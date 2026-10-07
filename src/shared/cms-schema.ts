@@ -116,6 +116,7 @@ export const ENTITIES: Record<CmsEntityName, EntityDef> = {
       { key: "personsPerSet", kind: "int", min: 1, max: 50 },
       { key: "minQuantity", kind: "int", min: 1, max: 999, required: true, default: 1 },
       { key: "maxQuantity", kind: "int", min: 1, max: 999 },
+      { key: "imageAssetId", kind: "asset", purpose: "FOOD" },
       { key: "status", kind: "enum", values: ["DRAFT", "ACTIVE", "INACTIVE"], required: true, default: "DRAFT" },
       sortOrder,
     ],

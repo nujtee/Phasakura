@@ -1,6 +1,7 @@
 import { DEFAULT_LOCALE, parseLocale } from "../../shared/i18n/locales.ts";
 import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
-import { BadRequestError } from "../http/errors.ts";
+import { BadRequestError, HttpError, PayloadTooLargeError, ValidationError } from "../http/errors.ts";
+import { MAX_FONT_BYTES } from "../../shared/media-types.ts";
 import { jsonOk } from "../http/response.ts";
 import type { Handler, RequestContext } from "../router.ts";
 import { readJsonObject } from "../security/request.ts";
@@ -48,7 +49,27 @@ export function settingsController(services: ServicesFor) {
     rollbackTheme: withAuth(services, async (ctx, auth) =>
       jsonOk(await services(ctx).settings.rollbackTheme(auth, ctx.params.id ?? "", requestMeta(ctx)))),
 
+    // Uploaded web fonts (Phase 12)
+    fonts: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).fonts.list(auth, requestMeta(ctx)), NO_STORE)),
+    uploadFont: withAuth(services, async (ctx, auth) => {
+      if (!/^multipart\/form-data;/i.test(ctx.request.headers.get("Content-Type") ?? "")) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Use multipart/form-data");
+      if (Number(ctx.request.headers.get("Content-Length") ?? "0") > MAX_FONT_BYTES + 64 * 1024) throw new PayloadTooLargeError();
+      let form: FormData;
+      try {
+        form = await ctx.request.formData();
+      } catch {
+        throw new ValidationError({ body: "INVALID_MULTIPART" });
+      }
+      return jsonOk(await services(ctx).fonts.upload(auth, form, requestMeta(ctx)), { status: 201 });
+    }),
+    deleteFont: withAuth(services, async (ctx, auth) => {
+      await services(ctx).fonts.remove(auth, ctx.params.id ?? "", requestMeta(ctx));
+      return jsonOk({ deleted: true });
+    }),
     // ------------------------------------------------------------------ public content (spec §59)
+    /** Active dishes by category (home "food preview"). */
+    publicFoodMenu: (async (ctx) => jsonOk(await services(ctx).quotes.publicMenu(lang(ctx)), PUBLIC_CACHE)) satisfies Handler,
+
     publicHome: (async (ctx) => jsonOk(await services(ctx).content.home(lang(ctx)), PUBLIC_CACHE)) satisfies Handler,
     publicSlides: (async (ctx) => jsonOk((await services(ctx).content.home(lang(ctx))).slides, PUBLIC_CACHE)) satisfies Handler,
     publicGallery: (async (ctx) => jsonOk(await services(ctx).content.gallery(lang(ctx)), PUBLIC_CACHE)) satisfies Handler,

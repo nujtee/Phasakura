@@ -29,6 +29,7 @@ function site(overrides: Partial<PublicSiteDto> = {}): PublicSiteDto {
     footerText: null,
     bookingCta: null,
     lineButton: null,
+    fonts: [],
     ...overrides,
   };
 }

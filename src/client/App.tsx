@@ -7,7 +7,8 @@ import { I18nProvider } from "./i18n/I18nProvider.tsx";
 import { AccommodationDetailPage } from "./pages/AccommodationDetailPage.tsx";
 import { BookingLookupPage } from "./pages/BookingLookupPage.tsx";
 import { BookingPage } from "./pages/BookingPage.tsx";
-import { ContentPage } from "./pages/ContentPage.tsx";
+import { GalleryPage } from "./pages/GalleryPage.tsx";
+import { HistoryPage } from "./pages/HistoryPage.tsx";
 import { HomePage } from "./pages/HomePage.tsx";
 import { NotFoundPage } from "./pages/NotFoundPage.tsx";
 import { useRouter } from "./router/Router.tsx";
@@ -55,8 +56,9 @@ function renderPage(page: SitePage | null, title: string, slug: string | undefin
     case "accommodation":
       return slug ? <AccommodationDetailPage key={slug} slug={slug} /> : <NotFoundPage />;
     case "gallery":
+      return <GalleryPage title={title} />;
     case "history":
-      return <ContentPage title={title} />;
+      return <HistoryPage title={title} />;
     default:
       return <NotFoundPage />;
   }

@@ -6,7 +6,7 @@ import { BadRequestError, HttpError, PayloadTooLargeError, ValidationError } fro
 import { jsonOk } from "../http/response.ts";
 import type { Handler, RequestContext } from "../router.ts";
 import { readJsonObject } from "../security/request.ts";
-import { MAX_IMAGE_BYTES, UPLOAD_PERMISSIONS } from "../services/media.service.ts";
+import { MAX_UPLOAD_BYTES, UPLOAD_PERMISSIONS } from "../services/media.service.ts";
 import type { MediaPurpose } from "../repositories/media.repository.ts";
 import { ID_PATTERN, Validator } from "../validation.ts";
 
@@ -323,20 +323,23 @@ export function accommodationController(services: ServicesFor) {
       const type = ctx.request.headers.get("Content-Type") ?? "";
       if (!/^multipart\/form-data;/i.test(type)) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Use multipart/form-data");
       const length = Number(ctx.request.headers.get("Content-Length") ?? "0");
-      if (length > MAX_IMAGE_BYTES + 64 * 1024) throw new PayloadTooLargeError();
+      if (length > MAX_UPLOAD_BYTES + 64 * 1024) throw new PayloadTooLargeError();
       let form: FormData;
       try {
         form = await ctx.request.formData();
       } catch {
         throw new ValidationError({ body: "INVALID_MULTIPART" });
       }
-      const unknown = [...form.keys()].filter((k) => k !== "file" && k !== "purpose");
+      const unknown = [...form.keys()].filter((k) => k !== "file" && k !== "purpose" && k !== "variant");
       if (unknown.length) throw new ValidationError(Object.fromEntries(unknown.map((k) => [k, "UNKNOWN_FIELD"])));
       const file = form.get("file");
       const purpose = form.get("purpose");
       if (!(file instanceof File)) throw new ValidationError({ file: "REQUIRED" });
       if (typeof purpose !== "string" || !(purpose in UPLOAD_PERMISSIONS)) throw new ValidationError({ purpose: "INVALID_VALUE" });
-      return jsonOk(await services(ctx).media.upload(auth, file, purpose as MediaPurpose, requestMeta(ctx)), { status: 201 });
+      // Responsive renditions made in the admin's browser (Phase 12).
+      const variants = form.getAll("variant");
+      if (!variants.every((v): v is File => v instanceof File)) throw new ValidationError({ variant: "EXPECTED_FILE" });
+      return jsonOk(await services(ctx).media.upload(auth, file, purpose as MediaPurpose, requestMeta(ctx), variants), { status: 201 });
     }),
 
     /** PUT /api/admin/media/:id/texts { texts: { th: {altText,title,caption}, … } } */

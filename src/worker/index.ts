@@ -18,6 +18,7 @@ import { jsonError } from "./http/response.ts";
 import { withSecurityHeaders } from "./http/security-headers.ts";
 import { Router, type RequestContext } from "./router.ts";
 import { assertSameOriginRequest } from "./security/request.ts";
+import { readCookie, SESSION_COOKIE } from "./security/cookies.ts";
 import { isSafeObjectKey } from "./services/media-url.ts";
 import { LINE_WEBHOOK_PATH } from "./line/line-api.ts";
 
@@ -189,6 +190,11 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/public/gallery/categories", settings.publicGalleryCategories)
     .get("/api/public/history", settings.publicHistory)
     .get("/api/public/history/timeline", settings.publicTimeline)
+    .get("/api/public/food-menu", settings.publicFoodMenu)
+    // Uploaded web fonts (Phase 12)
+    .get("/api/admin/fonts", settings.fonts)
+    .post("/api/admin/fonts", settings.uploadFont)
+    .delete("/api/admin/fonts/:id", settings.deleteFont)
     // Reports (spec §50)
     .get("/api/admin/reports/:type", rep.run)
     .get("/api/admin/reports/:type/export", rep.exportXlsx)
@@ -241,7 +247,10 @@ export function createApp(options: AppOptions = {}) {
     }
     if (!isSafeObjectKey(key)) return new Response("Not found", { status: 404 });
     try {
-      const res = await services({ request, env, url }).media.serve(key, request.headers.get("If-None-Match"));
+      const s = services({ request, env, url });
+      // Unpublished content images: only a signed-in staff session may see them (admin previews).
+      const isStaff = async () => (await s.sessions.authenticate(readCookie(request, SESSION_COOKIE))) !== null;
+      const res = await s.media.serve(key, request.headers.get("If-None-Match"), isStaff);
       if (!res) return new Response("Not found", { status: 404, headers: { "Cache-Control": "public, max-age=60" } });
       return request.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
     } catch (error) {

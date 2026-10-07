@@ -2,6 +2,8 @@ import type {
   FoodCatalogueDto,
   FoodCategoryDto,
   FoodLineDto,
+  FoodMenuDto,
+  FoodOptionDto,
   FoodSelection,
   IncludedMealDto,
   NightPriceDto,
@@ -22,6 +24,8 @@ import type {
   PricingRuleRow,
 } from "../repositories/pricing.repository.ts";
 import type { Clock } from "./auth-context.ts";
+import type { ImageResolver } from "../media/image-resolver.ts";
+import { publicMediaUrl } from "./media-url.ts";
 import { pickTranslation } from "./accommodation.service.ts";
 import type { AvailabilityService } from "./availability.service.ts";
 
@@ -79,7 +83,55 @@ export class QuoteService {
     private readonly inventory: InventoryRepository,
     private readonly availability: AvailabilityService,
     private readonly clock: Clock,
+    /** Responsive dish photos (Phase 12). */
+    private readonly images: ImageResolver | null = null,
+    private readonly mediaBaseUrl: string | undefined = undefined,
   ) {}
+
+  /** Dish → public DTO (shared by the stay catalogue and the public menu). */
+  private async optionDtos(menu: Awaited<ReturnType<QuoteService["menu"]>>): Promise<Map<string, FoodOptionDto>> {
+    const ids = menu.options.map((o) => o.image_asset_id);
+    const [renditions, alts] = this.images
+      ? await Promise.all([this.images.renditions(ids), this.images.altTexts(ids, menu.lang)])
+      : [new Map(), new Map<string, string>()];
+    return new Map(menu.options.map((o) => {
+      const name = menu.optionName(o.id) ?? o.code;
+      const url = publicMediaUrl(o.image_key, this.mediaBaseUrl);
+      return [o.id, {
+        id: o.id,
+        code: o.code,
+        name,
+        description: menu.optionText(o.id, "description"),
+        allergens: menu.optionText(o.id, "allergens"),
+        pricingType: o.pricing_type,
+        priceSatang: o.price_satang,
+        childPricing: o.child_pricing,
+        childPriceSatang: childUnitPrice(o),
+        personsPerSet: o.persons_per_set,
+        minQuantity: o.min_quantity,
+        maxQuantity: o.max_quantity,
+        image: url ? {
+          // The photo's own alt text (Media texts), else the dish name.
+          url, alt: alts.get(o.image_asset_id!) ?? name, width: o.image_width ?? null, height: o.image_height ?? null,
+          srcset: this.images?.srcset(renditions.get(o.image_asset_id!), { key: o.image_key, width: o.image_width }) ?? null,
+        } : null,
+      }];
+    }));
+  }
+
+  /** Public menu without dates (home "food preview"). */
+  async publicMenu(lang: string): Promise<FoodMenuDto> {
+    const menu = await this.menu(lang);
+    const options = await this.optionDtos(menu);
+    return {
+      categories: menu.categories
+        .map((c) => ({
+          id: c.id, code: c.code, name: menu.categoryName(c.id) ?? c.code, description: menu.categoryDescription(c.id), serviceTime: c.service_time,
+          options: menu.options.filter((o) => o.food_category_id === c.id).map((o) => options.get(o.id)!),
+        }))
+        .filter((c) => c.options.length > 0),
+    };
+  }
 
   async timezone(): Promise<string> {
     return (await this.inventory.siteTimezone()) ?? DEFAULT_TIMEZONE;
@@ -196,6 +248,7 @@ export class QuoteService {
     const serviceDates = [...new Set(menu.categories.flatMap((c) => this.serviceDates(c, nights)))].sort();
     const capacity = serviceDates.length ? await this.pricing.foodCapacity(serviceDates[0]!, serviceDates[serviceDates.length - 1]!) : [];
     const deadline = await this.deadlineChecker();
+    const optionDtos = await this.optionDtos(menu);
     const categories: FoodCategoryDto[] = menu.categories
       .map((c) => ({
         id: c.id,
@@ -211,20 +264,7 @@ export class QuoteService {
         })),
         options: menu.options
           .filter((o) => o.food_category_id === c.id)
-          .map((o) => ({
-            id: o.id,
-            code: o.code,
-            name: menu.optionName(o.id) ?? o.code,
-            description: menu.optionText(o.id, "description"),
-            allergens: menu.optionText(o.id, "allergens"),
-            pricingType: o.pricing_type,
-            priceSatang: o.price_satang,
-            childPricing: o.child_pricing,
-            childPriceSatang: childUnitPrice(o),
-            personsPerSet: o.persons_per_set,
-            minQuantity: o.min_quantity,
-            maxQuantity: o.max_quantity,
-          })),
+          .map((o) => optionDtos.get(o.id)!),
       }))
       .filter((c) => c.options.length > 0);
     return { checkIn, checkOut, categories };
@@ -263,6 +303,7 @@ export class QuoteService {
     const catMap = byId(catT);
     const optMap = byId(optT);
     return {
+      lang,
       categories,
       options,
       categoryName: (id: string) => pickTranslation(catMap.get(id) ?? {}, lang)?.name,

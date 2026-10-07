@@ -3,6 +3,7 @@ import type {
 } from "../../shared/content-types.ts";
 import { DEFAULT_LOCALE_CODE, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike } from "../env.ts";
+import type { ImageResolver, Rendition } from "../media/image-resolver.ts";
 import { iso, type Clock } from "./auth-context.ts";
 import { publicMediaUrl } from "./media-url.ts";
 
@@ -17,14 +18,25 @@ export class PublicContentService {
     private readonly db: D1DatabaseLike,
     private readonly clock: Clock,
     private readonly mediaBaseUrl: string | undefined,
+    /** Responsive renditions (Phase 12). */
+    private readonly images: ImageResolver | null = null,
   ) {}
+
+  private renditions = new Map<string, Rendition[]>();
+
+  /** Loads renditions for every image id found in the rows (one query). */
+  private async loadRenditions(rows: Row[], idColumns: string[]): Promise<void> {
+    if (!this.images) return;
+    this.renditions = await this.images.renditions(rows.flatMap((r) => idColumns.map((c) => r[c] as string | null)));
+  }
 
   async home(lang: LocaleCode): Promise<PublicHomeDto> {
     const now = iso(this.clock());
     const [slides, slideTr, sections, sectionTr] = await this.db.batch([
       this.db.prepare(
         `SELECT s.id, s.overlay_enabled, s.overlay_color, s.overlay_opacity, s.content_position, s.button1_url, s.button2_url,
-                d.object_key AS d_key, d.width AS d_w, d.height AS d_h, m.object_key AS m_key, m.width AS m_w, m.height AS m_h
+                d.id AS d_id, d.object_key AS d_key, d.width AS d_w, d.height AS d_h,
+                m.id AS m_id, m.object_key AS m_key, m.width AS m_w, m.height AS m_h
            FROM home_slides s
            JOIN media_assets d ON d.id = s.desktop_asset_id AND d.bucket = 'PUBLIC' AND d.status = 'ACTIVE'
            LEFT JOIN media_assets m ON m.id = s.mobile_asset_id AND m.bucket = 'PUBLIC' AND m.status = 'ACTIVE'
@@ -37,7 +49,7 @@ export class PublicContentService {
           WHERE s.status IN ('PUBLISHED', 'SCHEDULED')`,
       ),
       this.db.prepare(
-        `SELECT s.id, s.section_type, m.object_key AS i_key, m.width AS i_w, m.height AS i_h
+        `SELECT s.id, s.section_type, m.id AS i_id, m.object_key AS i_key, m.width AS i_w, m.height AS i_h
            FROM home_sections s LEFT JOIN media_assets m ON m.id = s.media_asset_id AND m.bucket = 'PUBLIC' AND m.status = 'ACTIVE'
           WHERE s.status = 'PUBLISHED' ORDER BY s.sort_order, s.created_at LIMIT 50`,
       ),
@@ -47,6 +59,7 @@ export class PublicContentService {
     ]);
     const st = byOwner(slideTr!.results as Row[], "slide_id");
     const sc = byOwner(sectionTr!.results as Row[], "section_id");
+    await this.loadRenditions([...(slides!.results as Row[]), ...(sections!.results as Row[])], ["d_id", "m_id", "i_id"]);
     return {
       language: lang,
       slides: (slides!.results as Row[]).map((r): PublicSlideDto => {
@@ -54,8 +67,8 @@ export class PublicContentService {
         const alt = str(t.image_alt) ?? str(t.title) ?? "";
         return {
           id: r.id as string,
-          desktop: this.image(r.d_key, r.d_w, r.d_h, alt)!,
-          mobile: this.image(r.m_key, r.m_w, r.m_h, alt),
+          desktop: this.image(r.d_key, r.d_w, r.d_h, alt, r.d_id)!,
+          mobile: this.image(r.m_key, r.m_w, r.m_h, alt, r.m_id),
           overlay: { enabled: r.overlay_enabled === 1, color: r.overlay_color as string, opacity: r.overlay_opacity as number },
           position: r.content_position as string,
           title: str(t.title),
@@ -76,7 +89,7 @@ export class PublicContentService {
         `SELECT t.* FROM gallery_category_translations t JOIN gallery_categories c ON c.id = t.category_id WHERE c.status = 'PUBLISHED'`,
       ),
       this.db.prepare(
-        `SELECT g.id, g.layout_span, c.slug, m.object_key AS i_key, m.width AS i_w, m.height AS i_h
+        `SELECT g.id, g.layout_span, c.slug, m.id AS i_id, m.object_key AS i_key, m.width AS i_w, m.height AS i_h
            FROM gallery_images g
            JOIN media_assets m ON m.id = g.media_asset_id AND m.bucket = 'PUBLIC' AND m.status = 'ACTIVE'
            LEFT JOIN gallery_categories c ON c.id = g.category_id
@@ -87,6 +100,7 @@ export class PublicContentService {
     ]);
     const ct = byOwner(catTr!.results as Row[], "category_id");
     const it = byOwner(imageTr!.results as Row[], "image_id");
+    await this.loadRenditions(images!.results as Row[], ["i_id"]);
     return {
       language: lang,
       categories: (cats!.results as Row[]).map((r) => {
@@ -99,7 +113,7 @@ export class PublicContentService {
           id: r.id as string,
           categorySlug: (r.slug as string | null) ?? null,
           span: r.layout_span as string,
-          image: this.image(r.i_key, r.i_w, r.i_h, str(t.alt_text) ?? str(t.title) ?? "")!,
+          image: this.image(r.i_key, r.i_w, r.i_h, str(t.alt_text) ?? str(t.title) ?? "", r.i_id)!,
           title: str(t.title),
           caption: str(t.caption),
         };
@@ -110,13 +124,13 @@ export class PublicContentService {
   async history(lang: LocaleCode): Promise<PublicHistoryDto> {
     const [sections, sectionTr, timeline, timelineTr] = await this.db.batch([
       this.db.prepare(
-        `SELECT s.id, s.section_type, s.layout, m.object_key AS i_key, m.width AS i_w, m.height AS i_h
+        `SELECT s.id, s.section_type, s.layout, m.id AS i_id, m.object_key AS i_key, m.width AS i_w, m.height AS i_h
            FROM history_sections s LEFT JOIN media_assets m ON m.id = s.media_asset_id AND m.bucket = 'PUBLIC' AND m.status = 'ACTIVE'
           WHERE s.status = 'PUBLISHED' ORDER BY s.sort_order, s.created_at LIMIT 100`,
       ),
       this.db.prepare(`SELECT t.* FROM history_translations t JOIN history_sections s ON s.id = t.section_id WHERE s.status = 'PUBLISHED'`),
       this.db.prepare(
-        `SELECT h.id, h.year, m.object_key AS i_key, m.width AS i_w, m.height AS i_h
+        `SELECT h.id, h.year, m.id AS i_id, m.object_key AS i_key, m.width AS i_w, m.height AS i_h
            FROM history_timeline h LEFT JOIN media_assets m ON m.id = h.media_asset_id AND m.bucket = 'PUBLIC' AND m.status = 'ACTIVE'
           WHERE h.status = 'PUBLISHED' ORDER BY h.sort_order, h.year LIMIT 200`,
       ),
@@ -126,6 +140,7 @@ export class PublicContentService {
     ]);
     const sc = byOwner(sectionTr!.results as Row[], "section_id");
     const tt = byOwner(timelineTr!.results as Row[], "timeline_id");
+    await this.loadRenditions([...(sections!.results as Row[]), ...(timeline!.results as Row[])], ["i_id"]);
     return {
       language: lang,
       sections: (sections!.results as Row[]).map((r) => this.section(r, pick(sc.get(r.id as string), lang), r.layout as string)),
@@ -135,7 +150,7 @@ export class PublicContentService {
         if (!title) return [];
         return [{
           id: r.id as string, year: r.year as number, title, description: str(t.description),
-          image: this.image(r.i_key, r.i_w, r.i_h, str(t.image_alt) ?? title),
+          image: this.image(r.i_key, r.i_w, r.i_h, str(t.image_alt) ?? title, r.i_id),
         }];
       }),
     };
@@ -145,7 +160,7 @@ export class PublicContentService {
     return {
       id: r.id as string,
       type: r.section_type as string,
-      image: this.image(r.i_key, r.i_w, r.i_h, str(t.image_alt) ?? str(t.title) ?? ""),
+      image: this.image(r.i_key, r.i_w, r.i_h, str(t.image_alt) ?? str(t.title) ?? "", r.i_id),
       layout,
       title: str(t.title),
       subtitle: str(t.subtitle),
@@ -155,9 +170,12 @@ export class PublicContentService {
     };
   }
 
-  private image(key: unknown, w: unknown, h: unknown, alt: string): PublicImageDto | null {
+  private image(key: unknown, w: unknown, h: unknown, alt: string, id?: unknown): PublicImageDto | null {
     const url = publicMediaUrl(key as string | null, this.mediaBaseUrl);
-    return url ? { url, width: (w as number | null) ?? null, height: (h as number | null) ?? null, alt } : null;
+    if (!url) return null;
+    const width = (w as number | null) ?? null;
+    const srcset = this.images && typeof id === "string" ? this.images.srcset(this.renditions.get(id), { key: key as string, width }) : null;
+    return { url, width, height: (h as number | null) ?? null, alt, srcset };
   }
 }
 

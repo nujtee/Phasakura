@@ -183,6 +183,8 @@ export interface FoodOptionDto {
   personsPerSet: number | null;
   minQuantity: number;
   maxQuantity: number | null;
+  /** Dish photo (Phase 12). */
+  image: { url: string; srcset: string | null; alt: string; width: number | null; height: number | null } | null;
 }
 
 export interface FoodCategoryDto {
@@ -195,6 +197,11 @@ export interface FoodCategoryDto {
   serviceDayOffset: 0 | 1;
   dates: FoodDateDto[];
   options: FoodOptionDto[];
+}
+
+/** GET /api/public/food-menu — active dishes by category, no dates (home "food preview", Phase 12). */
+export interface FoodMenuDto {
+  categories: { id: string; code: string; name: string; description: string | null; serviceTime: string | null; options: FoodOptionDto[] }[];
 }
 
 export interface FoodCatalogueDto {

@@ -2210,3 +2210,21 @@
 .line-manual[open] > summary { margin-bottom: 12px; }
 
 .line-reason { max-width: 28ch; }
+
+/* ---------- Uploaded fonts (Phase 12) ---------- */
+.font-list {
+  margin-bottom: 20px;
+}
+
+.font-sample {
+  margin: 4px 0 0;
+  font-size: 1.25rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.font-upload {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}

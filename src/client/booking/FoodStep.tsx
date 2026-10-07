@@ -1,5 +1,7 @@
 import type { FoodCatalogueDto, FoodOptionDto, QuoteDto } from "../../shared/booking-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
+import { IMAGE_SIZES } from "../../shared/media-types.ts";
+import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
 import type { FoodCart } from "./api.ts";
@@ -101,7 +103,8 @@ export function FoodStep({
                   const v = cart[key] ?? { adults: 0, children: 0, quantity: 0 };
                   const headroom = d.remaining === null ? Infinity : d.remaining - usedHere;
                   return (
-                    <div key={o.id} className="food-option">
+                    <div key={o.id} className={`food-option${o.image ? " food-option--image" : ""}`}>
+                      {o.image && <ResponsiveImage image={o.image} sizes={IMAGE_SIZES.thumb} className="food-option__img" alt="" />}
                       <div className="food-option__info">
                         <strong>{o.name}</strong>
                         <span className="food-option__price">{priceText(o, bt, baht)}</span>

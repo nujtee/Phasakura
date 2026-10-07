@@ -84,3 +84,23 @@ describe("LINE dictionaries (Phase 11)", () => {
     }
   });
 });
+
+describe("Phase 12 dictionaries (images, fonts, content pages)", () => {
+  it("public content texts: TH, EN and ZH-CN have identical keys and no empty strings", async () => {
+    const { contentTh, contentEn, contentZhCN } = await import("../../src/shared/i18n/content-messages.ts");
+    const ref = keys(contentTh).sort();
+    for (const dict of [contentEn, contentZhCN]) {
+      assert.deepEqual(keys(dict).sort(), ref);
+      assert.ok(values(dict).every((v) => v.trim().length > 0));
+    }
+  });
+
+  it("every image / font error code has a message in every admin language", async () => {
+    const { cmsTh } = await import("../../src/shared/i18n/admin-cms-messages.ts");
+    for (const code of ["FONT_TOO_LARGE", "UNSUPPORTED_FONT", "FONT_FACE_EXISTS", "FONT_IN_USE", "FONT_NOT_FOUND",
+      "NOT_A_RENDITION", "DUPLICATE_WIDTH", "TOO_MANY", "NOT_ALLOWED", "UNSUPPORTED_IMAGE", "IMAGE_TOO_LARGE_DIMENSIONS"]) {
+      for (const dict of [adminTh, adminEn, adminZhCN]) assert.ok((dict.errors as Record<string, string>)[code], code);
+    }
+    assert.ok(cmsTh.theme.fonts.upload);
+  });
+});

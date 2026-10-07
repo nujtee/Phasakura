@@ -86,8 +86,8 @@ export class SettingsRepository {
   }
 
   asset(id: string) {
-    return this.db.prepare("SELECT id, purpose, bucket, status FROM media_assets WHERE id = ?1").bind(id)
-      .first<{ id: string; purpose: string; bucket: string; status: string }>();
+    return this.db.prepare("SELECT id, purpose, bucket, status, parent_asset_id FROM media_assets WHERE id = ?1").bind(id)
+      .first<{ id: string; purpose: string; bucket: string; status: string; parent_asset_id: string | null }>();
   }
 
   // ================================================================ booking CTA

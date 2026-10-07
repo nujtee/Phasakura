@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CmsRecord } from "../../../shared/cms-schema.ts";
-import { apiRequest, apiUpload } from "../../api/client.ts";
+import { apiRequest } from "../../api/client.ts";
+import { uploadImage } from "../../media/prepareImage.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { CmsManager, enumLabel, PageTabs, recordTitle, useCmsList } from "../cms/CmsKit.tsx";
 import { Alert, Button, detailMessage } from "../ui.tsx";
@@ -90,10 +91,7 @@ function MultiUpload({ categoryId, onDone }: { categoryId: string | null; onDone
     for (const file of [...files]) {
       setProgress(`${c.ui.uploading} ${done + 1}/${files.length}`);
       try {
-        const form = new FormData();
-        form.set("file", file);
-        form.set("purpose", "GALLERY");
-        const asset = await apiUpload<{ id: string }>("/api/admin/media", form);
+        const asset = await uploadImage(file, "GALLERY");
         await apiRequest<CmsRecord>("POST", "/api/admin/cms/galleryImage", { mediaAssetId: asset.id, categoryId });
         done++;
       } catch (err) {

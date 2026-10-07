@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import type { AdminUnitDto, AmenityDto, MediaTextDto, UnitTranslationDto, UnitType } from "../../../shared/accommodation-types.ts";
 import { SATANG_PER_BAHT, parseBahtToSatang } from "../../../shared/booking-rules.ts";
 import { LOCALES, type LocaleCode } from "../../../shared/i18n/locales.ts";
-import { apiGet, apiRequest, apiUpload } from "../../api/client.ts";
+import { apiGet, apiRequest } from "../../api/client.ts";
+import { uploadImage } from "../../media/prepareImage.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, errorMessage, Field, fieldErrors } from "../ui.tsx";
@@ -302,10 +303,7 @@ function ImagesManager({ unit, canEdit, onSaved, onError }: {
     try {
       let latest = unit;
       for (const file of Array.from(files)) {
-        const form = new FormData();
-        form.set("file", file);
-        form.set("purpose", "ACCOMMODATION");
-        const asset = await apiUpload<{ id: string }>("/api/admin/media", form);
+        const asset = await uploadImage(file, "ACCOMMODATION");
         latest = await apiRequest<AdminUnitDto>("POST", `${base}/images`, { mediaAssetId: asset.id });
       }
       onSaved(latest);

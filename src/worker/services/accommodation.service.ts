@@ -1,3 +1,4 @@
+import type { ImageResolver, Rendition } from "../media/image-resolver.ts";
 import type {
   AdminUnitDto,
   AmenityDto,
@@ -53,6 +54,8 @@ export class AccommodationService {
     private readonly log: SecurityLogService,
     private readonly mediaBaseUrl: string | undefined,
     private readonly clock: Clock,
+    /** Responsive renditions (Phase 12). */
+    private readonly images: ImageResolver | null = null,
   ) {}
 
   // ================================================================ public
@@ -64,6 +67,9 @@ export class AccommodationService {
     const campingTexts = Object.fromEntries((await this.inventory.campingTranslations()).map((t) => [t.language_code, t]));
     const ct = pickTranslation(campingTexts, locale.code);
     const coverUrl = camping?.cover_key ? publicMediaUrl(camping.cover_key, this.mediaBaseUrl) : null;
+    const coverRenditions = this.images && camping?.cover_asset_id ? await this.images.renditions([camping.cover_asset_id]) : null;
+    const coverSrcset = coverRenditions && camping?.cover_asset_id
+      ? this.images!.srcset(coverRenditions.get(camping.cover_asset_id), { key: camping.cover_key, width: camping.cover_width }) : null;
     return {
       language: locale.code,
       houses: dtos.filter((u) => u.unitType === "HOUSE"),
@@ -76,7 +82,7 @@ export class AccommodationService {
         childFreeUnderAge: camping?.child_free_under_age ?? 12,
         maxGuestsPerTent: camping?.max_guests_per_tent ?? null,
         maxTentsPerNight: camping?.max_tents_per_night ?? 0,
-        cover: coverUrl ? { url: coverUrl, alt: ct?.name ?? "", caption: null, width: camping?.cover_width ?? null, height: camping?.cover_height ?? null } : null,
+        cover: coverUrl ? { url: coverUrl, alt: ct?.name ?? "", caption: null, width: camping?.cover_width ?? null, height: camping?.cover_height ?? null, srcset: coverSrcset } : null,
       },
     };
   }
@@ -95,6 +101,9 @@ export class AccommodationService {
       this.repo.translations(ids), this.repo.images(ids, true), this.repo.unitAmenities(ids), this.repo.amenities(true),
     ]);
     const texts = groupTexts(await this.media.translationsFor(images.map((i) => i.media_asset_id)));
+    const renditions = this.images
+      ? await this.images.renditions([...images.map((i) => i.media_asset_id), ...units.map((u) => u.cover_asset_id)])
+      : new Map<string, Rendition[]>();
     const tByUnit = groupBy(translations, (t) => t.unit_id);
     const amenityById = new Map(amenities.map((a) => [a.id, a]));
 
@@ -103,7 +112,10 @@ export class AccommodationService {
       if (!t) return []; // never publish a unit without any name
       const toImage = (key: string, assetId: string, w: number | null, h: number | null): PublicImageDto => {
         const mt = pickTranslation(texts[assetId] ?? {}, lang);
-        return { url: publicMediaUrl(key, this.mediaBaseUrl) ?? "", alt: mt?.altText ?? t.name, caption: mt?.caption ?? null, width: w, height: h };
+        return {
+          url: publicMediaUrl(key, this.mediaBaseUrl) ?? "", alt: mt?.altText ?? t.name, caption: mt?.caption ?? null, width: w, height: h,
+          srcset: this.images?.srcset(renditions.get(assetId), { key, width: w }) ?? null,
+        };
       };
       const unitImages = images.filter((i) => i.unit_id === u.id);
       return [{
@@ -276,7 +288,7 @@ export class AccommodationService {
     await this.authz.requirePermission(actor, "accommodation.edit", meta);
     const current = await this.getAdmin(id);
     const asset = await this.media.findById(mediaAssetId);
-    if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC" || asset.purpose !== "ACCOMMODATION") {
+    if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC" || asset.purpose !== "ACCOMMODATION" || asset.parent_asset_id) {
       throw new ValidationError({ mediaAssetId: "INVALID_IMAGE" });
     }
     if (current.images.some((i) => i.mediaAssetId === mediaAssetId)) throw new ConflictError("Image already added", "IMAGE_ALREADY_ADDED");
@@ -333,7 +345,7 @@ export class AccommodationService {
     const current = await this.getAdmin(id);
     const image = current.images.find((i) => i.id === imageId);
     if (!image) throw new NotFoundError("Image not found", "IMAGE_NOT_FOUND");
-    const asset = await this.media.findById(image.mediaAssetId);
+    const objects = await this.media.objectKeys(image.mediaAssetId); // original + responsive renditions
     const now = this.now();
     const statements: D1PreparedStatementLike[] = [
       this.repo.deleteImageStatement(id, imageId),
@@ -345,7 +357,7 @@ export class AccommodationService {
       statements.push(this.repo.setCoverStatement(id, next?.mediaAssetId ?? null, now));
     }
     await this.commit(statements);
-    if (asset) await this.bucket.delete(asset.object_key).catch(() => undefined);
+    for (const o of objects) if (o.bucket === "PUBLIC") await this.bucket.delete(o.object_key).catch(() => undefined);
     return this.getAdmin(id);
   }
 

@@ -84,6 +84,17 @@ export class Harness {
     return { status: res.status, data: body.data as T, error: body.error };
   }
 
+  /** Multipart POST with repeated fields and several files (variants, fonts). */
+  async multipart<T = unknown>(token: string | null, path: string, fields: [string, string | { bytes: Uint8Array; name: string; type: string }][]) {
+    const form = new FormData();
+    for (const [k, v] of fields) form.append(k, typeof v === "string" ? v : new File([v.bytes as BlobPart], v.name, { type: v.type }));
+    const headers: Record<string, string> = { Origin: ORIGIN, "X-Requested-With": "phasakura" };
+    if (token) headers.Cookie = `__Host-sid=${token}`;
+    const res = await this.app.fetch(new Request(`${ORIGIN}${path}`, { method: "POST", headers, body: form }), this.env);
+    const body = (await res.json()) as { data?: T; error?: ApiErrorBody["error"] };
+    return { status: res.status, data: body.data as T, error: body.error };
+  }
+
   /** Raw GET of a non-API path (e.g. /media/…). */
   get(path: string, headers: Record<string, string> = {}, method = "GET") {
     return this.app.fetch(new Request(`${ORIGIN}${path}`, { method, headers }), this.env);

@@ -323,6 +323,14 @@ button.button--secondary {
   padding: 8px 0;
 }
 
+.food-option__img {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+}
+
 .food-option__info {
   display: flex;
   flex-direction: column;

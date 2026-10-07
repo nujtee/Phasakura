@@ -6,6 +6,8 @@ export interface PublicImageDto {
   width: number | null;
   height: number | null;
   alt: string;
+  /** Responsive renditions "url 480w, …" (Phase 12); null when only the original exists. */
+  srcset?: string | null;
 }
 
 export interface PublicSlideDto {

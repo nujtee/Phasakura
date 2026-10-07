@@ -349,9 +349,10 @@ export class CmsService {
       const value = values[key];
       if (!f || value == null) continue;
       if (f.kind === "asset") {
-        const asset = await this.db.prepare("SELECT purpose, bucket, status FROM media_assets WHERE id = ?1").bind(value)
-          .first<{ purpose: string; bucket: string; status: string }>();
-        if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC") errors[key] = "MEDIA_NOT_FOUND";
+        const asset = await this.db.prepare("SELECT purpose, bucket, status, parent_asset_id FROM media_assets WHERE id = ?1").bind(value)
+          .first<{ purpose: string; bucket: string; status: string; parent_asset_id: string | null }>();
+        // Content points at originals only; renditions are found through their original.
+        if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC" || asset.parent_asset_id) errors[key] = "MEDIA_NOT_FOUND";
         else if (asset.purpose !== f.purpose) errors[key] = "WRONG_MEDIA_PURPOSE";
       }
       if (f.kind === "ref" && f.ref) {

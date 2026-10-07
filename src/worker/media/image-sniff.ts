@@ -82,3 +82,23 @@ export function sniffImage(bytes: Uint8Array): SniffedImage | null {
   if (!result || result.width < 1 || result.height < 1) return null;
   return result;
 }
+
+export interface SniffedFont {
+  mime: "font/woff2" | "font/woff";
+  format: "woff2" | "woff";
+}
+
+/**
+ * Web fonts are identified from their signature ('wOF2' / 'wOFF') and a header whose
+ * declared length matches the file — never from the name or declared type.
+ */
+export function sniffFont(b: Uint8Array): SniffedFont | null {
+  if (b.length < 48) return null;
+  const sig = ascii(b, 0, 4);
+  if (sig !== "wOF2" && sig !== "wOFF") return null;
+  // flavor: TrueType 0x00010000, 'OTTO' (CFF) or 'true'
+  const flavor = ascii(b, 4, 4);
+  if (!(u32be(b, 4) === 0x00010000 || flavor === "OTTO" || flavor === "true")) return null;
+  if (u32be(b, 8) !== b.length) return null; // header "length" = total file size
+  return sig === "wOF2" ? { mime: "font/woff2", format: "woff2" } : { mime: "font/woff", format: "woff" };
+}

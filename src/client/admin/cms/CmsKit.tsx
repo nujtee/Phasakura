@@ -5,7 +5,9 @@ import { ENTITIES, type CmsEntityName, type CmsRecord, type FieldDef } from "../
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import type { AdminCmsMessages } from "../../../shared/i18n/admin-cms-messages.ts";
 import { LOCALES, type LocaleCode } from "../../../shared/i18n/locales.ts";
-import { apiGet, apiRequest, apiUpload } from "../../api/client.ts";
+import { apiGet, apiRequest } from "../../api/client.ts";
+import { uploadImage } from "../../media/prepareImage.ts";
+import type { ImageProfilePurpose } from "../../../shared/media-types.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, fieldErrors } from "../ui.tsx";
 
@@ -126,10 +128,7 @@ export function ImageField({
     setBusy(true);
     setUploadError(null);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      form.set("purpose", purpose);
-      onChange(await apiUpload<{ id: string; url: string }>("/api/admin/media", form));
+      onChange(await uploadImage(file, purpose as ImageProfilePurpose));
     } catch (err) {
       setUploadError(detailMessage(t, err));
     } finally {

@@ -294,7 +294,9 @@ export class AvailabilityService {
     }
     if (input.coverAssetId) {
       const asset = await this.media.findById(input.coverAssetId);
-      if (!asset || asset.status !== "ACTIVE" || asset.purpose !== "ACCOMMODATION") throw new ValidationError({ coverAssetId: "INVALID_IMAGE" });
+      if (!asset || asset.status !== "ACTIVE" || asset.purpose !== "ACCOMMODATION" || asset.parent_asset_id) {
+        throw new ValidationError({ coverAssetId: "INVALID_IMAGE" });
+      }
     }
 
     const now = iso(this.clock());

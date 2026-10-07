@@ -2,6 +2,7 @@
  * API contract types shared by the Worker and the React client.
  */
 import type { LocaleCode } from "./i18n/locales.ts";
+import type { PublicFontFaceDto } from "./media-types.ts";
 import type { PublicSiteExtrasDto } from "./settings-types.ts";
 
 export interface ApiSuccess<T> {
@@ -47,6 +48,8 @@ export interface PublicSiteDto {
   bookingCta: PublicSiteExtrasDto["bookingCta"];
   /** Floating "chat with us on LINE" button (Phase 11): add-friend / OA link, or null when off. */
   lineButton: { url: string } | null;
+  /** Uploaded font faces used by the published theme (Phase 12), loaded with the FontFace API. */
+  fonts: PublicFontFaceDto[];
 }
 
 /** GET /api/health */

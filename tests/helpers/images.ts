@@ -33,3 +33,12 @@ export function webpBytes(width = 640, height = 480): Uint8Array {
 
 export const svgBytes = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>');
 export const htmlBytes = new TextEncoder().encode("<!doctype html><script>alert(document.cookie)</script>");
+
+/** WOFF2 / WOFF header with the "length" field equal to the file size (what the font sniffer checks). */
+export function fontBytes(kind: "woff2" | "woff" = "woff2", size = 256): Uint8Array {
+  const b = new Uint8Array(size);
+  b.set(new TextEncoder().encode(kind === "woff2" ? "wOF2" : "wOFF"), 0);
+  b.set([0, 1, 0, 0], 4); // flavor: TrueType
+  b.set(be32(size), 8);
+  return b;
+}

@@ -15,7 +15,9 @@ import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-cont
 import type { AuthorizationService } from "./authorization.service.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
-import { ctaPages } from "./site.service.ts";
+import { ctaPages, fontFaces } from "./site.service.ts";
+import type { FontRepository } from "../repositories/font.repository.ts";
+import type { PublicFontFaceDto } from "../../shared/media-types.ts";
 
 const PHONE = /^[0-9+()\- ]{6,30}$/;
 const GA4_ID = /^G-[A-Z0-9]{4,20}$/;
@@ -45,6 +47,8 @@ export class SettingsService {
     private readonly clock: Clock,
     private readonly mediaBaseUrl: string | undefined,
     private readonly secrets: MarketingSecrets,
+    /** Uploaded web fonts a theme may use (Phase 12). */
+    private readonly fonts: Pick<FontRepository, "families" | "list"> | null = null,
   ) {}
 
   // ================================================================ website
@@ -133,7 +137,8 @@ export class SettingsService {
       const id = ids[slot];
       if (!id) continue;
       const asset = await this.repo.asset(id);
-      if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC") v.errors[slot] = "MEDIA_NOT_FOUND";
+      // Settings point at originals only (a resized rendition is never a logo / favicon).
+      if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC" || asset.parent_asset_id) v.errors[slot] = "MEDIA_NOT_FOUND";
       else if (asset.purpose !== BRANDING_PURPOSE[slot]) v.errors[slot] = "WRONG_MEDIA_PURPOSE";
     }
     v.assertValid();
@@ -302,7 +307,7 @@ export class SettingsService {
       };
       if (entry.ogImageAssetId && !e.errors.ogImageAssetId) {
         const asset = await this.repo.asset(entry.ogImageAssetId);
-        if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC") e.errors.ogImageAssetId = "MEDIA_NOT_FOUND";
+        if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC" || asset.parent_asset_id) e.errors.ogImageAssetId = "MEDIA_NOT_FOUND";
         else if (asset.purpose !== "OG_IMAGE") e.errors.ogImageAssetId = "WRONG_MEDIA_PURPOSE";
       }
       for (const [k, code] of Object.entries(e.errors)) v.errors[`translations.${lang}.${k}`] = code;
@@ -332,10 +337,13 @@ export class SettingsService {
   }
 
   /** Draft tokens for "preview on the website" (admin session only); falls back to the live theme. */
-  async themePreview(actor: AuthContext, meta: RequestMeta): Promise<{ tokens: ThemeTokens; versionNumber: number | null; isDraft: boolean }> {
+  async themePreview(actor: AuthContext, meta: RequestMeta): Promise<{ tokens: ThemeTokens; versionNumber: number | null; isDraft: boolean; fonts: PublicFontFaceDto[] }> {
     const t = await this.theme(actor, meta);
     const v = t.draft ?? t.published;
-    return { tokens: v?.tokens ?? {}, versionNumber: v?.versionNumber ?? null, isDraft: !!t.draft };
+    const tokens = v?.tokens ?? {};
+    // Faces the draft uses, so "preview on the live website" shows uploaded fonts too.
+    const fonts = this.fonts ? fontFaces(tokens, await this.fonts.list(), this.mediaBaseUrl) : [];
+    return { tokens, versionNumber: v?.versionNumber ?? null, isDraft: !!t.draft, fonts };
   }
 
   async saveThemeDraft(actor: AuthContext, body: Body, meta: RequestMeta): Promise<ThemeAdminDto> {
@@ -343,7 +351,8 @@ export class SettingsService {
     const v = new Validator(body).allowOnly(["preset", "tokens", "note"]);
     const preset = v.oneOf("preset", [...THEME_PRESETS, "CUSTOM"] as const, { required: true });
     const note = v.string("note", { max: 200 }) ?? null;
-    const tokenErrors = validateThemeTokens(body.tokens);
+    // Uploaded font families (Phase 12) must exist in the font library.
+    const tokenErrors = validateThemeTokens(body.tokens, this.fonts ? await this.fonts.families() : []);
     for (const [k, code] of Object.entries(tokenErrors)) v.errors[k === "tokens" ? "tokens" : `tokens.${k}`] = code;
     v.assertValid();
     const tokens = JSON.stringify(body.tokens);

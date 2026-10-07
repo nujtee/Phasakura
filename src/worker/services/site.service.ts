@@ -11,6 +11,8 @@ import { validateThemeTokens, type ThemeTokens } from "../../shared/theme.ts";
 import type { CtaRecord, SiteSettingsRepository, SiteTranslationRecord } from "../repositories/site-settings.repository.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import { addFriendUrl } from "../../shared/line-types.ts";
+import { customFontFamily, FONT_TOKENS } from "../../shared/theme.ts";
+import type { PublicFontFaceDto } from "../../shared/media-types.ts";
 
 export class SiteService {
   constructor(
@@ -58,6 +60,7 @@ export class SiteService {
       ?? labels.find((l) => parseLocale(l.language_code)?.code === defaultLanguage)?.label
       ?? null;
 
+    const theme = parseTheme(record?.themeTokensJson);
     return {
       configured: record !== null,
       language: locale.code,
@@ -66,7 +69,7 @@ export class SiteService {
       siteName,
       tagline: nonEmpty(translation?.tagline),
       logo: { main, mobile },
-      theme: parseTheme(record?.themeTokensJson),
+      theme,
       favicon: publicMediaUrl(branding?.faviconKey, this.publicMediaBaseUrl) ?? null,
       loginLogo: publicMediaUrl(branding?.loginLogoKey, this.publicMediaBaseUrl) ?? null,
       contact: {
@@ -78,6 +81,7 @@ export class SiteService {
       },
       footerText: nonEmpty(translation?.footerText) ?? nonEmpty(fallback?.footerText),
       bookingCta: toCta(record?.cta ?? null, nonEmpty(label)),
+      fonts: fontFaces(theme, record?.fonts ?? [], this.publicMediaBaseUrl),
       lineButton: record?.lineButton?.enabled
         ? (() => {
             const url = nonEmpty(record.contact?.lineOaUrl) ?? addFriendUrl(record.lineButton.basicId);
@@ -93,7 +97,8 @@ export function parseTheme(json: string | null | undefined): ThemeTokens | null 
   if (!json) return null;
   try {
     const tokens = JSON.parse(json) as unknown;
-    return Object.keys(validateThemeTokens(tokens)).length === 0 ? (tokens as ThemeTokens) : null;
+    // Uploaded families were checked against the font library when the theme was saved.
+    return Object.keys(validateThemeTokens(tokens, "any")).length === 0 ? (tokens as ThemeTokens) : null;
   } catch {
     return null;
   }
@@ -137,4 +142,21 @@ function pickTranslation(
 function nonEmpty(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+/** Faces of the uploaded families the published theme uses (others are never downloaded by visitors). */
+export function fontFaces(
+  theme: ThemeTokens | null,
+  fonts: { family: string; weight: number; style: string; object_key: string; mime_type: string }[],
+  baseUrl: string | undefined,
+): PublicFontFaceDto[] {
+  if (!theme) return [];
+  const used = new Set(FONT_TOKENS.map((t) => (theme[t] ? customFontFamily(theme[t]!) : null)).filter((f): f is string => !!f));
+  return fonts.flatMap((f) => {
+    const url = used.has(f.family) ? publicMediaUrl(f.object_key, baseUrl) : null;
+    return url ? [{
+      family: f.family, url, weight: f.weight, style: f.style === "italic" ? "italic" as const : "normal" as const,
+      format: f.mime_type === "font/woff" ? "woff" as const : "woff2" as const,
+    }] : [];
+  });
 }

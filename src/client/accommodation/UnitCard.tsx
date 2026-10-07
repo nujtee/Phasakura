@@ -3,6 +3,8 @@ import { formatBaht } from "../../shared/booking-rules.ts";
 import { accommodationPath } from "../../shared/routes.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
+import { IMAGE_SIZES } from "../../shared/media-types.ts";
+import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
 
 export function fill(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, k: string) => String(values[k] ?? ""));
@@ -22,8 +24,7 @@ export function UnitCard({ unit, availability }: { unit: PublicUnitDto; availabi
     <article className="unit-card" aria-labelledby={`unit-${unit.id}`}>
       <div className="unit-card__media">
         {unit.cover ? (
-          <img src={unit.cover.url} alt={unit.cover.alt} width={unit.cover.width ?? undefined} height={unit.cover.height ?? undefined}
-            loading="lazy" decoding="async" />
+          <ResponsiveImage image={unit.cover} sizes={IMAGE_SIZES.card} />
         ) : (
           <div className="unit-card__placeholder" aria-hidden="true" />
         )}

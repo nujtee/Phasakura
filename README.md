@@ -63,6 +63,24 @@ Secrets are never committed. Set them with `npx wrangler secret put <NAME>`.
    For group chats, allow the bot to join groups in LINE Official Account Manager first.
 5. The cron trigger (every minute) sends due notifications and the daily check-in / kitchen digests.
 
+### Images and fonts (Phase 12)
+
+- **Compression happens in the admin's browser**: photos are scaled to the purpose's maximum width
+  (slides / gallery 2400 px, rooms / history / home sections 2000 px, dishes 1600 px), re-encoded as WebP
+  (JPEG where the browser cannot encode WebP; camera metadata such as GPS is dropped), and smaller
+  renditions are uploaded with them for `srcset`. The Worker re-checks every file from its bytes
+  (type, size, dimensions, same picture as the original). Logos, favicons and QR codes are kept as uploaded.
+- **Public bucket, private until published**: `/media/*` serves an image only while the content that uses
+  it is published (gallery photo + category, slide inside its schedule, active house, active dish…).
+  Drafts are visible to signed-in staff only (`Cache-Control: private, no-store`). Payment slips stay in
+  the private bucket and are never served from `/media/*`.
+- **Uploaded fonts**: Admin → Settings → Theme → *Uploaded fonts* (WOFF2 / WOFF, 2 MB, one file per weight
+  and style). Only faces of the families the published theme uses are sent to visitors. Make sure the font
+  licence allows web embedding.
+- **Separate media domain** (`PUBLIC_MEDIA_BASE_URL`, e.g. an R2 custom domain): add that origin to
+  `font-src` in `public/_headers`, and allow your site origin in the bucket's CORS rules — browsers fetch
+  fonts with CORS. With the default (`/media/*` on the same Worker) nothing extra is needed.
+
 ## Push to GitHub
 
 ```bash

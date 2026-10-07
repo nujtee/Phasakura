@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { ReceivingAccountDto, ReceivingAccountInput } from "../../../shared/payment-types.ts";
-import { apiGet, apiRequest, apiUpload } from "../../api/client.ts";
+import { apiGet, apiRequest } from "../../api/client.ts";
+import { uploadImage } from "../../media/prepareImage.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, Field, fieldErrors, detailMessage } from "../ui.tsx";
 
@@ -55,10 +56,7 @@ export function ReceivingAccountsPage() {
     if (!editing) return;
     setBusy(true);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      form.set("purpose", "PAYMENT_QR");
-      const asset = await apiUpload<{ id: string; url: string }>("/api/admin/media", form);
+      const asset = await uploadImage(file, "PAYMENT_QR"); // kept exactly as uploaded (scannable)
       setEditing({ ...editing, draft: { ...editing.draft, qrAssetId: asset.id, qrUrl: asset.url } });
     } catch (err) {
       fail(err);

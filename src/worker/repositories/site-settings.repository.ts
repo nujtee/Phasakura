@@ -49,6 +49,8 @@ export interface SiteSettingsRecord {
   ctaLabels?: { language_code: string; label: string }[];
   /** Floating LINE button (Phase 11). */
   lineButton?: { enabled: boolean; basicId: string | null } | null;
+  /** Uploaded font faces (Phase 12); the service keeps those the published theme uses. */
+  fonts?: { family: string; weight: number; style: string; object_key: string; mime_type: string }[];
 }
 
 export interface SiteSettingsRepository {
@@ -150,7 +152,7 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
         }
       : null;
 
-    // Separate from the batch: before migration 0016 the table is missing and the rest must still load.
+    // Separate from the batch: before migrations 0016 / 0017 the tables are missing and the rest must still load.
     let lineButton: SiteSettingsRecord["lineButton"] = null;
     try {
       const line = await this.db.prepare("SELECT public_button, bot_basic_id FROM line_settings WHERE id = 1")
@@ -159,9 +161,23 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
     } catch (error) {
       if (!isMissingTableError(error)) throw error;
     }
+    let fonts: SiteSettingsRecord["fonts"] = [];
+    try {
+      const { results } = await this.db
+        .prepare(
+          `SELECT f.family, f.weight, f.style, m.object_key, m.mime_type
+             FROM custom_fonts f JOIN media_assets m ON m.id = f.media_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'
+            ORDER BY f.family, f.weight, f.style`,
+        )
+        .all<{ family: string; weight: number; style: string; object_key: string; mime_type: string }>();
+      fonts = results;
+    } catch (error) {
+      if (!isMissingTableError(error)) throw error;
+    }
 
     return {
       lineButton,
+      fonts,
       defaultLanguage: settings.default_language,
       contact: {
         phone: settings.contact_phone ?? null,

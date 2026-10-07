@@ -42,6 +42,11 @@ export interface FoodOptionRow {
   max_quantity: number | null;
   status: string;
   sort_order: number;
+  /** Dish photo (Phase 12): ACTIVE public asset only. */
+  image_asset_id?: string | null;
+  image_key?: string | null;
+  image_width?: number | null;
+  image_height?: number | null;
 }
 
 export interface NamedTranslationRow {
@@ -152,8 +157,10 @@ export class PricingRepository {
     const { results } = await this.db
       .prepare(
         `SELECT o.id, o.food_category_id, o.code, o.pricing_type, o.price_satang, o.child_pricing, o.child_price_satang,
-                o.persons_per_set, o.min_quantity, o.max_quantity, o.status, o.sort_order
+                o.persons_per_set, o.min_quantity, o.max_quantity, o.status, o.sort_order,
+                m.id AS image_asset_id, m.object_key AS image_key, m.width AS image_width, m.height AS image_height
            FROM food_options o JOIN food_categories c ON c.id = o.food_category_id AND c.status = 'ACTIVE'
+           LEFT JOIN media_assets m ON m.id = o.image_asset_id AND m.bucket = 'PUBLIC' AND m.status = 'ACTIVE'
           WHERE o.status = 'ACTIVE' ORDER BY c.sort_order, o.sort_order, o.code`,
       )
       .all<FoodOptionRow>();

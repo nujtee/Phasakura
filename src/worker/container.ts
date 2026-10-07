@@ -46,6 +46,9 @@ import { LineService } from "./services/line.service.ts";
 import { NotificationService, Outbox } from "./services/notification.service.ts";
 import { LINE_WEBHOOK_PATH, type FetchLike } from "./line/line-api.ts";
 import { getLocale, parseLocale } from "../shared/i18n/locales.ts";
+import { ImageResolver } from "./media/image-resolver.ts";
+import { FontRepository } from "./repositories/font.repository.ts";
+import { FontService } from "./services/font.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -75,6 +78,7 @@ export interface Services {
   reports: ReportService;
   line: LineService;
   notifications: NotificationService;
+  fonts: FontService;
 }
 
 export interface ServiceOptions {
@@ -137,7 +141,11 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const paymentRepo = new PaymentRepository(db);
   const bookingRepo = new BookingRepository(db);
   const availability = new AvailabilityService(db, units, inventory, mediaRepo, authorization, log, clock, pricing);
-  const quotes = new QuoteService(pricing, units, inventory, availability, clock);
+  const media = new MediaService(db, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock);
+  const fontRepo = new FontRepository(db);
+  // Responsive image renditions (Phase 12).
+  const images = new ImageResolver(db, env.PUBLIC_MEDIA_BASE_URL);
+  const quotes = new QuoteService(pricing, units, inventory, availability, clock, images, env.PUBLIC_MEDIA_BASE_URL);
 
   // LINE (Phase 11): outbox rows are written inside the payment / slip / cancel batches.
   const site = new SiteService(new D1SiteSettingsRepository(db), env.PUBLIC_MEDIA_BASE_URL);
@@ -175,8 +183,8 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     auth: new AuthService(db, users, resets, sessions, links, delivery, log, clock),
     users: new UserManagementService(db, users, rbac, sessions, links, authorization, log, clock),
     logs: new AdminLogService(logRepo, authorization),
-    media: new MediaService(db, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock),
-    accommodation: new AccommodationService(db, units, inventory, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock),
+    media,
+    accommodation: new AccommodationService(db, units, inventory, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, images),
     availability,
     quotes,
     bookings,
@@ -188,11 +196,12 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     settings: new SettingsService(db, new SettingsRepository(db), authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL, {
       capiToken: !!env.META_CAPI_ACCESS_TOKEN?.trim(),
       testEventCode: !!env.META_TEST_EVENT_CODE?.trim(),
-    }),
+    }, fontRepo),
     foodAdmin: new FoodAdminService(db, new FoodAdminRepository(db), inventory, authorization, log, clock),
-    content: new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL),
+    content: new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL, images),
     reports: new ReportService(new ReportRepository(db), inventory, authorization, log, clock),
     line,
     notifications,
+    fonts: new FontService(db, fontRepo, media, mediaRepo, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
   };
 }

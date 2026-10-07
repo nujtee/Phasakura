@@ -265,6 +265,13 @@ describe("images: secure upload, storage, serving (§54, §55, §56)", () => {
     const key = res.data.url.slice("/media/".length);
     assert.ok(h.bucket.objects.has(key));
 
+    // Not used by any published accommodation yet: hidden from visitors, visible to staff (Phase 12).
+    assert.equal((await h.get(res.data.url)).status, 404);
+    const preview = await h.get(res.data.url, { Cookie: `__Host-sid=${manager}` });
+    assert.equal(preview.status, 200);
+    assert.equal(preview.headers.get("Cache-Control"), "private, no-store");
+    await h.api("POST", "/api/admin/accommodations/dev_house_01/images", { token: manager, body: { mediaAssetId: res.data.id } });
+
     const served = await h.get(res.data.url);
     assert.equal(served.status, 200);
     assert.equal(served.headers.get("Content-Type"), "image/png");

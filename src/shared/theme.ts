@@ -40,16 +40,39 @@ export type ShadowLevel = keyof typeof SHADOW_LEVELS;
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const PX = /^(\d{1,2})px$/;
 
-/** Field-level errors for a token map (empty object = valid). */
-export function validateThemeTokens(tokens: unknown): Record<string, string> {
+/** Name of an uploaded font family (Phase 12): letters, digits, space, "_" and "-" only — never quotes or CSS syntax. */
+export const CUSTOM_FONT_FAMILY = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/;
+
+/** Theme value for an uploaded family: the family first, then a system stack as fallback. */
+export function customFontToken(family: string, fallback: FontStackKey): string {
+  return `"${family}", ${FONT_STACKS[fallback]}`;
+}
+
+/** The uploaded family a font token refers to, or null for a plain system stack / invalid value. */
+export function customFontFamily(value: string): string | null {
+  const m = /^"([^"]{1,40})", (.+)$/.exec(value);
+  if (!m || !CUSTOM_FONT_FAMILY.test(m[1]!) || !(Object.values(FONT_STACKS) as string[]).includes(m[2]!)) return null;
+  return m[1]!;
+}
+
+/**
+ * Field-level errors for a token map (empty object = valid).
+ * `customFamilies`: uploaded families a font token may use ("any" = any well-formed family name,
+ * for re-validating a theme that was already checked when it was saved).
+ */
+export function validateThemeTokens(tokens: unknown, customFamilies: readonly string[] | "any" = []): Record<string, string> {
   if (typeof tokens !== "object" || tokens === null || Array.isArray(tokens)) return { tokens: "EXPECTED_OBJECT" };
   const errors: Record<string, string> = {};
   const fonts = Object.values(FONT_STACKS) as string[];
+  const customOk = (value: string) => {
+    const family = customFontFamily(value);
+    return family !== null && (customFamilies === "any" || customFamilies.includes(family));
+  };
   for (const [key, value] of Object.entries(tokens as Record<string, unknown>)) {
     if (!(THEME_TOKENS as readonly string[]).includes(key)) { errors[key] = "UNKNOWN_TOKEN"; continue; }
     if (typeof value !== "string") { errors[key] = "EXPECTED_STRING"; continue; }
     if ((COLOR_TOKENS as readonly string[]).includes(key) && !HEX.test(value)) errors[key] = "INVALID_COLOR";
-    if ((FONT_TOKENS as readonly string[]).includes(key) && !fonts.includes(value)) errors[key] = "INVALID_FONT";
+    if ((FONT_TOKENS as readonly string[]).includes(key) && !fonts.includes(value) && !customOk(value)) errors[key] = "INVALID_FONT";
     if ((RADIUS_TOKENS as readonly string[]).includes(key)) {
       const m = PX.exec(value);
       if (!m || Number(m[1]) > 48) errors[key] = "INVALID_RADIUS";

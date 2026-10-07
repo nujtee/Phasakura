@@ -24,6 +24,8 @@ import { Confirmation } from "../booking/Confirmation.tsx";
 import { FoodStep } from "../booking/FoodStep.tsx";
 import { BookingSummary, useDateText } from "../booking/Summary.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
+import { IMAGE_SIZES } from "../../shared/media-types.ts";
+import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
 
 type Choice = { kind: "UNIT"; unit: PublicUnitDto } | { kind: "CAMPING"; tents: number };
 type Step = "choose" | "food" | "details" | "review" | "done";
@@ -395,7 +397,7 @@ export function BookingPage() {
         <section aria-labelledby="sec-camping" className="unit-section">
           <h2 id="sec-camping" className="section-title">{data.camping.name ?? t.accommodation.camping}</h2>
           <article className="camping-card">
-            {data.camping.cover && <img src={data.camping.cover.url} alt={data.camping.cover.alt} loading="lazy" decoding="async" className="camping-card__img" />}
+            {data.camping.cover && <ResponsiveImage image={data.camping.cover} sizes={IMAGE_SIZES.half} className="camping-card__img" />}
             <div className="camping-card__body">
               {!data.camping.enabled ? (
                 <p>{t.accommodation.campingDisabled}</p>

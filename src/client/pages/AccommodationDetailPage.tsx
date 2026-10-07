@@ -11,6 +11,8 @@ import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
 import { NotFoundPage } from "./NotFoundPage.tsx";
+import { IMAGE_SIZES } from "../../shared/media-types.ts";
+import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
 
 /** /{lang}/accommodation/{slug} — details, photos, amenities and a live date check. */
 export function AccommodationDetailPage({ slug }: { slug: string }) {
@@ -71,8 +73,7 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
         <section className="detail-gallery" aria-label={t.accommodation.photos}>
           {current && (
             <figure className="detail-gallery__main">
-              <img src={current.url} alt={current.alt} width={current.width ?? undefined} height={current.height ?? undefined}
-                decoding="async" fetchPriority="high" />
+              <ResponsiveImage key={current.url} image={current} sizes={IMAGE_SIZES.hero} priority />
               {current.caption && <figcaption>{current.caption}</figcaption>}
             </figure>
           )}
@@ -82,7 +83,7 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
                 <li key={img.url}>
                   <button type="button" aria-label={`${t.accommodation.photos} ${i + 1}: ${img.alt}`}
                     aria-current={i === active ? "true" : undefined} onClick={() => setActive(i)}>
-                    <img src={img.url} alt="" loading="lazy" decoding="async" />
+                    <ResponsiveImage image={img} sizes={IMAGE_SIZES.thumb} alt="" />
                   </button>
                 </li>
               ))}

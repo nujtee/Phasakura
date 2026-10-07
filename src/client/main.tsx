@@ -7,6 +7,7 @@ import "./styles/base.css";
 import "./styles/layout.css";
 import "./styles/accommodation.css";
 import "./styles/booking.css";
+import "./styles/content.css";
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root element not found");

@@ -156,7 +156,7 @@ export class PaymentService {
   private async checkQr(assetId: string | null): Promise<void> {
     if (!assetId) return;
     const asset = await this.media.findById(assetId);
-    if (!asset || asset.status !== "ACTIVE" || asset.purpose !== "PAYMENT_QR") throw new ValidationError({ qrAssetId: "INVALID_IMAGE" });
+    if (!asset || asset.status !== "ACTIVE" || asset.purpose !== "PAYMENT_QR" || asset.parent_asset_id) throw new ValidationError({ qrAssetId: "INVALID_IMAGE" });
   }
 
   private toAccountDto(a: ReceivingAccountRow): ReceivingAccountDto {

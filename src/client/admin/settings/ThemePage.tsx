@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { format } from "../../../shared/i18n/admin-messages.ts";
+import type { CustomFontDto } from "../../../shared/media-types.ts";
 import type { ThemeAdminDto } from "../../../shared/settings-types.ts";
 import {
-  COLOR_TOKENS, contrastRatio, FONT_STACKS, FONT_TOKENS, PRESET_TOKENS, RADIUS_TOKENS, SHADOW_LEVELS, THEME_PRESETS,
+  COLOR_TOKENS, contrastRatio, customFontFamily, FONT_STACKS, FONT_TOKENS, PRESET_TOKENS, RADIUS_TOKENS, SHADOW_LEVELS, THEME_PRESETS,
   type FontStackKey, type ShadowLevel, type ThemePreset, type ThemeToken, type ThemeTokens,
 } from "../../../shared/theme.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
-import { applyTheme } from "../../site/SiteProvider.tsx";
+import { applyTheme, loadFonts } from "../../site/SiteProvider.tsx";
+import { FontLibrary } from "./FontLibrary.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { StatusPill } from "../cms/CmsKit.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, fieldErrors, useDateFormatter } from "../ui.tsx";
@@ -16,8 +18,13 @@ const PRESET_LABEL: Record<string, string> = {
   MINIMAL: "Minimal", WARM: "Warm", MODERN: "Modern", DARK: "Dark",
 };
 
-function fontKey(stack: string | undefined): FontStackKey {
-  return (Object.entries(FONT_STACKS).find(([, v]) => v === stack)?.[0] as FontStackKey | undefined) ?? "SANS";
+const CUSTOM = "custom:";
+
+/** <select> value for a font token: a system stack key, or "custom:<family>" for an uploaded font. */
+function fontKey(value: string | undefined): string {
+  const family = value ? customFontFamily(value) : null;
+  if (family) return `${CUSTOM}${family}`;
+  return (Object.entries(FONT_STACKS).find(([, v]) => v === value)?.[0] as FontStackKey | undefined) ?? "SANS";
 }
 
 function shadowLevel(tokens: ThemeTokens): ShadowLevel {
@@ -38,6 +45,7 @@ export function ThemePage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<{ kind: "publish" } | { kind: "rollback"; id: string; n: number } | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const [fonts, setFonts] = useState<CustomFontDto[]>([]);
 
   function adopt(d: ThemeAdminDto) {
     setData(d);
@@ -50,8 +58,24 @@ export function ThemePage() {
 
   useEffect(() => {
     apiGet<ThemeAdminDto>("/api/admin/theme").then(adopt).catch((err: unknown) => setMessage({ kind: "error", text: detailMessage(t, err) }));
+    apiGet<CustomFontDto[]>("/api/admin/fonts").then(setFonts).catch(() => setFonts([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Uploaded faces, so the preview (and the samples in the font list) render with them.
+  useEffect(() => loadFonts(fonts.map((x) => ({ family: x.family, url: x.url, weight: x.weight, style: x.style, format: x.format }))), [fonts]);
+  // First uploaded file of each family decides the token (family + its fallback stack).
+  const customFamilies = [...new Map(fonts.map((x) => [x.family, x.token] as const)).entries()];
+  const setFont = (k: ThemeToken, key: string) => {
+    if (key.startsWith(CUSTOM)) {
+      const family = key.slice(CUSTOM.length);
+      const current = tokens[k];
+      const token = customFamilies.find(([name]) => name === family)?.[1] ?? (current && customFontFamily(current) === family ? current : null);
+      if (token) setToken(k, token);
+    } else {
+      setToken(k, FONT_STACKS[key as FontStackKey]);
+    }
+  };
 
   // Live preview: the same CSS variables, scoped to the preview box.
   useEffect(() => (previewRef.current ? applyTheme(tokens, previewRef.current) : undefined), [tokens]);
@@ -141,11 +165,26 @@ export function ThemePage() {
                   {FONT_TOKENS.map((k) => (
                     <div key={k} className="adm-field">
                       <label htmlFor={`thm-${k}`}>{label(k)}</label>
-                      <select id={`thm-${k}`} value={fontKey(tokens[k])} onChange={(e) => setToken(k, FONT_STACKS[e.currentTarget.value as FontStackKey])}>
-                        {(Object.keys(FONT_STACKS) as FontStackKey[]).map((f) => (
-                          <option key={f} value={f}>{(c.theme as unknown as Record<string, string>)[`font${f}`]}</option>
-                        ))}
+                      <select id={`thm-${k}`} value={fontKey(tokens[k])} onChange={(e) => setFont(k, e.currentTarget.value)}
+                        aria-invalid={!!errors[`tokens.${k}`] || undefined}>
+                        <optgroup label={c.theme.fonts.systemGroup}>
+                          {(Object.keys(FONT_STACKS) as FontStackKey[]).map((f) => (
+                            <option key={f} value={f}>{(c.theme as unknown as Record<string, string>)[`font${f}`]}</option>
+                          ))}
+                        </optgroup>
+                        {(() => {
+                          // Keep a family the theme already uses selectable even before the list has loaded.
+                          const current = tokens[k] ? customFontFamily(tokens[k]!) : null;
+                          const names = customFamilies.map(([name]) => name);
+                          if (current && !names.includes(current)) names.push(current);
+                          return names.length > 0 && (
+                            <optgroup label={c.theme.fonts.uploadedGroup}>
+                              {names.map((name) => <option key={name} value={`${CUSTOM}${name}`}>{name}</option>)}
+                            </optgroup>
+                          );
+                        })()}
                       </select>
+                      {errors[`tokens.${k}`] && <span className="adm-field__error">{errors[`tokens.${k}`]}</span>}
                     </div>
                   ))}
                 </div>
@@ -210,6 +249,8 @@ export function ThemePage() {
               </div>
             </div>
           </div>
+
+          <FontLibrary fonts={fonts} onChange={setFonts} />
 
           <div className="adm-card">
             <h2 className="adm-h2">{c.theme.history}</h2>
