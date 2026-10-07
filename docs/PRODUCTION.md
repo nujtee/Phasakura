@@ -22,7 +22,8 @@
 | D1 `phasakura-db` | สร้างแล้ว (APAC) และ **migrate ครบ 0001–0020 แล้ว** — ตรวจด้วย fingerprint เทียบกับไฟล์ migration: schema 84,667 bytes / seed data 13,376 bytes ตรงกันทุกไบต์, 214 objects, 34 triggers, `d1_migrations` 20 แถว (wrangler เห็นว่าไม่มี migration ค้าง) |
 | R2 | `phasakura-media-public`, `phasakura-media-private` สร้างแล้ว (bucket `phasakura` ที่สร้างเองไม่ได้ใช้ — ลบได้) |
 | `wrangler.jsonc` | `APP_BASE_URL=https://phasakura.com`, routes `phasakura.com` + `www.phasakura.com` (www → 301 ไป apex), `workers_dev: false` — `npm run preflight` 0 error |
-| โค้ด | GitHub `nujtee/Phasakura` (branch `main`) |
+| SUPER_ADMIN คนแรก | `suriya.rth@gmail.com` (รหัสผ่านชั่วคราว — ต้องเปลี่ยนตอนเข้าครั้งแรก) |
+| โค้ด | GitHub `nujtee/Phasakura` (branch `main`) — CI บน GitHub ผ่านครบ: build, typecheck, ESLint, static checks, 554 tests, browser suites ทุกชุด |
 | Deploy | **Workers Builds** (Cloudflare build จาก GitHub ทุกครั้งที่ push `main`) — ต้องเชื่อมครั้งแรกใน Dashboard (ด้านล่าง) |
 | Workers Paid | ต้องตรวจ / อัปเกรดใน Dashboard → Workers & Pages → Plans |
 
