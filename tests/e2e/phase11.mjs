@@ -1,6 +1,5 @@
 const { chromium } = await import("playwright");
 const BASE = process.env.E2E_BASE ?? "https://localhost:4190";
-const DIR = process.env.E2E_FIXTURES;
 const SHOTS = process.env.E2E_SHOTS;
 const H = { Origin: BASE, "X-Requested-With": "phasakura" };
 const GROUP = `C${"a1".repeat(16)}`;

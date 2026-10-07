@@ -1,3 +1,4 @@
+import type { TranslationCoverageDto } from "../../src/shared/seo-types.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, it } from "node:test";
@@ -345,7 +346,7 @@ describe("language negotiation and header parity", () => {
 
 describe("translation coverage (i18n)", () => {
   it("lists visible content with Thai text but no EN / ZH-CN; hidden content and other permissions are left out", async () => {
-    type Cov = import("../../src/shared/seo-types.ts").TranslationCoverageDto;
+    type Cov = TranslationCoverageDto;
     h.db.run(`INSERT INTO food_options (id, food_category_id, code, pricing_type, price_satang, child_pricing, status, sort_order)
               VALUES ('thai_only', 'dev_food_dinner', 'THAI_ONLY', 'PER_PERSON', 10000, 'FULL', 'ACTIVE', 9),
                      ('draft_dish', 'dev_food_dinner', 'DRAFT_DISH', 'PER_PERSON', 10000, 'FULL', 'DRAFT', 10)`);

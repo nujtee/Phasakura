@@ -3,7 +3,7 @@ import { createApp } from "../../src/worker/index.ts";
 import { hashPassword } from "../../src/worker/security/password.ts";
 import type { PasswordResetDelivery } from "../../src/worker/services/password-link.service.ts";
 import type { SlipVerifier } from "../../src/worker/slip/slip-verifier.ts";
-import { makeEnv, MemoryBucket } from "./fake-env.ts";
+import { makeEnv, type MemoryBucket } from "./fake-env.ts";
 import { FakeLine } from "./fake-line.ts";
 import { fakeGoogle, fakeMeta } from "./fake-http.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";

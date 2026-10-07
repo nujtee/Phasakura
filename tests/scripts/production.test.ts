@@ -20,7 +20,7 @@ const READY = WRANGLER;
 const BLANK = WRANGLER
   .replace(/"APP_BASE_URL": "[^"]*"/, '"APP_BASE_URL": ""')
   .replace(/"database_id": "[^"]*"/, '"database_id": "REPLACE_WITH_D1_DATABASE_ID"')
-  .replace(/\n  "routes": \[[\s\S]*?\],/, "")
+  .replace(/\n {2}"routes": \[[\s\S]*?\],/, "")
   .replace('"workers_dev": false,', "");
 
 function run(overrides: Partial<PreflightInput> = {}): Finding[] {
