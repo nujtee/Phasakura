@@ -518,7 +518,11 @@ describe("LINE daily digests (spec §47: 1 day before, 18:00)", () => {
     h.now = new Date("2027-01-11T11:31:00.000Z");
     await h.app.scheduled(h.env, h.now.getTime());
     const front2 = h.line.pushes.filter((p) => p.to === GROUP).at(-1)!.texts.join("\n");
-    assert.match(front2, /เช็กอินอีก 2 วัน: พ\. 13 ม\.ค\. 2570/);
+    // Same formatter as the templates: the exact short weekday ("พ." / "พุธ") depends on the runtime's ICU data.
+    const thDate = new Intl.DateTimeFormat("th", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
+      .format(new Date("2027-01-13T00:00:00Z"));
+    assert.ok(front2.includes(`เช็กอินอีก 2 วัน: ${thDate}`), front2);
+    assert.match(thDate, /13 ม\.ค\. 2570/);
     assert.match(front2, /ไม่มีการเช็กอิน/);
   });
 });
