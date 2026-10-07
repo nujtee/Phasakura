@@ -37,7 +37,7 @@ jobs:
         if: failure()
         run: |
           npx tsx --test --test-reporter=tap "tests/**/*.test.ts" "tests/**/*.test.tsx" > test-report.tap 2>&1 || true
-          node -e "const t=require('fs').readFileSync('test-report.tap','utf8').split('\n');const o=[];t.forEach((l,i)=>{if(/^\s*not ok/.test(l)){o.push(l.trim());for(let j=i+1;j<Math.min(i+40,t.length);j++){if(/^\s*(error|expected|actual|location|code|failureType):/.test(t[j]))o.push('  '+t[j].trim().slice(0,160));}}});console.log('::error title=tests '+o.filter(x=>/not ok/.test(x)).length+' failing::'+o.join('%0A').replace(/%(?!0A)/g,'pct').slice(0,60000))"
+          node -e "const t=require('fs').readFileSync('test-report.tap','utf8').split('\n');const o=[];t.forEach((l,i)=>{if(/^\s*not ok/.test(l)&&!/subtestsFailed/.test(t.slice(i,i+6).join(' ')))o.push(...t.slice(i,i+45).map(x=>x.slice(0,200)));});console.log('::error title=tests::'+o.join('%0A').replace(/%(?!0A)/g,'pct').slice(0,60000))"
 
   e2e:
     # Browser suites (Phases 9–14, 16 + responsive sweep) against a local HTTPS server with fake third-party APIs.
