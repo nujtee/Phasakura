@@ -18,27 +18,31 @@
 
 | รายการ | สถานะ |
 |---|---|
-| โดเมน `phasakura.com` | จดผ่าน Cloudflare Registrar, nameserver ของ Cloudflare, ยังไม่มี DNS record (Custom Domain สร้างให้ตอน deploy) |
-| D1 `phasakura-db` | สร้างแล้ว (APAC) — `database_id` อยู่ใน `wrangler.jsonc`; มีตาราง `d1_migrations` ว่าง ยังไม่ได้ migrate |
+| โดเมน `phasakura.com` | จดผ่าน Cloudflare Registrar, nameserver ของ Cloudflare — Custom Domain (apex + www) สร้าง DNS / ใบรับรองให้ตอน deploy ครั้งแรก |
+| D1 `phasakura-db` | สร้างแล้ว (APAC) และ **migrate ครบ 0001–0020 แล้ว** — ตรวจด้วย fingerprint เทียบกับไฟล์ migration: schema 84,667 bytes / seed data 13,376 bytes ตรงกันทุกไบต์, 214 objects, 34 triggers, `d1_migrations` 20 แถว (wrangler เห็นว่าไม่มี migration ค้าง) |
+| R2 | `phasakura-media-public`, `phasakura-media-private` สร้างแล้ว (bucket `phasakura` ที่สร้างเองไม่ได้ใช้ — ลบได้) |
 | `wrangler.jsonc` | `APP_BASE_URL=https://phasakura.com`, routes `phasakura.com` + `www.phasakura.com` (www → 301 ไป apex), `workers_dev: false` — `npm run preflight` 0 error |
-| R2 | **ยังไม่เปิดใช้ในบัญชี** — Dashboard → R2 Object Storage → เปิดใช้ก่อน แล้วสร้าง 2 bucket |
+| โค้ด | GitHub `nujtee/Phasakura` (branch `main`) |
+| Deploy | **Workers Builds** (Cloudflare build จาก GitHub ทุกครั้งที่ push `main`) — ต้องเชื่อมครั้งแรกใน Dashboard (ด้านล่าง) |
 | Workers Paid | ต้องตรวจ / อัปเกรดใน Dashboard → Workers & Pages → Plans |
-| Worker | ยังไม่ได้ deploy |
 
-ลำดับ deploy ครั้งแรก (บนเครื่องที่มี Node 22+):
+### เชื่อม GitHub → Cloudflare (ครั้งเดียว)
 
-```bash
-npm install
-npx wrangler login
-npx wrangler r2 bucket create phasakura-media-public
-npx wrangler r2 bucket create phasakura-media-private
-npm run db:migrate:remote
-npm run admin:bootstrap -- --email <อีเมลแอดมิน> --name "<ชื่อ>" --out bootstrap.sql
-npx wrangler d1 execute phasakura-db --remote --file bootstrap.sql
-rm bootstrap.sql            # Windows: del bootstrap.sql
-npm run deploy
-npm run smoke -- https://phasakura.com
-```
+Dashboard → **Workers & Pages** → **Create application** → **Import a repository** → GitHub → เลือก `nujtee/Phasakura`
+
+| ช่อง | ค่า |
+|---|---|
+| Project name | `phasakura` (ต้องตรงกับ `name` ใน wrangler.jsonc) |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+| Root directory | `/` |
+
+กด **Save and Deploy** — build ครั้งแรก ~2–4 นาที แล้ว `https://phasakura.com` ใช้งานได้
+
+### Migration ครั้งต่อไป
+
+API token อัตโนมัติของ Workers Builds **ไม่มีสิทธิ์ D1** จึงไม่ migrate เอง: ก่อน push โค้ดที่มี migration ใหม่ ให้รัน
+`npm run db:backup && npm run db:migrate:remote` (หรือให้ Claude apply ผ่าน D1) แล้วค่อย push
 
 ---
 
