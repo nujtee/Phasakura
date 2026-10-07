@@ -1,5 +1,5 @@
 import { DEFAULT_LOCALE, getLocale, parseLocale } from "../../shared/i18n/locales.ts";
-import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
+import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { BadRequestError, HttpError, PayloadTooLargeError, ValidationError } from "../http/errors.ts";
 import { MAX_FONT_BYTES } from "../../shared/media-types.ts";
 import { jsonOk } from "../http/response.ts";
@@ -62,7 +62,7 @@ export function settingsController(services: ServicesFor) {
 
     // Uploaded web fonts (Phase 12)
     fonts: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).fonts.list(auth, requestMeta(ctx)), NO_STORE)),
-    uploadFont: withAuth(services, async (ctx, auth) => {
+    uploadFont: withPermission("settings.theme", services, async (ctx, auth) => {
       if (!/^multipart\/form-data;/i.test(ctx.request.headers.get("Content-Type") ?? "")) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Use multipart/form-data");
       if (Number(ctx.request.headers.get("Content-Length") ?? "0") > MAX_FONT_BYTES + 64 * 1024) throw new PayloadTooLargeError();
       let form: FormData;

@@ -1,7 +1,7 @@
 import { ACCOUNT_NUMBER_PATTERN, PAYMENT_METHODS, PROMPTPAY_PATTERN, type ReceivingAccountInput } from "../../shared/payment-types.ts";
 import { BOOKING_CODE_PATTERN } from "../../shared/booking-types.ts";
 import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
-import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
+import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { ValidationError } from "../http/errors.ts";
 import { jsonOk } from "../http/response.ts";
 import type { RequestContext } from "../router.ts";
@@ -60,12 +60,12 @@ export function paymentController(services: ServicesFor) {
     // ------------------------------------------------------------------ receiving accounts
     accounts: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).payments.listAccounts(auth, requestMeta(ctx)))),
 
-    createAccount: withAuth(services, async (ctx, auth) => {
+    createAccount: withPermission("receiving_accounts.edit", services, async (ctx, auth) => {
       const input = parseAccount(await readJsonObject(ctx.request), false) as ReceivingAccountInput;
       return jsonOk(await services(ctx).payments.createAccount(auth, input, requestMeta(ctx)), { status: 201 });
     }),
 
-    updateAccount: withAuth(services, async (ctx, auth) => {
+    updateAccount: withPermission("receiving_accounts.edit", services, async (ctx, auth) => {
       const patch = parseAccount(await readJsonObject(ctx.request), true);
       return jsonOk(await services(ctx).payments.updateAccount(auth, param(ctx, "id", ID_PATTERN), patch, requestMeta(ctx)));
     }),
@@ -79,7 +79,7 @@ export function paymentController(services: ServicesFor) {
     }),
 
     // ------------------------------------------------------------------ payments on a booking
-    recordPayment: withAuth(services, async (ctx, auth) => {
+    recordPayment: withPermission("payments.verify", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["amountSatang", "method", "paidAt", "reference", "note"]);
       const amountSatang = money(v, body.amountSatang, "amountSatang");
@@ -93,7 +93,7 @@ export function paymentController(services: ServicesFor) {
         { amountSatang, method, paidAt, reference, note }, requestMeta(ctx)), { headers: { "Cache-Control": "no-store" } });
     }),
 
-    refund: withAuth(services, async (ctx, auth) => {
+    refund: withPermission("payments.refund", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["amountSatang", "reason"]);
       const amountSatang = money(v, body.amountSatang, "amountSatang");

@@ -52,13 +52,24 @@ function Bars({ table, column, label }: { table: ReportTable; column: ReportColu
   const periodCol = table.columns[0]!;
   const values = table.rows.map((r) => (typeof r[column.key] === "number" ? (r[column.key] as number) : 0));
   const max = Math.max(1, ...values);
+  const { locale } = useAdmin(); // before the early return (rules of hooks)
   if (table.rows.length < 2 || table.rows.length > 62) return null;
+  // At most ~8 short axis labels (day number, short month, year): on a phone 31 full dates would
+  // collide. The full period is in each bar's title and in the table below.
+  const every = Math.ceil(table.rows.length / 8);
+  const month = new Intl.DateTimeFormat(locale.code, { month: "short", timeZone: "UTC" });
+  const axis = (v: Cell): string => {
+    const text = String(v ?? "");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return String(Number(text.slice(8)));
+    if (/^\d{4}-\d{2}$/.test(text)) return month.format(new Date(`${text}-01T00:00:00Z`));
+    return text;
+  };
   return (
     <div className="rpt-bars" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${table.rows.length}, minmax(0, 1fr))` }}>
       {table.rows.map((r, i) => (
         <div key={String(r.period ?? i)} className="rpt-bars__col" title={`${label(periodCol, r[periodCol.key] ?? null)}: ${label(column, r[column.key] ?? null)}`}>
           <span className="rpt-bars__bar" style={{ height: `${Math.round((values[i]! / max) * 100)}%` }} />
-          <span className="rpt-bars__label">{label(periodCol, r[periodCol.key] ?? null)}</span>
+          <span className="rpt-bars__label">{i % every === 0 ? axis(r[periodCol.key] ?? null) : ""}</span>
         </div>
       ))}
     </div>

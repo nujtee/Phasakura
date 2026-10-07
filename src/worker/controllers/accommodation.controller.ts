@@ -1,7 +1,7 @@
 import type { ImageStatus, UnitStatus, UnitTranslationDto, UnitType } from "../../shared/accommodation-types.ts";
 import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
 import { DEFAULT_LOCALE, LOCALE_CODES, parseLocale, type LocaleCode } from "../../shared/i18n/locales.ts";
-import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
+import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { BadRequestError, HttpError, PayloadTooLargeError, ValidationError } from "../http/errors.ts";
 import { jsonOk } from "../http/response.ts";
 import type { Handler, RequestContext } from "../router.ts";
@@ -136,7 +136,7 @@ export function accommodationController(services: ServicesFor) {
 
     get: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).accommodation.get(auth, id(ctx), requestMeta(ctx)))),
 
-    create: withAuth(services, async (ctx, auth) => {
+    create: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["unitCode", "unitType", "slug", "basePriceSatang", "standardGuests", "maxGuests", "maxAdults", "status", "sortOrder"]);
       const input = {
@@ -155,7 +155,7 @@ export function accommodationController(services: ServicesFor) {
       return jsonOk(await services(ctx).accommodation.create(auth, input, requestMeta(ctx)), { status: 201 });
     }),
 
-    update: withAuth(services, async (ctx, auth) => {
+    update: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["unitCode", "slug", "basePriceSatang", "standardGuests", "maxGuests", "maxAdults", "status", "sortOrder"]);
       const patch = {
@@ -177,28 +177,28 @@ export function accommodationController(services: ServicesFor) {
       return jsonOk({ deleted: true });
     }),
 
-    setTranslations: withAuth(services, async (ctx, auth) => {
+    setTranslations: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       new Validator(body).allowOnly(["translations"]).assertValid();
       const t = translations(body.translations, unitTranslation);
       return jsonOk(await services(ctx).accommodation.setTranslations(auth, id(ctx), t, requestMeta(ctx)));
     }),
 
-    setAmenities: withAuth(services, async (ctx, auth) => {
+    setAmenities: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["amenityIds"]);
       const amenityIds = v.stringArray("amenityIds", { required: true, max: 100, pattern: ID_PATTERN });
       v.assertValid();
       return jsonOk(await services(ctx).accommodation.setAmenities(auth, id(ctx), amenityIds ?? [], requestMeta(ctx)));
     }),
 
-    addImage: withAuth(services, async (ctx, auth) => {
+    addImage: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["mediaAssetId"]);
       const mediaAssetId = v.string("mediaAssetId", { required: true, pattern: ID_PATTERN });
       v.assertValid();
       return jsonOk(await services(ctx).accommodation.addImage(auth, id(ctx), mediaAssetId, requestMeta(ctx)), { status: 201 });
     }),
 
-    updateImage: withAuth(services, async (ctx, auth) => {
+    updateImage: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["status"]);
       const status = v.oneOf("status", IMAGE_STATUSES, { required: true }) as ImageStatus;
       v.assertValid();
@@ -208,21 +208,21 @@ export function accommodationController(services: ServicesFor) {
     removeImage: withAuth(services, async (ctx, auth) =>
       jsonOk(await services(ctx).accommodation.removeImage(auth, id(ctx), id(ctx, "imageId"), requestMeta(ctx)))),
 
-    reorderImages: withAuth(services, async (ctx, auth) => {
+    reorderImages: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["imageIds"]);
       const imageIds = v.stringArray("imageIds", { required: true, max: 200, pattern: ID_PATTERN });
       v.assertValid();
       return jsonOk(await services(ctx).accommodation.reorderImages(auth, id(ctx), imageIds ?? [], requestMeta(ctx)));
     }),
 
-    setCover: withAuth(services, async (ctx, auth) => {
+    setCover: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["mediaAssetId"]);
       const mediaAssetId = v.string("mediaAssetId", { required: true, pattern: ID_PATTERN });
       v.assertValid();
       return jsonOk(await services(ctx).accommodation.setCover(auth, id(ctx), mediaAssetId, requestMeta(ctx)));
     }),
 
-    addBlock: withAuth(services, async (ctx, auth) => {
+    addBlock: withPermission("accommodation.block", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["startDate", "endDate", "reason"]);
       const startDate = v.string("startDate", { required: true });
       const endDate = v.string("endDate", { required: true });
@@ -249,7 +249,7 @@ export function accommodationController(services: ServicesFor) {
     // ------------------------------------------------------------------ amenities
     amenities: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).accommodation.listAmenities(auth, requestMeta(ctx)))),
 
-    createAmenity: withAuth(services, async (ctx, auth) => {
+    createAmenity: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["code", "icon", "sortOrder", "names"]);
       const code = v.string("code", { required: true, pattern: AMENITY_CODE });
@@ -260,7 +260,7 @@ export function accommodationController(services: ServicesFor) {
       return jsonOk(await services(ctx).accommodation.createAmenity(auth, { code, icon, sortOrder, names }, requestMeta(ctx)), { status: 201 });
     }),
 
-    updateAmenity: withAuth(services, async (ctx, auth) => {
+    updateAmenity: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["icon", "sortOrder", "names", "status"]);
       const icon = v.has("icon") ? (v.string("icon", { pattern: ICON }) ?? null) : undefined;
@@ -274,7 +274,7 @@ export function accommodationController(services: ServicesFor) {
     // ------------------------------------------------------------------ camping
     camping: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).availability.getCampingSettings(auth, requestMeta(ctx)))),
 
-    updateCamping: withAuth(services, async (ctx, auth) => {
+    updateCamping: withPermission("camping.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly([
         "isEnabled", "maxTentsPerNight", "pricePerAdultNightSatang", "childFreeUnderAge", "maxGuestsPerTent", "coverAssetId", "translations",
@@ -304,12 +304,12 @@ export function accommodationController(services: ServicesFor) {
     campingIntegrity: withAuth(services, async (ctx, auth) =>
       jsonOk(await services(ctx).availability.campingIntegrity(auth, requestMeta(ctx)), { headers: { "Cache-Control": "no-store" } })),
 
-    recalculateCamping: withAuth(services, async (ctx, auth) => {
+    recalculateCamping: withPermission("camping.edit", services, async (ctx, auth) => {
       new Validator(await readJsonObject(ctx.request)).allowOnly([]).assertValid();
       return jsonOk(await services(ctx).availability.recalculateCamping(auth, requestMeta(ctx)));
     }),
 
-    setCampingNight: withAuth(services, async (ctx, auth) => {
+    setCampingNight: withPermission("camping.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["maxTents"]);
       const maxTents = body.maxTents === null ? null : int(v, body, "maxTents", 0, 1000, true)!;
@@ -319,7 +319,7 @@ export function accommodationController(services: ServicesFor) {
 
     // ------------------------------------------------------------------ media
     /** POST /api/admin/media (multipart/form-data: file, purpose) */
-    upload: withAuth(services, async (ctx, auth) => {
+    upload: withPermission(["accommodation.edit", "food.edit", "content.gallery", "content.home", "content.history", "settings.branding", "seo.edit", "receiving_accounts.edit"], services, async (ctx, auth) => {
       const type = ctx.request.headers.get("Content-Type") ?? "";
       if (!/^multipart\/form-data;/i.test(type)) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Use multipart/form-data");
       const length = Number(ctx.request.headers.get("Content-Length") ?? "0");
@@ -343,7 +343,7 @@ export function accommodationController(services: ServicesFor) {
     }),
 
     /** PUT /api/admin/media/:id/texts { texts: { th: {altText,title,caption}, … } } */
-    setMediaTexts: withAuth(services, async (ctx, auth) => {
+    setMediaTexts: withPermission(["accommodation.edit", "food.edit", "content.gallery", "content.home", "content.history", "settings.branding", "seo.edit", "receiving_accounts.edit"], services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       new Validator(body).allowOnly(["texts"]).assertValid();
       const texts = translations(body.texts, (v) => {

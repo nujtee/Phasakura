@@ -33,6 +33,16 @@ export class AuthorizationService {
     throw new ForbiddenError();
   }
 
+  /** 403 (logged) unless the user holds at least one of the permissions. */
+  async requireAnyPermission(user: AuthContext, permissions: readonly PermissionCode[], meta: RequestMeta): Promise<void> {
+    if (permissions.some((p) => this.can(user, p))) return;
+    await this.log.event("PERMISSION_DENIED", "WARNING", meta, {
+      userId: user.userId,
+      details: { permission: permissions.join(" | ") },
+    });
+    throw new ForbiddenError();
+  }
+
   isSuperAdmin(user: AuthContext): boolean {
     return user.roles.includes(AuthorizationService.SUPER_ADMIN_ROLE);
   }

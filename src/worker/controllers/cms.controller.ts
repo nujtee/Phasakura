@@ -45,6 +45,8 @@ export function cmsController(services: ServicesFor) {
     }),
     reorder: withAuth(services, async (ctx, auth) => {
       const name = entity(ctx);
+      // Permission for this entity first, then the body (Phase 15: 403 before any validation detail).
+      await services(ctx).cms.authorizeEdit(auth, name, requestMeta(ctx));
       const body = await readJsonObject(ctx.request);
       const keys = Object.keys(body);
       if (keys.some((k) => k !== "ids")) throw new ValidationError({ [keys.find((k) => k !== "ids")!]: "UNKNOWN_FIELD" });

@@ -23,3 +23,5 @@ coverage/
 
 # one-time admin bootstrap output (contains a password hash)
 bootstrap*.sql
+# Browser test screenshots / downloads (npm run test:e2e)
+tests/e2e/.output/

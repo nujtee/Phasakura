@@ -1,0 +1,53 @@
+{
+  "src/worker/cms/cms.service.ts": [
+    "cfg.table",
+    "cfg.trans.fk",
+    "cfg.trans.table",
+    "chunk.map((_, j) => `?${j + 1}`).join(\", \")",
+    "cols.join(\", \")",
+    "cols.map((_, i) => `?${i + 1}`).join(\", \")",
+    "cols.map((_, i) => `?${i + 3}`).join(\", \")",
+    "cols.map((c) => `${c} = excluded.${c}`).join(\", \")",
+    "fk",
+    "ref.alive",
+    "ref.table",
+    "sets.join(\", \")",
+    "sql",
+    "table",
+    "vals.length"
+  ],
+  "src/worker/repositories/booking.repository.ts": [
+    "ended"
+  ],
+  "src/worker/repositories/food-admin.repository.ts": [
+    "chunk.map((_, j) => `?${j + 1}`).join(\", \")"
+  ],
+  "src/worker/repositories/line.repository.ts": [
+    "flag",
+    "guard",
+    "redeemedHere"
+  ],
+  "src/worker/repositories/media.repository.ts": [
+    "root"
+  ],
+  "src/worker/repositories/search.repository.ts": [
+    "Math.max(1, Math.min(1000, Math.floor(limit)))",
+    "conditions"
+  ],
+  "src/worker/repositories/user.repository.ts": [
+    "countWhere.sql",
+    "listWhere.sql",
+    "n + 2",
+    "n + 3"
+  ],
+  "src/worker/services/translation-coverage.service.ts": [
+    "has(k.tt, k.fk, k.text, \"en\")",
+    "has(k.tt, k.fk, k.text, \"zh-CN\")",
+    "k.fk",
+    "k.label.includes(\"(\") ? k.label : `t.${k.label}`",
+    "k.table",
+    "k.tt",
+    "k.where",
+    "textOf(\"t\", k.text)"
+  ]
+}

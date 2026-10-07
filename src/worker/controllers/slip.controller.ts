@@ -1,4 +1,4 @@
-import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
+import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { HttpError, PayloadTooLargeError, ValidationError } from "../http/errors.ts";
 import { jsonOk } from "../http/response.ts";
 import type { Handler, RequestContext } from "../router.ts";
@@ -43,7 +43,7 @@ export function slipController(services: ServicesFor) {
       return jsonOk(result, { status: 201, headers: { "Cache-Control": "no-store" } });
     }) satisfies Handler,
 
-    queue: withAuth(services, async (ctx, auth) => {
+    queue: withPermission("slips.view", services, async (ctx, auth) => {
       const q = ctx.url.searchParams;
       const v = new Validator(Object.fromEntries(q.entries())).allowOnly(["status", "before", "limit"]);
       const status = v.oneOf("status", QUEUE_STATUSES) ?? "PENDING_VERIFICATION";
@@ -56,14 +56,14 @@ export function slipController(services: ServicesFor) {
 
     image: withAuth(services, async (ctx, auth) => services(ctx).slips.slipImage(auth, paymentId(ctx), requestMeta(ctx))),
 
-    verify: withAuth(services, async (ctx, auth) => {
+    verify: withPermission("payments.verify", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["transactionRef"]);
       const transactionRef = v.string("transactionRef", { pattern: TRANSACTION_REF }) ?? null;
       v.assertValid();
       return jsonOk(await services(ctx).slips.verify(auth, paymentId(ctx), { transactionRef }, requestMeta(ctx)));
     }),
 
-    reject: withAuth(services, async (ctx, auth) => {
+    reject: withPermission("payments.verify", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["reason"]);
       const reason = v.string("reason", { required: true, min: 3, max: 500 })!;
       v.assertValid();

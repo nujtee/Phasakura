@@ -1,3 +1,4 @@
+import type { PermissionCode } from "../../shared/auth-types.ts";
 import type { Services } from "../container.ts";
 import type { RequestContext } from "../router.ts";
 import { clearSessionCookie, readCookie, SESSION_COOKIE } from "../security/cookies.ts";
@@ -17,10 +18,20 @@ export function requestMeta(ctx: RequestContext): RequestMeta {
  * Wraps a handler so it only runs for an authenticated admin with a valid session.
  * Authorization (permissions) is checked inside the services via AuthorizationService.
  */
+export interface AuthOptions {
+  allowPasswordChangeRequired?: boolean;
+  /**
+   * Checked right after authentication, before the request body is read or validated, so an account
+   * without access gets 403 and learns nothing about the endpoint (Phase 15). Any one of the listed
+   * permissions is enough here; the service still checks the exact permission (defence in depth).
+   */
+  permission?: PermissionCode | readonly PermissionCode[];
+}
+
 export function withAuth(
   services: ServicesFor,
   handler: AuthedHandler,
-  options: { allowPasswordChangeRequired?: boolean } = {},
+  options: AuthOptions = {},
 ) {
   return async (ctx: RequestContext): Promise<Response> => {
     const token = readCookie(ctx.request, SESSION_COOKIE);
@@ -34,6 +45,19 @@ export function withAuth(
     if (auth.mustChangePassword && !options.allowPasswordChangeRequired) {
       throw new ForbiddenError("You must change your password before continuing", "PASSWORD_CHANGE_REQUIRED");
     }
+    if (options.permission) {
+      const any = typeof options.permission === "string" ? [options.permission] : options.permission;
+      await services(ctx).authorization.requireAnyPermission(auth, any, requestMeta(ctx));
+    }
     return handler(ctx, auth);
   };
+}
+
+/** `withAuth` that checks a permission (any of) before the handler reads the request. */
+export function withPermission(
+  permission: PermissionCode | readonly PermissionCode[],
+  services: ServicesFor,
+  handler: AuthedHandler,
+) {
+  return withAuth(services, handler, { permission });
 }

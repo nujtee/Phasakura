@@ -17,9 +17,37 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          # Works before package-lock.json is committed, too.
+          cache-dependency-path: package*.json
       - name: Install
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      - run: npm run check:static
+      - name: Tests with coverage
+        run: npm run test:coverage
       - run: npm run build
+
+  e2e:
+    # Browser suites (Phases 9–14 + responsive sweep) against a local HTTPS server with fake third-party APIs.
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package*.json
+      - name: Install
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: tests/e2e/.output
+          retention-days: 7

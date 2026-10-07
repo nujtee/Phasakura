@@ -63,7 +63,7 @@ export class ConsoleOrNoopDelivery implements PasswordResetDelivery {
 
   async deliver(input: { email: string; url: string }): Promise<boolean> {
     if (!this.isDevelopment) return false;
-    console.warn(`[DEV ONLY] Password reset link for ${input.email}: ${input.url}`);
+    console.warn(JSON.stringify({ level: "warn", message: "DEV ONLY: password reset link (never logged outside development)", email: input.email, url: input.url }));
     return true;
   }
 }

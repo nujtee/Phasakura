@@ -81,6 +81,10 @@
 
 .adm-topbar__link,
 .adm-linkbtn {
+  /* WCAG 2.2 target size: at least 24 × 24 px even though it looks like a text link. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   background: none;
   border: 0;
   padding: 0;
@@ -1976,6 +1980,7 @@
 
 .rpt-chart {
   margin: 0 0 12px;
+  overflow: hidden; /* axis labels near the edges never widen the page */
 }
 
 .rpt-bars {
@@ -1988,6 +1993,7 @@
 
 .rpt-bars__col {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr auto;
   height: 100%;
   min-width: 0;
@@ -2002,11 +2008,11 @@
 }
 
 .rpt-bars__label {
+  min-height: 1.4em;
   font-size: 0.6875rem;
   color: var(--color-muted);
-  overflow: hidden;
+  overflow: visible;
   white-space: nowrap;
-  text-overflow: clip;
 }
 
 .rpt-notes {

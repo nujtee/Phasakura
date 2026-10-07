@@ -3,7 +3,7 @@ import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN } from "../../shared/book
 import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
 import { isIsoDate } from "../../shared/dates.ts";
 import { DEFAULT_LOCALE, parseLocale } from "../../shared/i18n/locales.ts";
-import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
+import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { BadRequestError, ValidationError } from "../http/errors.ts";
 import { jsonOk } from "../http/response.ts";
 import type { Handler, RequestContext } from "../router.ts";
@@ -185,7 +185,7 @@ export function bookingController(services: ServicesFor) {
     }) satisfies Handler,
 
     // ------------------------------------------------------------------ admin bookings
-    list: withAuth(services, async (ctx, auth) => {
+    list: withPermission("bookings.view", services, async (ctx, auth) => {
       const q = ctx.url.searchParams;
       const v = new Validator(Object.fromEntries(q.entries()));
       const status = v.oneOf("status", BOOKING_STATUSES) as BookingStatus | undefined;
@@ -203,7 +203,7 @@ export function bookingController(services: ServicesFor) {
     get: withAuth(services, async (ctx, auth) =>
       jsonOk(await services(ctx).bookings.adminGet(auth, codeParam(ctx), requestMeta(ctx)), { headers: NO_STORE })),
 
-    cancel: withAuth(services, async (ctx, auth) => {
+    cancel: withPermission("bookings.cancel", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["reason"]);
       const reason = v.string("reason", { required: true, min: 3, max: 500 });
       v.assertValid();
@@ -211,7 +211,7 @@ export function bookingController(services: ServicesFor) {
     }),
 
     // ------------------------------------------------------------------ admin pricing rules
-    rules: withAuth(services, async (ctx, auth) => {
+    rules: withPermission("accommodation.view", services, async (ctx, auth) => {
       const q = ctx.url.searchParams;
       const v = new Validator(Object.fromEntries(q.entries())).allowOnly(["targetType", "unitId", "status"]);
       const filter = {
@@ -223,12 +223,12 @@ export function bookingController(services: ServicesFor) {
       return jsonOk(await services(ctx).pricingRules.list(auth, filter, requestMeta(ctx)));
     }),
 
-    createRule: withAuth(services, async (ctx, auth) => {
+    createRule: withPermission("pricing.edit", services, async (ctx, auth) => {
       const input = parseRule(await readJsonObject(ctx.request), false) as PricingRuleInput;
       return jsonOk(await services(ctx).pricingRules.create(auth, input, requestMeta(ctx)), { status: 201 });
     }),
 
-    updateRule: withAuth(services, async (ctx, auth) => {
+    updateRule: withPermission("pricing.edit", services, async (ctx, auth) => {
       const ruleId = ctx.params.id ?? "";
       if (!ID_PATTERN.test(ruleId)) throw new ValidationError({ id: "INVALID_ID" });
       const patch = parseRule(await readJsonObject(ctx.request), true);

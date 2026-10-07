@@ -37,9 +37,28 @@ The temporary password is printed once; you must change it at first sign-in at `
 ```bash
 npm run typecheck
 npm run lint
-npm test
+npm run check:static     # project rules: SQL built from reviewed fragments only, no raw HTML / eval, hooks order, secrets …
+npm test                 # unit + integration + API + security tests (real migrations in SQLite)
 npm run build
 ```
+
+More testing (Phase 15):
+
+```bash
+npm run test:coverage    # same tests with line / branch / function coverage of src/
+npx playwright install chromium
+npm run test:e2e         # browser suites (all phases + responsive sweep) against a local HTTPS server
+npm run test:e2e -- phase14 responsive    # only some suites
+```
+
+`test:e2e` builds the client, creates a throw-away certificate with `openssl`, draws its own test images and
+starts a fresh in-memory server for each suite (fake LINE / Meta / Google APIs — nothing leaves your machine).
+Screenshots land in `tests/e2e/.output/`. The Phase 12 font upload check needs a real WOFF2 file:
+`E2E_FONT_FILE=/path/to/font.woff2 npm run test:e2e -- phase12` (skipped otherwise).
+
+When `check:static` reports `sql/dynamic`, a new piece of SQL is built from a variable: make sure it can only
+contain code constants or `?` placeholders (never request input), then accept it with
+`npx tsx scripts/static-checks.ts --update-sql-baseline` and commit `scripts/sql-fragments.json`.
 
 ## Deploy
 

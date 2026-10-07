@@ -293,6 +293,9 @@ export function createApp(options: AppOptions = {}) {
   }
 
   return {
+    /** Every API route (method + pattern); used by the route security tests. */
+    routes: () => router.list(),
+
     /**
      * Cron (every minute): release unpaid holds whose time is up (nights, tents, kitchen portions),
      * then plan and deliver LINE notifications. The camping drift check runs every 15 minutes.

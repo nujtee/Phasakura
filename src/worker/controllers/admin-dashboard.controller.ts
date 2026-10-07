@@ -3,7 +3,7 @@ import { STAY_ACTIONS, type StayAction } from "../../shared/dashboard-types.ts";
 import { isIsoDate } from "../../shared/dates.ts";
 import { FOOD_ORDER_STATUSES, type FoodOrderStatus } from "../../shared/food-admin-types.ts";
 import { PAYMENT_METHODS } from "../../shared/payment-types.ts";
-import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
+import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { NotFoundError, ValidationError } from "../http/errors.ts";
 import { jsonOk } from "../http/response.ts";
 import type { RequestContext } from "../router.ts";
@@ -34,7 +34,7 @@ export function adminDashboardController(services: ServicesFor) {
     calendar: withAuth(services, async (ctx, auth) =>
       jsonOk(await services(ctx).dashboard.calendar(auth, q(ctx, "from"), q(ctx, "to"), requestMeta(ctx)), NO_STORE)),
 
-    payments: withAuth(services, async (ctx, auth) => {
+    payments: withPermission("payments.view", services, async (ctx, auth) => {
       const v = new Validator(Object.fromEntries(ctx.url.searchParams.entries()))
         .allowOnly(["status", "method", "code", "from", "to", "before", "limit"]);
       const status = v.oneOf("status", PAYMENT_STATUSES_ALL) ?? null;
@@ -64,7 +64,7 @@ export function adminDashboardController(services: ServicesFor) {
 
     bookingSettings: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).bookings.getSettings(auth, requestMeta(ctx)))),
 
-    saveBookingSettings: withAuth(services, async (ctx, auth) => {
+    saveBookingSettings: withPermission("settings.website", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["holdMinutes", "maxNights", "maxAdvanceDays", "maxTentsPerBooking"]);
       const input = {
@@ -81,7 +81,7 @@ export function adminDashboardController(services: ServicesFor) {
     foodCapacity: withAuth(services, async (ctx, auth) =>
       jsonOk(await services(ctx).foodAdmin.capacity(auth, q(ctx, "from"), q(ctx, "to"), requestMeta(ctx)), NO_STORE)),
 
-    setFoodCapacity: withAuth(services, async (ctx, auth) => {
+    setFoodCapacity: withPermission("food.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["maxQuantity"]);
       let max: number | null = null;
@@ -95,7 +95,7 @@ export function adminDashboardController(services: ServicesFor) {
         from: q(ctx, "from"), to: q(ctx, "to"), categoryId: q(ctx, "categoryId"), status: q(ctx, "status"),
       }, requestMeta(ctx)), NO_STORE)),
 
-    updateFoodOrder: withAuth(services, async (ctx, auth) => {
+    updateFoodOrder: withPermission("food_orders.manage", services, async (ctx, auth) => {
       const id = ctx.params.id ?? "";
       if (!ID_PATTERN.test(id)) throw new NotFoundError("Order not found", "RECORD_NOT_FOUND");
       const body = await readJsonObject(ctx.request);

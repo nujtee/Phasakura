@@ -55,6 +55,11 @@ export class Router {
     return this.on("DELETE", path, handler);
   }
 
+  /** Registered routes (method + pattern), for tests that check every endpoint. */
+  list(): { method: HttpMethod; path: string }[] {
+    return this.routes.map((r) => ({ method: r.method, path: `/${r.segments.join("/")}` }));
+  }
+
   match(method: string, pathname: string): { handler: Handler; params: Record<string, string> } {
     const requestSegments = splitPath(pathname);
     const allowed = new Set<string>();

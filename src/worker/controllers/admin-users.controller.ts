@@ -1,6 +1,6 @@
 import { PERMISSION_CODES, type PermissionOverrideDto } from "../../shared/auth-types.ts";
 import { LOCALE_CODES, parseLocale } from "../../shared/i18n/locales.ts";
-import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
+import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { ValidationError } from "../http/errors.ts";
 import { jsonOk } from "../http/response.ts";
 import type { RequestContext } from "../router.ts";
@@ -39,7 +39,7 @@ const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 export function adminUsersController(services: ServicesFor) {
   return {
     /** GET /api/admin/users?status=&q=&page=&pageSize= */
-    list: withAuth(services, async (ctx, auth) => {
+    list: withPermission("users.view", services, async (ctx, auth) => {
       const statusRaw = optionalQuery(ctx, "status", 16);
       if (statusRaw && !["ACTIVE", "SUSPENDED", "DELETED"].includes(statusRaw)) {
         throw new ValidationError({ status: "INVALID_VALUE" });
@@ -61,7 +61,7 @@ export function adminUsersController(services: ServicesFor) {
     get: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).users.get(auth, idParam(ctx), requestMeta(ctx)))),
 
     /** POST /api/admin/users */
-    create: withAuth(services, async (ctx, auth) => {
+    create: withPermission("users.create", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly([
         "email", "username", "displayName", "preferredLanguage", "roles", "password",
       ]);
@@ -79,7 +79,7 @@ export function adminUsersController(services: ServicesFor) {
     }),
 
     /** PATCH /api/admin/users/:id */
-    update: withAuth(services, async (ctx, auth) => {
+    update: withPermission("users.edit", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["email", "username", "displayName", "preferredLanguage"]);
       const input = {
         email: v.has("email") ? v.email("email", { required: true }) : undefined,
@@ -92,7 +92,7 @@ export function adminUsersController(services: ServicesFor) {
     }),
 
     /** PUT /api/admin/users/:id/roles  { roles: string[] } */
-    setRoles: withAuth(services, async (ctx, auth) => {
+    setRoles: withPermission("users.manage_roles", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["roles"]);
       const roles = v.stringArray("roles", { required: true, max: 10, pattern: ROLE_CODE_PATTERN });
       v.assertValid();
@@ -100,7 +100,7 @@ export function adminUsersController(services: ServicesFor) {
     }),
 
     /** PUT /api/admin/users/:id/permissions  { overrides: [{ code, effect }] } */
-    setPermissions: withAuth(services, async (ctx, auth) => {
+    setPermissions: withPermission("users.manage_permissions", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       new Validator(body).allowOnly(["overrides"]).assertValid();
       const raw = body.overrides;
@@ -130,7 +130,7 @@ export function adminUsersController(services: ServicesFor) {
       jsonOk(await services(ctx).users.listRoles(auth, languageParam(ctx), requestMeta(ctx)))),
 
     /** PUT /api/admin/roles/:id/permissions  { permissions: string[] } */
-    setRolePermissions: withAuth(services, async (ctx, auth) => {
+    setRolePermissions: withPermission("users.manage_permissions", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["permissions"]);
       const permissions = v.stringArray("permissions", { required: true, max: PERMISSION_CODES.length });
       v.assertValid();
@@ -144,7 +144,7 @@ export function adminUsersController(services: ServicesFor) {
     permissions: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).users.listPermissions(auth, requestMeta(ctx)))),
 
     /** GET /api/admin/security-events?type=&userId=&before=&limit= */
-    securityEvents: withAuth(services, async (ctx, auth) =>
+    securityEvents: withPermission("security_events.view", services, async (ctx, auth) =>
       jsonOk(await services(ctx).logs.securityEvents(auth, {
         type: optionalQuery(ctx, "type", 64, /^[A-Z_]+$/),
         userId: optionalQuery(ctx, "userId", 64, ID_PATTERN),
@@ -153,7 +153,7 @@ export function adminUsersController(services: ServicesFor) {
       }, requestMeta(ctx)))),
 
     /** GET /api/admin/audit-logs?module=&recordId=&before=&limit= */
-    auditLogs: withAuth(services, async (ctx, auth) =>
+    auditLogs: withPermission("audit_logs.view", services, async (ctx, auth) =>
       jsonOk(await services(ctx).logs.auditLogs(auth, {
         module: optionalQuery(ctx, "module", 32, /^[a-z_]+$/),
         recordId: optionalQuery(ctx, "recordId", 64, ID_PATTERN),

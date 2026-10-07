@@ -183,6 +183,10 @@ export class CmsService {
     await this.run(name, statements);
   }
 
+  async authorizeEdit(actor: AuthContext, name: CmsEntityName, meta: RequestMeta): Promise<void> {
+    await this.authz.requirePermission(actor, ENTITY_CONFIG[name].edit, meta);
+  }
+
   async reorder(actor: AuthContext, name: CmsEntityName, ids: string[], meta: RequestMeta): Promise<CmsRecord[]> {
     const cfg = ENTITY_CONFIG[name];
     if (!ENTITIES[name].fields.some((f) => f.key === "sortOrder")) throw new HttpError(405, "METHOD_NOT_ALLOWED", "Not sortable");

@@ -1,6 +1,6 @@
 import { getLocale, parseLocale } from "../../shared/i18n/locales.ts";
 import { REPORT_GROUPS, REPORT_TYPES, type ReportGroup, type ReportType } from "../../shared/report-types.ts";
-import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
+import { requestMeta, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { NotFoundError, ValidationError } from "../http/errors.ts";
 import { jsonOk } from "../http/response.ts";
 import { reportFileName, reportToXlsx } from "../reports/report-export.ts";
@@ -30,7 +30,7 @@ async function parse(ctx: RequestContext, today: () => Promise<string>, extra: s
 /** Reports (spec §50): JSON for the screen / print (PDF) view, XLSX download. */
 export function reportController(services: ServicesFor) {
   return {
-    run: withAuth(services, async (ctx, auth) => {
+    run: withPermission(["reports.view", "kitchen.view"], services, async (ctx, auth) => {
       const s = services(ctx);
       const req = await parse(ctx, () => s.reports.today(), ["export"]);
       if (req.export !== undefined && req.export !== "pdf") throw new ValidationError({ export: "INVALID_VALUE" });
@@ -38,7 +38,7 @@ export function reportController(services: ServicesFor) {
       return jsonOk(report, { headers: { "Cache-Control": "no-store" } });
     }),
 
-    exportXlsx: withAuth(services, async (ctx, auth) => {
+    exportXlsx: withPermission(["reports.export", "kitchen.view"], services, async (ctx, auth) => {
       const s = services(ctx);
       const req = await parse(ctx, () => s.reports.today(), ["format"]);
       if (req.format !== undefined && req.format !== "xlsx") throw new ValidationError({ format: "INVALID_VALUE" });
