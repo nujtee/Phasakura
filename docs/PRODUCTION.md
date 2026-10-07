@@ -24,7 +24,8 @@
 | `wrangler.jsonc` | `APP_BASE_URL=https://phasakura.com`, routes `phasakura.com` + `www.phasakura.com` (www → 301 ไป apex), `workers_dev: false` — `npm run preflight` 0 error |
 | SUPER_ADMIN คนแรก | `suriya.rth@gmail.com` (รหัสผ่านชั่วคราว — ต้องเปลี่ยนตอนเข้าครั้งแรก) |
 | โค้ด | GitHub `nujtee/Phasakura` (branch `main`) — CI บน GitHub ผ่านครบ: build, typecheck, ESLint, static checks, 554 tests, browser suites ทุกชุด |
-| Deploy | **Workers Builds** (Cloudflare build จาก GitHub ทุกครั้งที่ push `main`) — ต้องเชื่อมครั้งแรกใน Dashboard (ด้านล่าง) |
+| Deploy | **Workers Builds** เชื่อมแล้ว — deploy ครั้งแรก 2026-10-07 23:49 น.; ทุก push เข้า `main` จะ build + deploy อัตโนมัติ |
+| ตรวจหลัง deploy | `/th/` 200 (canonical `https://phasakura.com/th/`, index), robots.txt โหมด production, sitemap 12 URL บนโดเมนนี้, cron ทำงานทุกนาที (heartbeat OK), ไม่มี server error |
 | Workers Paid | ต้องตรวจ / อัปเกรดใน Dashboard → Workers & Pages → Plans |
 
 ### เชื่อม GitHub → Cloudflare (ครั้งเดียว)
