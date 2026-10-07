@@ -21,12 +21,13 @@ jobs:
           cache-dependency-path: package*.json
       - name: Install
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      # The production build first: it is what Cloudflare Workers Builds runs on every push to main.
+      - run: npm run build
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run check:static
       - name: Tests with coverage
         run: npm run test:coverage
-      - run: npm run build
 
   e2e:
     # Browser suites (Phases 9–14, 16 + responsive sweep) against a local HTTPS server with fake third-party APIs.
