@@ -1,0 +1,32 @@
+# Security headers for static assets served by Workers Static Assets.
+# API responses get their headers from src/worker/http/security-headers.ts.
+# CSP will be extended in Phase 14 for GA4 / Meta Pixel (consent-gated) and in
+# Phase 12/13 for the R2 media domain and web fonts.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Admin area: never indexed, never cached, no referrer (reset links use #fragment tokens).
+/th/admin/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+/en/admin/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+/zh-cn/admin/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+/admin/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store

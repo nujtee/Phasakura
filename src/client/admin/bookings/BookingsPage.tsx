@@ -1,0 +1,117 @@
+import { useCallback, useState, type FormEvent } from "react";
+import type { AdminBookingSummaryDto, BookingStatus, PaymentStatus } from "../../../shared/booking-types.ts";
+import { formatBaht } from "../../../shared/booking-rules.ts";
+import { format } from "../../../shared/i18n/admin-messages.ts";
+import { Link } from "../../router/Router.tsx";
+import { useAdmin } from "../AdminContext.tsx";
+import { Alert, Button } from "../ui.tsx";
+import { useCursorList } from "../useCursorList.ts";
+import { BookingStatusBadge, useStayDate } from "./shared.tsx";
+
+const PAYMENTS: PaymentStatus[] = ["UNPAID", "PENDING_VERIFICATION", "VERIFIED", "PAID", "REJECTED", "REFUNDED"];
+const STATUSES: BookingStatus[] = ["PENDING", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "CANCELLED", "EXPIRED", "NO_SHOW"];
+
+export function BookingsPage() {
+  const { t, href, locale } = useAdmin();
+  const stayDate = useStayDate();
+  const [status, setStatus] = useState<string>("");
+  const [payment, setPayment] = useState<string>("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [q, setQ] = useState("");
+  const [filters, setFilters] = useState({ status: "", payment: "", from: "", to: "", q: "" });
+
+  const buildUrl = useCallback((before: string | null) => {
+    const params = new URLSearchParams({ limit: "30" });
+    for (const [k, v] of Object.entries(filters)) if (v) params.set(k, v);
+    if (before) params.set("before", before);
+    return `/api/admin/bookings?${params}`;
+  }, [filters]);
+  const { items, cursor, loading, error, more } = useCursorList<AdminBookingSummaryDto>(buildUrl);
+
+  const apply = (e: FormEvent) => {
+    e.preventDefault();
+    setFilters({ status, payment, from, to, q: q.trim() });
+  };
+
+  return (
+    <section>
+      <div className="adm-pagehead">
+        <h1 className="adm-h1">{t.bk.title}</h1>
+      </div>
+
+      <form role="search" className="adm-filters" onSubmit={apply}>
+        <label className="adm-filter">
+          <span>{t.bk.status}</span>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">{t.bk.allStatuses}</option>
+            {STATUSES.map((s) => <option key={s} value={s}>{t.bk[`s${s}`]}</option>)}
+          </select>
+        </label>
+        <label className="adm-filter">
+          <span>{t.bk.payment}</span>
+          <select value={payment} onChange={(e) => setPayment(e.target.value)}>
+            <option value="">{t.pay.allPayments}</option>
+            {PAYMENTS.map((p) => <option key={p} value={p}>{t.bk[`p${p}`]}</option>)}
+          </select>
+        </label>
+        <label className="adm-filter">
+          <span>{t.bk.stayFrom}</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="adm-filter">
+          <span>{t.bk.stayTo}</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </label>
+        <label className="adm-filter adm-filter--grow">
+          <span>{t.common.search}</span>
+          <input type="search" placeholder={t.bk.searchPlaceholder} maxLength={60} value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
+        <Button type="submit" variant="secondary">{t.common.search}</Button>
+      </form>
+
+      {error && <Alert kind="error">{error}</Alert>}
+      <div className="adm-tablewrap">
+        <table className="adm-table">
+          <thead>
+            <tr>
+              <th scope="col">{t.bk.code}</th>
+              <th scope="col">{t.bk.guest}</th>
+              <th scope="col">{t.bk.stay}</th>
+              <th scope="col">{t.bk.item}</th>
+              <th scope="col" className="adm-num">{t.bk.total}</th>
+              <th scope="col">{t.bk.status}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!loading && items.length === 0 && <tr><td colSpan={6} className="adm-table__empty">{t.bk.empty}</td></tr>}
+            {items.map((b) => (
+              <tr key={b.id}>
+                <td><Link to={href("bookings", b.bookingCode)} className="adm-table__primary adm-mono">{b.bookingCode}</Link></td>
+                <td>
+                  {b.customerName}
+                  <div className="adm-muted adm-small">{b.customerPhone}</div>
+                </td>
+                <td className="adm-small">
+                  {stayDate(b.checkIn)} → {stayDate(b.checkOut)}
+                  <div className="adm-muted">{format(t.bk.nights, { n: b.nights })} · {format(t.bk.guests, { adults: b.adults, children: b.children })}</div>
+                </td>
+                <td className="adm-small">
+                  {b.itemName}
+                  {b.itemType === "OWN_TENT" && <div className="adm-muted">{format(t.bk.tents, { n: b.quantity })}</div>}
+                </td>
+                <td className="adm-num">{formatBaht(b.totalSatang, locale.code)}</td>
+                <td>
+                  <BookingStatusBadge status={b.status} />
+                  <div className="adm-muted adm-small">{t.bk[`p${b.paymentStatus}`]}</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {loading && <p role="status">{t.common.loading}</p>}
+      {cursor && !loading && <Button variant="secondary" onClick={more}>{t.common.loadMore}</Button>}
+    </section>
+  );
+}

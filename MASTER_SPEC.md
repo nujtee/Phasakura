@@ -1,0 +1,2932 @@
+# MASTER_SPEC — Phasakura Accommodation Booking Website
+
+> เอกสารนี้คือ Source of Truth ของ Requirement ทั้งหมด
+> ส่วน **A** คือสถานะโปรเจกต์และการตัดสินใจทางเทคนิค (อัปเดตทุก Phase)
+> ส่วน **B** คือ Specification ต้นฉบับครบทุกข้อ (ห้ามแก้ความหมาย)
+
+---
+
+## A. Project Status & Technical Decisions
+
+### A.1 Phase Tracker
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Project Setup (React, TS, Workers, D1/R2 bindings, i18n, Layout, Header, Footer) | ✅ Done |
+| 2 | Database migrations (72 tables, 10 migrations, dev seed) | ✅ Done |
+| 3 | Authentication, RBAC, User Management, Admin login UI | ✅ Done |
+| 4 | Accommodation (House, VIP, Camping, Images, Amenities, Translations, Availability) | ✅ Done |
+| 5 | Booking flow, pricing rules, food, snapshots, Booking ID, lookup, hold expiry | ✅ Done |
+| 6 | Camping capacity hardening (daily, multi-night, tents, race protection, integrity) | ✅ Done |
+| 7 | Payment (receiving accounts, QR, account snapshot, record / refund, status) | ✅ Done |
+| 8 | Slip verification (private R2 upload, manual queue, real auto-verification service adapter) | ✅ Done — รอ `NEXT PHASE` |
+| 9 | Admin dashboard | ⏳ Next |
+| 10–16 | ตาม B.60 | ⏳ Not started |
+
+### A.2 Architecture Decisions (ADR)
+
+| # | Decision | Reason |
+|---|---|---|
+| ADR-1 | Single Cloudflare Worker ให้บริการทั้ง API (`/api/*`) และ Static Assets (SPA) ผ่าน Workers Static Assets | Deploy ชิ้นเดียว, same-origin → ไม่ต้องเปิด CORS, cookie session ง่ายและปลอดภัยกว่า |
+| ADR-2 | Worker ไม่ใช้ web framework; ใช้ Router ขนาดเล็กของโปรเจกต์ + Layer: Router → Controller → Service → Repository → D1 | ตาม B.4, dependency น้อย, test ได้ด้วย Web-standard Request/Response |
+| ADR-3 | Frontend: React 19 + TypeScript + Vite; Router ภาษาเขียนเอง (`src/client/router`) | Route มีรูปแบบ `/{lang}/{page}` ชัดเจน, bundle เล็ก; หากต้องการ nested admin routes ซับซ้อนใน Phase 9 สามารถเปลี่ยนเป็น react-router ได้โดยไม่กระทบ page components |
+| ADR-4 | i18n แบบ typed dictionary (`src/shared/i18n`) — TypeScript บังคับให้ทุกภาษามี key ครบ | ป้องกัน key หาย; รองรับ `th` (default), `en`, `zh-CN` (path `zh-cn`) |
+| ADR-5 | R2 แยก 2 bucket: `MEDIA_PUBLIC` (รูปสาธารณะ) และ `MEDIA_PRIVATE` (สลิป/ไฟล์ส่วนตัว) | B.54 — แยก Access Policy ระดับ bucket ป้องกันการเปิดสลิปผิดพลาด |
+| ADR-6 | Theme ใช้ CSS Variables (B.37); ค่าใน `tokens.css` เป็นเพียง **fallback กลาง** ก่อนโหลด Theme จาก D1 (Phase 9) | ห้าม Hard-code Theme — ค่าจริงมาจาก `theme_settings` |
+| ADR-7 | Logo / Website Name โหลดจาก `GET /api/public/site` เท่านั้น; ถ้ายังไม่ตั้งค่า ระบบแสดง placeholder ที่เป็นกลาง (ไม่ใส่ชื่อ/โลโก้ใน code) | B.7, B.61 |
+| ADR-8 | Test runner: `node:test` ผ่าน `tsx` (ไม่มี dependency เพิ่ม) | รันได้ทุก environment |
+| ADR-9 | Secrets อยู่ใน `wrangler secret` / `.dev.vars` (gitignored) เท่านั้น — มี `.dev.vars.example` เป็นแม่แบบที่ไม่มีค่าจริง | B.45, B.61 |
+
+### A.3 Folder Structure
+
+```text
+src/
+  shared/            โค้ดที่ใช้ทั้ง client และ worker (i18n config, types ของ API)
+    i18n/            locales, dictionary th/en/zh-cn
+  worker/            Cloudflare Worker (backend)
+    index.ts         entry: fetch handler
+    router.ts        router ขนาดเล็ก
+    http/            response helpers, security headers, errors
+    controllers/     รับ Request → เรียก Service → คืน Response
+    services/        Business logic
+    repositories/    ติดต่อ D1 เท่านั้น (prepared statements)
+    env.ts           Env bindings (D1, R2, vars)
+  client/            React app
+    main.tsx, App.tsx
+    router/          localized routing
+    components/      Header, Footer, LanguageSwitcher, Layout
+    pages/           Home, Gallery, Booking, History, NotFound
+    styles/          tokens.css (CSS variables), base.css
+migrations/          D1 migrations 0001–0010
+seeds/dev.sql        ข้อมูลตัวอย่างสำหรับ local เท่านั้น
+tests/               node:test test suites
+```
+
+### A.4 Commands
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Vite dev server (frontend) — proxy `/api` ไป `wrangler dev` |
+| `npm run dev:worker` | `wrangler dev` (Worker + D1/R2 local) |
+| `npm run build` | Build frontend → `dist/client` |
+| `npm test` | Unit/API tests |
+| `npm run typecheck` | `tsc` ทั้ง client และ worker |
+| `npm run lint` | ESLint |
+| `npm run deploy` | build + `wrangler deploy` |
+| `npm run db:migrate:local` / `db:seed:local` / `db:reset:local` | Local D1: migrate, dev seed, reset |
+| `npm run db:migrate:remote` | Apply migrations to production D1 (backup first) |
+
+### A.5 Database design (Phase 2)
+
+Migrations: `migrations/0001…0010` (see `migrations/README.md`). Dev-only sample data: `seeds/dev.sql`.
+
+| Rule | How it is enforced in D1 (not only in code) |
+|---|---|
+| No double booking (§16) | `booking_unit_nights` PRIMARY KEY `(unit_id, stay_date)`; one row per stay night inserted in the same atomic `batch()` as the booking. Check-out day is not a night. Admin blocks use the same table. |
+| Camping capacity (§12.3) | `camping_night_inventory` per night: `INSERT OR IGNORE` (default capacity) + `UPDATE tents_used = tents_used + n` in the booking batch; `CHECK (tents_used <= max_tents)` rolls back the whole booking. |
+| Food capacity (§22) | `food_daily_capacity` per category × date, same pattern, `CHECK (used_quantity <= max_quantity)`. |
+| Price / payment-account / included-meal snapshots (§17, §20, §25) | Separate snapshot tables; `UPDATE`/`DELETE` blocked by triggers (`SNAPSHOT_IMMUTABLE`). Food line prices frozen by trigger. |
+| Money | INTEGER satang everywhere; `total = subtotal − discount` and `subtotal = accommodation + food` as CHECKs. |
+| Booking dates | `nights = check_out − check_in`, valid calendar dates, `BK-YYYYMMDD-XXXX` format + UNIQUE. |
+| Soft delete users (§32) | Hard `DELETE` blocked; `status='DELETED' ⇔ deleted_at IS NOT NULL`. No cascades anywhere. |
+| Last SUPER_ADMIN (§33) | Triggers block suspending/deleting/removing the role of the last ACTIVE SUPER_ADMIN (`LAST_SUPER_ADMIN`). Service layer checks first for a friendly error. |
+| Audit log (§51) | Append-only (UPDATE/DELETE blocked); old/new values must be JSON. Same for `price_history`, `slip_verifications`. |
+| Slips private (§27, §54) | `media_assets`: `purpose='PAYMENT_SLIP' ⇔ bucket='PRIVATE'`; payments may only reference PAYMENT_SLIP assets. |
+| Duplicate slip / transaction (§27) | Partial UNIQUE on `payments.slip_sha256` for live payments; partial UNIQUE on `slip_verifications.transaction_ref` for PASSED results. |
+| Secrets (§45, §61) | No token/secret columns except `token_hash` / `password_hash`. CAPI & LINE tokens only in Cloudflare Secrets. |
+| Languages | `languages` table (FK from all translation tables) — not hard-coded in CHECKs. |
+| Upload safety (§55) | R2 keys CHECKed against traversal/unsafe chars; MIME allow-list (no SVG/HTML). |
+| Roles & permissions (§29–31) | Stored in DB (migration 0010): 6 roles × 54 permissions. No default user/password shipped. |
+
+All tables are `STRICT`. Every rule above has a test in `tests/db/`.
+
+### A.7 Authentication & authorization (Phase 3)
+
+| Topic | Decision |
+|---|---|
+| Password hashing | PBKDF2-HMAC-SHA256, 100,000 iterations (Workers maximum), 16-byte salt, self-describing `pbkdf2_sha256$iter$salt$hash`; weaker hashes re-hashed on login. NFKC normalisation. |
+| Password policy | ≥ 12 chars, ≤ 128, not common, not trivially simple, must not contain email/username/name. |
+| Session | 256-bit random token in cookie `__Host-sid` (HttpOnly, Secure, SameSite=Strict, Path=/). Only SHA-256 stored in `sessions`. Browser session: 12 h absolute + 2 h idle. Remember me: 30 days. New session on every login; `POST /api/auth/refresh` rotates; logout / suspend / delete / password change / force logout revoke. |
+| CSRF | SameSite=Strict + Origin (or Sec-Fetch-Site) must be same-origin + `X-Requested-With: phasakura` on every POST/PUT/PATCH/DELETE. |
+| Brute force | 5 failures → account locked 15 min; 20 failures per IP / 15 min → 429. Same error for unknown user / wrong password / locked; dummy hash check equalises timing. |
+| Forgot password | Always 202 (no enumeration); throttled per IP and per account; one-time token (SHA-256 stored), 30 min, token in URL **fragment**; newest link only. **Production has no email channel yet** — admins issue reset links from User Management (24 h). |
+| Authorization | `AuthorizationService.requirePermission(user, "users.delete")`; effective = role perms ∪ user GRANT − user DENY, loaded from D1 each request. Frontend hides menus only. |
+| SUPER_ADMIN rules | Only a SUPER_ADMIN can grant SUPER_ADMIN or act on a SUPER_ADMIN; nobody can delete/suspend self or change own roles/permissions; non-SUPER_ADMIN cannot grant permissions they don't hold; SUPER_ADMIN role permissions locked; DB triggers keep ≥ 1 active SUPER_ADMIN. |
+| Audit | Every user/role change written in the same D1 batch as the change; secrets redacted by key name. |
+| First admin | `npm run admin:bootstrap -- --email … --name …` → SQL with hash only (no-op if an active SUPER_ADMIN exists). |
+| Admin URLs | `/{lang}/admin/*` (`/admin/*` → default language); `noindex`, `no-store`. |
+
+### A.8 Accommodation & availability (Phase 4)
+
+| Topic | Decision |
+|---|---|
+| Inventory | Each house / VIP tent is its own `accommodation_units` row; status DRAFT → ACTIVE requires a Thai (default-language) name. Soft delete refused while future bookings exist. |
+| Prices | Integer satang in API/DB; UI enters THB (`parseBahtToSatang`), shows `฿2,450.50` / `฿3,500`. Changing a price requires `pricing.edit`; every change → `price_history` + audit. Seasonal/weekday rules (`pricing_settings`) are applied per night since Phase 5 (A.9). |
+| Availability | Always computed live from D1 night-locks (`booking_unit_nights`) and camping inventory — never cached. Public API returns only available / fits-guests per unit (no booking data). Rules: check-in ≥ today (property time zone), ≤ 365 days ahead, 1–30 nights (`src/shared/booking-rules.ts`). |
+| Date blocks | Admin blocks (`accommodation.block`) are night-locks without a booking; they cannot overlap bookings (DB UNIQUE) and unblocking never removes a booking's nights. |
+| Camping | Default capacity in `camping_settings`; per-night rows in `camping_night_inventory` with `is_override` (migration 0011). Default changes apply to non-overridden future nights; CHECK rejects going below tents sold (atomic rollback). |
+| Images | `POST /api/admin/media` (multipart). Type detected from **bytes** (JPEG/PNG/WebP/AVIF only — SVG/HTML rejected), ≤ 10 MB, ≤ 10,000 px per side, ≤ 50 MP. Server-generated R2 key `<purpose>/YYYY/MM/<uuid>.<ext>`; client file name never used. Upload permission depends on purpose. Alt/title/caption per language in `media_asset_translations`. Compression & responsive variants: Phase 12. |
+| Media serving | `GET /media/<key>` (Worker-first route) serves only ACTIVE + PUBLIC assets registered in D1, with `nosniff`, `CSP: sandbox`, immutable cache, ETag/304. Removing an image retires the asset and deletes the R2 object. |
+| Public pages | `/{lang}/booking` (live availability search), `/{lang}/accommodation/{slug}` (photos, amenities, date check). Language switcher keeps the current path. Online booking: see A.9. |
+
+### A.9 Booking flow (Phase 5)
+
+| Topic | Decision |
+|---|---|
+| Scope | One booking = one accommodation choice: one house / VIP tent, or own-tent camping with N tents. Guests = adults (≥ 1) + children. |
+| Price engine | `QuoteService` — the browser never sends a price. Per night: highest-priority ACTIVE `pricing_settings` rule matching date + weekday wins (ties: UNIT > UNIT_TYPE, then newest), else the unit base price. Camping = Σ nightly price × adults (children under the configured age free). Rules are managed at `/admin/pricing` (`accommodation.view` to see, `pricing.edit` to change; every change → `price_history` + audit). |
+| Food | Service date = stay night + `food_categories.service_day_offset` (breakfast = next morning). Deadlines: `DAYS_BEFORE n` (today ≤ date − n) or `PREVIOUS_DAY_TIME` (before HH:MM the day before, property time zone). Child pricing FREE / FULL / HALF / SPECIAL_PRICE. Included meals become zero-priced lines (adults first, capped at guest count) and do **not** use kitchen capacity or deadlines. Extra portions reserve `food_daily_capacity`; NULL capacity = unlimited. |
+| Atomic creation | One D1 batch: booking, item, night-locks (PK) or tent reservation (CHECK), immutable price snapshot (nightly JSON), included-meal snapshots, kitchen orders (+ `capacity_reserved`), price-frozen food lines, security event, audit. Any conflict rolls back everything → 409 `UNIT_UNAVAILABLE` / `CAMPING_FULL` / `FOOD_CAPACITY_EXCEEDED`. Verified by concurrent-request tests that hit the DB constraints. |
+| Guards | `expectedTotalSatang` must equal the server total (else 409 `PRICE_CHANGED`); `idempotencyKey` (UNIQUE) makes retries return the same booking, reuse with another phone → 409; privacy acceptance required and timestamped; strict field allow-lists; ≤ 20 bookings / IP / hour. |
+| Booking ID | `BK-YYYYMMDD-XXXX` (property date + 4 chars A–Z0–9 from CSPRNG, retry on collision). Public lookup = `POST /api/public/bookings/lookup {bookingCode, phone}` — POST keeps the phone out of URLs; identical 404 for unknown code / wrong phone; throttled 5 failures per code and 10 per IP per 15 min; returns masked phone only. |
+| Holds | New bookings are PENDING / UNPAID until `expires_at` (`booking_settings.hold_minutes`, default 60). Cron `*/5 * * * *` (and every quote/create/lookup) expires overdue holds and releases nights, tents and kitchen portions; release statements are conditional on state, so they can never run twice. |
+| Admin | `/admin/bookings` list (status, stay dates, search by code / phone / name; cursor pages), detail from snapshots, cancel with reason (`bookings.cancel`) releasing inventory + audit. |
+| Logging | Security events / audit carry the Booking ID and amounts only — never name, phone or email. |
+| Not yet | Payment account snapshot, QR and payment: Phase 7. Admin UI for booking settings and food menu: Phase 9. |
+
+### A.10 Camping capacity (Phase 6)
+
+| Topic | Decision |
+|---|---|
+| Daily capacity | `camping_night_inventory` row per night (created on demand at the default **read inside the booking transaction**, or set by an override). `CHECK (tents_used <= max_tents)` is the authority; default/override changes below tents sold are refused. |
+| Multi-night | Every night of the stay is reserved in the same batch; one full night rejects the whole booking. Availability reports per-night remaining and names the short nights (`shortNights`). |
+| Tent quantity | Capacity counts tents, price counts adults (§18). Guests need ≥ ⌈guests ÷ max guests per tent⌉ tents; ≤ `booking_settings.max_tents_per_booking` per booking. Availability returns `reason` (FULL / TOO_FEW_TENTS / TOO_MANY_TENTS) and `minTents`; the booking page offers a one-tap "use N tents". |
+| Race protection | DB-enforced: CHECK on tents, triggers (migration 0013) refuse own-tent bookings while camping is disabled and unit bookings unless the unit is ACTIVE — closing the gap between quote and batch. Tested with 10-way, overlapping multi-night and capacity-change races; losers are stopped by the DB constraint and leave no rows. |
+| Stale holds | Availability search first expires unpaid holds past their time (in addition to the 5-minute cron), so expired holds never show as "full". |
+| Integrity | Truth per night = Σ ACTIVE own-tent items covering that night. `GET /api/admin/camping/integrity` (`camping.view`) lists nights where the counter differs; `POST /api/admin/camping/recalculate` (`camping.edit`, audited) resets counters from today in one batch and refuses (409 `OVERSOLD_NIGHTS`) if bookings exceed capacity. The cron only detects: one CRITICAL `CAMPING_INVENTORY_DRIFT` event per 6 h, never changes data. |
+
+### A.11 Payment (Phase 7)
+
+| Topic | Decision |
+|---|---|
+| Receiving accounts | `/admin/receiving-accounts` (`receiving_accounts.view` / `.edit`, all changes audited). Fields per §25; account number digits/dashes, PromptPay 10/13/15 digits (spaces/dashes stripped); at least one of the two. QR = uploaded `PAYMENT_QR` image (public bucket — it is meant to be shown to payers; byte-sniffed like all uploads). Exactly one primary (UNIQUE index); the primary cannot be deactivated or deleted; delete = soft (`DELETED`). |
+| Snapshot | The primary ACTIVE account is copied into `payment_account_snapshots` **inside the booking batch**. If no primary exists the statement inserts NULLs → NOT NULL aborts the whole booking (409 `PAYMENT_NOT_CONFIGURED`) — a booking can never exist without payment details. Snapshots are immutable (trigger); QR assets referenced by snapshots are never retired. |
+| Guest | Confirmation and lookup show payment instructions (bank, account, PromptPay, QR, exact amount, hold deadline) from the booking's own snapshot, only while it is PENDING and UNPAID/REJECTED. |
+| Status | `payments.verify` records money received in full → booking CONFIRMED + PAID, hold cleared (never expires). One conditional batch: works only while PENDING and not past the hold; two staff at once → one payment. Payments on cancelled/expired bookings are refused by trigger. Amount/booking/method of a payment are frozen; refunded is final; payments are never deleted. |
+| Refund | `payments.refund`, only after the booking is cancelled / no-show; amount ≤ paid; booking payment status → REFUNDED once no paid payment remains. Cancelling a paid booking keeps `PAID` until the refund is recorded. |
+| Next | Slip upload (private R2), manual verify / reject, real auto-verification service: Phase 8. |
+
+### A.12 Slip verification (Phase 8)
+
+| Topic | Decision |
+|---|---|
+| Upload | `POST /api/public/bookings/slip` (multipart `bookingCode`, `phone`, `file`). Booking ID + phone prove ownership with the same throttle as lookup. JPEG/PNG/WebP sniffed from bytes, ≤ 10 MB; server-generated key `slips/YYYY/MM/<id>.<ext>` in the **PRIVATE** R2 bucket (`media_assets` CHECK: slips must be private); ≤ 5 slips / booking / day, ≤ 20 / IP / hour. One atomic batch claims the booking (PENDING + UNPAID/REJECTED + hold not over) → `PENDING_VERIFICATION` (hold kept until staff decide), inserts asset + payment; failures delete the R2 object. |
+| Duplicates | Same image: `payments.slip_sha256` UNIQUE among live payments → 409 `DUPLICATE_SLIP`. Same bank transaction: `slip_verifications.transaction_ref` UNIQUE among PASSED → never confirms two bookings. |
+| Auto verification | Real service only (`SlipVerifier` interface; EasySlip adapter). Enabled only when `SLIP_VERIFY_PROVIDER` (var) **and** `SLIP_VERIFICATION_API_KEY` (Cloudflare Secret) are set; otherwise every slip goes to staff. Never OCR. Checks: amount = booking total, transfer time within [booking created − 15 min, now + 5 min], destination = snapshot account or PromptPay (bank-masked digits, ≥ 4 visible), transaction not used before; sender/receiver bank recorded. All pass → payment VERIFIED + booking CONFIRMED. Anything else (failed check, not a slip, timeout 10 s, unexpected response, crash) → recorded and left for staff — the design can only fail towards manual review. Stored provider data excludes payer names and full numbers. |
+| Provider contract | The EasySlip adapter follows the provider's v1 verify API (multipart `file`, Bearer key, `data.transRef/date/amount.amount/receiver.account…`). Its public field-level docs could not be fetched while building; **confirm the current contract before setting the key** — a mismatch only produces ERROR → manual review. |
+| Staff | `/admin/slips` (`slips.view`): queue by status, verification history with reasons. Slip images only via `GET /api/admin/payments/:id/slip` (session + `slips.view`, `private, no-store`, nosniff, audited `VIEW_SLIP`); `/media` never serves private objects. Verify / reject need `payments.verify`; reject reason stays internal; the guest gets a fresh hold (`hold_minutes`) and can pay/upload again; unpaid rejected holds expire normally. Recording a manual payment is refused while a slip waits (`SLIP_PENDING_REVIEW`) — no double counting. |
+
+### A.6 Verification notes (Phase 1–8)
+
+- Workspace had no npm registry access; `package-lock.json` must be generated on first `npm install`.
+- Run on first install: `npm run lint`, `npm run build`, `npm run typecheck` (client part needs `@types/react`).
+- Phase 5: 263 tests pass; worker typecheck clean (incl. `--noUnusedLocals`); client checked against a local React type shim; 22/22 browser end-to-end checks (mobile 390 px TH, desktop EN, admin) with zero console/CSP errors. ESLint could not run (plugins not installable offline).
+- Phase 6: 275 tests pass (12 new camping-capacity tests; race losers verified to be stopped by the DB CHECK); worker + client typecheck clean; 7/7 browser checks (mobile tent hint, admin drift + recalculate), zero console/CSP errors.
+- Phase 7: 285 tests pass (10 new payment tests); worker + client typecheck clean; 11/11 browser checks (admin account + QR + primary, guest payment instructions on mobile, record payment, cancel + refund), zero console/CSP errors.
+- Phase 8: 305 tests pass (20 new slip tests incl. provider adapter with fake fetch); worker + client typecheck clean; 14/14 browser checks (manual review path, auto-verified path, private slip 401 without session), zero console/CSP errors. No migration needed (Phase 2 schema already covers slips).
+
+---
+
+## B. Original Specification (verbatim)
+
+คุณคือ Senior Full-Stack Engineer, Cloudflare Architect, Database Engineer, Security Engineer, UI/UX Designer และ QA Engineer
+
+หน้าที่ของคุณคือสร้างระบบเว็บไซต์จองที่พักและระบบบริหารหลังบ้านแบบ Production-ready ตาม Specification นี้
+
+---
+
+### 1. กฎสำคัญในการทำงาน
+
+ก่อนเริ่มเขียน Code ให้:
+
+1. อ่าน `MASTER_SPEC.md` ทั้งหมด
+2. ตรวจสอบ Repository ปัจจุบันทั้งหมด
+3. ตรวจสอบโครงสร้างไฟล์ที่มีอยู่
+4. ตรวจสอบ package.json
+5. ตรวจสอบ configuration
+6. ตรวจสอบ Cloudflare configuration
+7. ตรวจสอบ Git status
+8. ตรวจสอบ Database migrations ที่มีอยู่
+9. ตรวจสอบว่า Feature ใดมีอยู่แล้ว
+10. ห้ามสร้างระบบซ้ำโดยไม่จำเป็น
+
+ถ้ายังไม่มี `MASTER_SPEC.md` ให้สร้างจาก Specification นี้
+
+---
+
+### 2. ห้ามทำทั้งหมดในครั้งเดียว
+
+ให้พัฒนาเป็น Phase
+
+```text
+PHASE 1
+PHASE 2
+PHASE 3
+...
+PHASE 16
+```
+
+เมื่อทำ Phase ปัจจุบันเสร็จ:
+
+1. Run tests
+2. Fix errors
+3. Run typecheck
+4. Run lint
+5. Security review
+6. ตรวจ Migration
+7. ตรวจ Regression
+8. สรุปสิ่งที่ทำ
+9. แสดงไฟล์ที่เปลี่ยน
+10. STOP
+
+ห้ามเริ่ม Phase ถัดไปจนกว่าผู้ใช้จะพิมพ์:
+
+```text
+NEXT PHASE
+```
+
+---
+
+### 3. Technology Stack
+
+Frontend:
+
+```text
+React
+TypeScript
+Responsive UI
+Mobile-first
+```
+
+Backend:
+
+```text
+Cloudflare Workers
+```
+
+Database:
+
+```text
+Cloudflare D1
+SQLite compatible
+```
+
+Storage:
+
+```text
+Cloudflare R2
+```
+
+Version Control:
+
+```text
+GitHub
+```
+
+Development:
+
+```text
+Claude Code
+```
+
+Domain:
+
+```text
+Custom Domain
+```
+
+Integrations:
+
+```text
+LINE Official Account
+LINE Messaging API
+GA4
+Meta Pixel
+Meta Conversions API
+Google Search Console
+```
+
+---
+
+### 4. Architecture
+
+ใช้ Architecture:
+
+```text
+Frontend
+   ↓
+API
+   ↓
+Authentication / Authorization
+   ↓
+Controller
+   ↓
+Service Layer
+   ↓
+Repository Layer
+   ↓
+Cloudflare D1
+```
+
+ไฟล์:
+
+```text
+Frontend
+   ↓
+Upload API
+   ↓
+Cloudflare R2
+```
+
+Backend เป็น Source of Truth สำหรับ Business Logic
+
+D1 เป็น Source of Truth สำหรับ:
+
+* Booking
+* Payment
+* Revenue
+* Inventory
+* Food Capacity
+
+Search Index เป็น Optimization เท่านั้น
+
+ห้ามใช้ Search Index เป็น Source of Truth
+
+---
+
+### 5. Languages
+
+รองรับ 3 ภาษา:
+
+```text
+th
+en
+zh-CN
+```
+
+Default:
+
+```text
+th
+```
+
+Routes:
+
+```text
+/th/
+/en/
+/zh-cn/
+```
+
+Main menu:
+
+```text
+Home
+Gallery
+จองที่พัก
+ประวัติความเป็นมา
+```
+
+Admin UI รองรับ 3 ภาษาเช่นกัน
+
+---
+
+### 6. Public Website
+
+สร้าง:
+
+```text
+Home
+Gallery
+Booking
+History
+Accommodation Detail
+Food
+Search
+```
+
+Routes:
+
+```text
+/th/
+/th/gallery
+/th/booking
+/th/history
+
+/en/
+/en/gallery
+/en/booking
+/en/history
+
+/zh-cn/
+/zh-cn/gallery
+/zh-cn/booking
+/zh-cn/history
+```
+
+---
+
+### 7. Header
+
+Desktop:
+
+```text
+Logo
+Home
+Gallery
+จองที่พัก
+ประวัติความเป็นมา
+Language
+```
+
+Mobile:
+
+```text
+Logo
+Hamburger
+```
+
+Logo ต้องโหลดจาก:
+
+```text
+D1 + R2
+```
+
+ห้าม Hard-code Logo
+
+---
+
+### 8. HOME
+
+Home ประกอบด้วย:
+
+```text
+Header
+Hero Slideshow
+Introduction
+Accommodation Highlights
+Gallery Preview
+History Preview
+Food Preview
+Booking CTA
+Location
+Contact
+Footer
+```
+
+ทุก Content ต้อง Dynamic จาก D1/R2
+
+ห้าม Hard-code รูปภาพและ Content สำคัญ
+
+---
+
+### 9. HOME HERO SLIDESHOW
+
+Admin สามารถ:
+
+```text
+Add
+Edit
+Delete
+Reorder
+Publish
+Unpublish
+Schedule
+```
+
+แต่ละ Slide:
+
+```text
+Desktop Image
+Mobile Image
+Title
+Subtitle
+Description
+Button 1
+Button 2
+Overlay
+Overlay Opacity
+Position
+Start Date
+End Date
+Status
+```
+
+รองรับ:
+
+```text
+TH
+EN
+ZH-CN
+```
+
+สถานะ:
+
+```text
+DRAFT
+PUBLISHED
+SCHEDULED
+EXPIRED
+INACTIVE
+```
+
+Public:
+
+* Auto Play
+* 5 seconds
+* Prev/Next
+* Swipe
+* Keyboard
+* Pause
+* Reduced Motion
+* Lazy Load
+* Preload First Image
+
+---
+
+### 10. GALLERY
+
+Gallery ต้องเป็นระบบ Dynamic CMS
+
+Admin Upload:
+
+```text
+Admin
+ ↓
+R2
+ ↓
+D1 Metadata
+ ↓
+Preview
+ ↓
+Publish
+ ↓
+Public Gallery
+```
+
+Public Gallery:
+
+```text
+Gallery Title
+Category Filter
+Modern Image Grid
+Masonry / Justified / Bento
+Lightbox
+```
+
+Responsive:
+
+```text
+Mobile: 1–2 columns
+Tablet: 2–3 columns
+Desktop: 3–5 columns
+```
+
+ต้องมี:
+
+* Lazy Loading
+* Responsive Images
+* WebP/AVIF หากรองรับ
+* Thumbnail
+* Lightbox
+* Caption
+* Alt Text
+* Prev/Next
+* Mobile Swipe
+* Keyboard
+* Skeleton
+* Empty State
+
+Admin สามารถ:
+
+```text
+Upload
+Edit
+Delete
+Reorder
+Publish
+Unpublish
+Create Category
+Edit Category
+Delete Category
+```
+
+Database:
+
+```text
+gallery_categories
+gallery_category_translations
+gallery_images
+gallery_image_translations
+```
+
+เฉพาะ `PUBLISHED` เท่านั้นที่แสดง Public
+
+---
+
+### 11. HISTORY — ประวัติความเป็นมา
+
+Public:
+
+```text
+/th/history
+/en/history
+/zh-cn/history
+```
+
+Admin:
+
+```text
+Content
+ └ History
+```
+
+สามารถเพิ่ม:
+
+```text
+Hero
+Introduction
+Story
+Image + Text
+Timeline
+Gallery
+Quote
+CTA
+```
+
+Admin สามารถ:
+
+```text
+เพิ่ม
+แก้ไข
+ลบ
+เรียงลำดับ
+Publish
+Unpublish
+Upload Image
+```
+
+รองรับ:
+
+```text
+TH
+EN
+ZH-CN
+```
+
+Timeline:
+
+```text
+Year
+Title
+Description
+Image
+Sort Order
+Status
+```
+
+Database:
+
+```text
+history_sections
+history_translations
+history_timeline
+history_timeline_translations
+```
+
+ห้าม Hard-code History Content
+
+---
+
+### 12. BOOKING
+
+เมนู:
+
+```text
+จองที่พัก
+Booking
+立即预订
+```
+
+ระบบต้องรองรับ:
+
+### 1. บ้านพัก
+
+แต่ละบ้านเป็น Inventory แยกกัน
+
+ตัวอย่าง:
+
+```text
+House 01 — บ้านซากุระ
+House 02 — บ้านชมดาว
+```
+
+ลูกค้าต้องเลือกบ้านที่ต้องการโดยตรง
+
+ข้อมูล:
+
+```text
+Unit ID
+Name
+Description
+Price
+Capacity
+Status
+Amenities
+Images
+Cover
+SEO
+Translations
+```
+
+---
+
+### 2. VIP Tent
+
+แต่ละ VIP เป็น Inventory แยกกัน
+
+ตัวอย่าง:
+
+```text
+VIP-01
+VIP-02
+VIP-03
+```
+
+แต่ละ VIP มี:
+
+```text
+ราคา
+ความจุ
+รายละเอียด
+สิ่งอำนวยความสะดวก
+รูปภาพ
+สถานะ
+SEO
+Translation
+```
+
+---
+
+### 3. นำเต็นท์มาเอง
+
+ใช้ Shared Capacity
+
+ตัวอย่าง:
+
+```text
+Maximum = 30 tents/night
+```
+
+ถ้ามี:
+
+```text
+A = 3
+B = 5
+```
+
+เหลือ:
+
+```text
+22
+```
+
+ต้องตรวจ Capacity ทุกคืน
+
+---
+
+### 13. BOOKING FLOW
+
+Flow:
+
+```text
+1. Language
+2. Check-in
+3. Check-out
+4. Accommodation Type
+5. Select House/VIP หรือ Own Tent
+6. Guests
+7. Tent Quantity
+8. Food
+9. Customer Information
+10. Review
+11. Confirm
+12. Booking ID
+13. Payment Account
+14. QR
+15. Upload Slip
+16. Verification
+17. LINE Notification
+```
+
+---
+
+### 14. BOOKING ID
+
+รูปแบบ:
+
+```text
+BK-YYYYMMDD-XXXX
+```
+
+ต้อง Unique
+
+Public Lookup ต้องใช้:
+
+```text
+Booking ID
++
+Phone
+```
+
+ห้ามเปิดข้อมูล Booking ด้วย Booking ID อย่างเดียว
+
+---
+
+### 15. MULTI-NIGHT
+
+```text
+nights = checkout - checkin
+```
+
+ตัวอย่าง:
+
+```text
+10–13 Jan = 3 nights
+```
+
+ตรวจ Availability ทุกคืน:
+
+```text
+10
+11
+12
+```
+
+Check-out ไม่ถือเป็น Stay Night
+
+---
+
+### 16. DOUBLE BOOKING
+
+ห้ามเกิด Double Booking
+
+ต้องป้องกันทั้ง:
+
+```text
+Application
++
+Database
+```
+
+ใช้ Transaction / Constraint / Atomic Operation ตามความเหมาะสม
+
+ห้ามพึ่ง Frontend อย่างเดียว
+
+---
+
+### 17. PRICE SNAPSHOT
+
+เมื่อ Booking ถูกสร้าง ต้องเก็บ Snapshot:
+
+```text
+unit_id
+unit_name_snapshot
+unit_type
+price_snapshot
+pricing_type
+quantity
+number_of_nights
+adult_count
+child_count
+subtotal
+discount
+total
+```
+
+หาก Admin เปลี่ยนราคาในอนาคต:
+
+Booking เก่าต้องไม่เปลี่ยนราคา
+
+---
+
+### 18. CAMPING PRICE
+
+Own Tent:
+
+```text
+Price per adult/person/night
+```
+
+Children:
+
+```text
+Under 12 = Free
+```
+
+ตัวอย่าง:
+
+```text
+2 tents
+5 adults
+2 children
+2 nights
+250 THB
+```
+
+Total:
+
+```text
+5 × 2 × 250
+= 2,500 THB
+```
+
+จำนวนเต็นท์ใช้สำหรับ Capacity
+
+---
+
+### 19. FOOD
+
+Food Module เชื่อมกับ Booking
+
+Categories:
+
+```text
+Breakfast
+Dinner
+BBQ
+Other
+```
+
+อนาคต:
+
+```text
+Lunch
+Drinks
+Snack
+```
+
+รองรับ:
+
+```text
+Included Meal
+Extra Food
+```
+
+---
+
+### 20. INCLUDED MEALS
+
+ตัวอย่าง:
+
+```text
+House Sakura
+Breakfast included
+2 persons/night
+```
+
+ถ้ามี 4 คน:
+
+```text
+2 Free
+2 Extra Charge
+```
+
+ห้ามคิดเงินซ้ำ
+
+ต้อง Snapshot Included Meal ตอน Booking
+
+---
+
+### 21. EXTRA FOOD
+
+ตัวอย่าง:
+
+```text
+Breakfast A = 150/person
+Breakfast B = 180/person
+Dinner A = 250/person
+BBQ = 399/set
+```
+
+Pricing:
+
+```text
+PER_PERSON
+PER_SET
+PER_ITEM
+PER_NIGHT
+```
+
+Child Pricing:
+
+```text
+FREE
+FULL
+HALF
+SPECIAL_PRICE
+```
+
+---
+
+### 22. FOOD CAPACITY
+
+รองรับ Daily Capacity
+
+ตัวอย่าง:
+
+```text
+Dinner
+Maximum = 50
+Used = 48
+New Request = 5
+```
+
+ต้อง Reject หรือแจ้งจำนวนที่เหลือ
+
+ห้ามเกิน Capacity
+
+---
+
+### 23. FOOD DEADLINE
+
+Admin ตั้ง Deadline ได้
+
+เช่น:
+
+```text
+Dinner = 1 day ahead
+Breakfast = before 18:00 previous day
+```
+
+หลัง Cutoff:
+
+```text
+Unavailable
+```
+
+---
+
+### 24. FOOD ORDER STATUS
+
+```text
+PENDING
+CONFIRMED
+PREPARING
+READY
+SERVED
+CANCELLED
+```
+
+---
+
+### 25. PAYMENT
+
+Admin สามารถตั้งบัญชีรับเงินหลายบัญชี:
+
+```text
+payment_account_id
+bank_name
+account_name
+account_number
+promptpay_number
+qr_image
+status
+is_primary
+```
+
+Booking ต้อง Snapshot:
+
+```text
+bank_name_snapshot
+account_name_snapshot
+account_number_snapshot
+promptpay_number_snapshot
+payment_qr_snapshot
+```
+
+---
+
+### 26. PAYMENT STATUS
+
+```text
+UNPAID
+PENDING_VERIFICATION
+VERIFIED
+PAID
+REJECTED
+REFUNDED
+```
+
+---
+
+### 27. SLIP VERIFICATION
+
+รองรับ:
+
+```text
+Manual Verification
+Auto Verification
+```
+
+Auto Verification ต้องใช้ Transaction/Slip Verification Service จริง
+
+ห้ามใช้ OCR อย่างเดียวในการยืนยันเงิน
+
+ตรวจ:
+
+```text
+Amount
+Date
+Time
+Sender Bank
+Receiver Bank
+Reference
+Destination Account
+Duplicate Slip
+Duplicate Transaction
+```
+
+Slip อยู่ใน Private R2
+
+---
+
+### 28. ADMIN LOGIN
+
+สร้าง:
+
+```text
+/admin/login
+```
+
+หรือ:
+
+```text
+/th/admin/login
+/en/admin/login
+/zh-cn/admin/login
+```
+
+Login:
+
+```text
+Email/Username
+Password
+Remember Me
+Show Password
+Forgot Password
+```
+
+ใช้:
+
+```text
+Secure Session
+HttpOnly Cookie
+Secure
+SameSite
+Expiration
+Session Rotation
+Session Revocation
+```
+
+Password ต้อง Hash
+
+ห้ามเก็บ Password Plain Text
+
+---
+
+### 29. ADMIN ROLES
+
+```text
+SUPER_ADMIN
+MANAGER
+BOOKING_ADMIN
+FINANCE_ADMIN
+CONTENT_ADMIN
+VIEWER
+```
+
+---
+
+### 30. SUPER_ADMIN USER MANAGEMENT
+
+SUPER_ADMIN สามารถ:
+
+```text
+View User
+Create User
+Edit User
+Change Role
+Change Permission
+Reset Password
+Suspend User
+Activate User
+Force Logout
+Delete User
+Restore User
+```
+
+Admin Page:
+
+```text
+/admin/users
+```
+
+---
+
+### 31. USER MANAGEMENT PERMISSIONS
+
+```text
+users.view
+users.create
+users.edit
+users.delete
+users.manage_roles
+users.manage_permissions
+users.reset_password
+users.suspend
+users.force_logout
+users.restore
+```
+
+---
+
+### 32. SOFT DELETE USER
+
+ห้าม Hard Delete User โดย Default
+
+ใช้:
+
+```text
+deleted_at
+deleted_by
+status = DELETED
+```
+
+เมื่อ Delete:
+
+```text
+Login ไม่ได้
+Session ถูก Revoke
+ไม่แสดงใน Active User
+Booking ไม่ถูกลบ
+Payment ไม่ถูกลบ
+Food Order ไม่ถูกลบ
+Audit Log ไม่ถูกลบ
+```
+
+สามารถ Restore ได้
+
+---
+
+### 33. SUPER_ADMIN SECURITY RULES
+
+ห้าม:
+
+```text
+SUPER_ADMIN ลบตัวเอง
+```
+
+ห้าม:
+
+```text
+ลบ SUPER_ADMIN คนสุดท้าย
+```
+
+ห้าม:
+
+```text
+ลด Role ของ SUPER_ADMIN คนสุดท้าย
+```
+
+ต้องมี SUPER_ADMIN อย่างน้อย 1 คนเสมอ
+
+---
+
+### 34. AUTHORIZATION
+
+สร้าง:
+
+```text
+AuthorizationService
+UserManagementService
+```
+
+ห้ามกระจาย:
+
+```text
+if role === SUPER_ADMIN
+```
+
+ไปทั่ว Code
+
+ใช้:
+
+```text
+authorization.requirePermission(
+    currentUser,
+    "users.delete"
+)
+```
+
+Backend เป็น Authority
+
+Frontend ซ่อน Menu ได้ แต่ไม่ใช่ Security
+
+---
+
+### 35. ADMIN SIDEBAR
+
+```text
+Dashboard
+
+การจอง
+ปฏิทิน
+
+ที่พัก
+ ├ บ้านพัก
+ ├ VIP Tent
+ └ Camping
+
+อาหาร
+ ├ รายการอาหาร
+ ├ คำสั่งอาหาร
+ └ รายงานครัว
+
+การเงิน
+ ├ Payment
+ ├ Slip
+ └ Receiving Accounts
+
+รายงาน
+
+เว็บไซต์
+ ├ Home
+ ├ Gallery
+ ├ ประวัติความเป็นมา
+ └ SEO
+
+การตลาด
+ ├ GA4
+ ├ Meta Pixel
+ └ CAPI
+
+ตั้งค่า
+ ├ Website
+ ├ Branding
+ ├ Theme
+ ├ Booking CTA
+ ├ LINE
+ └ Privacy
+
+ผู้ดูแลระบบ
+ ├ Users
+ ├ Roles
+ ├ Permissions
+ └ Security Events
+
+Audit Logs
+```
+
+แสดง Menu ตาม Permission
+
+---
+
+### 36. BRANDING
+
+Admin สามารถเปลี่ยน:
+
+```text
+Main Logo
+Mobile Logo
+Favicon
+Login Logo
+```
+
+โดยไม่ต้อง Deploy ใหม่
+
+เก็บไฟล์ใน:
+
+```text
+R2
+```
+
+Metadata ใน:
+
+```text
+D1
+```
+
+---
+
+### 37. WEBSITE CUSTOMIZATION
+
+Admin สามารถเปลี่ยน:
+
+```text
+Website Name
+Tagline
+Colors
+Fonts
+Typography
+Buttons
+Cards
+Inputs
+Radius
+Shadows
+Header
+Footer
+Layout
+```
+
+ใช้ CSS Variables:
+
+```text
+--color-primary
+--color-secondary
+--color-accent
+--color-background
+--color-surface
+--color-text
+--color-heading
+--color-muted
+--color-border
+--color-success
+--color-warning
+--color-error
+--color-info
+--font-body
+--font-heading
+--font-button
+--radius-sm
+--radius-md
+--radius-lg
+--radius-xl
+--shadow-sm
+--shadow-md
+--shadow-lg
+```
+
+---
+
+### 38. THEME PRESETS
+
+รองรับ:
+
+```text
+Default
+Nature
+Forest
+Mountain
+Sakura
+Luxury
+Minimal
+Warm
+Modern
+Dark
+```
+
+ต้อง Preview ก่อน Publish
+
+รองรับ:
+
+```text
+Draft
+Preview
+Publish
+Rollback
+Version History
+```
+
+---
+
+### 39. FLOATING BOOKING CTA
+
+ทุก Public Page ให้มี Floating:
+
+```text
+จองที่พัก
+Book Now
+立即预订
+```
+
+ลอยตามการ Scroll
+
+Desktop:
+
+```text
+Bottom Right
+```
+
+Mobile:
+
+```text
+Bottom
+```
+
+ต้องไม่บัง:
+
+```text
+Cookie Banner
+LINE Button
+Form
+Important Content
+```
+
+รองรับ Safe Area สำหรับ iPhone
+
+Admin สามารถตั้ง:
+
+```text
+Enabled
+Label
+Icon
+Position
+Size
+Color
+Animation
+Mobile
+Desktop
+Closeable
+Pages
+```
+
+Default:
+
+```text
+คลิก → /{lang}/booking
+```
+
+---
+
+### 40. SEARCH
+
+Global Search:
+
+```text
+ค้นหาที่พัก อาหาร หรือกิจกรรม...
+```
+
+ค้นหา:
+
+```text
+House
+VIP
+Camping
+Food
+Activity
+Promotion
+FAQ
+History
+Gallery
+Article
+```
+
+รองรับ TH/EN/ZH-CN
+
+ถ้ามีวันที่:
+
+```text
+Search
+ ↓
+Availability Service
+```
+
+ต้องตรวจ Availability จริง
+
+---
+
+### 41. SEARCH INDEX
+
+```text
+search_index
+```
+
+เป็น Optimization เท่านั้น
+
+ห้ามใช้แทน D1 Source of Truth
+
+สามารถเปลี่ยนภายหลังเป็น:
+
+```text
+Meilisearch
+Typesense
+Algolia
+```
+
+โดยไม่ต้องแก้ Business Logic
+
+---
+
+### 42. SEO
+
+ทุก Public Page รองรับ:
+
+```text
+SEO Title
+Meta Description
+Canonical
+OG Title
+OG Description
+OG Image
+Robots
+Schema
+```
+
+รองรับ 3 ภาษา
+
+สร้าง:
+
+```text
+/sitemap.xml
+/robots.txt
+```
+
+Exclude:
+
+```text
+/admin
+/api
+/customer
+/payment
+private booking
+```
+
+รองรับ:
+
+```text
+hreflang
+canonical
+structured data
+```
+
+---
+
+### 43. GA4
+
+Admin ตั้ง:
+
+```text
+GA4 Measurement ID
+Enable/Disable
+```
+
+Events:
+
+```text
+page_view
+view_item
+search
+select_item
+begin_checkout
+add_payment_info
+purchase
+generate_lead
+view_accommodation
+select_accommodation
+begin_booking
+select_food
+payment_submitted
+booking_confirmed
+view_food
+add_food
+```
+
+Purchase:
+
+```text
+transaction_id = Booking ID
+value = total
+currency = THB
+```
+
+ห้ามส่ง:
+
+```text
+Name
+Phone
+Bank Account
+Slip
+Sensitive PII
+```
+
+---
+
+### 44. META PIXEL
+
+Admin ตั้ง:
+
+```text
+Pixel ID
+Enabled
+```
+
+Events:
+
+```text
+PageView
+ViewContent
+Search
+InitiateCheckout
+AddToCart
+AddPaymentInfo
+Purchase
+Lead
+Contact
+```
+
+---
+
+### 45. META CAPI
+
+ใช้ Server-side
+
+```text
+Customer
+ ↓
+Website
+ ↓
+Cloudflare Worker
+ ↓
+Meta CAPI
+```
+
+Secrets:
+
+```text
+META_PIXEL_ID
+META_CAPI_ACCESS_TOKEN
+META_TEST_EVENT_CODE
+```
+
+เก็บใน Cloudflare Secrets
+
+ห้าม:
+
+```text
+Git
+Frontend
+D1
+Logs
+```
+
+CAPI + Pixel ต้องใช้ `event_id` เดียวกันเพื่อ Deduplication
+
+Purchase ต้องเกิดเฉพาะ Payment State ที่ระบบกำหนดว่า Confirmed แล้ว
+
+---
+
+### 46. COOKIE CONSENT
+
+Categories:
+
+```text
+Necessary
+Analytics
+Marketing
+```
+
+Buttons:
+
+```text
+ยอมรับทั้งหมด
+ตั้งค่าคุกกี้
+ปฏิเสธที่ไม่จำเป็น
+```
+
+Analytics / Marketing ต้องเคารพ Consent Policy
+
+---
+
+### 47. LINE
+
+รองรับ:
+
+```text
+LINE Official Account
+LINE Messaging API
+```
+
+Tomorrow Check-in:
+
+Default:
+
+```text
+1 day before
+18:00
+```
+
+Admin ปรับได้
+
+Message:
+
+```text
+Booking ID
+Customer
+Check-in
+Check-out
+House/VIP
+Camping
+Guests
+Food
+Payment Status
+```
+
+รองรับ TH/EN/ZH-CN
+
+ต้องมี:
+
+```text
+Idempotency
+Retry
+Notification Log
+```
+
+---
+
+### 48. ADMIN DASHBOARD
+
+Dashboard:
+
+```text
+Today Check-in
+Today Check-out
+Bookings
+Revenue
+Pending Payment
+Available Houses
+Available VIP
+Camping Used
+Camping Remaining
+Food Revenue
+Total Revenue
+```
+
+Analytics:
+
+```text
+Visitors
+Page Views
+Searches
+Accommodation Views
+Booking Started
+Checkout Started
+Payment Submitted
+Confirmed Booking
+Revenue
+Food Orders
+```
+
+Analytics ไม่ใช่ Financial Source of Truth
+
+---
+
+### 49. BOOKING CALENDAR
+
+รองรับ:
+
+```text
+Day
+Week
+Month
+Custom
+```
+
+แสดง:
+
+```text
+Booking ID
+Customer
+House/VIP
+Camping
+Guests
+Check-in
+Check-out
+Payment Status
+Revenue
+```
+
+Multi-night ต้องแสดงทุก Stay Date
+
+---
+
+### 50. REPORTS
+
+รายงาน:
+
+```text
+Booking
+Revenue
+Accommodation
+Camping
+Food
+Kitchen
+Payment
+```
+
+ช่วงเวลา:
+
+```text
+Daily
+Monthly
+Yearly
+Custom
+```
+
+Export:
+
+```text
+Excel
+PDF
+```
+
+---
+
+### 51. AUDIT LOG
+
+ทุก Important Admin Action ต้อง Audit
+
+ตัวอย่าง:
+
+```text
+Price Change
+Food Change
+Booking Change
+Payment Verification
+User Change
+Role Change
+Permission Change
+Logo Change
+Theme Change
+SEO Change
+Gallery Change
+History Change
+Home Change
+Marketing Change
+```
+
+ข้อมูล:
+
+```text
+user_id
+action
+module
+record_id
+old_value
+new_value
+IP
+User Agent
+timestamp
+```
+
+ห้าม Log:
+
+```text
+Password
+Token
+Secret
+CAPI Token
+```
+
+---
+
+### 52. DATABASE TABLES
+
+Core:
+
+```text
+users
+roles
+permissions
+role_permissions
+user_roles
+user_permissions
+sessions
+password_reset_tokens
+security_events
+
+accommodation_units
+accommodation_translations
+accommodation_images
+accommodation_amenities
+
+camping_settings
+
+bookings
+booking_items
+booking_guests
+booking_price_snapshots
+
+pricing_settings
+price_history
+
+payments
+slip_verifications
+
+receiving_accounts
+payment_account_snapshots
+
+notification_logs
+audit_logs
+```
+
+Food:
+
+```text
+food_categories
+food_options
+food_option_translations
+food_images
+included_meals
+booking_food_items
+booking_included_meals
+food_daily_capacity
+food_orders
+```
+
+Search:
+
+```text
+search_index
+search_history
+search_analytics
+```
+
+Branding:
+
+```text
+branding_settings
+```
+
+Theme:
+
+```text
+site_settings
+theme_settings
+theme_versions
+font_settings
+```
+
+Marketing:
+
+```text
+marketing_settings
+```
+
+SEO:
+
+```text
+seo_settings
+seo_redirects
+```
+
+Content:
+
+```text
+home_sections
+home_section_translations
+home_slides
+home_slide_translations
+home_versions
+
+gallery_categories
+gallery_category_translations
+gallery_images
+gallery_image_translations
+
+history_sections
+history_translations
+history_timeline
+history_timeline_translations
+```
+
+Booking CTA:
+
+```text
+booking_cta_settings
+```
+
+---
+
+### 53. DATABASE RULES
+
+สร้าง Index สำหรับ:
+
+```text
+booking_id
+check_in
+check_out
+unit_id
+booking_status
+payment_status
+customer_phone
+
+search_index
+entity_type
+entity_id
+language_code
+is_active
+
+gallery
+category
+status
+sort_order
+
+home_slides
+status
+start_at
+end_at
+sort_order
+```
+
+สร้าง Migration ทุกครั้งที่ Schema เปลี่ยน
+
+ห้ามแก้ Production Database โดยตรงโดยไม่มี Migration
+
+---
+
+### 54. R2
+
+R2 ใช้เก็บ:
+
+```text
+Accommodation Images
+Food Images
+Logo
+Favicon
+Fonts
+Home Slides
+Gallery
+History
+Payment Slips
+```
+
+Public Image และ Private File ต้องแยก Access Policy
+
+Payment Slip ต้อง Private
+
+---
+
+### 55. IMAGE SECURITY
+
+ตรวจ:
+
+```text
+MIME Type
+File Extension
+File Size
+Image Dimensions
+```
+
+ป้องกัน:
+
+```text
+Malicious Upload
+Path Traversal
+Unsafe SVG
+Executable File
+XSS
+```
+
+แนะนำ:
+
+```text
+JPG
+JPEG
+PNG
+WEBP
+AVIF
+```
+
+ตาม Browser Support
+
+---
+
+### 56. IMAGE SEO
+
+ทุก Public Image รองรับ:
+
+```text
+Alt
+Title
+Caption
+```
+
+รองรับ TH/EN/ZH-CN
+
+---
+
+### 57. ACCESSIBILITY
+
+ต้องรองรับ:
+
+```text
+Keyboard
+Screen Reader
+Focus State
+ARIA
+Contrast
+Reduced Motion
+Alt Text
+Semantic HTML
+```
+
+---
+
+### 58. SECURITY
+
+ต้องป้องกัน:
+
+```text
+SQL Injection
+XSS
+CSRF
+IDOR
+Authentication Bypass
+Authorization Bypass
+Privilege Escalation
+Session Hijacking
+Brute Force
+Rate Limit Abuse
+Mass Assignment
+File Upload Attack
+Booking Enumeration
+PII Exposure
+```
+
+Backend เป็น Security Authority
+
+---
+
+### 59. API DESIGN
+
+Public:
+
+```text
+GET /api/public/site
+GET /api/public/home
+GET /api/public/home/slides
+GET /api/public/gallery
+GET /api/public/gallery/categories
+GET /api/public/history
+GET /api/public/history/timeline
+GET /api/search
+```
+
+Auth:
+
+```text
+POST /api/auth/login
+POST /api/auth/logout
+GET /api/auth/me
+POST /api/auth/refresh
+```
+
+Admin:
+
+```text
+/api/admin/*
+```
+
+ทุก Protected API:
+
+```text
+Authentication
+→ Authorization
+→ Validation
+→ Service
+→ Repository
+→ Database
+```
+
+---
+
+### 60. PHASE DEVELOPMENT
+
+#### PHASE 1 — Project Setup
+
+สร้าง:
+
+```text
+React
+TypeScript
+Cloudflare Workers
+D1
+R2
+GitHub
+i18n
+Responsive Layout
+Header
+Footer
+```
+
+STOP
+
+---
+
+#### PHASE 2 — Database
+
+สร้าง Migration:
+
+```text
+Core
+Booking
+Food
+Payment
+Users
+Auth
+Branding
+Theme
+SEO
+Marketing
+Home
+Gallery
+History
+Search
+```
+
+Seed Data สำหรับ Development เท่านั้น
+
+STOP
+
+---
+
+#### PHASE 3 — Authentication
+
+สร้าง:
+
+```text
+Login
+Logout
+Session
+Forgot Password
+RBAC
+Authorization
+User Management
+SUPER_ADMIN
+Soft Delete
+Security Events
+```
+
+STOP
+
+---
+
+#### PHASE 4 — Accommodation
+
+สร้าง:
+
+```text
+House
+VIP
+Camping
+Images
+Amenities
+Translations
+Availability
+```
+
+STOP
+
+---
+
+#### PHASE 5 — Booking
+
+สร้าง:
+
+```text
+Booking Flow
+Date
+Guests
+Inventory
+Pricing
+Food
+Snapshots
+Booking ID
+Confirmation
+```
+
+STOP
+
+---
+
+#### PHASE 6 — Camping Capacity
+
+สร้าง:
+
+```text
+Daily Capacity
+Multi-night Capacity
+Tent Quantity
+Race Protection
+```
+
+STOP
+
+---
+
+#### PHASE 7 — Payment
+
+สร้าง:
+
+```text
+Receiving Account
+QR
+Payment
+Snapshot
+Status
+```
+
+STOP
+
+---
+
+#### PHASE 8 — Slip Verification
+
+สร้าง:
+
+```text
+Upload
+Private R2
+Manual Verification
+Auto Verification Integration
+Duplicate Protection
+```
+
+STOP
+
+---
+
+#### PHASE 9 — Admin Dashboard
+
+สร้าง:
+
+```text
+Dashboard
+Calendar
+Bookings
+Accommodation
+Food
+Payments
+Users
+Branding
+Theme
+Marketing
+SEO
+Home
+Gallery
+History
+```
+
+STOP
+
+---
+
+#### PHASE 10 — Reports
+
+สร้าง:
+
+```text
+Revenue
+Booking
+Accommodation
+Camping
+Food
+Kitchen
+Excel
+PDF
+```
+
+STOP
+
+---
+
+#### PHASE 11 — LINE
+
+สร้าง:
+
+```text
+LINE OA
+Messaging API
+Check-in Notification
+Food Notification
+Payment Notification
+Retry
+Idempotency
+Logs
+```
+
+STOP
+
+---
+
+#### PHASE 12 — R2 & Images
+
+สร้าง:
+
+```text
+Accommodation Images
+Food Images
+Logo
+Fonts
+Home
+Gallery
+History
+Compression
+Responsive Images
+Access Control
+```
+
+STOP
+
+---
+
+#### PHASE 13 — i18n & SEO
+
+สร้าง:
+
+```text
+TH
+EN
+ZH-CN
+hreflang
+Canonical
+Metadata
+OG
+Sitemap
+Robots
+Schema
+Search Console
+```
+
+STOP
+
+---
+
+#### PHASE 14 — Security & Marketing
+
+สร้าง:
+
+```text
+GA4
+Meta Pixel
+CAPI
+Cookie Consent
+Rate Limit
+Security
+Audit
+Accessibility
+```
+
+STOP
+
+---
+
+#### PHASE 15 — Testing
+
+ต้อง Test:
+
+```text
+Authentication
+Authorization
+User Management
+Soft Delete
+SUPER_ADMIN Rules
+Booking
+Double Booking
+Camping Capacity
+Multi-night
+Food Capacity
+Price Snapshot
+Payment Snapshot
+Slip
+Search
+i18n
+LINE
+Branding
+Theme
+Home
+Gallery
+History
+Floating Booking CTA
+GA4
+Meta
+SEO
+Security
+Responsive
+Regression
+```
+
+STOP
+
+---
+
+#### PHASE 16 — Production
+
+ตรวจ:
+
+```text
+Cloudflare Workers
+D1
+R2
+Custom Domain
+SSL
+Secrets
+LINE
+GA4
+Meta
+Search Console
+Sitemap
+Robots
+Backup
+Monitoring
+Error Logging
+Security
+Final Smoke Test
+```
+
+เมื่อเสร็จสมบูรณ์ให้รายงาน Production Readiness
+
+---
+
+### 61. CLAUDE CODE QUALITY RULES
+
+ห้าม:
+
+```text
+Hard-coded Price
+Hard-coded Permission
+Hard-coded Logo
+Hard-coded Website Name
+Hard-coded Font
+Hard-coded Theme
+Hard-coded Tracking ID
+Hard-coded Language
+Hard-coded Booking Inventory
+```
+
+ห้ามใส่:
+
+```text
+Secrets
+API Keys
+Passwords
+CAPI Token
+LINE Secret
+```
+
+ใน Git
+
+---
+
+### 62. BUSINESS RULES
+
+ต้องรักษา:
+
+```text
+Booking = Source of Truth
+Payment = Source of Truth
+Revenue = Source of Truth
+Inventory = Source of Truth
+Food Capacity = Source of Truth
+```
+
+ห้าม:
+
+```text
+Booking เกิน Capacity
+Double Booking
+Food เกิน Capacity
+Camping เกิน Capacity
+Price Booking เก่าเปลี่ยน
+Payment Account Booking เก่าเปลี่ยน
+Included Meal Booking เก่าเปลี่ยน
+```
+
+---
+
+### 63. TESTING RULE
+
+หลังแต่ละ Feature:
+
+```text
+Typecheck
+Lint
+Unit Test
+Integration Test
+API Test
+Security Test
+```
+
+ก่อนจบ Phase:
+
+```text
+npm test
+npm run typecheck
+npm run lint
+```
+
+หาก Command แตกต่างจาก Repository ให้ใช้ Command ที่ถูกต้องตาม Project
+
+ห้ามบอกว่า Test ผ่าน ถ้ายังไม่ได้ Run จริง
+
+---
+
+### 64. GIT RULES
+
+ก่อนแก้ไข:
+
+```text
+git status
+```
+
+หลังแก้ไข:
+
+```text
+git diff
+```
+
+ตรวจ:
+
+```text
+git status
+```
+
+ห้ามลบข้อมูลหรือไฟล์สำคัญโดยไม่มีคำสั่ง
+
+ห้ามทำ Destructive Migration โดยไม่แจ้ง
+
+---
+
+### 65. PRODUCTION SAFETY
+
+ก่อน Migration ที่อาจทำลายข้อมูล:
+
+ต้องแจ้ง:
+
+```text
+Migration นี้มีความเสี่ยง...
+```
+
+และเสนอ:
+
+```text
+Backup
+Migration Plan
+Rollback Plan
+```
+
+ห้าม Drop Table Production โดยพลการ
+
+---
+
+### 66. FINAL REQUIREMENT
+
+ระบบสุดท้ายต้องมี:
+
+```text
+PUBLIC WEBSITE
++
+BOOKING SYSTEM
++
+FOOD SYSTEM
++
+PAYMENT SYSTEM
++
+ADMIN LOGIN
++
+RBAC
++
+SUPER_ADMIN USER MANAGEMENT
++
+SOFT DELETE
++
+DASHBOARD
++
+REPORTS
++
+LINE
++
+GALLERY CMS
++
+HISTORY CMS
++
+HOME CMS
++
+BRANDING
++
+THEME CUSTOMIZATION
++
+SEO
++
+GA4
++
+META PIXEL
++
+META CAPI
++
+SEARCH
++
+MULTI-LANGUAGE
++
+SECURITY
++
+AUDIT LOG
++
+RESPONSIVE UI
+```
+
+---
+
+### 67. FIRST COMMAND
+
+เมื่อได้รับ Prompt นี้ครั้งแรก:
+
+อย่าเพิ่งสร้างทุกอย่าง
+
+ให้ทำตามลำดับ:
+
+```text
+1. ตรวจ Repository
+2. ตรวจ Project Structure
+3. ตรวจ Existing Code
+4. ตรวจ package.json
+5. ตรวจ Cloudflare Config
+6. ตรวจ D1 Migration
+7. ตรวจ R2 Config
+8. ตรวจ Git
+9. สร้าง/ปรับ MASTER_SPEC.md
+10. สรุป Architecture
+11. สรุปสิ่งที่จะทำใน PHASE 1
+12. Implement PHASE 1 เท่านั้น
+13. Test
+14. Fix
+15. Security Review
+16. สรุป
+17. STOP
+```
+
+ห้ามข้าม Phase
+
+ห้ามทำ Phase 2 จนกว่าผู้ใช้จะพิมพ์:
+
+```text
+NEXT PHASE
+```
+
+---
+
+### 68. DEFINITION OF DONE
+
+แต่ละ Feature จะถือว่าเสร็จเมื่อ:
+
+```text
+Code เสร็จ
+Database Migration เสร็จ
+API เสร็จ
+UI เสร็จ
+Validation เสร็จ
+Permission เสร็จ
+Security เสร็จ
+Test เสร็จ
+Responsive เสร็จ
+Accessibility เสร็จ
+Documentation เสร็จ
+```
+
+และต้องไม่มี:
+
+```text
+TypeScript Error
+Lint Error
+Failed Test
+Known Security Issue
+```
+
+ที่เกี่ยวข้องกับ Phase นั้น
+
+---
+
+### START
+
+เริ่มจากการตรวจสอบ Repository ปัจจุบัน
+
+จากนั้นสร้างหรืออัปเดต:
+
+```text
+MASTER_SPEC.md
+```
+
+ห้าม Implement ทั้งระบบในครั้งเดียว
+
+เริ่มเฉพาะ:
+
+```text
+PHASE 1
+```
+
+และเมื่อ PHASE 1 เสร็จแล้วให้หยุดรอคำสั่ง:
+
+```text
+NEXT PHASE
+```

@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# Cloudflare local state
+.wrangler/
+worker-configuration.d.ts
+
+# secrets — never commit
+.dev.vars
+.env
+.env.*
+!.env.example
+
+# logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
+
+# one-time admin bootstrap output (contains a password hash)
+bootstrap*.sql

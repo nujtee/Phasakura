@@ -1,0 +1,51 @@
+/*
+ * Design tokens (spec §37).
+ * These are NEUTRAL FALLBACKS only. The published theme from D1 (theme_settings,
+ * Phase 9) overrides every variable at runtime on :root, so the website look is
+ * never hard-coded here.
+ */
+:root {
+  --color-primary: #2f5d50;
+  --color-primary-contrast: #ffffff;
+  --color-secondary: #6b7f5e;
+  --color-accent: #c9785b;
+  --color-background: #fbfaf7;
+  --color-surface: #ffffff;
+  --color-text: #1f2622;
+  --color-heading: #121815;
+  --color-muted: #5b6660;
+  --color-border: #e3e1da;
+  --color-success: #2e7d4f;
+  --color-warning: #a86400;
+  --color-error: #b3261e;
+  --color-info: #2860a8;
+
+  /* System font stacks with Thai and Simplified Chinese coverage. */
+  --font-body: system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-heading: var(--font-body);
+  --font-button: var(--font-body);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --shadow-sm: 0 1px 2px rgb(18 24 21 / 0.06);
+  --shadow-md: 0 4px 12px rgb(18 24 21 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(18 24 21 / 0.12);
+
+  /* Layout tokens */
+  --container-max: 1200px;
+  --gutter: 16px;
+  --header-height: 64px;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--color-primary) 45%, transparent);
+  --transition-fast: 150ms ease;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --gutter: 24px;
+    --header-height: 72px;
+  }
+}

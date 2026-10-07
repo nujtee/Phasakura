@@ -1,0 +1,71 @@
+import { useState, type RefObject } from "react";
+import { SlipStatus, SlipUpload } from "./SlipUpload.tsx";
+import type { PublicBookingDto } from "../../shared/booking-types.ts";
+import { bookingLookupPath } from "../../shared/routes.ts";
+import { useI18n } from "../i18n/I18nProvider.tsx";
+import { Link } from "../router/Router.tsx";
+import { fill } from "../accommodation/UnitCard.tsx";
+import { PaymentInstructions } from "./PaymentInstructions.tsx";
+import { BookingSummary, useDateTimeText } from "./Summary.tsx";
+import { useBookingT } from "./useBookingT.ts";
+
+export function StatusPill({ status }: { status: PublicBookingDto["status"] }) {
+  const bt = useBookingT();
+  return <span className={`status-pill status-pill--${status.toLowerCase()}`}>{bt.statuses[status]}</span>;
+}
+
+/** Shown right after booking: the Booking ID is the thing to keep. */
+export function Confirmation({
+  booking: initial,
+  phone,
+  headingRef,
+  onNewBooking,
+}: {
+  booking: PublicBookingDto;
+  /** The phone the guest just typed — proves ownership for the slip upload. */
+  phone: string;
+  headingRef: RefObject<HTMLHeadingElement | null>;
+  onNewBooking: () => void;
+}) {
+  const [booking, setBooking] = useState(initial);
+  const { locale } = useI18n();
+  const bt = useBookingT();
+  const timeText = useDateTimeText();
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="confirmation">
+      <div className="confirmation__head">
+        <span className="confirmation__check" aria-hidden="true">✓</span>
+        <h1 className="page__title" tabIndex={-1} ref={headingRef}>{bt.doneTitle}</h1>
+      </div>
+
+      <div className="confirmation__code">
+        <p className="confirmation__label">{bt.yourCode}</p>
+        <p className="confirmation__value" translate="no">{booking.bookingCode}</p>
+        <button type="button" className="button button--secondary"
+          onClick={() => navigator.clipboard.writeText(booking.bookingCode).then(() => setCopied(true), () => setCopied(false))}>
+          {copied ? bt.copied : bt.copy}
+        </button>
+        <p className="confirmation__hint">{bt.keepCode}</p>
+      </div>
+
+      <p className="confirmation__status">
+        {bt.status}: <StatusPill status={booking.status} />
+      </p>
+      <SlipStatus booking={booking} />
+      {booking.paymentInstructions ? (
+        <PaymentInstructions payment={booking.paymentInstructions} expiresAt={booking.expiresAt}>
+          <SlipUpload bookingCode={booking.bookingCode} phone={phone} onDone={(r) => setBooking(r.booking)} />
+        </PaymentInstructions>
+      ) : booking.expiresAt && <p className="notice" role="note">{fill(bt.holdUntil, { time: timeText(booking.expiresAt) })}</p>}
+
+      <BookingSummary quote={booking} />
+
+      <div className="flow-nav">
+        <Link to={bookingLookupPath(locale)} className="button button--secondary">{bt.checkBooking}</Link>
+        <button type="button" className="button button--ghost" onClick={onNewBooking}>{bt.newBooking}</button>
+      </div>
+    </div>
+  );
+}

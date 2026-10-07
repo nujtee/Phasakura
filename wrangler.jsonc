@@ -1,0 +1,63 @@
+// Cloudflare Worker configuration.
+// - No secrets in this file. Secrets go to `wrangler secret put <NAME>` (production)
+//   or `.dev.vars` (local, gitignored). See `.dev.vars.example`.
+// - D1 database_id is not a secret; replace the placeholder after `wrangler d1 create`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "phasakura",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-06-01",
+  "observability": {
+    "enabled": true
+  },
+
+  // Single Worker serves the API and the React SPA (ADR-1).
+  // `/api/*` and `/media/*` (public R2 images) always run the Worker first; everything else is served from static
+  // assets and unknown paths fall back to index.html (client-side routing).
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/media/*"]
+  },
+
+  // Every 5 minutes: expire unpaid booking holds and release their inventory.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
+  // Non-secret configuration. `.dev.vars` overrides these locally.
+  "vars": {
+    "APP_ENV": "production",
+    // Canonical https origin used in password reset / invite links, e.g. "https://www.example.com"
+    "APP_BASE_URL": "",
+    "PUBLIC_MEDIA_BASE_URL": "",
+    // Slip verification service ("easyslip" or empty = staff verify every slip).
+    // The API key is a secret: `wrangler secret put SLIP_VERIFICATION_API_KEY` — never here.
+    "SLIP_VERIFY_PROVIDER": ""
+  },
+
+  // D1 — source of truth for bookings, payments, revenue, inventory, food capacity.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "phasakura-db",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // R2 — two buckets with separate access policies (ADR-5).
+  // MEDIA_PUBLIC : logos, favicon, slides, gallery, history, accommodation & food images.
+  // MEDIA_PRIVATE: payment slips and any private file. Never exposed publicly.
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_PUBLIC",
+      "bucket_name": "phasakura-media-public"
+    },
+    {
+      "binding": "MEDIA_PRIVATE",
+      "bucket_name": "phasakura-media-private"
+    }
+  ]
+}

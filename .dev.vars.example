@@ -1,0 +1,21 @@
+# Copy to `.dev.vars` for local development (`.dev.vars` is gitignored).
+# NEVER commit real values. Production values are set with `wrangler secret put <NAME>`.
+
+APP_ENV=development
+
+# Origin used in password reset / invite links (defaults to the request origin)
+APP_BASE_URL=http://localhost:5173
+
+# Optional: public URL of the R2 public bucket (custom domain), e.g. https://media.example.com
+# Leave empty to serve public media through the Worker at /media/* (Phase 12).
+PUBLIC_MEDIA_BASE_URL=
+
+# --- Secrets used in later phases (leave empty until the phase that needs them) ---
+# META_PIXEL_ID=
+# META_CAPI_ACCESS_TOKEN=
+# META_TEST_EVENT_CODE=
+# LINE_CHANNEL_ACCESS_TOKEN=
+# LINE_CHANNEL_SECRET=
+# Slip verification (Phase 8): provider name is plain config; the key is a secret.
+# SLIP_VERIFY_PROVIDER=easyslip
+# SLIP_VERIFICATION_API_KEY=

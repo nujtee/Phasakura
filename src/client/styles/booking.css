@@ -1,0 +1,736 @@
+/* Public booking flow: choose → food → details → review → confirmation. Mobile-first. */
+
+button.button {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+button.button--secondary {
+  border: 1px solid var(--color-border);
+}
+
+.button--ghost {
+  background: transparent;
+  color: var(--color-primary);
+  padding: 0 12px;
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lookup-link {
+  margin: -8px 0 24px;
+  font-size: 0.9375rem;
+}
+
+.unit-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unit-pick .unit-card {
+  flex: 1;
+}
+
+.unit-pick__btn {
+  width: 100%;
+}
+
+/* ---------- Steps ---------- */
+.flow-steps {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  overflow-x: auto;
+}
+
+.flow-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.flow-steps li + li::before {
+  content: "";
+  width: 16px;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.flow-steps__n {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-weight: 600;
+}
+
+.flow-steps .is-current {
+  color: var(--color-heading);
+  font-weight: 600;
+}
+
+.flow-steps .is-current .flow-steps__n,
+.flow-steps .is-done .flow-steps__n {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.flow-stay {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.flow-stay__meta {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.booking-flow .page__title:focus {
+  outline: none;
+}
+
+.flow-layout {
+  display: grid;
+  gap: 24px;
+}
+
+.flow-aside__busy {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+}
+
+@media (min-width: 1024px) {
+  .flow-layout {
+    grid-template-columns: 1fr 360px;
+    align-items: start;
+  }
+
+  .flow-aside {
+    position: sticky;
+    top: calc(var(--header-height) + 16px);
+  }
+}
+
+/* Sticky action bar on mobile so "Continue" is always reachable. */
+.flow-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 24px calc(-1 * var(--gutter)) 0;
+  padding: 12px var(--gutter) calc(12px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
+  border-top: 1px solid var(--color-border);
+  backdrop-filter: blur(6px);
+}
+
+.flow-nav .button--primary {
+  flex: 1;
+  max-width: 420px;
+}
+
+@media (min-width: 1024px) {
+  .flow-nav {
+    position: static;
+    margin-inline: 0;
+    padding-inline: 0;
+    background: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ---------- Summary ---------- */
+.summary {
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.summary__title {
+  font-size: 1.0625rem;
+}
+
+.summary__item {
+  margin: 0 0 4px;
+}
+
+.summary__meta {
+  margin: 0 0 12px;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.summary__lines {
+  margin: 0;
+}
+
+.summary__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.summary__line dt,
+.summary__line dd {
+  margin: 0;
+}
+
+.summary__line dd {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary__line--sub {
+  border-top: 0;
+  padding: 2px 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.summary__line--total {
+  margin-top: 4px;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-heading);
+  border-top-width: 2px;
+}
+
+/* ---------- Food ---------- */
+.food-step__intro {
+  color: var(--color-muted);
+}
+
+.food-included {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface));
+}
+
+.food-included h3 {
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.food-included ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.food-cat {
+  margin-bottom: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.food-cat > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.food-cat__time {
+  font-weight: 400;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.food-cat__desc {
+  margin: 0 16px 8px;
+  color: var(--color-muted);
+  font-size: 0.9375rem;
+}
+
+.food-day {
+  margin: 0;
+  padding: 8px 16px 12px;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.food-day legend {
+  float: left;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 8px;
+  font-weight: 600;
+}
+
+.food-day:disabled .food-option {
+  opacity: 0.5;
+}
+
+.food-day__tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-muted) 12%, var(--color-surface));
+  color: var(--color-muted);
+}
+
+.food-day__tag--ok {
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface));
+  color: var(--color-success);
+}
+
+.food-option {
+  clear: both;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 0;
+}
+
+.food-option__info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.food-option__price,
+.food-option__desc {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.food-option__steppers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stepper__caption {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  margin-right: 4px;
+}
+
+.stepper__btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepper__btn:disabled {
+  color: var(--color-border);
+  cursor: not-allowed;
+}
+
+.stepper__value {
+  min-width: 2ch;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Forms ---------- */
+.flow-form {
+  display: grid;
+  gap: 16px;
+  max-width: 560px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-field label {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.form-field input,
+.form-field textarea {
+  min-height: 44px;
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 1rem; /* ≥16px: no iOS zoom */
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.form-field [aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+}
+
+.field-error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-error);
+}
+
+.review-contact {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.review-contact div {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  gap: 8px;
+}
+
+.review-contact dt {
+  color: var(--color-muted);
+}
+
+.review-contact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.check input {
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  flex: none;
+  accent-color: var(--color-primary);
+}
+
+/* ---------- Confirmation / lookup ---------- */
+.confirmation {
+  max-width: 640px;
+  margin-inline: auto;
+}
+
+.confirmation__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.confirmation__head .page__title {
+  margin: 0;
+}
+
+.confirmation__check {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-success);
+  color: #fff;
+  font-size: 1.5rem;
+  flex: none;
+}
+
+.confirmation__code {
+  margin: 20px 0;
+  padding: 20px;
+  text-align: center;
+  background: var(--color-surface);
+  border: 2px dashed color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  border-radius: var(--radius-lg);
+}
+
+.confirmation__label {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.confirmation__value {
+  margin: 4px 0 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(1.4rem, 6vw, 2rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-heading);
+  overflow-wrap: anywhere;
+}
+
+.confirmation__hint {
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+  color: var(--color-warning);
+}
+
+.status-pill--confirmed,
+.status-pill--checked_in,
+.status-pill--checked_out {
+  background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+  color: var(--color-success);
+}
+
+.status-pill--cancelled,
+.status-pill--expired,
+.status-pill--no_show {
+  background: color-mix(in srgb, var(--color-muted) 14%, var(--color-surface));
+  color: var(--color-muted);
+}
+
+.lookup__form {
+  margin: 16px 0 24px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.lookup__result {
+  max-width: 640px;
+}
+
+.detail__book {
+  width: 100%;
+  margin-top: 12px;
+}
+
+/* Nothing to "continue" on the confirmation page: keep its actions in flow. */
+.confirmation .flow-nav {
+  position: static;
+  margin-inline: 0;
+  padding-inline: 0;
+  background: none;
+  backdrop-filter: none;
+  border-top: 0;
+}
+
+.camping-hint {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
+  font-size: 0.9375rem;
+}
+
+.camping-hint .button {
+  margin-top: 8px;
+}
+
+/* ---------- Payment instructions ---------- */
+.pay {
+  margin: 20px 0;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 2px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  border-radius: var(--radius-lg);
+}
+
+.pay__title {
+  font-size: 1.125rem;
+  margin-bottom: 8px;
+}
+
+.pay__amount {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0;
+}
+
+.pay__amount strong {
+  font-size: 1.5rem;
+  color: var(--color-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.pay__deadline {
+  margin: 4px 0 12px;
+  font-size: 0.875rem;
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.pay__body {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+}
+
+.pay__qr {
+  width: min(220px, 70vw);
+  height: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: #fff;
+}
+
+.pay__details {
+  width: 100%;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.pay__row {
+  display: grid;
+  grid-template-columns: 8.5em 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.pay__row dt {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.pay__row dd {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.pay__value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.pay__copy {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pay__note {
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+@media (min-width: 640px) {
+  .pay__body {
+    grid-template-columns: auto 1fr;
+    justify-items: start;
+    align-items: center;
+  }
+}
+
+/* ---------- Slip upload ---------- */
+.slip {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.slip__title {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.slip__pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.slip__pick:focus-within .button {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.slip__name {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.notice--ok {
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface));
+  color: var(--color-success);
+  font-weight: 600;
+}
