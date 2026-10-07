@@ -51,7 +51,9 @@ describe("GET /api/health", () => {
     const { data } = await body<ApiSuccess<HealthDto>>(res);
     assert.equal(data.status, "ok");
     assert.equal(data.database, "ok");
-    assert.equal(Object.keys(data).sort().join(","), "database,status,time", "exposes no config");
+    assert.equal(Object.keys(data).sort().join(","), "cron,database,schema,status,time", "exposes no config");
+    assert.notEqual(data.schema, "outdated");
+    assert.equal(data.cron, "unknown", "no heartbeat yet is not reported as broken");
   });
 
   it("returns 503 degraded when D1 fails", async () => {

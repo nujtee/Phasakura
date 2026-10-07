@@ -30,6 +30,9 @@
   "src/worker/repositories/media.repository.ts": [
     "root"
   ],
+  "src/worker/repositories/monitoring.repository.ts": [
+    "sql"
+  ],
   "src/worker/repositories/search.repository.ts": [
     "Math.max(1, Math.min(1000, Math.floor(limit)))",
     "conditions"

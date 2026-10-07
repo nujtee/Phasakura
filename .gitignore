@@ -23,5 +23,7 @@ coverage/
 
 # one-time admin bootstrap output (contains a password hash)
 bootstrap*.sql
+# D1 exports (npm run db:backup): personal data — keep encrypted, never commit
+backups/
 # Browser test screenshots / downloads (npm run test:e2e)
 tests/e2e/.output/

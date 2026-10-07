@@ -10,7 +10,7 @@ const RESERVED = /^\/(api|media|assets)(\/|$)/;
 /** A file name at the end of the path: not a page (no app shell for /wp-login.php or /x.png). */
 const FILE_LIKE = /\/[^/]*\.[A-Za-z0-9]{1,8}$/;
 
-function log(message: string, error: unknown) {
+function logToConsole(message: string, error: unknown) {
   console.error(JSON.stringify({ level: "error", message, error: String(error).slice(0, 300) }));
 }
 
@@ -48,6 +48,11 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
     const head = request.method === "HEAD";
     if (request.method !== "GET" && !head) return text(405, "Method not allowed", false, { Allow: "GET, HEAD", "Cache-Control": "no-store" });
     const s = servicesFor(request, env, url);
+    // Console (Workers Observability) + the owner's error log (System status).
+    const log = (message: string, error: unknown) => {
+      logToConsole(message, error);
+      return s.monitoring.recordError({ source: "PAGE", error, method: request.method, path, context: message });
+    };
     const production = env.APP_ENV === "production";
     const noindex: Record<string, string> = { "X-Robots-Tag": "noindex, nofollow" };
 
@@ -66,7 +71,7 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
         return text(404, "Not found", head, noindex);
       }
     } catch (error) {
-      log("seo_file_failed", error);
+      await log("seo_file_failed", error);
       return text(503, "Temporarily unavailable", head, { "Cache-Control": "no-store", "Retry-After": "60" });
     }
 
@@ -76,7 +81,7 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
         const r = await s.seo.redirectFor(path);
         if (r) return redirect(r.status, r.to, url.search, head);
       } catch (error) {
-        log("seo_redirect_failed", error);
+        await log("seo_redirect_failed", error);
       }
     }
 
@@ -91,7 +96,7 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
     }
     if (FILE_LIKE.test(path)) return text(404, "Not found", head, noindex);
 
-    const shell = await template(env, url).catch((error: unknown) => { log("app_shell_failed", error); return null; });
+    const shell = await template(env, url).catch(async (error: unknown) => { await log("app_shell_failed", error); return null; });
     if (shell === null) return env.ASSETS.fetch(request);
 
     if (route.kind === "admin") {
@@ -117,7 +122,7 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
         ...(indexable ? {} : noindex),
       }, head);
     } catch (error) {
-      log("page_meta_failed", error);
+      await log("page_meta_failed", error);
       return withHeaders(shell, route.kind === "notFound" ? 404 : 200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }, head);
     }
   };

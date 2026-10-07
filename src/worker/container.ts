@@ -58,6 +58,8 @@ import { MarketingRepository } from "./repositories/marketing.repository.ts";
 import { CompositeOutbox, MarketingOutbox, MetaCapiService } from "./services/marketing.service.ts";
 import { PrivacyService } from "./services/privacy.service.ts";
 import { Ga4ReportService } from "./services/ga4-report.service.ts";
+import { MonitoringRepository } from "./repositories/monitoring.repository.ts";
+import { MonitoringService } from "./services/monitoring.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -95,6 +97,8 @@ export interface Services {
   /** Security events / audit writer (rate-limit events, Phase 14). */
   securityLog: SecurityLogService;
   privacy: PrivacyService;
+  /** Heartbeats, server error log, System status (Phase 16). */
+  monitoring: MonitoringService;
 }
 
 export interface ServiceOptions {
@@ -199,6 +203,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const accommodation = new AccommodationService(db, units, inventory, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, images);
   const content = new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL, images);
   const privacy = new PrivacyService(db, authorization, log, clock);
+  const health = new HealthService(new D1HealthRepository(db), clock);
   // Dashboard visitors / page views / funnel from the GA4 Data API (Phase 14); key = Cloudflare Secret.
   const ga4 = new Ga4ReportService(db, async () => (await new SettingsRepository(db).marketing())?.ga4_property_id ?? null, clock, {
     keyJson: env.GA4_SERVICE_ACCOUNT_KEY, fetch: options.googleFetch,
@@ -206,7 +211,8 @@ export function createServices(env: Env, options: ServiceOptions): Services {
 
   return {
     site,
-    health: new HealthService(new D1HealthRepository(db)),
+    health,
+    monitoring: new MonitoringService(new MonitoringRepository(db), health, authorization, clock, env),
     sessions,
     authorization,
     auth: new AuthService(db, users, resets, sessions, links, delivery, log, clock),

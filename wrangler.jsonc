@@ -7,9 +7,24 @@
   "name": "phasakura",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-06-01",
+  // Workers Logs (Phase 16): every request and every console.error is kept (3 days Free / 7 days Paid).
+  // The owner-facing error log and cron heartbeat are in D1 (Admin → System status).
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "head_sampling_rate": 1
   },
+
+  // Production domain (Phase 16) — uncomment with YOUR hostname(s) once the zone is on Cloudflare.
+  // A Custom Domain creates the DNS record and the TLS certificate automatically (no CNAME may exist yet).
+  // APP_BASE_URL below must be one of these hostnames. With routes set, workers.dev is off by default.
+  // "routes": [
+  //   { "pattern": "www.your-domain.com", "custom_domain": true },
+  //   { "pattern": "your-domain.com", "custom_domain": true }
+  // ],
+  // Keep *.workers.dev off in production (duplicate site, skips the zone's security settings).
+  // "workers_dev": false,
+  // Version preview URLs would run unreleased code against the production D1 / R2 — keep them off.
+  "preview_urls": false,
 
   // Single Worker serves the API and the React SPA (ADR-1).
   // Every request except the hashed build files under /assets/ runs the Worker first (Phase 13): it renders
@@ -25,7 +40,8 @@
   },
 
   // Every minute: expire unpaid booking holds (release inventory), plan + send LINE notifications
-  // (retries with backoff); camping drift check every 15 minutes.
+  // (retries with backoff), Meta CAPI delivery, then a heartbeat row (GET /api/health → cron "stale" after
+  // 5 minutes without one). Camping drift check every 15 minutes. Needs the Workers Paid plan (CPU time).
   "triggers": {
     "crons": ["* * * * *"]
   },

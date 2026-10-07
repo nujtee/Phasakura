@@ -1,8 +1,9 @@
 # Security headers for static assets served by Workers Static Assets.
 # Pages (HTML) are rendered by the Worker since Phase 13 and carry the same "/*" headers from
 # PAGE_SECURITY_HEADERS in src/worker/http/security-headers.ts (a test keeps both identical).
-# API responses get their own headers there too. CSP will be extended in Phase 14 for GA4 /
-# Meta Pixel (consent-gated); a separate media domain must be added to font-src (README).
+# API responses get their own headers there too. Pages widen script-src / connect-src only for
+# GA4 / Meta Pixel while they are switched on (pageSecurityHeaders; scripts still wait for consent).
+# A separate public media domain (PUBLIC_MEDIA_BASE_URL) must be added to font-src (README).
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff

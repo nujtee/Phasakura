@@ -62,11 +62,19 @@ contain code constants or `?` placeholders (never request input), then accept it
 
 ## Deploy
 
+**Production runbook: [`docs/PRODUCTION.md`](docs/PRODUCTION.md)** (Workers Paid plan, custom domain + SSL, secrets,
+backup & restore, monitoring, incident response, final smoke test).
+
 ```bash
-npm run deploy
+npm run preflight                               # config check before deploy (no network); exit 1 on any error
+npm run release                                 # preflight → D1 backup → migrations (remote) → build → deploy
+npm run smoke -- https://www.your-domain.com    # read-only post-deploy checks (add SMOKE_ADMIN_* env for System status)
+npm run db:backup                               # Time Travel bookmark + D1 export to backups/ (gitignored)
 ```
 
 Secrets are never committed. Set them with `npx wrangler secret put <NAME>`.
+After deploy, Admin → **System status** lists everything that is not production-ready yet, the cron heartbeat,
+queued / failed deliveries and recent server errors; uptime monitors use `GET /api/health` (200 / 503).
 
 ### LINE notifications (Phase 11)
 

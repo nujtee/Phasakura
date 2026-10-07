@@ -1107,6 +1107,62 @@
   color: var(--color-warning);
 }
 
+.adm-badge--error {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
+}
+
+/* System status (Phase 16) */
+.sys-beat {
+  display: contents;
+}
+
+/* Row headers: the check's name in normal text, not the column-header style of .adm-table th. */
+.sys-checks th {
+  font-size: inherit;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--color-text);
+  background: transparent;
+}
+
+.sys-checks tr:last-child th {
+  border-bottom: 0;
+}
+
+.sys-checks th,
+.sys-value {
+  overflow-wrap: anywhere;
+}
+
+.sys-value--inline {
+  display: none;
+  margin-top: 4px;
+  font-weight: 400;
+}
+
+@media (max-width: 640px) {
+  .sys-value {
+    display: none;
+  }
+
+  .sys-value--inline {
+    display: block;
+  }
+}
+
+.sys-checks td:first-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.sys-fix {
+  margin-top: 2px;
+  font-weight: 400;
+  max-width: 70ch;
+}
+
 .adm-badge--muted {
   background: color-mix(in srgb, var(--color-muted) 12%, transparent);
   color: var(--color-muted);

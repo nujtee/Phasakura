@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { makeFixtures } from "./fixtures.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const ALL = ["phase09", "phase10", "phase11", "phase12", "phase13", "phase14", "responsive"];
+const ALL = ["phase09", "phase10", "phase11", "phase12", "phase13", "phase14", "phase16", "responsive"];
 const suites = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const selected = suites.length ? suites : ALL;
 for (const s of selected) if (!ALL.includes(s)) { console.error(`unknown suite ${s} (known: ${ALL.join(", ")})`); process.exit(2); }
@@ -79,7 +79,8 @@ try {
 const summary = [];
 for (const suite of selected) {
   // The Phase 9 suite checks that CAPI cannot be enabled before the token secret exists.
-  const server = await startServer(suite === "phase09" ? { E2E_NO_CAPI: "1" } : {});
+  // Phase 16 runs the production smoke test, so its server runs with APP_ENV=production.
+  const server = await startServer(suite === "phase09" ? { E2E_NO_CAPI: "1" } : suite === "phase16" ? { E2E_APP_ENV: "production" } : {});
   console.log(`\n=== ${suite}`);
   const run = spawnSync(process.execPath, [join(ROOT, "tests", "e2e", `${suite}.mjs`)], {
     cwd: ROOT, stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", timeout: 15 * 60_000,

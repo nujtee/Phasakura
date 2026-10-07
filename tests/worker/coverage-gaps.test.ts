@@ -167,10 +167,16 @@ describe("deploy order: the site keeps working while new migrations are not appl
       const app = createApp({ requestId: () => "req" });
       const env = makeEnv(db, { ASSETS: { fetch: async () => new Response("<!doctype html><html><head><title></title></head><body><div id=root></div></body></html>", { headers: { "Content-Type": "text/html" } }) } });
       const get = (path: string) => app.fetch(new Request(`https://phasakura.test${path}`), env);
-      for (const path of ["/api/health", "/api/public/site?lang=th", "/th/", "/en/gallery", "/robots.txt"]) {
+      for (const path of ["/api/public/site?lang=th", "/th/", "/en/gallery", "/robots.txt"]) {
         const res = await get(path);
         assert.ok(res.status < 500, `${path} → ${res.status} ${(await res.text()).slice(0, 200)}`);
       }
+      // …while the health check tells the uptime monitor that migrations are missing (Phase 16).
+      const health = await get("/api/health");
+      const h = (await health.json()) as { data: { status: string; schema: string } };
+      const complete = upTo === files.length - 1;
+      assert.equal(health.status, complete ? 200 : 503);
+      assert.equal(h.data.schema, complete ? "ok" : "outdated");
       const site = await (await get("/api/public/site?lang=th")).json() as { data: { consent?: { enabled: boolean }; tracking?: unknown } };
       if (site.data.consent) assert.equal(site.data.consent.enabled, false, "no trackers → no banner");
       // The cron must not fail either (it runs every minute).

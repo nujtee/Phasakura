@@ -55,9 +55,5 @@ export interface PublicSiteDto {
   fonts: PublicFontFaceDto[];
 }
 
-/** GET /api/health */
-export interface HealthDto {
-  status: "ok" | "degraded";
-  database: "ok" | "unavailable";
-  time: string;
-}
+/** GET /api/health (Phase 16: also schema and cron freshness). */
+export type { HealthDto } from "./system-types.ts";

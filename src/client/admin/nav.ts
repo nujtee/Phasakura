@@ -87,7 +87,13 @@ export const ADMIN_NAV: NavGroup[] = [
       { path: "security-events", label: (t) => t.nav.securityEvents, permission: "security_events.view", ready: true },
     ],
   },
-  { label: null, items: [{ path: "audit-logs", label: (t) => t.nav.auditLogs, permission: "audit_logs.view", ready: true }] },
+  {
+    label: null,
+    items: [
+      { path: "audit-logs", label: (t) => t.nav.auditLogs, permission: "audit_logs.view", ready: true },
+      { path: "system", label: (t) => t.nav.system, permission: "system.view", ready: true },
+    ],
+  },
 ];
 
 export function findNavItem(path: string): NavItem | undefined {

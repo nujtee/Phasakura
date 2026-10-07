@@ -38,6 +38,7 @@ import { BookingCtaPage, BrandingPage, MarketingPage, SeoPage, WebsiteSettingsPa
 import { ThemePage } from "./settings/ThemePage.tsx";
 import { LinePage } from "./settings/LinePage.tsx";
 import { PrivacySettingsPage } from "./settings/PrivacySettingsPage.tsx";
+import { SystemStatusPage } from "./pages/SystemStatusPage.tsx";
 import { ReportPrintPage } from "./reports/ReportPrintPage.tsx";
 import { ReportsPage } from "./reports/ReportsPage.tsx";
 import "../styles/admin.css";
@@ -223,6 +224,8 @@ function renderPage(segments: string[], notFound: string) {
       return <PermissionsPage />;
     case "security-events":
       return <SecurityEventsPage />;
+    case "system":
+      return <SystemStatusPage />;
     case "audit-logs":
       return <AuditLogsPage />;
     case "change-password":

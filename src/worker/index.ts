@@ -1,4 +1,5 @@
 import { createServices, resolveBaseUrl, type Services, type ServiceOptions } from "./container.ts";
+import { canonicalHostRedirect } from "./http/canonical-host.ts";
 import { accommodationController } from "./controllers/accommodation.controller.ts";
 import { adminUsersController } from "./controllers/admin-users.controller.ts";
 import { bookingController } from "./controllers/booking.controller.ts";
@@ -25,6 +26,7 @@ import { LINE_WEBHOOK_PATH } from "./line/line-api.ts";
 import { createPageHandler } from "./seo/pages.ts";
 import { seoController } from "./controllers/seo.controller.ts";
 import { searchController } from "./controllers/search.controller.ts";
+import { systemController } from "./controllers/system.controller.ts";
 
 export interface AppOptions {
   /** Override service wiring (tests). */
@@ -65,6 +67,7 @@ export function createApp(options: AppOptions = {}) {
   const line = lineController(services);
   const seo = seoController(services);
   const search = searchController(services);
+  const system = systemController(services);
   const servePage = createPageHandler((request, env, url) => services({ request, env, url }));
 
   const router = new Router()
@@ -76,6 +79,8 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/search", search.search)
     .post("/api/search/click", search.click)
     .get("/api/admin/search/analytics", search.analytics)
+    // System status: health, configuration warnings, cron, deliveries, server errors (Phase 16)
+    .get("/api/admin/system", system.status)
     .post("/api/admin/search/reindex", search.reindex)
     // Authentication (spec §59)
     .post("/api/auth/login", auth.login)
@@ -251,6 +256,14 @@ export function createApp(options: AppOptions = {}) {
       }
     } catch (error) {
       response = toErrorResponse(error, requestId);
+      // Unexpected failures also go to the owner's error log (System status); no query string, no body.
+      if (response.status >= 500) {
+        try {
+          await services({ request, env, url }).monitoring.recordError({ source: "API", error, requestId, method: request.method, path: url.pathname });
+        } catch {
+          // services unavailable: the console log above is all there is
+        }
+      }
     }
     return withSecurityHeaders(response, requestId);
   }
@@ -302,39 +315,50 @@ export function createApp(options: AppOptions = {}) {
      */
     async scheduled(env: Env, scheduledTime?: number): Promise<number> {
       const s = makeServices(env, { ...options.serviceOptions, origin: resolveBaseUrl(env, "https://localhost") });
-      const expired = await s.bookings.expireDue(200);
+      const minute = scheduledTime === undefined ? null : new Date(scheduledTime).getUTCMinutes();
+      const started = Date.now();
+      const failures: string[] = [];
+      // Each task runs on its own: one failing never stops the others (Phase 16), and every failure
+      // reaches the console (Workers Observability) and the owner's error log.
+      const task = async <T>(name: string, run: () => Promise<T>): Promise<T | null> => {
+        try {
+          return await run();
+        } catch (error) {
+          failures.push(name);
+          console.error(JSON.stringify({ level: "error", message: `${name}_failed`, error: String(error).slice(0, 200) }));
+          await s.monitoring.recordError({ source: "CRON", error, path: name, context: name });
+          return null;
+        }
+      };
+
+      const expired = (await task("bookings_expire", () => s.bookings.expireDue(200))) ?? 0;
       if (expired) console.log(JSON.stringify({ level: "info", message: "bookings_expired", count: expired }));
-      if (scheduledTime === undefined || new Date(scheduledTime).getUTCMinutes() % 15 === 0) {
-        const drift = await s.availability.detectCampingDrift();
+      if (minute === null || minute % 15 === 0) {
+        const drift = await task("camping_drift", () => s.availability.detectCampingDrift());
         if (drift) console.error(JSON.stringify({ level: "error", message: "camping_inventory_drift", nights: drift }));
       }
       // Search index: rebuilt only when the content it is built from changed (checked every 5 minutes).
-      if (scheduledTime === undefined || new Date(scheduledTime).getUTCMinutes() % 5 === 0) {
-        try {
-          const rows = await s.search.rebuildIfStale();
-          if (rows !== null) console.log(JSON.stringify({ level: "info", message: "search_index_rebuilt", rows }));
-        } catch (error) {
-          console.error(JSON.stringify({ level: "error", message: "search_index_failed", error: String(error).slice(0, 200) }));
-        }
+      if (minute === null || minute % 5 === 0) {
+        const rows = await task("search_index", () => s.search.rebuildIfStale());
+        if (rows !== null && rows !== undefined) console.log(JSON.stringify({ level: "info", message: "search_index_rebuilt", rows }));
       }
       // Meta Conversions API (Phase 14): due Lead / Purchase events, retries and retention.
-      try {
-        const capi = await s.capi.tick();
-        if (capi.sent || capi.failed || capi.retried) console.log(JSON.stringify({ level: "info", message: "capi_events", ...capi }));
-      } catch (error) {
-        console.error(JSON.stringify({ level: "error", message: "capi_failed", error: String(error).slice(0, 200) }));
-      }
-      try {
-        const line = await s.notifications.tick();
-        if (line.planned || line.sent || line.failed || line.retried) console.log(JSON.stringify({ level: "info", message: "line_notifications", ...line }));
-      } catch (error) {
-        console.error(JSON.stringify({ level: "error", message: "line_notifications_failed", error: String(error).slice(0, 200) }));
-      }
+      const capi = await task("capi", () => s.capi.tick());
+      if (capi && (capi.sent || capi.failed || capi.retried)) console.log(JSON.stringify({ level: "info", message: "capi_events", ...capi }));
+      const line = await task("line_notifications", () => s.notifications.tick());
+      if (line && (line.planned || line.sent || line.failed || line.retried)) console.log(JSON.stringify({ level: "info", message: "line_notifications", ...line }));
+      // Error log retention, once an hour.
+      if (minute === null || minute === 11) await task("error_log_retention", () => s.monitoring.retention());
+
+      // Heartbeat last: /api/health turns "stale" if this stops happening.
+      await s.monitoring.heartbeat("cron", failures.length === 0, Date.now() - started, failures.length ? `failed: ${failures.join(", ")}` : null);
       return expired;
     },
 
     async fetch(request: Request, env: Env): Promise<Response> {
       const url = new URL(request.url);
+      const canonical = canonicalHostRedirect(request, env, url);
+      if (canonical) return canonical;
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
         return handleApi(request, env, url);
       }

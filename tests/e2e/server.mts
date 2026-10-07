@@ -1,6 +1,6 @@
 // End-to-end test server (Phase 15): the real Worker app over HTTPS with SQLite (all migrations + dev seed),
 // in-memory R2, the built SPA, and in-process fakes for LINE, the Meta Graph API and Google APIs.
-// Started by tests/e2e/run.mjs — never deploy this. Env: PORT, DIST, TLS_CERT, TLS_KEY, E2E_NO_CAPI.
+// Started by tests/e2e/run.mjs — never deploy this. Env: PORT, DIST, TLS_CERT, TLS_KEY, E2E_NO_CAPI, E2E_APP_ENV.
 import { createServer } from "node:https";
 import { readFileSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
@@ -38,7 +38,8 @@ delete globalHeaders["Strict-Transport-Security"];
 
 const TYPES: Record<string, string> = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html; charset=utf-8", ".svg": "image/svg+xml" };
 const env = {
-  DB: db, MEDIA_PUBLIC: new MemoryBucket(), MEDIA_PRIVATE: new MemoryBucket(), APP_ENV: "development",
+  // E2E_APP_ENV=production: the Phase 16 suite runs the production smoke test against this server.
+  DB: db, MEDIA_PUBLIC: new MemoryBucket(), MEDIA_PRIVATE: new MemoryBucket(), APP_ENV: process.env.E2E_APP_ENV ?? "development",
   APP_BASE_URL: `https://localhost:${PORT}`,
   // Fake LINE channel (the LINE API itself is the in-process FakeLine below).
   LINE_CHANNEL_ACCESS_TOKEN: "e2e-channel-token", LINE_CHANNEL_SECRET: "e2e-channel-secret",
@@ -50,7 +51,9 @@ const env = {
       const url = new URL(req.url);
       let file = join(DIST, url.pathname);
       if (!url.pathname.startsWith("/assets/") || !existsSync(file)) file = join(DIST, "index.html");
-      return new Response(readFileSync(file), { headers: { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", ...globalHeaders } });
+      // Same as the /assets/* rule in public/_headers: hashed build files are immutable.
+      const cache = file.endsWith("index.html") ? {} : { "Cache-Control": "public, max-age=31536000, immutable" };
+      return new Response(readFileSync(file), { headers: { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", ...globalHeaders, ...cache } });
     },
   },
 } as never;
