@@ -10,6 +10,8 @@
 export interface D1Result<T> {
   results: T[];
   success: boolean;
+  /** Rows changed by a write (D1 reports it; RETURNING statements report rows instead). */
+  meta?: { changes?: number };
 }
 
 export interface D1PreparedStatementLike {
@@ -68,4 +70,8 @@ export interface Env {
   META_CAPI_ACCESS_TOKEN?: string;
   /** Meta test event code — Cloudflare Secret (used in Phase 14 while testing CAPI). */
   META_TEST_EVENT_CODE?: string;
+  /** LINE Messaging API channel access token (long-lived) — Cloudflare Secret only. */
+  LINE_CHANNEL_ACCESS_TOKEN?: string;
+  /** LINE channel secret (webhook signature) — Cloudflare Secret only. */
+  LINE_CHANNEL_SECRET?: string;
 }

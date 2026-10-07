@@ -49,6 +49,20 @@ npm run deploy
 
 Secrets are never committed. Set them with `npx wrangler secret put <NAME>`.
 
+### LINE notifications (Phase 11)
+
+1. LINE Developers console → create a **Messaging API** channel for your LINE Official Account.
+2. Store the channel credentials as Cloudflare Secrets (never in Git / D1):
+   ```bash
+   npx wrangler secret put LINE_CHANNEL_ACCESS_TOKEN   # Messaging API tab → long-lived channel access token
+   npx wrangler secret put LINE_CHANNEL_SECRET         # Basic settings tab → channel secret
+   ```
+3. Set `APP_BASE_URL` (https) in `wrangler.jsonc` so messages can link back to the site.
+4. Admin → Settings → LINE: copy the **Webhook URL** into the channel (Messaging API → Webhook URL, turn on
+   "Use webhook"), press **Check connection**, turn notifications on, then add staff chats with a link code.
+   For group chats, allow the bot to join groups in LINE Official Account Manager first.
+5. The cron trigger (every minute) sends due notifications and the daily check-in / kitchen digests.
+
 ## Push to GitHub
 
 ```bash

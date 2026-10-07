@@ -3,6 +3,7 @@
  * Money is always integer satang. Dates are YYYY-MM-DD business dates (Asia/Bangkok).
  */
 
+import type { GuestLineDto } from "./line-types.ts";
 import type { PaymentAccountSnapshotDto, PaymentDto, PaymentInstructionsDto } from "./payment-types.ts";
 
 export type BookingItemType = "HOUSE" | "VIP_TENT" | "OWN_TENT";
@@ -117,6 +118,8 @@ export interface PublicBookingDto extends QuoteDto {
   customerPhoneMasked: string;
   expiresAt: string | null;
   createdAt: string;
+  /** LINE updates for this booking (Phase 11): offered when the property has it on; linked = guest opted in. */
+  lineUpdates: GuestLineDto;
   /** Where and how much to pay — present only while the booking awaits payment. */
   paymentInstructions: PaymentInstructionsDto | null;
 }

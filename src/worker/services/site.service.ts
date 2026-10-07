@@ -10,6 +10,7 @@ import { CTA_ICONS, CTA_PAGES, type BookingCtaDto, type CtaPage, type PublicSite
 import { validateThemeTokens, type ThemeTokens } from "../../shared/theme.ts";
 import type { CtaRecord, SiteSettingsRepository, SiteTranslationRecord } from "../repositories/site-settings.repository.ts";
 import { publicMediaUrl } from "./media-url.ts";
+import { addFriendUrl } from "../../shared/line-types.ts";
 
 export class SiteService {
   constructor(
@@ -77,6 +78,12 @@ export class SiteService {
       },
       footerText: nonEmpty(translation?.footerText) ?? nonEmpty(fallback?.footerText),
       bookingCta: toCta(record?.cta ?? null, nonEmpty(label)),
+      lineButton: record?.lineButton?.enabled
+        ? (() => {
+            const url = nonEmpty(record.contact?.lineOaUrl) ?? addFriendUrl(record.lineButton.basicId);
+            return url ? { url } : null;
+          })()
+        : null,
     };
   }
 }

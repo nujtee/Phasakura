@@ -680,6 +680,8 @@
 }
 
 .adm-tablewrap {
+  /* Positioned so visually-hidden (absolute) labels inside cells are clipped here, not widening the page. */
+  position: relative;
   overflow-x: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -2134,3 +2136,77 @@
 .rpt-grid .rpt-nowrap {
   white-space: nowrap;
 }
+
+/* ===================================================================== Settings → LINE (Phase 11) */
+.line-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.line-types .adm-check { margin: 0; white-space: nowrap; }
+
+.line-row--off td { color: var(--color-muted); }
+
+.line-actions { gap: 6px; }
+
+.line-recipients td { vertical-align: top; }
+
+.line-steps {
+  margin: 0 0 8px;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 4px;
+}
+
+.line-pair-form { align-items: flex-end; }
+.line-pair-form .adm-field { margin-bottom: 0; }
+
+.line-code {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--color-border);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  display: grid;
+  gap: 8px;
+}
+
+.line-code__value {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  user-select: all;
+}
+
+.line-spinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 4px;
+  vertical-align: -0.1em;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: line-spin 0.9s linear infinite;
+}
+
+@keyframes line-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .line-spinner { animation: none; }
+}
+
+.line-manual > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.line-manual[open] > summary { margin-bottom: 12px; }
+
+.line-reason { max-width: 28ch; }

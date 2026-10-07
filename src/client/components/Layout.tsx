@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { PublicPage, SitePage } from "../../shared/routes.ts";
 import { FloatingBookingCta } from "./FloatingBookingCta.tsx";
+import { LineButton } from "./LineButton.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { useRouter } from "../router/Router.tsx";
 import { useSite } from "../site/SiteProvider.tsx";
@@ -56,6 +57,7 @@ export function Layout({
         {children}
       </main>
       <Footer currentPage={currentPage} />
+      <LineButton page={sitePage} />
       <FloatingBookingCta page={sitePage} />
     </div>
   );

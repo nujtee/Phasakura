@@ -21,9 +21,10 @@
 | 7 | Payment (receiving accounts, QR, account snapshot, record / refund, status) | ✅ Done |
 | 8 | Slip verification (private R2 upload, manual queue, real auto-verification service adapter) | ✅ Done |
 | 9 | Admin dashboard (dashboard, calendar, stay actions, payments list, food menu/capacity/kitchen orders, website, branding, theme, booking CTA, marketing IDs, SEO, Home/Gallery/History CMS) | ✅ Done |
-| 10 | Reports (Revenue, Booking, Accommodation, Camping, Food, Kitchen, Payment; daily / monthly / yearly / custom; Excel + PDF) | ✅ Done — รอ `NEXT PHASE` |
-| 11 | LINE | ⏳ Next |
-| 12–16 | ตาม B.60 | ⏳ Not started |
+| 10 | Reports (Revenue, Booking, Accommodation, Camping, Food, Kitchen, Payment; daily / monthly / yearly / custom; Excel + PDF) | ✅ Done |
+| 11 | LINE (Official Account + Messaging API: check-in, food and payment notifications to staff chats; guest opt-in; retry, idempotency, delivery log; website LINE button) | ✅ Done — รอ `NEXT PHASE` |
+| 12 | R2 & Images | ⏳ Next |
+| 13–16 | ตาม B.60 | ⏳ Not started |
 
 ### A.2 Architecture Decisions (ADR)
 
@@ -54,6 +55,7 @@ src/
     repositories/    ติดต่อ D1 เท่านั้น (prepared statements)
     cms/             generic back-office record engine (Phase 9)
     reports/         dependency-free XLSX writer + report → workbook (Phase 10)
+    line/            LINE Messaging API client, webhook signature, message templates TH/EN/ZH (Phase 11)
     env.ts           Env bindings (D1, R2, vars)
   client/            React app
     main.tsx, App.tsx
@@ -61,7 +63,7 @@ src/
     components/      Header, Footer, LanguageSwitcher, Layout
     pages/           Home, Gallery, Booking, History, NotFound
     styles/          tokens.css (CSS variables), base.css
-migrations/          D1 migrations 0001–0015 (see migrations/README.md)
+migrations/          D1 migrations 0001–0016 (see migrations/README.md)
 seeds/dev.sql        ข้อมูลตัวอย่างสำหรับ local เท่านั้น
 tests/               node:test test suites
 ```
@@ -198,7 +200,7 @@ All tables are `STRICT`. Every rule above has a test in `tests/db/`.
 | Floating booking CTA (§39) | Settings → Booking CTA (`settings.booking_cta`): enabled, desktop/mobile visibility and position (mobile full-width bar default), size, icon, colour (or theme primary), animation (off with reduced motion), closeable (per session), pages, label per language. Links to `/{lang}/booking`. Never shown on the booking pages (cannot cover the booking form); pages reserve space for the mobile bar; iPhone safe area respected; `--cta-offset` for the LINE button / cookie banner (Phases 11 & 14). |
 | Marketing (§43–45) | `GET` `marketing.view`, `PUT` `marketing.edit`: GA4 ID, Pixel ID, CAPI on/off, Search Console code. **The CAPI token is never stored or returned**: the API only reports whether `META_CAPI_ACCESS_TOKEN` / `META_TEST_EVENT_CODE` exist as Cloudflare Secrets, and CAPI cannot be enabled without the token (`CAPI_TOKEN_MISSING`). Sending events + consent: Phase 14. |
 | SEO (§42) | Per page (home / gallery / booking / history) × language: title, description, https canonical, OG title / description / OG_IMAGE image, robots, JSON-LD (must be a JSON object, ≤ 8 KB, no `</script` / `<!--`). Redirects managed (reserved `/api`, `/media`, `/admin`, `/assets`, `/{lang}/admin` refused); serving metadata, sitemap and redirects: Phase 13. |
-| Admin UI | New pages: Dashboard, Calendar, Payments, Food menu (+ daily capacity grid), Food orders, Home, Gallery (multi-upload), History, SEO (+ redirects), GA4 / Meta Pixel / CAPI, Website (+ booking rules), Branding, Theme, Booking CTA; check-in / check-out / no-show on the booking page. All TH / EN / ZH-CN (`admin-cms-messages.ts`, parity tested). Still placeholders: LINE (Phase 11), Privacy / cookies (Phase 14). |
+| Admin UI | New pages: Dashboard, Calendar, Payments, Food menu (+ daily capacity grid), Food orders, Home, Gallery (multi-upload), History, SEO (+ redirects), GA4 / Meta Pixel / CAPI, Website (+ booking rules), Branding, Theme, Booking CTA; check-in / check-out / no-show on the booking page. All TH / EN / ZH-CN (`admin-cms-messages.ts`, parity tested). Still placeholders: Privacy / cookies (Phase 14). |
 | Migration | `0015_admin_dashboard.sql` — triggers (booking lifecycle, kitchen order forward-only, frozen theme versions) + 5 indexes. Non-destructive (no table rebuild, no data change). |
 
 ### A.14 Reports (Phase 10)
@@ -216,7 +218,24 @@ All tables are `STRICT`. Every rule above has a test in `tests/db/`.
 | Screen | Reports page with type tabs (only permitted types), period presets, bar chart for the main period figure, tables with totals, notes explaining each basis. "Kitchen report" menu opens the same page fixed to the kitchen type. All TH / EN / ZH-CN (`report-messages.ts`, parity tested). |
 | Migration | None. Phase 10 only reads existing tables and uses the Phase 9 indexes (payments, bookings, food orders). |
 
-### A.6 Verification notes (Phase 1–10)
+### A.15 LINE notifications (Phase 11)
+
+| Topic | Decision |
+|---|---|
+| Channel & secrets (§47, §61) | LINE Official Account + Messaging API. `LINE_CHANNEL_ACCESS_TOKEN` (long-lived) and `LINE_CHANNEL_SECRET` are **Cloudflare Secrets only**: never in Git, D1, logs or API responses (the admin API reports only "set / not set"). The token is used only in the `Authorization` header of calls to `api.line.me`. Settings → LINE shows the webhook URL to paste into LINE Developers and "Check connection" (bot name, Basic ID, monthly quota — the public Basic ID / name are stored). |
+| Who gets what | **Staff chats** (a person, group or room), each with a language (TH / EN / ZH-CN) and three switches: *upcoming check-ins* (daily digest), *food / kitchen* (daily "food to prepare" digest + new confirmed food orders + cancellations of orders the kitchen already got), *payments* (slip waiting for review — sent 2 minutes later and skipped if auto-verification settled it — and booking paid / confirmed). **Guests** who opt in from their booking page get "payment received, booking confirmed" and a check-in reminder in their booking language. |
+| Check-in notice | Default 1 day before at 18:00 property time (`reminder_days_before` 0–7, `reminder_time` HH:MM). Staff digest lists, per arrival, Booking ID, customer, check-in, check-out (nights), house/VIP or camping (tents), guests, food lines and payment status (§47); held-but-unpaid arrivals are included and marked. "Send when empty" is optional. Planned once per date (idempotency key per date), so changing the time never sends twice. |
+| Pairing staff chats | Admin creates a one-time code (8 characters without look-alikes, 30 minutes, single use, only its SHA-256 stored); someone sends `LINK ABCD-EFGH` to the Official Account in that chat; the webhook registers the chat (user / group / room id) and replies. Manual id entry is a fallback. `leave` / `unfollow` events turn the chat off. Ids are masked in the admin API. |
+| Guest opt-in | Only when "guest updates" is on. The booking page (confirmation + lookup; Booking ID + phone required) creates a code and a `line.me/R/oaMessage/@basicId/?…` link with the message pre-filled; the webhook links the LINE user (1:1 chat only) to that booking. The guest can stop it any time; blocking the account unlinks every booking; links are deleted 30 days after check-out (cron), codes 7 days after expiry. The log never stores the guest's LINE id (`recipient = 'guest:<booking id>'`, resolved at send time). |
+| Outbox + idempotency | Notification rows are inserted **in the same D1 batch** as the change that causes them (record payment, slip stored, auto / staff slip verification, cancellation), guarded by the change's marker (`confirmed_at = now`, …), so a notice exists if and only if the change committed. `INSERT OR IGNORE` on a unique `idempotency_key` (type + booking / payment / date + recipient) makes replays harmless. Nothing is queued while LINE is off. |
+| Delivery + retry | Cron every minute (was 5): plan digests, then deliver due rows. Each attempt is *claimed* (attempts + 1 and a 2-minute lease, compare-and-set), so parallel runs never send a row twice. Push uses `X-Line-Retry-Key` = a UUID derived from the row id, so a retry after a timeout is de-duplicated by LINE (409 → treated as sent). Temporary errors (network, timeout, 401, 408, 429 + Retry-After, 5xx) retry after 1, 5, 15, 60 minutes, 5 attempts max; other 4xx fail at once. Stale (> 24 h), opted-out, removed recipients, LINE switched off, or no-longer-relevant notices are skipped with a reason. A SENT row is final (DB trigger `NOTIFICATION_SENT_FINAL`). Message texts are rendered at send time from D1 snapshots; ≤ 5 messages × 5,000 characters per push. |
+| Delivery log (§47) | Settings → LINE → Delivery log (`notifications.view`): type, recipient, booking, status + reason, attempts, times; filters; "send again" (FAILED / skipped → 3 more attempts) and "cancel" (`settings.line`, audited); "send due notifications now". Test message per chat (rate-limited, 10 / hour). |
+| Webhook security | `POST /api/line/webhook` is the only API path outside the CSRF guard; it is authenticated by `x-line-signature` (HMAC-SHA256 of the raw body with the channel secret, constant-time compare), body ≤ 256 KB, ≤ 100 events. Bad signatures → 401 + security event (rate-capped). Only `LINK …` messages, `unfollow` and `leave` are acted on; nothing else is stored. |
+| Website button | Optional floating "LINE" button (add-friend link from Website settings or the bot's Basic ID; https only), stacked above the floating booking button, hidden on the booking pages, AA-contrast green. |
+| Permissions | `settings.line` (settings, chats, codes, retry / cancel / test), `notifications.view` (log). Audited: settings, chat create / update / delete / link, codes, tests, retry, cancel. |
+| Migration | `0016_line_notifications.sql` — new tables `line_settings` (seeded row), `line_recipients`, `line_link_codes`, `booking_line_links`; trigger "SENT is final"; log index. Non-destructive. |
+
+### A.6 Verification notes (Phase 1–11)
 
 - Workspace had no npm registry access; `package-lock.json` must be generated on first `npm install`.
 - Run on first install: `npm run lint`, `npm run build`, `npm run typecheck` (client part needs `@types/react`).
@@ -226,6 +245,7 @@ All tables are `STRICT`. Every rule above has a test in `tests/db/`.
 - Phase 8: 305 tests pass (20 new slip tests incl. provider adapter with fake fetch); worker + client typecheck clean; 14/14 browser checks (manual review path, auto-verified path, private slip 401 without session), zero console/CSP errors. No migration needed (Phase 2 schema already covers slips).
 - Phase 9: 330 tests pass (dashboard, calendar, stay lifecycle + DB trigger, payments list, booking rules, CMS engine for every entity, public content API, food capacity / kitchen orders, website, branding, theme draft/publish/rollback, CTA, marketing secret handling, SEO, dictionaries, public CTA/footer render); worker, client (React type shim) and test typecheck clean; 20/20 browser checks over HTTPS (dashboard, calendar, check-in, payments, kitchen, food menu, slide + gallery upload/publish, branding, theme publish + live preview, CTA, CAPI guard, SEO, permissions, mobile 390 px), zero console/CSP errors.
 - Phase 10: 339 tests pass (9 new report tests: per-night allocation, XLSX structure / no formulas, revenue across months + cash/refunds, booking PII rule, occupancy with blocks, camping, food, payment, kitchen confirmed vs pending, permissions / validation / export audit, label coverage); worker, client and test typecheck clean; 9/9 Phase 10 browser checks (revenue monthly, Excel download opened as a workbook, yearly bookings, custom range validation, PDF view as EN and TH, kitchen staff, viewer without export) and the 20 Phase 9 checks again, zero console/CSP errors. Excel files checked with openpyxl; PDFs rendered via Chromium print and checked with pdftotext (Thai text correct).
+- Phase 11: 366 tests pass (23 new LINE tests against a fake LINE API: retry key, signature, codes, templates in 3 languages, settings / secrets, pairing + expiry + leave, outbox in the same transaction, slip review skip, retry / backoff / 409 / permanent failure / max attempts, parallel runs, opt-out, kitchen cancel rules, digests at 18:00 + empty + days before, guest link / unlink / unfollow / 30-day purge, log / test / public button; plus client and dictionary tests); worker, client and test typecheck clean; 12/12 Phase 11 browser checks (check connection, enable, pairing through a signed webhook, test message, guest opt-in on mobile TH, payment → staff + kitchen + guest messages via the cron, failed → send again, booking page badge, website LINE button vs booking button on mobile + desktop, Thai admin at 390 px, viewer refused) and the Phase 9 (20) and Phase 10 (9) checks again; zero console / CSP errors. Real LINE delivery was not tested (needs a real channel and token).
 
 ---
 

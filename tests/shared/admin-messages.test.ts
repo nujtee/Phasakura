@@ -60,3 +60,27 @@ describe("admin CMS dictionaries (Phase 9)", () => {
     }
   });
 });
+
+describe("LINE dictionaries (Phase 11)", () => {
+  it("admin LINE texts: TH, EN and ZH-CN have identical keys and no empty strings", async () => {
+    const { lineTh, lineEn, lineZhCN } = await import("../../src/shared/i18n/admin-line-messages.ts");
+    const ref = keys(lineTh).sort();
+    for (const dict of [lineEn, lineZhCN]) {
+      assert.deepEqual(keys(dict).sort(), ref);
+      assert.ok(values(dict).every((v) => v.trim().length > 0));
+    }
+  });
+
+  it("every notification type, status and skip reason has a label; every LINE API error has a message", async () => {
+    const { lineTh } = await import("../../src/shared/i18n/admin-line-messages.ts");
+    const { NOTIFICATION_TYPES, NOTIFICATION_STATUSES } = await import("../../src/shared/line-types.ts");
+    for (const t of NOTIFICATION_TYPES) assert.ok(lineTh.log.types[t], t);
+    for (const s of NOTIFICATION_STATUSES) assert.ok(lineTh.log.statuses[s], s);
+    for (const r of ["EMPTY", "NOT_RELEVANT", "RECIPIENT_INACTIVE", "RECIPIENT_OPTED_OUT", "LINE_DISABLED", "EXPIRED", "NOT_LINKED", "GUEST_DISABLED", "TOKEN_MISSING", "CANCELLED_BY_STAFF", "MAX_ATTEMPTS", "NETWORK", "TIMEOUT"]) {
+      assert.ok((lineTh.log.reasons as Record<string, string>)[r], r);
+    }
+    for (const code of ["LINE_TOKEN_MISSING", "LINE_SECRET_MISSING", "LINE_NOT_CHECKED", "LINE_URL_MISSING", "LINE_DISABLED", "LINE_TOKEN_INVALID", "LINE_UNAVAILABLE", "LINE_RECIPIENT_EXISTS", "NOTIFICATION_NOT_RETRYABLE", "NOTIFICATION_NOT_PENDING"]) {
+      assert.ok((lineTh.errors as Record<string, string>)[code], code);
+    }
+  });
+});

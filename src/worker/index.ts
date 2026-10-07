@@ -11,6 +11,7 @@ import { adminDashboardController } from "./controllers/admin-dashboard.controll
 import { cmsController } from "./controllers/cms.controller.ts";
 import { settingsController } from "./controllers/settings.controller.ts";
 import { reportController } from "./controllers/report.controller.ts";
+import { lineController } from "./controllers/line.controller.ts";
 import type { Env } from "./env.ts";
 import { HttpError, MethodNotAllowedError, TooManyRequestsError } from "./http/errors.ts";
 import { jsonError } from "./http/response.ts";
@@ -18,6 +19,7 @@ import { withSecurityHeaders } from "./http/security-headers.ts";
 import { Router, type RequestContext } from "./router.ts";
 import { assertSameOriginRequest } from "./security/request.ts";
 import { isSafeObjectKey } from "./services/media-url.ts";
+import { LINE_WEBHOOK_PATH } from "./line/line-api.ts";
 
 export interface AppOptions {
   /** Override service wiring (tests). */
@@ -55,6 +57,7 @@ export function createApp(options: AppOptions = {}) {
   const cms = cmsController(services);
   const settings = settingsController(services);
   const rep = reportController(services);
+  const line = lineController(services);
 
   const router = new Router()
     .get("/api/health", health.check)
@@ -188,13 +191,32 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/public/history/timeline", settings.publicTimeline)
     // Reports (spec §50)
     .get("/api/admin/reports/:type", rep.run)
-    .get("/api/admin/reports/:type/export", rep.exportXlsx);
+    .get("/api/admin/reports/:type/export", rep.exportXlsx)
+    // LINE Official Account (spec §47)
+    .get("/api/admin/line/settings", line.settings)
+    .put("/api/admin/line/settings", line.saveSettings)
+    .post("/api/admin/line/check", line.check)
+    .get("/api/admin/line/recipients", line.recipients)
+    .post("/api/admin/line/recipients", line.addRecipient)
+    .patch("/api/admin/line/recipients/:id", line.updateRecipient)
+    .delete("/api/admin/line/recipients/:id", line.deleteRecipient)
+    .post("/api/admin/line/recipients/:id/test", line.testRecipient)
+    .post("/api/admin/line/link-codes", line.createLinkCode)
+    .get("/api/admin/line/link-codes/:id", line.linkStatus)
+    .get("/api/admin/notifications", line.logs)
+    .post("/api/admin/notifications/run", line.runNow)
+    .post("/api/admin/notifications/:id/retry", line.retry)
+    .post("/api/admin/notifications/:id/cancel", line.cancel)
+    .post("/api/public/bookings/line-link", line.guestLink)
+    .post("/api/public/bookings/line-unlink", line.guestUnlink)
+    .post(LINE_WEBHOOK_PATH, line.webhook);
 
   async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
     const requestId = newRequestId();
     let response: Response;
     try {
-      assertSameOriginRequest(request, url);
+      // The LINE webhook is server-to-server and authenticated by its HMAC signature instead.
+      if (url.pathname !== LINE_WEBHOOK_PATH) assertSameOriginRequest(request, url);
       const { handler, params } = router.match(request.method, url.pathname);
       response = await handler({ request, env, url, params, requestId });
       if (request.method === "HEAD") {
@@ -229,13 +251,24 @@ export function createApp(options: AppOptions = {}) {
   }
 
   return {
-    /** Cron: release unpaid holds whose time is up (nights, tents, kitchen portions). */
-    async scheduled(env: Env): Promise<number> {
+    /**
+     * Cron (every minute): release unpaid holds whose time is up (nights, tents, kitchen portions),
+     * then plan and deliver LINE notifications. The camping drift check runs every 15 minutes.
+     */
+    async scheduled(env: Env, scheduledTime?: number): Promise<number> {
       const s = makeServices(env, { ...options.serviceOptions, origin: resolveBaseUrl(env, "https://localhost") });
       const expired = await s.bookings.expireDue(200);
       if (expired) console.log(JSON.stringify({ level: "info", message: "bookings_expired", count: expired }));
-      const drift = await s.availability.detectCampingDrift();
-      if (drift) console.error(JSON.stringify({ level: "error", message: "camping_inventory_drift", nights: drift }));
+      if (scheduledTime === undefined || new Date(scheduledTime).getUTCMinutes() % 15 === 0) {
+        const drift = await s.availability.detectCampingDrift();
+        if (drift) console.error(JSON.stringify({ level: "error", message: "camping_inventory_drift", nights: drift }));
+      }
+      try {
+        const line = await s.notifications.tick();
+        if (line.planned || line.sent || line.failed || line.retried) console.log(JSON.stringify({ level: "info", message: "line_notifications", ...line }));
+      } catch (error) {
+        console.error(JSON.stringify({ level: "error", message: "line_notifications_failed", error: String(error).slice(0, 200) }));
+      }
       return expired;
     },
 
@@ -277,7 +310,7 @@ export default {
   fetch(request: Request, env: Env): Promise<Response> {
     return app.fetch(request, env);
   },
-  scheduled(_controller: unknown, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): void {
-    ctx.waitUntil(app.scheduled(env));
+  scheduled(controller: { scheduledTime?: number }, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): void {
+    ctx.waitUntil(app.scheduled(env, controller?.scheduledTime));
   },
 };

@@ -468,3 +468,46 @@ html.has-cta-bar .site-footer { padding-bottom: calc(72px + env(safe-area-inset-
 /* Admin preview: render in place, not fixed. */
 .cta.cta--preview { position: static; transform: none; display: flex; padding: 0; background: none; border: 0; }
 .cta--preview .cta__button { flex: none; }
+
+/* ===================================================================== Floating LINE button (Phase 11) */
+/* Right side, stacked above the booking button when that sits bottom-right or as the mobile bar. */
+.line-fab {
+  /* LINE-style green, darkened to 4.6:1 against white text (WCAG AA). */
+  --line-green: #04873a;
+  position: fixed;
+  z-index: 49;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom) + var(--cta-offset, 0px));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 16px 0 14px;
+  border-radius: 999px;
+  background: var(--line-green);
+  color: #fff;
+  font-family: var(--font-button);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  box-shadow: var(--shadow-lg);
+}
+
+.line-fab:hover { background: #036e2f; }
+.line-fab:focus-visible { outline: 3px solid var(--color-heading); outline-offset: 3px; }
+
+html.has-cta-bar .line-fab { bottom: calc(80px + env(safe-area-inset-bottom) + var(--cta-offset, 0px)); }
+html.has-cta-m-right .line-fab { bottom: calc(76px + env(safe-area-inset-bottom) + var(--cta-offset, 0px)); }
+
+@media (min-width: 768px) {
+  .line-fab,
+  html.has-cta-bar .line-fab,
+  html.has-cta-m-right .line-fab { right: max(24px, env(safe-area-inset-right)); bottom: calc(24px + env(safe-area-inset-bottom) + var(--cta-offset, 0px)); }
+  html.has-cta-d-right .line-fab { bottom: calc(88px + env(safe-area-inset-bottom) + var(--cta-offset, 0px)); }
+}
+
+@media print {
+  .line-fab { display: none; }
+}

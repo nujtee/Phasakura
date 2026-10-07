@@ -10,6 +10,7 @@ import { PaymentInstructions } from "../booking/PaymentInstructions.tsx";
 import { SlipStatus, SlipUpload } from "../booking/SlipUpload.tsx";
 import { BookingSummary, useDateTimeText } from "../booking/Summary.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
+import { LineUpdates } from "../booking/LineUpdates.tsx";
 
 /** Guest self-service: Booking ID + phone (both required — no enumeration). */
 export function BookingLookupPage() {
@@ -69,6 +70,7 @@ export function BookingLookupPage() {
               <SlipUpload bookingCode={booking.bookingCode} phone={phone.trim()} onDone={(r) => setBooking(r.booking)} />
             </PaymentInstructions>
           ) : booking.expiresAt && <p className="notice" role="note">{fill(bt.holdUntil, { time: timeText(booking.expiresAt) })}</p>}
+          <LineUpdates booking={booking} phone={phone.trim()} onChange={setBooking} />
           <BookingSummary quote={booking} />
         </section>
       )}

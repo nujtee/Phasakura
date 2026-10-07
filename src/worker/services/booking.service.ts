@@ -22,6 +22,8 @@ import { addMs, iso, type AuthContext, type Clock, type RequestMeta } from "./au
 import type { AuthorizationService } from "./authorization.service.ts";
 import type { PreparedBooking, QuoteInput, QuoteService } from "./quote.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
+import type { GuestLineDto } from "../../shared/line-types.ts";
+import type { Outbox } from "./notification.service.ts";
 
 export interface CreateBookingInput extends QuoteInput {
   customer: { name: string; phone: string; email: string | null; lineId: string | null; note: string | null };
@@ -59,6 +61,10 @@ export class BookingService {
     private readonly clock: Clock,
     private readonly payments: PaymentRepository,
     private readonly mediaBaseUrl: string | undefined,
+    /** LINE outbox (Phase 11): kitchen hears about cancelled food orders. */
+    private readonly outbox: Outbox | null = null,
+    /** LINE opt-in state for the guest's booking page (Phase 11). */
+    private readonly lineStatus: ((row: BookingRow) => Promise<GuestLineDto>) | null = null,
   ) {}
 
   async quote(input: QuoteInput): Promise<QuoteDto> {
@@ -373,6 +379,7 @@ export class BookingService {
     const results = await this.db.batch([
       this.repo.cancelStatement(row.id, actor.userId, reason, now),
       ...this.repo.releaseStatements(row.id, row.check_in, row.check_out, now),
+      ...(this.outbox ? await this.outbox.bookingCancelled(row.id, row.booking_status === "CONFIRMED", now) : []),
     ]);
     if (!(results[0]?.results.length)) throw new ConflictError("The booking changed meanwhile, please reload", "BOOKING_NOT_CANCELLABLE");
     await this.log.auditStatement(actor.userId, "CANCEL_BOOKING", "bookings", row.id,
@@ -449,11 +456,12 @@ export class BookingService {
   // ================================================================ DTOs (from snapshots, never from current prices)
 
   private async toPublic(row: BookingRow): Promise<PublicBookingDto> {
-    const [items, included, food, snapshot] = await Promise.all([
+    const [items, included, food, snapshot, lineUpdates] = await Promise.all([
       this.repo.items(row.id),
       this.repo.includedMeals(row.id),
       this.repo.food(row.id),
       this.payments.snapshot(row.id),
+      this.lineStatus ? this.lineStatus(row) : Promise.resolve({ available: false, linked: false }),
     ]);
     // Payment details only while the booking is still waiting for money.
     const awaitingPayment = row.booking_status === "PENDING" && (row.payment_status === "UNPAID" || row.payment_status === "REJECTED");
@@ -466,6 +474,7 @@ export class BookingService {
       customerPhoneMasked: maskPhone(row.customer_phone),
       expiresAt: row.booking_status === "PENDING" ? row.expires_at : null,
       createdAt: row.created_at,
+      lineUpdates,
       paymentInstructions: awaitingPayment && snapshot ? {
         bankName: snapshot.bank_name_snapshot,
         accountName: snapshot.account_name_snapshot,

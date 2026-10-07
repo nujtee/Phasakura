@@ -41,6 +41,11 @@ import { PublicContentService } from "./services/public-content.service.ts";
 import { SettingsService } from "./services/settings.service.ts";
 import { ReportRepository } from "./repositories/report.repository.ts";
 import { ReportService } from "./services/report.service.ts";
+import { LineRepository } from "./repositories/line.repository.ts";
+import { LineService } from "./services/line.service.ts";
+import { NotificationService, Outbox } from "./services/notification.service.ts";
+import { LINE_WEBHOOK_PATH, type FetchLike } from "./line/line-api.ts";
+import { getLocale, parseLocale } from "../shared/i18n/locales.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -68,6 +73,8 @@ export interface Services {
   foodAdmin: FoodAdminService;
   content: PublicContentService;
   reports: ReportService;
+  line: LineService;
+  notifications: NotificationService;
 }
 
 export interface ServiceOptions {
@@ -77,6 +84,8 @@ export interface ServiceOptions {
   delivery?: PasswordResetDelivery;
   /** Tests: replace the slip verification service (null = manual only). */
   slipVerifier?: SlipVerifier | null;
+  /** Tests / e2e: fetch used for the LINE Messaging API. */
+  lineFetch?: FetchLike;
 }
 
 /** Absolute links (reset / invite) use APP_BASE_URL when configured (https only). */
@@ -91,6 +100,18 @@ export function resolveBaseUrl(env: Env, origin: string): string {
     }
   }
   return origin;
+}
+
+/** Only an explicitly configured https APP_BASE_URL is used for links inside LINE messages (cron has no request origin). */
+export function configuredBaseUrl(env: Env): string | null {
+  const configured = env.APP_BASE_URL?.trim();
+  if (!configured) return null;
+  try {
+    const url = new URL(configured);
+    return url.protocol === "https:" ? url.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 export function createServices(env: Env, options: ServiceOptions): Services {
@@ -118,11 +139,36 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const availability = new AvailabilityService(db, units, inventory, mediaRepo, authorization, log, clock, pricing);
   const quotes = new QuoteService(pricing, units, inventory, availability, clock);
 
-  const bookings = new BookingService(db, bookingRepo, quotes, authorization, log, clock, paymentRepo, env.PUBLIC_MEDIA_BASE_URL);
+  // LINE (Phase 11): outbox rows are written inside the payment / slip / cancel batches.
+  const site = new SiteService(new D1SiteSettingsRepository(db), env.PUBLIC_MEDIA_BASE_URL);
+  const publicSite = (lang: string) => site.getPublicSite(getLocale(parseLocale(lang)?.code ?? "th"));
+  const lineRepo = new LineRepository(db);
+  const outbox = new Outbox(lineRepo);
+  const notifications = new NotificationService(
+    db, lineRepo, new ReportRepository(db),
+    async (lang) => {
+      const s = await publicSite(lang);
+      return { name: s.siteName, address: s.contact.address, phone: s.contact.phone, mapUrl: s.contact.mapUrl };
+    },
+    () => inventory.siteTimezone(), clock,
+    { token: env.LINE_CHANNEL_ACCESS_TOKEN?.trim() || null, fetch: options.lineFetch, linkBase: configuredBaseUrl(env) },
+  );
+  let bookingsRef: BookingService | null = null;
+  const line = new LineService(db, lineRepo, notifications, { guestBooking: (c, p, m) => bookingsRef!.guestBooking(c, p, m) },
+    authorization, log, clock, {
+      secret: env.LINE_CHANNEL_SECRET?.trim() || null,
+      webhookUrl: `${resolveBaseUrl(env, options.origin)}${LINE_WEBHOOK_PATH}`,
+      timezone: () => inventory.siteTimezone(),
+      siteLineUrl: async () => (await publicSite("th")).contact.lineOaUrl,
+      siteName: async (lang) => (await publicSite(lang)).siteName,
+    });
+  const bookings = new BookingService(db, bookingRepo, quotes, authorization, log, clock, paymentRepo, env.PUBLIC_MEDIA_BASE_URL,
+    outbox, (row) => line.guestStatus(row));
+  bookingsRef = bookings;
   const verifier = options.slipVerifier !== undefined ? options.slipVerifier : createSlipVerifier(env);
 
   return {
-    site: new SiteService(new D1SiteSettingsRepository(db), env.PUBLIC_MEDIA_BASE_URL),
+    site,
     health: new HealthService(new D1HealthRepository(db)),
     sessions,
     authorization,
@@ -134,8 +180,8 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     availability,
     quotes,
     bookings,
-    slips: new SlipService(db, paymentRepo, bookings, pricing, env.MEDIA_PRIVATE, verifier, authorization, log, clock),
-    payments: new PaymentService(db, paymentRepo, bookingRepo, mediaRepo, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock),
+    slips: new SlipService(db, paymentRepo, bookings, pricing, env.MEDIA_PRIVATE, verifier, authorization, log, clock, outbox),
+    payments: new PaymentService(db, paymentRepo, bookingRepo, mediaRepo, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, outbox),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
     dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock),
     cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
@@ -146,5 +192,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     foodAdmin: new FoodAdminService(db, new FoodAdminRepository(db), inventory, authorization, log, clock),
     content: new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL),
     reports: new ReportService(new ReportRepository(db), inventory, authorization, log, clock),
+    line,
+    notifications,
   };
 }

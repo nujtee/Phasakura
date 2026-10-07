@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AdminBookingDto } from "../../../shared/booking-types.ts";
 import { formatBaht } from "../../../shared/booking-rules.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
+import { getLineMessages } from "../../../shared/i18n/admin-line-messages.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
@@ -115,6 +116,7 @@ export function BookingDetailPage({ code }: { code: string }) {
             <dt>{t.bk.phone}</dt><dd><a href={`tel:${b.customerPhone.replace(/[^\d+]/g, "")}`}>{b.customerPhone}</a></dd>
             {b.customerEmail && <><dt>{t.bk.email}</dt><dd>{b.customerEmail}</dd></>}
             {b.customerLineId && <><dt>{t.bk.lineId}</dt><dd>{b.customerLineId}</dd></>}
+            {b.lineUpdates.linked && <><dt>LINE</dt><dd><span className="adm-badge adm-badge--active">✓ {getLineMessages(locale.code).bookingLinked}</span></dd></>}
             {b.customerNote && <><dt>{t.bk.note}</dt><dd className="adm-prewrap">{b.customerNote}</dd></>}
             <dt>{t.bk.privacyAccepted}</dt><dd>{dateTime(b.privacyAcceptedAt)}</dd>
           </dl>

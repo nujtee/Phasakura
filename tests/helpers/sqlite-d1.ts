@@ -82,8 +82,8 @@ class SqliteStatement implements D1PreparedStatementLike {
     const stmt = this.db.prepare(this.sql);
     const params = this.params as SQLInputValue[];
     if (stmt.columns().length > 0) return { results: stmt.all(...params), success: true };
-    stmt.run(...params);
-    return { results: [], success: true };
+    const info = stmt.run(...params);
+    return { results: [], success: true, meta: { changes: Number(info.changes) } };
   }
 
   async first<T>(): Promise<T | null> {

@@ -4,6 +4,8 @@ import { hashPassword } from "../../src/worker/security/password.ts";
 import type { PasswordResetDelivery } from "../../src/worker/services/password-link.service.ts";
 import type { SlipVerifier } from "../../src/worker/slip/slip-verifier.ts";
 import { makeEnv, MemoryBucket } from "./fake-env.ts";
+import { FakeLine } from "./fake-line.ts";
+import { signLineBody } from "../../src/worker/line/line-api.ts";
 import { SqliteD1 } from "./sqlite-d1.ts";
 
 /** Indirection so a test can set `h.verifier(...)` after the app is created. */
@@ -38,6 +40,8 @@ export class Harness {
   };
   /** Slip verification service used by the app (null = manual only). Tests may swap it. */
   slipVerifier: SlipVerifier | null = null;
+  /** Fake LINE Messaging API (every call the app makes to api.line.me). */
+  readonly line = new FakeLine();
   readonly app = createApp({
     requestId: () => "req",
     serviceOptions: {
@@ -46,6 +50,7 @@ export class Harness {
       get slipVerifier() {
         return harnessVerifier.current;
       },
+      lineFetch: (input: string, init?: RequestInit) => this.line.fetch(input, init),
     },
   });
   readonly env: ReturnType<typeof makeEnv>;
@@ -105,6 +110,23 @@ export class Harness {
     );
     const body = (await res.json()) as { data?: T; error?: ApiErrorBody["error"] };
     return { status: res.status, data: body.data as T, error: body.error };
+  }
+
+  /** LINE secrets as Cloudflare Secrets would provide them. */
+  lineSecrets(token: string | null = "test-channel-token", secret: string | null = "test-channel-secret") {
+    this.env.LINE_CHANNEL_ACCESS_TOKEN = token ?? undefined;
+    this.env.LINE_CHANNEL_SECRET = secret ?? undefined;
+  }
+
+  /** Server-to-server call from LINE: signed body, no browser headers. */
+  async webhook(body: unknown, opts: { signature?: string | null; raw?: string } = {}) {
+    const raw = opts.raw ?? JSON.stringify(body);
+    const signature = opts.signature === undefined ? await signLineBody(this.env.LINE_CHANNEL_SECRET ?? "", raw) : opts.signature;
+    const headers: Record<string, string> = { "Content-Type": "application/json", "User-Agent": "LineBotWebhook/2.0", "CF-Connecting-IP": "147.92.150.192" };
+    if (signature !== null) headers["x-line-signature"] = signature;
+    const res = await this.app.fetch(new Request(`${ORIGIN}/api/line/webhook`, { method: "POST", headers, body: raw }), this.env);
+    const text = await res.text();
+    return { status: res.status, body: (text ? JSON.parse(text) : {}) as { data?: { handled: number }; error?: ApiErrorBody["error"] } };
   }
 
   advance(ms: number) {

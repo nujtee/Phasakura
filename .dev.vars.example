@@ -14,8 +14,11 @@ PUBLIC_MEDIA_BASE_URL=
 # META_PIXEL_ID=
 # META_CAPI_ACCESS_TOKEN=
 # META_TEST_EVENT_CODE=
-# LINE_CHANNEL_ACCESS_TOKEN=
-# LINE_CHANNEL_SECRET=
 # Slip verification (Phase 8): provider name is plain config; the key is a secret.
 # SLIP_VERIFY_PROVIDER=easyslip
 # SLIP_VERIFICATION_API_KEY=
+
+# LINE Messaging API (Phase 11) — LINE Developers console → your Messaging API channel.
+# Long-lived channel access token (Messaging API tab) and channel secret (Basic settings tab).
+# LINE_CHANNEL_ACCESS_TOKEN=
+# LINE_CHANNEL_SECRET=

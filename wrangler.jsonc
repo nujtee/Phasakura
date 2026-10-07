@@ -21,20 +21,22 @@
     "run_worker_first": ["/api/*", "/media/*"]
   },
 
-  // Every 5 minutes: expire unpaid booking holds and release their inventory.
+  // Every minute: expire unpaid booking holds (release inventory), plan + send LINE notifications
+  // (retries with backoff); camping drift check every 15 minutes.
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": ["* * * * *"]
   },
 
   // Non-secret configuration. `.dev.vars` overrides these locally.
   "vars": {
     "APP_ENV": "production",
-    // Canonical https origin used in password reset / invite links, e.g. "https://www.example.com"
+    // Canonical https origin used in password reset / invite links and in LINE messages, e.g. "https://www.example.com"
     "APP_BASE_URL": "",
     "PUBLIC_MEDIA_BASE_URL": "",
     // Slip verification service ("easyslip" or empty = staff verify every slip).
     // The API key is a secret: `wrangler secret put SLIP_VERIFICATION_API_KEY` — never here.
     "SLIP_VERIFY_PROVIDER": ""
+    // LINE: `wrangler secret put LINE_CHANNEL_ACCESS_TOKEN` and `wrangler secret put LINE_CHANNEL_SECRET` — never here.
   },
 
   // D1 — source of truth for bookings, payments, revenue, inventory, food capacity.

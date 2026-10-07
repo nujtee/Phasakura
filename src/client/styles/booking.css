@@ -734,3 +734,51 @@ button.button--secondary {
   color: var(--color-success);
   font-weight: 600;
 }
+
+/* ===================================================================== LINE updates (Phase 11) */
+.line-updates {
+  margin: 24px 0;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 12px);
+  background: var(--color-surface);
+}
+
+.line-updates__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 1.0625rem;
+}
+
+.line-updates__title .line-icon { color: #04873a; }
+
+.line-updates__intro { margin: 0 0 12px; }
+
+.line-updates__step { display: grid; gap: 8px; justify-items: start; }
+
+.line-updates__message {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--color-background, #f6f6f6);
+  border: 1px dashed var(--color-border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9375rem;
+  white-space: pre-wrap;
+  user-select: all;
+}
+
+.button--line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  /* LINE-style green, darkened to 4.6:1 against white text (WCAG AA). */
+  background: #04873a;
+  border-color: #04873a;
+  color: #fff;
+  text-decoration: none;
+}
+
+.button--line:hover { background: #036e2f; border-color: #036e2f; color: #fff; }

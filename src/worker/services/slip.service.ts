@@ -11,6 +11,7 @@ import { addMs, iso, type AuthContext, type Clock, type RequestMeta } from "./au
 import type { AuthorizationService } from "./authorization.service.ts";
 import type { BookingService } from "./booking.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
+import type { Outbox } from "./notification.service.ts";
 
 export const SLIP_LIMITS = {
   maxBytes: 10 * 1024 * 1024,
@@ -58,6 +59,7 @@ export class SlipService {
     private readonly authz: AuthorizationService,
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
+    private readonly outbox: Outbox | null = null,
   ) {}
 
   // ================================================================ guest upload
@@ -104,6 +106,7 @@ export class SlipService {
         this.repo.insertSlipAssetStatement({ id: assetId, bookingId: booking.id, key, mime: image.mime, size: bytes.length, width: image.width, height: image.height, sha256, now: at }),
         this.repo.insertSlipPaymentStatement({ id: paymentId, bookingId: booking.id, amount: booking.total_satang, assetId, sha256, now: at }),
         this.log.eventStatement("SLIP_UPLOADED", "INFO", meta, { identifier: booking.booking_code }),
+        ...(this.outbox ? await this.outbox.slipSubmitted(paymentId, booking.id, at) : []),
       ]);
       if (!results[0]?.results.length) throw new ConflictError("This booking is not waiting for a payment slip", "SLIP_NOT_ACCEPTED");
     } catch (error) {
@@ -162,6 +165,7 @@ export class SlipService {
           this.repo.insertVerificationStatement({ ...record, result: "PASSED", failureCode: null, transactionRef: slip.transactionRef }),
           this.repo.markVerifiedStatement(paymentId, slip.transferredAt, null, now),
           this.repo.confirmVerifiedStatement(payment.booking_id, now),
+          ...(this.outbox ? await this.outbox.bookingConfirmed(payment.booking_id, now) : []),
         ]);
         return "VERIFIED";
       } catch (error) {
@@ -244,6 +248,7 @@ export class SlipService {
           redacted: null, verifiedBy: actor.userId, now,
         }),
         this.repo.confirmVerifiedStatement(payment.booking_id, now),
+        ...(this.outbox ? await this.outbox.bookingConfirmed(payment.booking_id, now) : []),
       ]);
       if (!results[0]?.results.length) throw new ConflictError("This slip was already handled", "SLIP_ALREADY_HANDLED");
     } catch (error) {

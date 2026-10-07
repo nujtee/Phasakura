@@ -28,6 +28,7 @@ function site(overrides: Partial<PublicSiteDto> = {}): PublicSiteDto {
     contact: { phone: null, email: null, lineOaUrl: null, mapUrl: null, address: null },
     footerText: null,
     bookingCta: null,
+    lineButton: null,
     ...overrides,
   };
 }
@@ -189,5 +190,34 @@ describe("Floating booking button and footer contact (Phase 9)", () => {
     assert.ok(html.includes('href="tel:0812345678"'));
     assert.ok(html.includes('href="mailto:hi@example.com"'));
     assert.ok(html.includes('rel="noopener noreferrer"'));
+  });
+});
+
+describe("Floating LINE button (Phase 11)", () => {
+  async function renderLine(page: "home" | "booking" | "bookingLookup", url: string | null, code: LocaleCode = "th") {
+    const { LineButton } = await import("../../src/client/components/LineButton.tsx");
+    const value = { status: "ready" as const, site: site({ lineButton: url ? { url } : null }), retry: () => {}, preview: false, exitPreview: () => {} };
+    return renderToStaticMarkup(
+      <RouterProvider initialPath={`/${getLocale(code).path}/`}>
+        <I18nProvider locale={getLocale(code)}>
+          <SiteContext.Provider value={value}><LineButton page={page} /></SiteContext.Provider>
+        </I18nProvider>
+      </RouterProvider>,
+    );
+  }
+
+  it("opens the Official Account in a new tab with a localised accessible name", async () => {
+    const html = await renderLine("home", "https://line.me/R/ti/p/@phasakura");
+    assert.ok(html.includes('href="https://line.me/R/ti/p/@phasakura"'));
+    assert.ok(html.includes('rel="noopener noreferrer"'));
+    assert.ok(html.includes('aria-label="แชตกับเราทาง LINE"'));
+    assert.ok((await renderLine("home", "https://lin.ee/x", "zh-CN")).includes('aria-label="通过 LINE 联系我们"'));
+  });
+
+  it("is hidden when off, on the booking pages, and for a non-https link", async () => {
+    assert.equal(await renderLine("home", null), "");
+    assert.equal(await renderLine("booking", "https://lin.ee/x"), "");
+    assert.equal(await renderLine("bookingLookup", "https://lin.ee/x"), "");
+    assert.equal(await renderLine("home", "javascript:alert(1)"), "");
   });
 });

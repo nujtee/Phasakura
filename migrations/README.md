@@ -17,6 +17,7 @@
 | `0013_capacity_guards.sql` | triggers: own-tent booking requires camping enabled, unit booking requires ACTIVE unit; index for active own-tent items — no data change |
 | `0014_payments.sql` | payments: reference, note, refund_reason (ADD COLUMN); triggers: frozen money fields, refund is final, no payment on cancelled/expired bookings — no data change |
 | `0015_admin_dashboard.sql` | triggers: booking lifecycle (`BOOKING_STATUS_TRANSITION`), kitchen orders forward-only, published/archived theme versions frozen; indexes for dashboard, calendar and admin lists — no data change |
+| `0016_line_notifications.sql` | LINE settings (singleton), staff recipients, one-time link codes (hashed), guest booking ↔ LINE links; trigger: a SENT notification is final; log index — new tables only, no data change |
 
 ## Commands
 

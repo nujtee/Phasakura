@@ -47,6 +47,8 @@ export interface SiteSettingsRecord {
   themeTokensJson?: string | null;
   cta?: CtaRecord | null;
   ctaLabels?: { language_code: string; label: string }[];
+  /** Floating LINE button (Phase 11). */
+  lineButton?: { enabled: boolean; basicId: string | null } | null;
 }
 
 export interface SiteSettingsRepository {
@@ -148,7 +150,18 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
         }
       : null;
 
+    // Separate from the batch: before migration 0016 the table is missing and the rest must still load.
+    let lineButton: SiteSettingsRecord["lineButton"] = null;
+    try {
+      const line = await this.db.prepare("SELECT public_button, bot_basic_id FROM line_settings WHERE id = 1")
+        .first<{ public_button: number; bot_basic_id: string | null }>();
+      lineButton = line ? { enabled: line.public_button === 1, basicId: line.bot_basic_id } : null;
+    } catch (error) {
+      if (!isMissingTableError(error)) throw error;
+    }
+
     return {
+      lineButton,
       defaultLanguage: settings.default_language,
       contact: {
         phone: settings.contact_phone ?? null,

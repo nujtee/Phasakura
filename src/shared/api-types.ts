@@ -45,6 +45,8 @@ export interface PublicSiteDto {
   contact: PublicSiteExtrasDto["contact"];
   footerText: string | null;
   bookingCta: PublicSiteExtrasDto["bookingCta"];
+  /** Floating "chat with us on LINE" button (Phase 11): add-friend / OA link, or null when off. */
+  lineButton: { url: string } | null;
 }
 
 /** GET /api/health */

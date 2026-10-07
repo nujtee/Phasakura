@@ -38,6 +38,7 @@ export interface Messages {
     close: string;
     themePreview: string;
     exitPreview: string;
+    lineChat: string;
   };
   accommodation: {
     houses: string;
@@ -113,6 +114,7 @@ export const th: Messages = {
     close: "ปิด",
     themePreview: "กำลังดูตัวอย่างธีมฉบับร่าง (เห็นเฉพาะผู้ดูแล)",
     exitPreview: "ออกจากโหมดตัวอย่าง",
+    lineChat: "แชตกับเราทาง LINE",
   },
   accommodation: {
     houses: "บ้านพัก",
@@ -198,6 +200,7 @@ export const en: Messages = {
     close: "Close",
     themePreview: "Previewing the draft theme (admins only)",
     exitPreview: "Exit preview",
+    lineChat: "Chat with us on LINE",
   },
   accommodation: {
     houses: "Houses",
@@ -283,6 +286,7 @@ export const zhCN: Messages = {
     close: "关闭",
     themePreview: "正在预览草稿主题（仅管理员可见）",
     exitPreview: "退出预览",
+    lineChat: "通过 LINE 联系我们",
   },
   accommodation: {
     houses: "房屋",

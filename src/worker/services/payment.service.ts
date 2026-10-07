@@ -11,6 +11,7 @@ import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-cont
 import type { AuthorizationService } from "./authorization.service.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
+import type { Outbox } from "./notification.service.ts";
 
 export function toPaymentDto(p: PaymentRow): PaymentDto {
   return {
@@ -46,6 +47,7 @@ export class PaymentService {
     private readonly log: SecurityLogService,
     private readonly mediaBaseUrl: string | undefined,
     private readonly clock: Clock,
+    private readonly outbox: Outbox | null = null,
   ) {}
 
   // ================================================================ payments list
@@ -210,6 +212,8 @@ export class PaymentService {
         id: paymentId, bookingId: booking.id, amount: input.amountSatang, method: input.method,
         reference: input.reference, note: input.note, paidAt: input.paidAt, by: actor.userId, now: at,
       }),
+      // LINE (Phase 11): queued only if the confirmation above happened — same transaction.
+      ...(this.outbox ? await this.outbox.bookingConfirmed(booking.id, at) : []),
     ]);
     if (!results[0]?.results.length) throw new ConflictError("The booking changed meanwhile, please reload", "BOOKING_NOT_PAYABLE");
     await this.log.auditStatement(actor.userId, "RECORD_PAYMENT", "payments", paymentId,

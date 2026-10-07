@@ -70,10 +70,14 @@ export function FloatingBookingCta({ page }: { page: SitePage | null }) {
     && (cta.pages.includes("*") || cta.pages.includes(pageKey as never));
 
   // Reserve space at the bottom of the page for a full-width bar so it never hides the footer.
+  // …and tell other floating buttons (LINE) where the CTA sits so they stack above it.
   useEffect(() => {
+    const root = document.documentElement.classList;
     const bar = visible && cta?.showOnMobile && cta.mobilePosition === "BOTTOM_BAR";
-    document.documentElement.classList.toggle("has-cta-bar", !!bar);
-    return () => document.documentElement.classList.remove("has-cta-bar");
+    root.toggle("has-cta-bar", !!bar);
+    root.toggle("has-cta-m-right", !!(visible && cta?.showOnMobile && cta.mobilePosition === "BOTTOM_RIGHT"));
+    root.toggle("has-cta-d-right", !!(visible && cta?.showOnDesktop && cta.desktopPosition === "BOTTOM_RIGHT"));
+    return () => root.remove("has-cta-bar", "has-cta-m-right", "has-cta-d-right");
   }, [visible, cta]);
 
   if (!visible || !cta) return null;
