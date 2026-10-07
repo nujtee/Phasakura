@@ -8,6 +8,7 @@ import type { BookingItemListRow, DashboardRepository, RevenueRow } from "../rep
 import type { InventoryRepository } from "../repositories/inventory.repository.ts";
 import type { AuthContext, Clock, RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
+import type { Ga4DashboardResult } from "./ga4-report.service.ts";
 
 const TREND_DAYS = 14;
 const ANALYTICS_DAYS = 30;
@@ -19,6 +20,8 @@ export class DashboardService {
     private readonly inventory: InventoryRepository,
     private readonly authz: AuthorizationService,
     private readonly clock: Clock,
+    /** GA4 Data API numbers for the date range (Phase 14); absent = not connected. */
+    private readonly ga4: ((from: string, to: string) => Promise<Ga4DashboardResult>) | null = null,
   ) {}
 
   private async zone() {
@@ -35,11 +38,15 @@ export class DashboardService {
     const seesBookings = this.authz.can(actor, "bookings.view");
     const seesMoney = this.authz.can(actor, "payments.view") || this.authz.can(actor, "reports.view");
 
-    const [counts, inv, analytics] = await Promise.all([
+    const analyticsFrom = addDays(today, -(ANALYTICS_DAYS - 1));
+    const [counts, inv, analytics, web] = await Promise.all([
       this.repo.counts(today, monthStart, offset),
       this.repo.inventoryTonight(today),
-      this.repo.analytics(addDays(today, -(ANALYTICS_DAYS - 1)), offset),
+      this.repo.analytics(analyticsFrom, offset),
+      this.ga4 ? this.ga4(analyticsFrom, today).catch((): Ga4DashboardResult => ({ status: "ERROR", fetchedAt: null, numbers: null }))
+        : Promise.resolve<Ga4DashboardResult>({ status: "NOT_CONFIGURED", fetchedAt: null, numbers: null }),
     ]);
+    const ga = web.numbers;
     const units = (type: string) => inv.units.find((u) => u.unit_type === type) ?? { total: 0, available: 0 };
     const campingEnabled = inv.camping?.is_enabled === 1;
     const campingMax = campingEnabled ? inv.camping?.max_tents ?? 0 : 0;
@@ -96,11 +103,12 @@ export class DashboardService {
       money,
       analytics: {
         days: ANALYTICS_DAYS,
-        visitors: null,
-        pageViews: null,
-        accommodationViews: null,
-        bookingStarted: null,
-        checkoutStarted: null,
+        ga4: { status: web.status, fetchedAt: web.fetchedAt },
+        visitors: ga?.visitors ?? null,
+        pageViews: ga?.pageViews ?? null,
+        accommodationViews: ga?.events.view_accommodation ?? null,
+        bookingStarted: ga?.events.begin_booking ?? null,
+        checkoutStarted: ga?.events.begin_checkout ?? null,
         searches: analytics.searches,
         bookingsCreated: analytics.created,
         paymentSubmitted: analytics.slips,

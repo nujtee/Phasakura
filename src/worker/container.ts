@@ -54,6 +54,10 @@ import { SeoService } from "./services/seo.service.ts";
 import { TranslationCoverageService } from "./services/translation-coverage.service.ts";
 import { SearchRepository } from "./repositories/search.repository.ts";
 import { SearchService } from "./services/search.service.ts";
+import { MarketingRepository } from "./repositories/marketing.repository.ts";
+import { CompositeOutbox, MarketingOutbox, MetaCapiService } from "./services/marketing.service.ts";
+import { PrivacyService } from "./services/privacy.service.ts";
+import { Ga4ReportService } from "./services/ga4-report.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -87,6 +91,10 @@ export interface Services {
   seo: SeoService;
   translations: TranslationCoverageService;
   search: SearchService;
+  capi: MetaCapiService;
+  /** Security events / audit writer (rate-limit events, Phase 14). */
+  securityLog: SecurityLogService;
+  privacy: PrivacyService;
 }
 
 export interface ServiceOptions {
@@ -98,6 +106,10 @@ export interface ServiceOptions {
   slipVerifier?: SlipVerifier | null;
   /** Tests / e2e: fetch used for the LINE Messaging API. */
   lineFetch?: FetchLike;
+  /** Tests / e2e: fetch used for the Meta Conversions API. */
+  metaFetch?: FetchLike;
+  /** Google APIs (GA4 Data API, OAuth) — tests use a fake. */
+  googleFetch?: FetchLike;
 }
 
 /** Absolute links (reset / invite) use APP_BASE_URL when configured (https only). */
@@ -159,7 +171,9 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const site = new SiteService(new D1SiteSettingsRepository(db), env.PUBLIC_MEDIA_BASE_URL);
   const publicSite = (lang: string) => site.getPublicSite(getLocale(parseLocale(lang)?.code ?? "th"));
   const lineRepo = new LineRepository(db);
-  const outbox = new Outbox(lineRepo);
+  // Outbox rows written inside the payment / slip / cancel batches: LINE (Phase 11) + Meta CAPI Purchase (Phase 14).
+  const marketingRepo = new MarketingRepository(db);
+  const outbox = new CompositeOutbox([new Outbox(lineRepo), new MarketingOutbox(marketingRepo)]);
   const notifications = new NotificationService(
     db, lineRepo, new ReportRepository(db),
     async (lang) => {
@@ -179,11 +193,16 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       siteName: async (lang) => (await publicSite(lang)).siteName,
     });
   const bookings = new BookingService(db, bookingRepo, quotes, authorization, log, clock, paymentRepo, env.PUBLIC_MEDIA_BASE_URL,
-    outbox, (row) => line.guestStatus(row));
+    outbox, (row) => line.guestStatus(row), marketingRepo);
   bookingsRef = bookings;
   const verifier = options.slipVerifier !== undefined ? options.slipVerifier : createSlipVerifier(env);
   const accommodation = new AccommodationService(db, units, inventory, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, images);
   const content = new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL, images);
+  const privacy = new PrivacyService(db, authorization, log, clock);
+  // Dashboard visitors / page views / funnel from the GA4 Data API (Phase 14); key = Cloudflare Secret.
+  const ga4 = new Ga4ReportService(db, async () => (await new SettingsRepository(db).marketing())?.ga4_property_id ?? null, clock, {
+    keyJson: env.GA4_SERVICE_ACCOUNT_KEY, fetch: options.googleFetch,
+  });
 
   return {
     site,
@@ -201,11 +220,13 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     slips: new SlipService(db, paymentRepo, bookings, pricing, env.MEDIA_PRIVATE, verifier, authorization, log, clock, outbox),
     payments: new PaymentService(db, paymentRepo, bookingRepo, mediaRepo, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, outbox),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
-    dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock),
+    dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock, (from, to) => ga4.dashboard(from, to)),
     cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
     settings: new SettingsService(db, new SettingsRepository(db), authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL, {
       capiToken: !!env.META_CAPI_ACCESS_TOKEN?.trim(),
       testEventCode: !!env.META_TEST_EVENT_CODE?.trim(),
+      pixelId: env.META_PIXEL_ID?.trim() || null,
+      ga4Key: ga4.keyConfigured(),
     }, fontRepo),
     foodAdmin: new FoodAdminService(db, new FoodAdminRepository(db), inventory, authorization, log, clock),
     content,
@@ -215,8 +236,20 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     fonts: new FontService(db, fontRepo, media, mediaRepo, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
     // Page metadata, sitemap, robots, redirects (Phase 13). Only production is indexable.
     seo: new SeoService(new SeoRepository(db), site, accommodation, content, resolveBaseUrl(env, options.origin),
-      env.PUBLIC_MEDIA_BASE_URL, env.APP_ENV === "production"),
+      env.PUBLIC_MEDIA_BASE_URL, env.APP_ENV === "production", (locale) => privacy.publicPolicy(locale)),
     translations: new TranslationCoverageService(db, authorization),
+    capi: new MetaCapiService(db, marketingRepo, async () => {
+      const m = await new SettingsRepository(db).marketing();
+      return { enabled: m?.meta_capi_enabled === 1, pixelId: env.META_PIXEL_ID?.trim() || m?.meta_pixel_id || null };
+    }, authorization, log, clock, {
+      token: env.META_CAPI_ACCESS_TOKEN?.trim() || null,
+      testEventCode: env.META_TEST_EVENT_CODE?.trim() || null,
+      version: env.META_GRAPH_API_VERSION?.trim() || undefined,
+      fetch: options.metaFetch,
+      siteUrl: resolveBaseUrl(env, options.origin),
+    }),
+    privacy,
+    securityLog: log,
     // Global search (spec §40–41): index for matching only; results re-read from source, live availability.
     search: new SearchService(db, new SearchRepository(db), accommodation, quotes, content, availability,
       () => inventory.siteTimezone(), authorization, log, clock),

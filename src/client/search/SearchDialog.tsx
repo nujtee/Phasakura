@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatBaht } from "../../shared/booking-rules.ts";
 import { getSearchMessages } from "../../shared/i18n/search-messages.ts";
+import { track } from "../analytics/tracker.ts";
 import { pagePath } from "../../shared/routes.ts";
 import { SEARCH_ENTITY_TYPES, type SearchEntityType, type SearchResponseDto, type SearchResultDto } from "../../shared/search-types.ts";
 import { apiGet, apiRequest } from "../api/client.ts";
@@ -83,12 +84,21 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
     .filter((g) => g.items.length);
   const hasStay = results.some((r) => r.type === "HOUSE" || r.type === "VIP_TENT" || r.type === "CAMPING");
 
+  // "search" event (GA4 / Pixel, with consent): once per query, when submitted or a result is opened.
+  const trackedTerm = useRef<string | null>(null);
+  const trackSearch = (term: string | null | undefined) => {
+    if (!term || trackedTerm.current === term) return;
+    trackedTerm.current = term;
+    track({ name: "search", term });
+  };
   const opened = () => {
     if (data?.query) void apiRequest("POST", "/api/search/click", { q: data.query, lang: locale.code }).catch(() => undefined);
+    trackSearch(data?.query);
     onClose();
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    trackSearch(words);
     setNonce((n) => n + 1);
   };
 

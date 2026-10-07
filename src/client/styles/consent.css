@@ -1,0 +1,378 @@
+/*
+ * Cookie banner, cookie settings dialog and privacy page (Phase 14, spec §46). Theme tokens only.
+ * The three choices share one style so refusing is as easy to find as accepting.
+ */
+
+.consent-banner {
+  position: fixed;
+  z-index: 70; /* above the floating buttons (49–60), below dialogs and the skip link */
+  inset: auto 0 0 0;
+  padding: 0 max(12px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+.consent-banner__inner {
+  pointer-events: auto;
+  display: grid;
+  gap: 16px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lg);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+
+.consent-banner__title {
+  margin: 0 0 4px;
+  font-family: var(--font-heading);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.consent-banner__body {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.consent-banner__link,
+.consent-dialog__intro a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.consent-banner__actions,
+.consent-dialog__actions {
+  display: grid;
+  gap: 8px;
+}
+
+.consent-button {
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 1.5px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font: 600 0.9375rem/1.3 var(--font-button);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.consent-button:hover {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.consent-button:focus-visible,
+.consent-dialog__close:focus-visible,
+.link-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (max-width: 639px) {
+  .consent-banner__inner {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .consent-banner__body {
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+
+  .consent-banner__actions {
+    gap: 6px;
+  }
+}
+
+@media (min-width: 900px) {
+  .consent-banner {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .consent-banner__inner {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 24px;
+    padding: 20px 24px;
+  }
+
+  .consent-banner__actions {
+    grid-auto-flow: column;
+  }
+}
+
+/* Floating booking / LINE buttons step aside while the banner is up. */
+html.has-consent-banner .cta,
+html.has-consent-banner .line-fab {
+  display: none;
+}
+
+/* Room at the end of the page so the banner never hides the footer. */
+html.has-consent-banner .app-shell {
+  padding-bottom: 240px;
+}
+
+@media (min-width: 900px) {
+  html.has-consent-banner .app-shell {
+    padding-bottom: 140px;
+  }
+}
+
+/* ---------------------------------------------------------------- settings dialog */
+.consent-dialog {
+  width: min(600px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lg);
+}
+
+.consent-dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.consent-dialog__panel {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.consent-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.consent-dialog__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  color: var(--color-heading);
+}
+
+.consent-dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-heading);
+  cursor: pointer;
+}
+
+.consent-dialog__close:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+}
+
+.consent-dialog__intro {
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.consent-options {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border);
+}
+
+.consent-option {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.consent-option__name {
+  display: block;
+  font-weight: 700;
+  color: var(--color-heading);
+  cursor: pointer;
+}
+
+.consent-option__desc {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--color-muted);
+}
+
+.consent-option__control {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.consent-option__always {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+/* Switch: a styled checkbox (role="switch"), keyboard and screen reader friendly. */
+.consent-switch {
+  appearance: none;
+  position: relative;
+  width: 48px;
+  height: 28px;
+  margin: 8px 0 0;
+  border: 2px solid var(--color-muted);
+  border-radius: 999px;
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.consent-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-muted);
+  transition: transform var(--transition-fast), background-color var(--transition-fast);
+}
+
+.consent-switch:checked {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.consent-switch:checked::after {
+  transform: translateX(20px);
+  background: var(--color-primary-contrast);
+}
+
+.consent-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.consent-switch:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (min-width: 640px) {
+  .consent-dialog__actions {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .consent-button,
+  .consent-switch,
+  .consent-switch::after {
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------- footer + privacy page */
+.site-footer__legal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+
+.site-footer__legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-footer__legal-links a,
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/*
+ * Floating buttons (booking CTA, LINE) sit in a bottom corner: keep the last footer row (privacy and
+ * cookie settings links) clear of them when the page is scrolled to the end.
+ */
+.app-shell:has(.cta) .site-footer__legal,
+.app-shell:has(.line-fab) .site-footer__legal {
+  padding-bottom: 96px;
+}
+
+.app-shell:has(.cta):has(.line-fab) .site-footer__legal {
+  padding-bottom: 160px;
+}
+
+.privacy-page {
+  max-width: 760px;
+}
+
+.privacy-page__updated {
+  margin: -8px 0 24px;
+  color: var(--color-muted);
+  font-size: 0.9375rem;
+}
+
+.privacy-page__body {
+  line-height: 1.75;
+}
+
+.privacy-page__body h2 {
+  margin: 32px 0 8px;
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  color: var(--color-heading);
+}
+
+.privacy-page__body p,
+.privacy-page__body ul {
+  margin: 0 0 16px;
+}
+
+.privacy-page__manage {
+  margin-top: 32px;
+}
+
+@media print {
+  .consent-banner { display: none; }
+}

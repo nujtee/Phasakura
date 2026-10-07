@@ -51,6 +51,13 @@ export interface SiteSettingsRecord {
   lineButton?: { enabled: boolean; basicId: string | null } | null;
   /** Uploaded font faces (Phase 12); the service keeps those the published theme uses. */
   fonts?: { family: string; weight: number; style: string; object_key: string; mime_type: string }[];
+  /** Tracking switches (Phase 14). */
+  marketing?: { ga4_enabled: number; ga4_measurement_id: string | null; meta_pixel_enabled: number; meta_pixel_id: string | null } | null;
+  /** Cookie banner settings and texts (Phase 14). */
+  privacy?: {
+    banner_enabled: number; consent_version: number; consent_days: number;
+    texts: { language_code: string; banner_text: string | null; policy_title: string | null; policy_body_set: number }[];
+  } | null;
 }
 
 export interface SiteSettingsRepository {
@@ -175,7 +182,29 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
       if (!isMissingTableError(error)) throw error;
     }
 
+    // Phase 14: tracking switches and the cookie banner (tables missing before migration 0019 → defaults).
+    let marketing: SiteSettingsRecord["marketing"] = null;
+    let privacy: SiteSettingsRecord["privacy"] = null;
+    try {
+      const [m, p, t] = await this.db.batch([
+        this.db.prepare("SELECT ga4_enabled, ga4_measurement_id, meta_pixel_enabled, meta_pixel_id FROM marketing_settings WHERE id = 1"),
+        this.db.prepare("SELECT banner_enabled, consent_version, consent_days FROM privacy_settings WHERE id = 1"),
+        this.db.prepare(
+          `SELECT language_code, banner_text, policy_title,
+                  (policy_body IS NOT NULL AND trim(policy_body) <> '') AS policy_body_set
+             FROM privacy_setting_translations`,
+        ),
+      ]);
+      marketing = (m?.results[0] as SiteSettingsRecord["marketing"] | undefined) ?? null;
+      const pr = p?.results[0] as { banner_enabled: number; consent_version: number; consent_days: number } | undefined;
+      privacy = pr ? { ...pr, texts: (t?.results ?? []) as NonNullable<SiteSettingsRecord["privacy"]>["texts"] } : null;
+    } catch (error) {
+      if (!isMissingTableError(error)) throw error;
+    }
+
     return {
+      marketing,
+      privacy,
       lineButton,
       fonts,
       defaultLanguage: settings.default_language,

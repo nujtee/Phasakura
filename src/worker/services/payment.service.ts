@@ -11,7 +11,7 @@ import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-cont
 import type { AuthorizationService } from "./authorization.service.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
-import type { Outbox } from "./notification.service.ts";
+import type { OutboxLike } from "./marketing.service.ts";
 
 export function toPaymentDto(p: PaymentRow): PaymentDto {
   return {
@@ -47,7 +47,7 @@ export class PaymentService {
     private readonly log: SecurityLogService,
     private readonly mediaBaseUrl: string | undefined,
     private readonly clock: Clock,
-    private readonly outbox: Outbox | null = null,
+    private readonly outbox: OutboxLike | null = null,
   ) {}
 
   // ================================================================ payments list

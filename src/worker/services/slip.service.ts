@@ -11,7 +11,7 @@ import { addMs, iso, type AuthContext, type Clock, type RequestMeta } from "./au
 import type { AuthorizationService } from "./authorization.service.ts";
 import type { BookingService } from "./booking.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
-import type { Outbox } from "./notification.service.ts";
+import type { OutboxLike } from "./marketing.service.ts";
 
 export const SLIP_LIMITS = {
   maxBytes: 10 * 1024 * 1024,
@@ -59,7 +59,7 @@ export class SlipService {
     private readonly authz: AuthorizationService,
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
-    private readonly outbox: Outbox | null = null,
+    private readonly outbox: OutboxLike | null = null,
   ) {}
 
   // ================================================================ guest upload

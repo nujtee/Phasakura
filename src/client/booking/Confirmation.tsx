@@ -9,6 +9,7 @@ import { PaymentInstructions } from "./PaymentInstructions.tsx";
 import { BookingSummary, useDateTimeText } from "./Summary.tsx";
 import { useBookingT } from "./useBookingT.ts";
 import { LineUpdates } from "./LineUpdates.tsx";
+import { paymentSubmittedEvent, useConfirmedBookingEvent } from "../analytics/booking-events.ts";
 
 export function StatusPill({ status }: { status: PublicBookingDto["status"] }) {
   const bt = useBookingT();
@@ -29,6 +30,7 @@ export function Confirmation({
   onNewBooking: () => void;
 }) {
   const [booking, setBooking] = useState(initial);
+  useConfirmedBookingEvent(booking);
   const { locale } = useI18n();
   const bt = useBookingT();
   const timeText = useDateTimeText();
@@ -57,7 +59,7 @@ export function Confirmation({
       <SlipStatus booking={booking} />
       {booking.paymentInstructions ? (
         <PaymentInstructions payment={booking.paymentInstructions} expiresAt={booking.expiresAt}>
-          <SlipUpload bookingCode={booking.bookingCode} phone={phone} onDone={(r) => setBooking(r.booking)} />
+          <SlipUpload bookingCode={booking.bookingCode} phone={phone} onDone={(r) => { paymentSubmittedEvent(r.booking); setBooking(r.booking); }} />
         </PaymentInstructions>
       ) : booking.expiresAt && <p className="notice" role="note">{fill(bt.holdUntil, { time: timeText(booking.expiresAt) })}</p>}
 

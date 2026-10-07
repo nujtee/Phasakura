@@ -20,11 +20,16 @@ export function pagePath(locale: Locale, page: PublicPage): string {
 }
 
 /** Pages that exist but are not in the main menu. */
-export type SitePage = PublicPage | "accommodation" | "bookingLookup";
+export type SitePage = PublicPage | "accommodation" | "bookingLookup" | "privacy";
 
 /** Guest booking lookup (Booking ID + phone). */
 export function bookingLookupPath(locale: Locale): string {
   return `/${locale.path}/booking/lookup`;
+}
+
+/** Privacy policy (Phase 14): linked from the footer, the cookie banner and the booking form. */
+export function privacyPath(locale: Locale): string {
+  return `/${locale.path}/privacy`;
 }
 
 const DETAIL_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/;
@@ -106,6 +111,11 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   if (rest.length === 2 && rest[0] === "booking" && rest[1] === "lookup") {
     if (pathname.endsWith("/")) return { kind: "redirect", to: bookingLookupPath(locale) };
     return { kind: "page", locale, page: "bookingLookup" };
+  }
+
+  if (rest.length === 1 && rest[0] === "privacy") {
+    if (pathname.endsWith("/")) return { kind: "redirect", to: privacyPath(locale) };
+    return { kind: "page", locale, page: "privacy" };
   }
 
   if (rest.length === 1) {

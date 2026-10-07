@@ -13,6 +13,7 @@ import { CmsManager, ImageField, LangTabs, PageTabs } from "../cms/CmsKit.tsx";
 import { CtaButton } from "../../components/FloatingBookingCta.tsx";
 import { Alert, Button, detailMessage, Field, fieldErrors } from "../ui.tsx";
 import { SearchEnginesCard, SiteSearchCard, TranslationCoverageCard } from "./SeoExtras.tsx";
+import { CapiPanel } from "./PrivacySettingsPage.tsx";
 
 type Msg = { kind: "error" | "success"; text: string } | null;
 
@@ -285,7 +286,7 @@ export function MarketingPage({ focus }: { focus: "ga4" | "meta-pixel" | "capi" 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void s.save({
-      ga4Enabled: f.ga4Enabled, ga4MeasurementId: f.ga4MeasurementId || null, metaPixelEnabled: f.metaPixelEnabled,
+      ga4Enabled: f.ga4Enabled, ga4MeasurementId: f.ga4MeasurementId || null, ga4PropertyId: f.ga4PropertyId?.trim() || null, metaPixelEnabled: f.metaPixelEnabled,
       metaPixelId: f.metaPixelId || null, metaCapiEnabled: f.metaCapiEnabled, gscVerification: f.gscVerification || null,
     });
   };
@@ -304,6 +305,16 @@ export function MarketingPage({ focus }: { focus: "ga4" | "meta-pixel" | "capi" 
             <Check label={c.mkt.ga4Enabled} checked={f.ga4Enabled} onChange={(v) => set("ga4Enabled", v)} />
             <Field label={c.mkt.ga4Id} value={f.ga4MeasurementId ?? ""} error={s.errors.ga4MeasurementId} spellCheck={false}
               onChange={(e) => set("ga4MeasurementId", e.currentTarget.value)} />
+            <fieldset className="adm-fieldset adm-subform">
+              <legend>{c.mkt.ga4Data}</legend>
+              <Field label={c.mkt.ga4PropertyId} inputMode="numeric" value={f.ga4PropertyId ?? ""} error={s.errors.ga4PropertyId} spellCheck={false}
+                onChange={(e) => set("ga4PropertyId", e.currentTarget.value)} />
+              <dl className="adm-dl">
+                <dt>{c.mkt.ga4DataKey}</dt><dd>{f.ga4DataKeyConfigured ? `✓ ${c.mkt.capiTokenSet}` : c.mkt.ga4DataKeyMissing}</dd>
+                {f.ga4DataError && <><dt>{c.mkt.ga4DataError}</dt><dd className="adm-mono adm-small">{f.ga4DataError}</dd></>}
+              </dl>
+              <p className="adm-field__hint">{c.mkt.ga4DataHelp}</p>
+            </fieldset>
           </>)}
           {box("meta-pixel", c.mkt.pixel, <>
             <Check label={c.mkt.pixelEnabled} checked={f.metaPixelEnabled} onChange={(v) => set("metaPixelEnabled", v)} />
@@ -326,6 +337,7 @@ export function MarketingPage({ focus }: { focus: "ga4" | "meta-pixel" | "capi" 
           {editable && <Button type="submit" busy={s.busy}>{t.common.save}</Button>}
         </fieldset>
       </form>
+      {s.data && <CapiPanel marketing={s.data} />}
     </section>
   );
 }

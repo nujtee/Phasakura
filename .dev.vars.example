@@ -10,10 +10,21 @@ APP_BASE_URL=http://localhost:5173
 # Leave empty to serve public media through the Worker at /media/* (Phase 12).
 PUBLIC_MEDIA_BASE_URL=
 
-# --- Secrets used in later phases (leave empty until the phase that needs them) ---
+# --- Meta Pixel + Conversions API (Phase 14) ---
+# Pixel ID can also be entered in Admin → Marketing; a value here wins (and the page warns on mismatch).
+# The access token is a SECRET: Events Manager → your dataset → Settings → Conversions API → Generate access token.
+# The test event code (Events Manager → Test events) routes EVERY server event to Test events while set —
+# remove it in production. Production: `wrangler secret put META_CAPI_ACCESS_TOKEN` (never in wrangler.jsonc / Git / D1).
 # META_PIXEL_ID=
 # META_CAPI_ACCESS_TOKEN=
 # META_TEST_EVENT_CODE=
+# META_GRAPH_API_VERSION=v23.0
+
+# --- GA4 Data API (Phase 14): dashboard visitors / page views / booking steps ---
+# JSON key of a Google Cloud service account that has Viewer access to the GA4 property (one line).
+# The property ID itself is entered in Admin → Marketing → GA4. Production: `wrangler secret put GA4_SERVICE_ACCOUNT_KEY`.
+# GA4_SERVICE_ACCOUNT_KEY={"client_email":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"}
+
 # Slip verification (Phase 8): provider name is plain config; the key is a secret.
 # SLIP_VERIFY_PROVIDER=easyslip
 # SLIP_VERIFICATION_API_KEY=

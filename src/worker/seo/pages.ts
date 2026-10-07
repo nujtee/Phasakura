@@ -2,7 +2,7 @@ import { DEFAULT_LOCALE, negotiateLocale } from "../../shared/i18n/locales.ts";
 import { pagePath, resolveRoute } from "../../shared/routes.ts";
 import type { Services } from "../container.ts";
 import type { Env } from "../env.ts";
-import { PAGE_SECURITY_HEADERS } from "../http/security-headers.ts";
+import { PAGE_SECURITY_HEADERS, pageSecurityHeaders } from "../http/security-headers.ts";
 import { escapeHtml, injectHead } from "./html.ts";
 
 /** Paths that are never pages (and never redirect targets of Website → SEO → Redirects). */
@@ -106,7 +106,10 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
     try {
       const meta = await s.seo.meta(route, path);
       const indexable = meta.robots.startsWith("index");
+      const tracking = (await s.site.getPublicSite(route.locale)).tracking;
       return withHeaders(injectHead(shell, meta), meta.status, {
+        // GA4 / Pixel origins only while they are switched on (the app still waits for consent).
+        ...pageSecurityHeaders({ ga4: !!tracking.ga4MeasurementId, pixel: !!tracking.metaPixelId }),
         "Content-Type": "text/html; charset=utf-8",
         "Content-Language": meta.lang,
         // HTML always revalidates (content and hashed asset names change on deploy).

@@ -6,7 +6,10 @@ import { apiGet } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { BookingStatusBadge, PaymentBadge } from "../bookings/shared.tsx";
-import { Alert, errorMessage } from "../ui.tsx";
+import { Alert, errorMessage, useDateFormatter } from "../ui.tsx";
+
+/** Figures that come from the GA4 Data API; the rest is counted in D1. */
+const GA4_KPIS = ["visitors", "pageViews", "accommodationViews", "bookingStarted", "checkoutStarted"] as const;
 
 /** Dashboard (spec §48). Every figure comes from D1; widgets follow the viewer's permissions. */
 export function DashboardPage() {
@@ -26,6 +29,7 @@ export function DashboardPage() {
   const dateFmt = new Intl.DateTimeFormat(locale.code, { dateStyle: "full", timeZone: "UTC" });
   const shortDay = new Intl.DateTimeFormat(locale.code, { day: "numeric", month: "short", timeZone: "UTC" });
   const num = new Intl.NumberFormat(locale.code);
+  const dateTime = useDateFormatter();
 
   return (
     <section>
@@ -91,11 +95,21 @@ export function DashboardPage() {
                 ["checkoutStarted", data.analytics.checkoutStarted], ["searches", data.analytics.searches],
                 ["bookingsCreated", data.analytics.bookingsCreated], ["paymentSubmitted", data.analytics.paymentSubmitted],
                 ["confirmedBookings", data.analytics.confirmedBookings], ["foodOrders", data.analytics.foodOrders],
-              ] as const).map(([k, v]) => (
-                <Kpi key={k} label={c.dash[k]} value={v === null ? "—" : num.format(v)} sub={v === null ? c.dash.fromGa4 : undefined} />
-              ))}
+              ] as const).map(([k, v]) => {
+                const fromGa4 = (GA4_KPIS as readonly string[]).includes(k);
+                const sub = !fromGa4 ? undefined
+                  : data.analytics.ga4.status === "NOT_CONFIGURED" ? c.dash.ga4NotConnected
+                    : v === null ? c.dash.ga4Error : c.dash.fromGa4;
+                return <Kpi key={k} label={c.dash[k]} value={v === null ? "—" : num.format(v)} sub={sub} />;
+              })}
               {data.analytics.revenueSatang !== null && <Kpi label={c.dash.revenue} value={baht(data.analytics.revenueSatang)} />}
             </ul>
+            {data.analytics.ga4.fetchedAt && (
+              <p className="adm-small adm-muted">
+                {format(c.dash.ga4Updated, { time: dateTime(data.analytics.ga4.fetchedAt) })}
+                {data.analytics.ga4.status === "ERROR" && ` · ${c.dash.ga4Error}`}
+              </p>
+            )}
             <p className="adm-small adm-muted">{c.dash.analyticsNote} {c.dash.restricted}</p>
           </div>
         </>

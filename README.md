@@ -93,6 +93,36 @@ Secrets are never committed. Set them with `npx wrangler secret put <NAME>`.
 - Site search uses `search_index` (rebuilt by the cron when content changes, or from Website → SEO → Site search).
   It only finds candidates; what a result shows and whether a stay is free are read live from D1.
 
+### Cookie consent, GA4, Meta Pixel, Conversions API, rate limits (Phase 14)
+
+- **Consent first.** The cookie banner appears as soon as GA4 or Meta Pixel is switched on (Admin → Marketing).
+  GA4 loads only after *Analytics* consent, Meta Pixel and the Conversions API only after *Marketing* consent.
+  Banner text, how long a choice lasts, "ask everyone again" and the privacy policy page (`/{lang}/privacy`) are in
+  Admin → Settings → Privacy. Write the policy before switching trackers on.
+- **GA4** (Admin → Marketing → GA4): Measurement ID. The site sends page views itself with a cleaned URL (only
+  `utm_*`, `gclid`, `fbclid` are kept), so in GA4 → Data streams → Enhanced measurement turn **off** "Page changes
+  based on browser history events" to avoid double page views. Purchase = Booking ID / total / THB, sent when the
+  guest sees the booking confirmed.
+- **Meta Pixel**: Pixel ID. In Events Manager → the Pixel's settings turn **off "Automatic advanced matching"**
+  so the Pixel never reads names or phone numbers from the booking form (the site never sends them).
+- **Conversions API** (server-side Lead at booking, Purchase when payment is confirmed; same `event_id` as the
+  browser Pixel so Meta counts once):
+  ```bash
+  npx wrangler secret put META_CAPI_ACCESS_TOKEN   # Events Manager → dataset → Settings → Conversions API → Generate access token
+  npx wrangler secret put META_TEST_EVENT_CODE     # optional, while testing: every event goes to "Test events" — delete it afterwards
+  npx wrangler secret put META_PIXEL_ID            # optional: overrides the Pixel ID from Admin (a mismatch is flagged)
+  ```
+  Then tick "Enable CAPI". Delivery log and "Send test event": Admin → Marketing → CAPI. Browser ids (`_fbp`, `_fbc`,
+  IP, user agent) are kept only with Marketing consent and erased after 8 days; the log after 90 days.
+- **Dashboard visitors / page views / funnel** come from the GA4 Data API: create a Google Cloud service account,
+  enable "Google Analytics Data API", add the service account's e-mail as **Viewer** in GA4 → Property access
+  management, then `npx wrangler secret put GA4_SERVICE_ACCOUNT_KEY` (paste the JSON key) and enter the numeric
+  property ID in Admin → Marketing → GA4. Reports are cached for 3 hours. Money figures always come from D1.
+- **Rate limits** use Workers Rate Limiting bindings (`ratelimits` in `wrangler.jsonc`, per client IP): public pages /
+  reads 300 per minute, public writes 30, sign-in 10, admin API 600. Over the limit → `429` + `Retry-After`, and one
+  `RATE_LIMITED` security event per IP per minute. The `namespace_id` values must be unique in your Cloudflare
+  account; change them if another Worker already uses 1001–1004. Without the bindings (local dev) nothing is limited.
+
 ## Push to GitHub
 
 ```bash

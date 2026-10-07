@@ -224,7 +224,10 @@ describe("routing and errors", () => {
       const res = await app.fetch(get("/apiary"), makeEnv(configured));
       assert.equal(res.status, 404);
       assert.match(res.headers.get("Content-Type") ?? "", /text\/html/);
-      assert.match(await res.text(), /asset/);
+      // The app shell (from ASSETS) rendered as a not-found page, not an API error.
+      const body = await res.text();
+      assert.match(body, /<!doctype html>/i);
+      assert.doesNotMatch(body, /"error"/);
     } finally {
       console.error = original;
     }

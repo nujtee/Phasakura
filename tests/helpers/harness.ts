@@ -5,6 +5,7 @@ import type { PasswordResetDelivery } from "../../src/worker/services/password-l
 import type { SlipVerifier } from "../../src/worker/slip/slip-verifier.ts";
 import { makeEnv, MemoryBucket } from "./fake-env.ts";
 import { FakeLine } from "./fake-line.ts";
+import { fakeGoogle, fakeMeta } from "./fake-http.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
 import { SqliteD1 } from "./sqlite-d1.ts";
 
@@ -42,6 +43,9 @@ export class Harness {
   slipVerifier: SlipVerifier | null = null;
   /** Fake LINE Messaging API (every call the app makes to api.line.me). */
   readonly line = new FakeLine();
+  /** Fake Meta Graph API (Conversions API) and Google APIs (GA4 Data API). */
+  readonly meta = fakeMeta();
+  readonly google = fakeGoogle();
   readonly app = createApp({
     requestId: () => "req",
     serviceOptions: {
@@ -51,6 +55,8 @@ export class Harness {
         return harnessVerifier.current;
       },
       lineFetch: (input: string, init?: RequestInit) => this.line.fetch(input, init),
+      metaFetch: (input: string, init?: RequestInit) => this.meta.fetch(input, init),
+      googleFetch: (input: string, init?: RequestInit) => this.google.fetch(input, init),
     },
   });
   readonly env: ReturnType<typeof makeEnv>;

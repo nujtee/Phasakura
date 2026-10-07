@@ -37,6 +37,7 @@ import { PaymentsPage } from "./payments/PaymentsPage.tsx";
 import { BookingCtaPage, BrandingPage, MarketingPage, SeoPage, WebsiteSettingsPage } from "./settings/SettingsPages.tsx";
 import { ThemePage } from "./settings/ThemePage.tsx";
 import { LinePage } from "./settings/LinePage.tsx";
+import { PrivacySettingsPage } from "./settings/PrivacySettingsPage.tsx";
 import { ReportPrintPage } from "./reports/ReportPrintPage.tsx";
 import { ReportsPage } from "./reports/ReportsPage.tsx";
 import "../styles/admin.css";
@@ -214,6 +215,8 @@ function renderPage(segments: string[], notFound: string) {
       return <BookingCtaPage />;
     case "settings-line":
       return <LinePage />;
+    case "settings-privacy":
+      return <PrivacySettingsPage />;
     case "roles":
       return <RolesPage />;
     case "permissions":

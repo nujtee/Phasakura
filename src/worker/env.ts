@@ -42,6 +42,11 @@ export interface R2BucketLike {
   delete(key: string): Promise<void>;
 }
 
+/** Cloudflare Workers Rate Limiting binding (`ratelimits` in wrangler.jsonc). */
+export interface RateLimitBinding {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface AssetsFetcher {
   fetch(request: Request): Promise<Response>;
 }
@@ -68,8 +73,19 @@ export interface Env {
   SLIP_VERIFICATION_API_KEY?: string;
   /** Meta Conversions API token — Cloudflare Secret only. Never stored in D1, never returned by the API. */
   META_CAPI_ACCESS_TOKEN?: string;
-  /** Meta test event code — Cloudflare Secret (used in Phase 14 while testing CAPI). */
+  /** Meta test event code — Cloudflare Secret. When set, CAPI events go to Events Manager → Test events. */
   META_TEST_EVENT_CODE?: string;
+  /** Optional Cloudflare Secret: Pixel ID for CAPI (otherwise the Pixel ID from Marketing settings is used). */
+  META_PIXEL_ID?: string;
+  /** GA4 Data API: JSON key of a service account with Viewer access to the GA4 property (secret). */
+  GA4_SERVICE_ACCOUNT_KEY?: string;
+  /** Graph API version for CAPI (plain var, e.g. "v23.0"). */
+  META_GRAPH_API_VERSION?: string;
+  /** Workers Rate Limiting bindings (Phase 14). Missing in local dev / tests unless configured. */
+  RL_PUBLIC?: RateLimitBinding;
+  RL_WRITE?: RateLimitBinding;
+  RL_AUTH?: RateLimitBinding;
+  RL_ADMIN?: RateLimitBinding;
   /** LINE Messaging API channel access token (long-lived) — Cloudflare Secret only. */
   LINE_CHANNEL_ACCESS_TOKEN?: string;
   /** LINE channel secret (webhook signature) — Cloudflare Secret only. */

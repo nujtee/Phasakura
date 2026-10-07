@@ -4,6 +4,9 @@ import type { FoodCatalogueDto, PublicBookingDto, QuoteDto, QuoteRequest } from 
 import { formatBaht } from "../../shared/booking-rules.ts";
 import { isIsoDate } from "../../shared/dates.ts";
 import { bookingLookupPath } from "../../shared/routes.ts";
+import { campingItem, foodChangeEvents, quoteItems, unitItem } from "../analytics/booking-events.ts";
+import { track } from "../analytics/tracker.ts";
+import { useSite } from "../site/SiteProvider.tsx";
 import { ApiError } from "../api/client.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
@@ -89,6 +92,9 @@ export function BookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [booking, setBooking] = useState<PublicBookingDto | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const { site } = useSite();
+  /** Funnel steps sent once per chosen stay. */
+  const sent = useRef({ viewFood: false, begin: false });
 
   const search = useCallback(async (q: StayQuery) => {
     setQuery(q);
@@ -144,6 +150,11 @@ export function BookingPage() {
   }, [step]);
 
   function choose(c: Choice, q: StayQuery = searched ?? query) {
+    sent.current = { viewFood: false, begin: false };
+    const item = c.kind === "UNIT" ? unitItem(c.unit) : campingItem(data?.camping ?? null, t.accommodation.camping, c.tents);
+    track({ name: "select_accommodation", item });
+    // Indicative value (one night); the exact total is known at checkout.
+    track({ name: "begin_booking", value: (item.price ?? 0) * (c.kind === "UNIT" ? 1 : q.adults), items: [item] });
     setChoice(c);
     setCart({});
     setQuote(null);
@@ -156,7 +167,17 @@ export function BookingPage() {
       .catch(() => setCatalogue({ checkIn: q.checkIn, checkOut: q.checkOut, categories: [] }));
   }
 
+  useEffect(() => {
+    if (step !== "food" || !catalogue || sent.current.viewFood) return;
+    sent.current.viewFood = true;
+    track({ name: "view_food" });
+  }, [step, catalogue]);
+
   function go(next: Step) {
+    if (next === "details" && quote && !sent.current.begin) {
+      sent.current.begin = true;
+      track({ name: "begin_checkout", value: quote.totalSatang / 100, items: quoteItems(quote) });
+    }
     if (next === "review") setIdemKey(newIdempotencyKey());
     setStep(next);
     window.scrollTo({ top: 0 });
@@ -185,6 +206,8 @@ export function BookingPage() {
         idempotencyKey: idemKey,
       });
       setBooking(created);
+      // Lead: same event_id as the server copy (Conversions API) → Meta keeps one.
+      track({ name: "generate_lead", bookingCode: created.bookingCode, value: created.totalSatang / 100 });
       setStep("done");
       window.scrollTo({ top: 0 });
     } catch (err) {
@@ -279,7 +302,8 @@ export function BookingPage() {
         <div className="flow-layout">
           <div className="flow-main">
             {step === "food" && (
-              catalogue ? <FoodStep catalogue={catalogue} quote={quote} cart={cart} onChange={setCart} />
+              catalogue ? <FoodStep catalogue={catalogue} quote={quote} cart={cart}
+                onChange={(next) => { foodChangeEvents(cart, next, catalogue); setCart(next); }} />
                 : <p role="status">{t.common.loading}</p>
             )}
 
@@ -315,6 +339,10 @@ export function BookingPage() {
                     onChange={(e) => { setPrivacy(e.target.checked); setFieldErrors({}); }} />
                   <span>{bt.privacy}</span>
                 </label>
+                {site?.consent?.policyPath && (
+                  // New tab: the guest keeps what they typed.
+                  <p className="field-hint"><a href={site.consent.policyPath} target="_blank" rel="noopener">{t.footer.privacy}</a></p>
+                )}
                 {fieldErrors.privacyAccepted && <p id="privacy-err" className="field-error">{fieldErrors.privacyAccepted}</p>}
               </div>
             )}

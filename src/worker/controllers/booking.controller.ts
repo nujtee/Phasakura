@@ -10,6 +10,10 @@ import type { Handler, RequestContext } from "../router.ts";
 import { readJsonObject } from "../security/request.ts";
 import { MAX_FOOD_LINES, MAX_GUESTS_PER_BOOKING, type QuoteInput } from "../services/quote.service.ts";
 import { ID_PATTERN, Validator } from "../validation.ts";
+import { currentConsent, metaBrowserIds } from "../../shared/consent.ts";
+import type { Services } from "../container.ts";
+import type { Attribution } from "../repositories/marketing.repository.ts";
+import type { RequestMeta } from "../services/auth-context.ts";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 const BOOKING_STATUSES = ["PENDING", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "CANCELLED", "EXPIRED", "NO_SHOW"] as const;
@@ -163,9 +167,10 @@ export function bookingController(services: ServicesFor) {
       const expectedTotalSatang = int(v, body.expectedTotalSatang, "expectedTotalSatang", 0, MAX_PRICE_SATANG * 100);
       const idempotencyKey = v.string("idempotencyKey", { required: true, pattern: IDEMPOTENCY_KEY_PATTERN })!;
       v.assertValid();
+      const meta = requestMeta(ctx);
       const { booking, replayed } = await services(ctx).bookings.create(
-        { ...input, customer, expectedTotalSatang, idempotencyKey },
-        requestMeta(ctx),
+        { ...input, customer, expectedTotalSatang, idempotencyKey, attribution: await attributionOf(ctx, services(ctx), meta) },
+        meta,
       );
       return jsonOk(booking, { status: replayed ? 200 : 201, headers: NO_STORE });
     }) satisfies Handler,
@@ -229,5 +234,29 @@ export function bookingController(services: ServicesFor) {
       const patch = parseRule(await readJsonObject(ctx.request), true);
       return jsonOk(await services(ctx).pricingRules.update(auth, ruleId, patch, requestMeta(ctx)));
     }),
+  };
+}
+
+/**
+ * What the visitor agreed to (consent cookie, current version only) and — only with Marketing consent —
+ * the Meta browser ids, user agent, IP and page (without query string), for the Conversions API.
+ */
+async function attributionOf(ctx: Parameters<Handler>[0], s: Services, meta: RequestMeta): Promise<Attribution> {
+  const cookies = ctx.request.headers.get("Cookie");
+  const version = (await s.site.getPublicSite(DEFAULT_LOCALE)).consent.version;
+  const consent = currentConsent(cookies, version);
+  const ids = metaBrowserIds(cookies);
+  let sourceUrl: string | null = null;
+  try {
+    const ref = new URL(ctx.request.headers.get("Referer") ?? "");
+    if (ref.origin === ctx.url.origin) sourceUrl = `${ref.origin}${ref.pathname}`;
+  } catch {
+    sourceUrl = null;
+  }
+  return {
+    consentVersion: consent?.version ?? 0,
+    analytics: consent?.analytics ?? false,
+    marketing: consent?.marketing ?? false,
+    fbp: ids.fbp, fbc: ids.fbc, userAgent: meta.userAgent, ip: meta.ip, sourceUrl,
   };
 }

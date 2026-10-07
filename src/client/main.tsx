@@ -9,6 +9,7 @@ import "./styles/accommodation.css";
 import "./styles/booking.css";
 import "./styles/content.css";
 import "./styles/search.css";
+import "./styles/consent.css";
 
 const container = document.getElementById("root");
 if (!container) throw new Error("#root element not found");

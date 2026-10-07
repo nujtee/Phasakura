@@ -46,6 +46,9 @@ export interface PublicSiteDto {
   contact: PublicSiteExtrasDto["contact"];
   footerText: string | null;
   bookingCta: PublicSiteExtrasDto["bookingCta"];
+  /** GA4 / Meta Pixel IDs when switched on, and the cookie banner (Phase 14). */
+  tracking: PublicSiteExtrasDto["tracking"];
+  consent: PublicSiteExtrasDto["consent"];
   /** Floating "chat with us on LINE" button (Phase 11): add-friend / OA link, or null when off. */
   lineButton: { url: string } | null;
   /** Uploaded font faces used by the published theme (Phase 12), loaded with the FontFace API. */

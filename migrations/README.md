@@ -20,6 +20,7 @@
 | `0016_line_notifications.sql` | LINE settings (singleton), staff recipients, one-time link codes (hashed), guest booking ↔ LINE links; trigger: a SENT notification is final; log index — new tables only, no data change |
 | `0017_images_fonts.sql` | `media_assets.parent_asset_id` (responsive variants) and `food_options.image_asset_id` (ADD COLUMN), `custom_fonts`; triggers: variants must match their original, FONT ⇔ font file, font rows point at an active FONT file; indexes for media access checks — no data change |
 | `0018_search_state.sql` | `search_index_state` (fingerprint of the content the search index was built from, row count, time) and an analytics index — new table only, no data change |
+| `0019_privacy_marketing.sql` | `privacy_settings` (+ seeded row) and texts per language, `booking_marketing` (consent + browser ids, only with Marketing consent, erased after 8 days), `marketing_events` (Meta CAPI outbox, no personal data); trigger: a SENT event is final; `marketing_settings.ga4_property_id` (new nullable column) and `analytics_report_cache` (GA4 Data API numbers for the dashboard) — additive only, no data change |
 
 ## Commands
 

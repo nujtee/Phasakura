@@ -75,7 +75,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { ready: true, path: "settings-theme", label: (t) => t.nav.theme, permission: "settings.theme" },
       { ready: true, path: "settings-booking-cta", label: (t) => t.nav.bookingCta, permission: "settings.booking_cta" },
       { ready: true, path: "settings-line", label: (t) => t.nav.line, permission: "settings.line" },
-      { path: "settings-privacy", label: (t) => t.nav.privacy, permission: "settings.privacy" },
+      { ready: true, path: "settings-privacy", label: (t) => t.nav.privacy, permission: "settings.privacy" },
     ],
   },
   {

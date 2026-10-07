@@ -6,6 +6,8 @@ import { ApiError, apiGet } from "../api/client.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
 import { defaultStay, fetchAvailability, type StayQuery } from "../accommodation/data.ts";
+import { unitItem } from "../analytics/booking-events.ts";
+import { track } from "../analytics/tracker.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
@@ -32,6 +34,7 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
       .then((u) => {
         setUnit(u);
         setState("ready");
+        track({ name: "view_accommodation", item: unitItem(u) });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;

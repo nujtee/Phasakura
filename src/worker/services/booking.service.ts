@@ -23,12 +23,15 @@ import type { AuthorizationService } from "./authorization.service.ts";
 import type { PreparedBooking, QuoteInput, QuoteService } from "./quote.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
 import type { GuestLineDto } from "../../shared/line-types.ts";
-import type { Outbox } from "./notification.service.ts";
+import type { OutboxLike } from "./marketing.service.ts";
+import type { Attribution, MarketingRepository } from "../repositories/marketing.repository.ts";
 
 export interface CreateBookingInput extends QuoteInput {
   customer: { name: string; phone: string; email: string | null; lineId: string | null; note: string | null };
   expectedTotalSatang: number;
   idempotencyKey: string;
+  /** Cookie consent + Meta browser ids at booking time (Phase 14); browser ids only with Marketing consent. */
+  attribution?: Attribution | null;
 }
 
 /** Abuse limits (security policy, not business configuration). */
@@ -62,9 +65,11 @@ export class BookingService {
     private readonly payments: PaymentRepository,
     private readonly mediaBaseUrl: string | undefined,
     /** LINE outbox (Phase 11): kitchen hears about cancelled food orders. */
-    private readonly outbox: Outbox | null = null,
+    private readonly outbox: OutboxLike | null = null,
     /** LINE opt-in state for the guest's booking page (Phase 11). */
     private readonly lineStatus: ((row: BookingRow) => Promise<GuestLineDto>) | null = null,
+    /** Marketing attribution + Conversions API Lead (Phase 14). */
+    private readonly marketing: MarketingRepository | null = null,
   ) {}
 
   async quote(input: QuoteInput): Promise<QuoteDto> {
@@ -234,6 +239,11 @@ export class BookingService {
     // No PII in logs: booking code and amount only.
     // Payment account snapshot (spec §25): later account changes never touch this booking.
     statements.push(this.payments.insertSnapshotStatement(bookingId, at));
+
+    // Marketing (Phase 14): consent at booking time; Lead queued only with Marketing consent + CAPI on.
+    if (this.marketing && input.attribution) {
+      statements.push(this.marketing.attributionStatement(bookingId, input.attribution, at), this.marketing.leadStatement(bookingId, at));
+    }
 
     statements.push(this.log.eventStatement("BOOKING_CREATED", "INFO", meta, { identifier: code }));
     statements.push(this.log.auditStatement(null, "CREATE_BOOKING", "bookings", bookingId, null,

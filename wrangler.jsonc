@@ -38,8 +38,12 @@
     "PUBLIC_MEDIA_BASE_URL": "",
     // Slip verification service ("easyslip" or empty = staff verify every slip).
     // The API key is a secret: `wrangler secret put SLIP_VERIFICATION_API_KEY` — never here.
-    "SLIP_VERIFY_PROVIDER": ""
+    "SLIP_VERIFY_PROVIDER": "",
+    // Graph API version for the Meta Conversions API (update when Meta retires it).
+    "META_GRAPH_API_VERSION": "v23.0"
     // LINE: `wrangler secret put LINE_CHANNEL_ACCESS_TOKEN` and `wrangler secret put LINE_CHANNEL_SECRET` — never here.
+    // Meta: `wrangler secret put META_CAPI_ACCESS_TOKEN` (+ optional META_PIXEL_ID, META_TEST_EVENT_CODE) — never here.
+    // GA4 dashboard numbers: `wrangler secret put GA4_SERVICE_ACCOUNT_KEY` — never here.
   },
 
   // D1 — source of truth for bookings, payments, revenue, inventory, food capacity.
@@ -64,5 +68,14 @@
       "binding": "MEDIA_PRIVATE",
       "bucket_name": "phasakura-media-private"
     }
+  ],
+
+  // Per-IP request limits (Phase 14, spec §58) — Workers Rate Limiting, counted at the edge (no D1 writes).
+  // namespace_id must be unique per account; period is 10 or 60 seconds.
+  "ratelimits": [
+    { "name": "RL_PUBLIC", "namespace_id": "1001", "simple": { "limit": 300, "period": 60 } },
+    { "name": "RL_WRITE", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } },
+    { "name": "RL_AUTH", "namespace_id": "1003", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_ADMIN", "namespace_id": "1004", "simple": { "limit": 600, "period": 60 } }
   ]
 }

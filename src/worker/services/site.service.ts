@@ -8,7 +8,7 @@ import {
 } from "../../shared/i18n/locales.ts";
 import { CTA_ICONS, CTA_PAGES, type BookingCtaDto, type CtaPage, type PublicSiteExtrasDto } from "../../shared/settings-types.ts";
 import { validateThemeTokens, type ThemeTokens } from "../../shared/theme.ts";
-import type { CtaRecord, SiteSettingsRepository, SiteTranslationRecord } from "../repositories/site-settings.repository.ts";
+import type { CtaRecord, SiteSettingsRecord, SiteSettingsRepository, SiteTranslationRecord } from "../repositories/site-settings.repository.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import { addFriendUrl } from "../../shared/line-types.ts";
 import { customFontFamily, FONT_TOKENS } from "../../shared/theme.ts";
@@ -20,7 +20,20 @@ export class SiteService {
     private readonly publicMediaBaseUrl: string | undefined,
   ) {}
 
-  async getPublicSite(locale: Locale): Promise<PublicSiteDto> {
+  /** Services live for one request: page metadata, CSP and booking attribution share one read. */
+  private readonly cache = new Map<string, Promise<PublicSiteDto>>();
+
+  getPublicSite(locale: Locale): Promise<PublicSiteDto> {
+    let p = this.cache.get(locale.code);
+    if (!p) {
+      p = this.load(locale);
+      this.cache.set(locale.code, p);
+      p.catch(() => this.cache.delete(locale.code));
+    }
+    return p;
+  }
+
+  private async load(locale: Locale): Promise<PublicSiteDto> {
     const record = await this.repository.findPublicSettings();
 
     const defaultLanguage: LocaleCode =
@@ -82,6 +95,8 @@ export class SiteService {
       footerText: nonEmpty(translation?.footerText) ?? nonEmpty(fallback?.footerText),
       bookingCta: toCta(record?.cta ?? null, nonEmpty(label)),
       fonts: fontFaces(theme, record?.fonts ?? [], this.publicMediaBaseUrl),
+      tracking: trackingIds(record?.marketing ?? null),
+      consent: consentBanner(record, locale, defaultLanguage),
       lineButton: record?.lineButton?.enabled
         ? (() => {
             const url = nonEmpty(record.contact?.lineOaUrl) ?? addFriendUrl(record.lineButton.basicId);
@@ -90,6 +105,32 @@ export class SiteService {
         : null,
     };
   }
+}
+
+/** GA4 / Pixel IDs only when switched on and well-formed (they end up in a script URL / call). */
+export function trackingIds(m: SiteSettingsRecord["marketing"]): PublicSiteDto["tracking"] {
+  const ga4 = m?.ga4_enabled === 1 && m.ga4_measurement_id && /^G-[A-Z0-9]{4,20}$/.test(m.ga4_measurement_id) ? m.ga4_measurement_id : null;
+  const pixel = m?.meta_pixel_enabled === 1 && m.meta_pixel_id && /^\d{5,20}$/.test(m.meta_pixel_id) ? m.meta_pixel_id : null;
+  return { ga4MeasurementId: ga4, metaPixelId: pixel };
+}
+
+/** The cookie banner is needed only when a tracker is on (necessary cookies need no consent). */
+function consentBanner(record: SiteSettingsRecord | null, locale: Locale, defaultLanguage: LocaleCode): PublicSiteDto["consent"] {
+  const tracking = trackingIds(record?.marketing ?? null);
+  const p = record?.privacy ?? null;
+  const texts = p?.texts ?? [];
+  const pick = (code: string) => texts.find((x) => parseLocale(x.language_code)?.code === code);
+  const own = pick(locale.code);
+  const fallback = pick(defaultLanguage);
+  const policy = (own?.policy_body_set ? own : null) ?? (fallback?.policy_body_set ? fallback : null);
+  return {
+    enabled: (p?.banner_enabled ?? 1) === 1 && !!(tracking.ga4MeasurementId || tracking.metaPixelId),
+    version: p?.consent_version ?? 1,
+    days: p?.consent_days ?? 180,
+    // No own-language text → the app's standard banner text in the visitor's language (not another language).
+    text: nonEmpty(own?.banner_text),
+    policyPath: policy ? `/${locale.path}/privacy` : null,
+  };
 }
 
 /** Stored tokens are re-validated on the way out: an invalid theme is dropped, never half-applied. */

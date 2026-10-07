@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE, parseLocale } from "../../shared/i18n/locales.ts";
+import { DEFAULT_LOCALE, getLocale, parseLocale } from "../../shared/i18n/locales.ts";
 import { requestMeta, withAuth, type ServicesFor } from "../http/auth-guard.ts";
 import { BadRequestError, HttpError, PayloadTooLargeError, ValidationError } from "../http/errors.ts";
 import { MAX_FONT_BYTES } from "../../shared/media-types.ts";
@@ -6,6 +6,9 @@ import { jsonOk } from "../http/response.ts";
 import type { Handler, RequestContext } from "../router.ts";
 import { readJsonObject } from "../security/request.ts";
 import { CMS_MAX_JSON_BYTES } from "./cms.controller.ts";
+
+/** Privacy policy: up to 30,000 characters per language (Thai is 3 bytes per character in UTF-8). */
+const PRIVACY_MAX_JSON_BYTES = 320 * 1024;
 
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 const PUBLIC_CACHE = { headers: { "Cache-Control": "public, max-age=60, s-maxage=300", Vary: "Accept-Encoding" } };
@@ -33,6 +36,14 @@ export function settingsController(services: ServicesFor) {
       jsonOk(await services(ctx).settings.saveBookingCta(auth, await readJsonObject(ctx.request), requestMeta(ctx)))),
 
     marketing: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).settings.marketing(auth, requestMeta(ctx)), NO_STORE)),
+    // Conversions API delivery log + test event (Phase 14)
+    capiEvents: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).capi.events(auth, requestMeta(ctx)), NO_STORE)),
+    capiTest: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).capi.sendTest(auth, requestMeta(ctx)), NO_STORE)),
+    // Privacy / cookie consent (Phase 14)
+    privacy: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).privacy.get(auth, requestMeta(ctx)), NO_STORE)),
+    savePrivacy: withAuth(services, async (ctx, auth) =>
+      jsonOk(await services(ctx).privacy.save(auth, await readJsonObject(ctx.request, PRIVACY_MAX_JSON_BYTES), requestMeta(ctx)), NO_STORE)),
+    publicPrivacy: (async (ctx) => jsonOk(await services(ctx).privacy.publicPolicy(getLocale(lang(ctx))), PUBLIC_CACHE)) satisfies Handler,
     saveMarketing: withAuth(services, async (ctx, auth) =>
       jsonOk(await services(ctx).settings.saveMarketing(auth, await readJsonObject(ctx.request), requestMeta(ctx)))),
 

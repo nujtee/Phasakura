@@ -75,6 +75,8 @@ export function seededSite(seed: SeedSite): FakeD1 {
     if (/FROM site_setting_translations/.test(sql)) return seed.translations ?? [];
     if (/FROM branding_settings/.test(sql)) return seed.branding ? [seed.branding] : [];
     if (/FROM theme_settings|FROM booking_cta_settings|FROM booking_cta_translations|FROM line_settings|FROM custom_fonts/.test(sql)) return [];
+    // Phase 14: trackers off, no privacy rows (defaults).
+    if (/FROM marketing_settings|FROM privacy_settings|FROM privacy_setting_translations/.test(sql)) return [];
     throw new Error(`Unexpected SQL in test: ${sql}`);
   });
 }

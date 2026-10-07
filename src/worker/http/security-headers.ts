@@ -43,3 +43,31 @@ export const PAGE_SECURITY_HEADERS: Record<string, string> = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "Cross-Origin-Opener-Policy": "same-origin",
 };
+
+/** Third-party origins a tracker needs; added to the page CSP only while that tracker is switched on. */
+const TRACKER_SOURCES = {
+  ga4: {
+    script: ["https://www.googletagmanager.com"],
+    // Google's CSP guide for GA4; doubleclick / google.com only carry Google signals (Marketing consent).
+    connect: ["https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://*.g.doubleclick.net", "https://www.google.com"],
+  },
+  pixel: {
+    script: ["https://connect.facebook.net"],
+    connect: ["https://www.facebook.com", "https://connect.facebook.net"],
+  },
+} as const;
+
+/**
+ * Page headers with the CSP widened for the trackers that are on (Phase 14). The scripts are still
+ * loaded only after consent, by the app; with both trackers off this is exactly PAGE_SECURITY_HEADERS.
+ */
+export function pageSecurityHeaders(tracking: { ga4: boolean; pixel: boolean }): Record<string, string> {
+  const extra = { script: [] as string[], connect: [] as string[] };
+  if (tracking.ga4) { extra.script.push(...TRACKER_SOURCES.ga4.script); extra.connect.push(...TRACKER_SOURCES.ga4.connect); }
+  if (tracking.pixel) { extra.script.push(...TRACKER_SOURCES.pixel.script); extra.connect.push(...TRACKER_SOURCES.pixel.connect); }
+  if (!extra.script.length) return PAGE_SECURITY_HEADERS;
+  const csp = PAGE_SECURITY_HEADERS["Content-Security-Policy"]!
+    .replace("script-src 'self'", `script-src 'self' ${extra.script.join(" ")}`)
+    .replace("connect-src 'self'", `connect-src 'self' ${extra.connect.join(" ")}`);
+  return { ...PAGE_SECURITY_HEADERS, "Content-Security-Policy": csp };
+}

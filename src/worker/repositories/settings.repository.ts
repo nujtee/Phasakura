@@ -141,31 +141,41 @@ export class SettingsRepository {
   marketing() {
     return this.db
       .prepare(
-        `SELECT ga4_enabled, ga4_measurement_id, meta_pixel_enabled, meta_pixel_id, meta_capi_enabled, gsc_verification, updated_at
+        `SELECT ga4_enabled, ga4_measurement_id, ga4_property_id, meta_pixel_enabled, meta_pixel_id, meta_capi_enabled, gsc_verification, updated_at
            FROM marketing_settings WHERE id = 1`,
       )
       .first<{
-        ga4_enabled: number; ga4_measurement_id: string | null; meta_pixel_enabled: number; meta_pixel_id: string | null;
+        ga4_enabled: number; ga4_measurement_id: string | null; ga4_property_id: string | null; meta_pixel_enabled: number; meta_pixel_id: string | null;
         meta_capi_enabled: number; gsc_verification: string | null; updated_at: string;
       }>();
   }
 
+  /** Last GA4 Data API error for the dashboard report (no credentials in it), or null. */
+  async ga4ReportError(propertyId: string): Promise<string | null> {
+    try {
+      const row = await this.db.prepare("SELECT error FROM analytics_report_cache WHERE cache_key = ?1").bind(`ga4:dashboard:${propertyId}`).first<{ error: string | null }>();
+      return row?.error ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   saveMarketingStatement(m: {
-    ga4Enabled: boolean; ga4MeasurementId: string | null; metaPixelEnabled: boolean; metaPixelId: string | null;
+    ga4Enabled: boolean; ga4MeasurementId: string | null; ga4PropertyId: string | null; metaPixelEnabled: boolean; metaPixelId: string | null;
     metaCapiEnabled: boolean; gscVerification: string | null;
   }, actorId: string, now: string): D1PreparedStatementLike {
     return this.db
       .prepare(
         `INSERT INTO marketing_settings (id, ga4_enabled, ga4_measurement_id, meta_pixel_enabled, meta_pixel_id, meta_capi_enabled,
-                                         gsc_verification, updated_at, updated_by)
-         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                                         gsc_verification, updated_at, updated_by, ga4_property_id)
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT (id) DO UPDATE SET ga4_enabled = excluded.ga4_enabled, ga4_measurement_id = excluded.ga4_measurement_id,
            meta_pixel_enabled = excluded.meta_pixel_enabled, meta_pixel_id = excluded.meta_pixel_id,
            meta_capi_enabled = excluded.meta_capi_enabled, gsc_verification = excluded.gsc_verification,
-           updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+           updated_at = excluded.updated_at, updated_by = excluded.updated_by, ga4_property_id = excluded.ga4_property_id`,
       )
       .bind(m.ga4Enabled ? 1 : 0, m.ga4MeasurementId, m.metaPixelEnabled ? 1 : 0, m.metaPixelId, m.metaCapiEnabled ? 1 : 0,
-        m.gscVerification, now, actorId);
+        m.gscVerification, now, actorId, m.ga4PropertyId);
   }
 
   // ================================================================ SEO

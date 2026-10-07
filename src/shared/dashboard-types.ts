@@ -59,11 +59,14 @@ export interface DashboardDto {
     trend: { date: string; bookings: number; revenueSatang: number }[];
   } | null;
   /**
-   * Last 30 days. Web analytics (visitors, page views, funnel steps) come from GA4 (Phase 14)
-   * and are null here; D1 is never replaced by analytics for money.
+   * Last 30 days. Web analytics (visitors, page views, accommodation views, booking / checkout
+   * started) come from the GA4 Data API (Phase 14) and are null when it is not connected or
+   * unreachable; the rest is counted in D1. D1 is never replaced by analytics for money.
    */
   analytics: {
     days: number;
+    /** GA4 connection: OK, NOT_CONFIGURED (no property id / key), ERROR (numbers may be from fetchedAt). */
+    ga4: { status: "OK" | "NOT_CONFIGURED" | "ERROR"; fetchedAt: string | null };
     visitors: number | null;
     pageViews: number | null;
     accommodationViews: number | null;

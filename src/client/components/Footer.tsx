@@ -1,4 +1,5 @@
 import { pagePath, type PublicPage } from "../../shared/routes.ts";
+import { useConsent } from "../consent/ConsentProvider.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
 import { useSite } from "../site/SiteProvider.tsx";
@@ -11,6 +12,8 @@ import { MAIN_MENU } from "./navigation.ts";
 export function Footer({ currentPage }: { currentPage: PublicPage | null }) {
   const { locale, t } = useI18n();
   const { site } = useSite();
+  const { manageable, openSettings } = useConsent();
+  const policyPath = site?.consent?.policyPath ?? null;
   const year = new Date().getFullYear();
 
   return (
@@ -53,6 +56,12 @@ export function Footer({ currentPage }: { currentPage: PublicPage | null }) {
           © {year}
           {site?.siteName ? ` ${site.siteName}` : ""} · {t.footer.rights}
         </small>
+        {(policyPath || manageable) && (
+          <ul className="site-footer__legal-links">
+            {policyPath && <li><Link to={policyPath}>{t.footer.privacy}</Link></li>}
+            {manageable && <li><button type="button" className="link-button" onClick={openSettings} aria-haspopup="dialog">{t.footer.cookieSettings}</button></li>}
+          </ul>
+        )}
       </div>
     </footer>
   );

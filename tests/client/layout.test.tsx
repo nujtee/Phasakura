@@ -29,6 +29,8 @@ function site(overrides: Partial<PublicSiteDto> = {}): PublicSiteDto {
     footerText: null,
     bookingCta: null,
     lineButton: null,
+    tracking: { ga4MeasurementId: null, metaPixelId: null },
+    consent: { enabled: false, version: 1, days: 180, text: null, policyPath: null },
     fonts: [],
     ...overrides,
   };

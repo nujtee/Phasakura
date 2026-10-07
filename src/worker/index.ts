@@ -17,7 +17,8 @@ import { HttpError, MethodNotAllowedError, TooManyRequestsError } from "./http/e
 import { jsonError } from "./http/response.ts";
 import { withSecurityHeaders } from "./http/security-headers.ts";
 import { Router, type RequestContext } from "./router.ts";
-import { assertSameOriginRequest } from "./security/request.ts";
+import { assertSameOriginRequest, clientIp } from "./security/request.ts";
+import { allowRequest, rateGroup, shouldLog } from "./security/rate-limit.ts";
 import { readCookie, SESSION_COOKIE } from "./security/cookies.ts";
 import { isSafeObjectKey } from "./services/media-url.ts";
 import { LINE_WEBHOOK_PATH } from "./line/line-api.ts";
@@ -188,6 +189,11 @@ export function createApp(options: AppOptions = {}) {
     .put("/api/admin/settings/booking-cta", settings.saveBookingCta)
     .get("/api/admin/settings/marketing", settings.marketing)
     .put("/api/admin/settings/marketing", settings.saveMarketing)
+    .get("/api/admin/marketing/events", settings.capiEvents)
+    .post("/api/admin/marketing/capi-test", settings.capiTest)
+    .get("/api/admin/settings/privacy", settings.privacy)
+    .put("/api/admin/settings/privacy", settings.savePrivacy)
+    .get("/api/public/privacy", settings.publicPrivacy)
     .get("/api/admin/i18n/coverage", seo.coverage)
     .get("/api/admin/seo", settings.seo)
     .put("/api/admin/seo/:pageKey", settings.saveSeo)
@@ -235,6 +241,7 @@ export function createApp(options: AppOptions = {}) {
     const requestId = newRequestId();
     let response: Response;
     try {
+      await enforceRateLimit(request, env, url);
       // The LINE webhook is server-to-server and authenticated by its HMAC signature instead.
       if (url.pathname !== LINE_WEBHOOK_PATH) assertSameOriginRequest(request, url);
       const { handler, params } = router.match(request.method, url.pathname);
@@ -246,6 +253,18 @@ export function createApp(options: AppOptions = {}) {
       response = toErrorResponse(error, requestId);
     }
     return withSecurityHeaders(response, requestId);
+  }
+
+  /** Per-IP request limits (Phase 14); 429 + Retry-After, one security event per IP / minute. */
+  async function enforceRateLimit(request: Request, env: Env, url: URL): Promise<void> {
+    const group = rateGroup(request.method, url.pathname);
+    const ip = clientIp(request);
+    if (!group || (await allowRequest(env, group, ip))) return;
+    if (ip && shouldLog(group, ip)) {
+      await services({ request, env, url }).securityLog
+        .event("RATE_LIMITED", "WARNING", { ip, userAgent: request.headers.get("User-Agent") }, { details: { group, path: url.pathname.slice(0, 100) } });
+    }
+    throw new TooManyRequestsError(60, "Too many requests. Please wait a moment and try again.");
   }
 
   /** GET /media/<object key> — public R2 images registered in D1 only. */
@@ -295,6 +314,13 @@ export function createApp(options: AppOptions = {}) {
           console.error(JSON.stringify({ level: "error", message: "search_index_failed", error: String(error).slice(0, 200) }));
         }
       }
+      // Meta Conversions API (Phase 14): due Lead / Purchase events, retries and retention.
+      try {
+        const capi = await s.capi.tick();
+        if (capi.sent || capi.failed || capi.retried) console.log(JSON.stringify({ level: "info", message: "capi_events", ...capi }));
+      } catch (error) {
+        console.error(JSON.stringify({ level: "error", message: "capi_failed", error: String(error).slice(0, 200) }));
+      }
       try {
         const line = await s.notifications.tick();
         if (line.planned || line.sent || line.failed || line.retried) console.log(JSON.stringify({ level: "info", message: "line_notifications", ...line }));
@@ -313,6 +339,10 @@ export function createApp(options: AppOptions = {}) {
         return serveMedia(request, env, url);
       }
       // Everything else: robots.txt, sitemap.xml, redirects and the app shell with page metadata (Phase 13).
+      const group = rateGroup(request.method, url.pathname);
+      if (group && !(await allowRequest(env, group, clientIp(request)))) {
+        return new Response("Too many requests", { status: 429, headers: { "Retry-After": "60", "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+      }
       return servePage(request, env, url);
     },
   };

@@ -31,6 +31,10 @@ type Body = Record<string, unknown>;
 export interface MarketingSecrets {
   capiToken: boolean;
   testEventCode: boolean;
+  /** META_PIXEL_ID secret (a Pixel ID is not sensitive, but it is never echoed back either). */
+  pixelId?: string | null;
+  /** GA4_SERVICE_ACCOUNT_KEY secret is set and readable (dashboard numbers from the GA4 Data API). */
+  ga4Key?: boolean;
 }
 
 /**
@@ -229,18 +233,24 @@ export class SettingsService {
       metaPixelId: m?.meta_pixel_id ?? null,
       metaCapiEnabled: m?.meta_capi_enabled === 1,
       gscVerification: m?.gsc_verification ?? null,
+      ga4PropertyId: m?.ga4_property_id ?? null,
+      ga4DataKeyConfigured: !!this.secrets.ga4Key,
+      ga4DataError: m?.ga4_property_id ? await this.repo.ga4ReportError(m.ga4_property_id) : null,
       capiTokenConfigured: this.secrets.capiToken,
       capiTestEventCodeConfigured: this.secrets.testEventCode,
+      capiPixelSource: this.secrets.pixelId ? "SECRET" : m?.meta_pixel_id ? "SETTINGS" : null,
+      capiPixelMismatch: !!this.secrets.pixelId && !!m?.meta_pixel_id && this.secrets.pixelId !== m.meta_pixel_id,
       updatedAt: m?.updated_at ?? null,
     };
   }
 
   async saveMarketing(actor: AuthContext, body: Body, meta: RequestMeta): Promise<MarketingDto> {
     await this.authz.requirePermission(actor, "marketing.edit", meta);
-    const v = new Validator(body).allowOnly(["ga4Enabled", "ga4MeasurementId", "metaPixelEnabled", "metaPixelId", "metaCapiEnabled", "gscVerification"]);
+    const v = new Validator(body).allowOnly(["ga4Enabled", "ga4MeasurementId", "ga4PropertyId", "metaPixelEnabled", "metaPixelId", "metaCapiEnabled", "gscVerification"]);
     const input = {
       ga4Enabled: v.boolean("ga4Enabled", false),
       ga4MeasurementId: v.string("ga4MeasurementId", { max: 30 })?.toUpperCase() ?? null,
+      ga4PropertyId: v.string("ga4PropertyId", { pattern: PIXEL_ID }) ?? null,
       metaPixelEnabled: v.boolean("metaPixelEnabled", false),
       metaPixelId: v.string("metaPixelId", { pattern: PIXEL_ID }) ?? null,
       metaCapiEnabled: v.boolean("metaCapiEnabled", false),
@@ -249,14 +259,15 @@ export class SettingsService {
     if (input.ga4MeasurementId && !GA4_ID.test(input.ga4MeasurementId)) v.errors.ga4MeasurementId = "INVALID_FORMAT";
     if (input.ga4Enabled && !input.ga4MeasurementId) v.errors.ga4MeasurementId = "REQUIRED";
     if (input.metaPixelEnabled && !input.metaPixelId) v.errors.metaPixelId = "REQUIRED";
-    if (input.metaCapiEnabled && !input.metaPixelId) v.errors.metaPixelId = "REQUIRED";
+    if (input.metaCapiEnabled && !input.metaPixelId && !this.secrets.pixelId) v.errors.metaPixelId = "REQUIRED";
     if (input.metaCapiEnabled && !this.secrets.capiToken) v.errors.metaCapiEnabled = "CAPI_TOKEN_MISSING";
     v.assertValid();
     const before = await this.marketing(actor, meta);
     await this.db.batch([
       this.repo.saveMarketingStatement(input, actor.userId, iso(this.clock())),
       this.log.auditStatement(actor.userId, "UPDATE_MARKETING", "marketing", "marketing_settings",
-        { ...before, capiTokenConfigured: undefined, capiTestEventCodeConfigured: undefined, updatedAt: undefined }, input, meta),
+        { ...before, capiTokenConfigured: undefined, capiTestEventCodeConfigured: undefined, capiPixelSource: undefined,
+          capiPixelMismatch: undefined, ga4DataKeyConfigured: undefined, ga4DataError: undefined, updatedAt: undefined }, input, meta),
     ]);
     return this.marketing(actor, meta);
   }

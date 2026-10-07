@@ -4,7 +4,8 @@ import { formatBaht } from "../../shared/booking-rules.ts";
 import { getMessages } from "../../shared/i18n/index.ts";
 import { DEFAULT_LOCALE, LOCALES, type Locale, type LocaleCode } from "../../shared/i18n/locales.ts";
 import { getSeoMessages } from "../../shared/i18n/seo-messages.ts";
-import { accommodationPath, bookingLookupPath, pagePath, PUBLIC_PAGES, type PublicPage, type ResolvedRoute } from "../../shared/routes.ts";
+import { accommodationPath, bookingLookupPath, pagePath, privacyPath, PUBLIC_PAGES, type PublicPage, type ResolvedRoute } from "../../shared/routes.ts";
+import type { PublicPrivacyDto } from "../../shared/settings-types.ts";
 import { HREFLANG, OG_LOCALE, type MetaImageDto, type PageMetaDto, type RobotsDirective } from "../../shared/seo-types.ts";
 import { HttpError } from "../http/errors.ts";
 import type { SeoRepository, SeoRow } from "../repositories/seo.repository.ts";
@@ -62,6 +63,8 @@ export class SeoService {
     private readonly mediaBaseUrl: string | undefined,
     /** Non-production deployments are never indexed. */
     private readonly production: boolean,
+    /** Privacy policy text (Phase 14): the page exists only when it has text. */
+    private readonly privacyPolicy: ((locale: Locale) => Promise<PublicPrivacyDto>) | null = null,
   ) {}
 
   private abs(url: string | null | undefined): string | null {
@@ -94,7 +97,9 @@ export class SeoService {
       favicon: site.favicon ? this.abs(site.favicon) : null,
     };
 
-    const page = route.kind === "page" ? route.page : null;
+    let page = route.kind === "page" ? route.page : null;
+    const policy = page === "privacy" && this.privacyPolicy ? await this.privacyPolicy(locale) : null;
+    if (page === "privacy" && !policy?.body) page = null;
     let unit: PublicUnitDto | null = null;
     if (page === "accommodation" && route.kind === "page") {
       unit = await this.accommodation.publicBySlug(route.slug!, locale).catch((e: unknown) => {
@@ -119,7 +124,7 @@ export class SeoService {
     const rows = pageKey ? await this.repo.page(pageKey) : [];
     const row: SeoRow | undefined = rows.find((r) => r.language_code === lang);
     const thRow: SeoRow | undefined = rows.find((r) => r.language_code === DEFAULT_LOCALE.code);
-    const pathFor = (l: Locale) => (unit ? accommodationPath(l, unit.slug) : pagePath(l, pageKey!));
+    const pathFor = (l: Locale) => (unit ? accommodationPath(l, unit.slug) : page === "privacy" ? privacyPath(l) : pagePath(l, pageKey!));
     const ownUrl = `${this.baseUrl}${pathFor(locale)}`;
 
     const pageRobots = (r: SeoRow | undefined): RobotsDirective => (r && ROBOTS.has(r.robots as RobotsDirective) ? (r.robots as RobotsDirective) : "index,follow");
@@ -170,6 +175,12 @@ export class SeoService {
         amenityFeature: unit.amenities.map((a) => ({ "@type": "LocationFeatureSpecification", name: a.name, value: true })),
         containedInPlace: siteName ? { "@type": "LodgingBusiness", "@id": `${this.baseUrl}/#lodging`, name: siteName, url: homeUrl } : null,
       }));
+    } else if (page === "privacy" && policy) {
+      const pageTitle = policy.title ?? t.pages.privacy.title;
+      title = withSite(pageTitle);
+      description = clean(policy.body?.split(/\n\s*\n/)[0]);
+      jsonLd.push(crumbs([{ name: t.nav.home, url: homeUrl }, { name: pageTitle, url: ownUrl }]));
+      jsonLd.push(compact({ "@context": "https://schema.org", "@type": "WebPage", name: title, url: ownUrl, inLanguage: HREFLANG[lang] }));
     } else if (pageKey === "home") {
       title = siteName ? (site.tagline ? `${siteName} | ${site.tagline}` : siteName) : t.pages.home.title;
       description = siteName ? clean(fill(sm.home, { site: siteName })) : clean(site.tagline);
@@ -341,6 +352,8 @@ export class SeoService {
       add((l) => accommodationPath(l, u.slug), () => true, w3cDate(unitDates.get(u.slug)),
         imgs([u.cover?.url, ...u.images.map((i) => i.url)]));
     }
+    const policy = this.privacyPolicy ? await this.privacyPolicy(th) : null;
+    if (policy?.body) add((l) => privacyPath(l), () => true, w3cDate(policy.updatedAt), []);
     return [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">',

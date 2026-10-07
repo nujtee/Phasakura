@@ -76,9 +76,52 @@ export interface MarketingDto {
   metaPixelId: string | null;
   metaCapiEnabled: boolean;
   gscVerification: string | null;
+  /** GA4 property (numeric) for dashboard numbers via the GA4 Data API (Phase 14). */
+  ga4PropertyId: string | null;
+  /** Whether the GA4_SERVICE_ACCOUNT_KEY secret is set (the key itself is never returned). */
+  ga4DataKeyConfigured: boolean;
+  /** Last GA4 Data API error, if the latest attempt failed. */
+  ga4DataError: string | null;
   /** Whether META_CAPI_ACCESS_TOKEN is set as a Cloudflare Secret. The token itself is never returned. */
   capiTokenConfigured: boolean;
   capiTestEventCodeConfigured: boolean;
+  /** Where the Conversions API takes the Pixel ID from (a META_PIXEL_ID secret wins over these settings). */
+  capiPixelSource: "SECRET" | "SETTINGS" | null;
+  /** The META_PIXEL_ID secret differs from the Pixel ID above (browser and server would report to different pixels). */
+  capiPixelMismatch: boolean;
+  updatedAt: string | null;
+}
+
+/** One Conversions API delivery (admin log). No personal data. */
+export interface MarketingEventDto {
+  id: string;
+  eventName: "Lead" | "Purchase" | "PageView";
+  eventId: string;
+  bookingCode: string | null;
+  isTest: boolean;
+  status: "PENDING" | "SENT" | "FAILED" | "SKIPPED";
+  attempts: number;
+  lastError: string | null;
+  skipReason: string | null;
+  eventTime: string;
+  createdAt: string;
+  sentAt: string | null;
+}
+
+/** Settings → Privacy (spec §46). */
+export interface PrivacySettingsDto {
+  bannerEnabled: boolean;
+  consentVersion: number;
+  consentDays: number;
+  translations: Partial<Record<LocaleCode, { bannerText: string | null; policyTitle: string | null; policyBody: string | null }>>;
+  updatedAt: string | null;
+}
+
+/** GET /api/public/privacy — the privacy policy page. */
+export interface PublicPrivacyDto {
+  language: LocaleCode;
+  title: string | null;
+  body: string | null;
   updatedAt: string | null;
 }
 
@@ -111,4 +154,8 @@ export interface PublicSiteExtrasDto {
   contact: { phone: string | null; email: string | null; lineOaUrl: string | null; mapUrl: string | null; address: string | null };
   footerText: string | null;
   bookingCta: (Omit<BookingCtaDto, "labels"> & { label: string | null }) | null;
+  /** Trackers that are switched on (null = off). Loaded only after the matching consent (Phase 14). */
+  tracking: { ga4MeasurementId: string | null; metaPixelId: string | null };
+  /** Cookie banner: shown only when a tracker is on. `policyPath` = the privacy page, when it has text. */
+  consent: { enabled: boolean; version: number; days: number; text: string | null; policyPath: string | null };
 }

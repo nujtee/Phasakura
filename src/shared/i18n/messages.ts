@@ -28,6 +28,8 @@ export interface Messages {
     email: string;
     line: string;
     map: string;
+    privacy: string;
+    cookieSettings: string;
   };
   common: {
     skipToContent: string;
@@ -77,6 +79,7 @@ export interface Messages {
     gallery: { title: string };
     booking: { title: string };
     history: { title: string };
+    privacy: { title: string };
     notFound: { title: string; body: string; backHome: string };
   };
 }
@@ -104,6 +107,8 @@ export const th: Messages = {
     email: "อีเมล",
     line: "LINE",
     map: "แผนที่",
+    privacy: "นโยบายความเป็นส่วนตัว",
+    cookieSettings: "ตั้งค่าคุกกี้",
   },
   common: {
     skipToContent: "ข้ามไปยังเนื้อหาหลัก",
@@ -159,6 +164,7 @@ export const th: Messages = {
     gallery: { title: "แกลเลอรี" },
     booking: { title: "จองที่พัก" },
     history: { title: "ประวัติความเป็นมา" },
+    privacy: { title: "นโยบายความเป็นส่วนตัว" },
     notFound: {
       title: "ไม่พบหน้าที่ต้องการ",
       body: "หน้าที่คุณค้นหาอาจถูกย้ายหรือไม่มีอยู่",
@@ -190,6 +196,8 @@ export const en: Messages = {
     email: "Email",
     line: "LINE",
     map: "Map",
+    privacy: "Privacy policy",
+    cookieSettings: "Cookie settings",
   },
   common: {
     skipToContent: "Skip to main content",
@@ -245,6 +253,7 @@ export const en: Messages = {
     gallery: { title: "Gallery" },
     booking: { title: "Booking" },
     history: { title: "History" },
+    privacy: { title: "Privacy policy" },
     notFound: {
       title: "Page not found",
       body: "The page you're looking for may have moved or doesn't exist.",
@@ -276,6 +285,8 @@ export const zhCN: Messages = {
     email: "邮箱",
     line: "LINE",
     map: "地图",
+    privacy: "隐私政策",
+    cookieSettings: "Cookie 设置",
   },
   common: {
     skipToContent: "跳至主要内容",
@@ -331,6 +342,7 @@ export const zhCN: Messages = {
     gallery: { title: "图库" },
     booking: { title: "立即预订" },
     history: { title: "历史沿革" },
+    privacy: { title: "隐私政策" },
     notFound: {
       title: "页面未找到",
       body: "您访问的页面可能已移动或不存在。",
