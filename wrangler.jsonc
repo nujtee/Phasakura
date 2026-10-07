@@ -12,13 +12,16 @@
   },
 
   // Single Worker serves the API and the React SPA (ADR-1).
-  // `/api/*` and `/media/*` (public R2 images) always run the Worker first; everything else is served from static
-  // assets and unknown paths fall back to index.html (client-side routing).
+  // Every request except the hashed build files under /assets/ runs the Worker first (Phase 13): it renders
+  // the app shell with page metadata and the right status code (404 for unknown pages), serves robots.txt /
+  // sitemap.xml, applies SEO redirects and serves /media/* (public R2 images) and /api/*.
+  // /assets/* comes straight from static assets (immutable, long cache); a missing build file is a real 404
+  // (no app-shell fallback: page routing lives in the Worker).
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/media/*"]
+    "not_found_handling": "none",
+    "run_worker_first": ["/*", "!/assets/*"]
   },
 
   // Every minute: expire unpaid booking holds (release inventory), plan + send LINE notifications

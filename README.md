@@ -81,6 +81,18 @@ Secrets are never committed. Set them with `npx wrangler secret put <NAME>`.
   `font-src` in `public/_headers`, and allow your site origin in the bucket's CORS rules — browsers fetch
   fonts with CORS. With the default (`/media/*` on the same Worker) nothing extra is needed.
 
+### SEO, Search Console and site search (Phase 13)
+
+- The Worker renders every page's `<head>` (title, description, canonical, hreflang TH / EN / ZH-Hans + x-default,
+  Open Graph, JSON-LD) and returns real 404s. Texts come from Website → SEO, with automatic defaults.
+- `/robots.txt` and `/sitemap.xml` are generated. **Only `APP_ENV=production` is indexable** — any other value
+  serves `Disallow: /` and `X-Robots-Tag: noindex` so staging / preview copies never appear in Google.
+- Set `APP_BASE_URL` to the public https origin so canonical, hreflang, OG and sitemap URLs use it.
+- Google Search Console: add a **Domain** property (verified with a DNS TXT record) — or a URL-prefix property and
+  paste the HTML-tag code into Admin → Marketing → GA4 / Search Console — then submit `https://<domain>/sitemap.xml`.
+- Site search uses `search_index` (rebuilt by the cron when content changes, or from Website → SEO → Site search).
+  It only finds candidates; what a result shows and whether a stay is free are read live from D1.
+
 ## Push to GitHub
 
 ```bash

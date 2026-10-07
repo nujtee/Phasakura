@@ -205,14 +205,28 @@ describe("routing and errors", () => {
     }
   });
 
-  it("delegates non-API paths to static assets (SPA)", async () => {
-    const res = await app.fetch(get("/th/gallery"), makeEnv(configured));
-    assert.equal(res.status, 200);
-    assert.match(await res.text(), /asset/);
+  it("serves the app shell for pages, even when page metadata cannot be loaded", async () => {
+    const original = console.error;
+    console.error = () => {};
+    try {
+      const res = await app.fetch(get("/th/gallery"), makeEnv(configured));
+      assert.equal(res.status, 200);
+      assert.match(await res.text(), /asset/);
+    } finally {
+      console.error = original;
+    }
   });
 
-  it("does not treat /apiary as an API route", async () => {
-    const res = await app.fetch(get("/apiary"), makeEnv(configured));
-    assert.match(await res.text(), /asset/);
+  it("does not treat /apiary as an API route (it is an unknown page)", async () => {
+    const original = console.error;
+    console.error = () => {};
+    try {
+      const res = await app.fetch(get("/apiary"), makeEnv(configured));
+      assert.equal(res.status, 404);
+      assert.match(res.headers.get("Content-Type") ?? "", /text\/html/);
+      assert.match(await res.text(), /asset/);
+    } finally {
+      console.error = original;
+    }
   });
 });

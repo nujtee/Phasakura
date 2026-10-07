@@ -5,6 +5,8 @@ import { Link, useRouter } from "../router/Router.tsx";
 import { Brand } from "./Brand.tsx";
 import { LanguageSwitcher } from "./LanguageSwitcher.tsx";
 import { MAIN_MENU } from "./navigation.ts";
+import { SearchDialog } from "../search/SearchDialog.tsx";
+import { getSearchMessages } from "../../shared/i18n/search-messages.ts";
 
 /**
  * Desktop: Logo · Home · Gallery · Booking · History · Language
@@ -17,6 +19,24 @@ export function Header({ currentPage }: { currentPage: PublicPage | null }) {
   const menuId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLButtonElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const sm = getSearchMessages(locale.code);
+
+  // "/" opens the search from anywhere except while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setOpen(false);
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   // Close the menu whenever the route changes.
   useEffect(() => setOpen(false), [pathname]);
@@ -60,6 +80,14 @@ export function Header({ currentPage }: { currentPage: PublicPage | null }) {
           <ul>{links()}</ul>
         </nav>
 
+        <button ref={searchRef} type="button" className="search-toggle" aria-haspopup="dialog" aria-label={sm.open}
+          onClick={() => { setOpen(false); setSearchOpen(true); }}>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+            <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
+            <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+
         <LanguageSwitcher className="lang-switcher--desktop" />
 
         <button
@@ -87,6 +115,8 @@ export function Header({ currentPage }: { currentPage: PublicPage | null }) {
         </nav>
         <LanguageSwitcher className="lang-switcher--mobile" onNavigate={close} />
       </div>
+
+      <SearchDialog open={searchOpen} onClose={() => { setSearchOpen(false); searchRef.current?.focus(); }} />
     </header>
   );
 }

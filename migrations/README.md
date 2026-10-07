@@ -19,6 +19,7 @@
 | `0015_admin_dashboard.sql` | triggers: booking lifecycle (`BOOKING_STATUS_TRANSITION`), kitchen orders forward-only, published/archived theme versions frozen; indexes for dashboard, calendar and admin lists — no data change |
 | `0016_line_notifications.sql` | LINE settings (singleton), staff recipients, one-time link codes (hashed), guest booking ↔ LINE links; trigger: a SENT notification is final; log index — new tables only, no data change |
 | `0017_images_fonts.sql` | `media_assets.parent_asset_id` (responsive variants) and `food_options.image_asset_id` (ADD COLUMN), `custom_fonts`; triggers: variants must match their original, FONT ⇔ font file, font rows point at an active FONT file; indexes for media access checks — no data change |
+| `0018_search_state.sql` | `search_index_state` (fingerprint of the content the search index was built from, row count, time) and an analytics index — new table only, no data change |
 
 ## Commands
 

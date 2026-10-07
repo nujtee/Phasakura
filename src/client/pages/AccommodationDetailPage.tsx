@@ -5,7 +5,6 @@ import { pagePath } from "../../shared/routes.ts";
 import { ApiError, apiGet } from "../api/client.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
-import { useSite } from "../site/SiteProvider.tsx";
 import { defaultStay, fetchAvailability, type StayQuery } from "../accommodation/data.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
@@ -17,7 +16,6 @@ import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
 /** /{lang}/accommodation/{slug} — details, photos, amenities and a live date check. */
 export function AccommodationDetailPage({ slug }: { slug: string }) {
   const { locale, t } = useI18n();
-  const { site } = useSite();
   const [unit, setUnit] = useState<PublicUnitDto | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [result, setResult] = useState<AvailabilityDto | null>(null);
@@ -41,10 +39,6 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
       });
     return () => controller.abort();
   }, [slug, locale]);
-
-  useEffect(() => {
-    if (unit) document.title = [unit.seoTitle ?? unit.name, site?.siteName].filter(Boolean).join(" | ");
-  }, [unit, site?.siteName]);
 
   if (state === "missing") return <NotFoundPage />;
   if (state === "error") return <div className="page container"><p role="alert" className="notice notice--error">{t.common.loadError}</p></div>;

@@ -12,6 +12,7 @@ import { useAdmin } from "../AdminContext.tsx";
 import { CmsManager, ImageField, LangTabs, PageTabs } from "../cms/CmsKit.tsx";
 import { CtaButton } from "../../components/FloatingBookingCta.tsx";
 import { Alert, Button, detailMessage, Field, fieldErrors } from "../ui.tsx";
+import { SearchEnginesCard, SiteSearchCard, TranslationCoverageCard } from "./SeoExtras.tsx";
 
 type Msg = { kind: "error" | "success"; text: string } | null;
 
@@ -373,6 +374,7 @@ export function SeoPage() {
         <form className="adm-card" onSubmit={submit} noValidate>
           <fieldset className="adm-fieldset" disabled={s.busy || !editable}>
             <div className="adm-toolbar"><h2 className="adm-h2">{c.seo.pages[page]}</h2><LangTabs value={lang} onChange={setLang} filled={(l) => !!draft[l]?.seoTitle} /></div>
+            <p className="adm-field__hint">{c.seo.autoHint}</p>
             <div className="adm-seo-preview" aria-label={c.seo.googlePreview}>
               <span className="adm-seo-preview__title">{e.seoTitle || c.ui.untitled}</span>
               <span className="adm-seo-preview__url">{e.canonicalUrl || ""}</span>
@@ -413,6 +415,9 @@ export function SeoPage() {
             summary={(r) => `→ ${r.toPath as string} (${r.statusCode as number}) ${r.isActive ? "" : `· ${c.status.INACTIVE}`}`} />
         </div>
       )}
+      <SearchEnginesCard />
+      {can("content.view") && <TranslationCoverageCard />}
+      {editable && <SiteSearchCard />}
     </section>
   );
 }

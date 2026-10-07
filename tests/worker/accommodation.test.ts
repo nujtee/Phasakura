@@ -328,9 +328,11 @@ describe("images: secure upload, storage, serving (§54, §55, §56)", () => {
 
   it("/media only serves registered, active, public assets", async () => {
     assert.equal((await h.get("/media/accommodation/2027/01/nope.png")).status, 404);
-    // URL normalisation turns /media/../x into /x: it never reaches the media handler (SPA page, not a file).
+    // URL normalisation turns /media/../x into /x: it never reaches the media handler, and a file-like
+    // path outside /assets is a plain 404 (Phase 13), never a file from the project.
     const escaped = await h.get("/media/../wrangler.jsonc");
-    assert.match(await escaped.text(), /<!doctype html>/i);
+    assert.equal(escaped.status, 404);
+    assert.doesNotMatch(await escaped.text(), /d1_databases|<!doctype html>/i);
     assert.equal((await h.get("/media/a%2F..%2Fsecret")).status, 404, "decoded traversal rejected by key guard");
     // An object that exists in the bucket but is not registered (or is private) is never served.
     await h.bucket.put("slips/2027/01/private.jpg", jpegBytes());

@@ -104,3 +104,26 @@ describe("Phase 12 dictionaries (images, fonts, content pages)", () => {
     assert.ok(cmsTh.theme.fonts.upload);
   });
 });
+
+describe("Phase 13 dictionaries (SEO, search, translation coverage)", () => {
+  it("SEO descriptions and search texts: TH, EN and ZH-CN have identical keys and no empty strings", async () => {
+    const { seoTh, seoEn, seoZhCN } = await import("../../src/shared/i18n/seo-messages.ts");
+    const { searchTh, searchEn, searchZhCN } = await import("../../src/shared/i18n/search-messages.ts");
+    for (const [ref, others] of [[seoTh, [seoEn, seoZhCN]], [searchTh, [searchEn, searchZhCN]]] as const) {
+      for (const dict of others) {
+        assert.deepEqual(keys(dict).sort(), keys(ref).sort());
+        assert.ok(values(dict).every((v) => v.trim().length > 0));
+      }
+    }
+  });
+
+  it("every search result type and translation-coverage group has a label", async () => {
+    const { searchTh } = await import("../../src/shared/i18n/search-messages.ts");
+    const { cmsTh, cmsEn, cmsZhCN } = await import("../../src/shared/i18n/admin-cms-messages.ts");
+    const { SEARCH_ENTITY_TYPES } = await import("../../src/shared/search-types.ts");
+    const { TRANSLATION_KINDS } = await import("../../src/shared/seo-types.ts");
+    for (const t of SEARCH_ENTITY_TYPES) assert.ok(searchTh.types[t], t);
+    for (const dict of [cmsTh, cmsEn, cmsZhCN]) for (const k of TRANSLATION_KINDS) assert.ok(dict.seo.kinds[k], k);
+    assert.equal(searchTh.placeholder, "ค้นหาที่พัก อาหาร หรือกิจกรรม...", "spec §40 wording");
+  });
+});

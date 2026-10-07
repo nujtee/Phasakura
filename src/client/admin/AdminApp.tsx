@@ -4,6 +4,7 @@ import { getAdminMessages, type AdminMessages } from "../../shared/i18n/admin-me
 import { getCmsMessages } from "../../shared/i18n/admin-cms-messages.ts";
 import type { Locale } from "../../shared/i18n/locales.ts";
 import { adminPath } from "../../shared/routes.ts";
+import { clearHeadMeta } from "../seo/headMeta.ts";
 import { ApiError, apiGet, apiRequest, setUnauthorizedHandler } from "../api/client.ts";
 import { useRouter } from "../router/Router.tsx";
 import { AdminContext, type AdminContextValue } from "./AdminContext.tsx";
@@ -45,6 +46,8 @@ const PUBLIC_PAGES = new Set(["login", "forgot-password", "reset-password"]);
 /** Keeps admin pages out of search engines (also sent as X-Robots-Tag by the Worker assets). */
 function useNoIndex() {
   useEffect(() => {
+    // Public page metadata (if the visitor came from the website) does not belong to admin pages.
+    clearHeadMeta();
     const meta = document.createElement("meta");
     meta.name = "robots";
     meta.content = "noindex, nofollow";

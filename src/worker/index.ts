@@ -21,6 +21,9 @@ import { assertSameOriginRequest } from "./security/request.ts";
 import { readCookie, SESSION_COOKIE } from "./security/cookies.ts";
 import { isSafeObjectKey } from "./services/media-url.ts";
 import { LINE_WEBHOOK_PATH } from "./line/line-api.ts";
+import { createPageHandler } from "./seo/pages.ts";
+import { seoController } from "./controllers/seo.controller.ts";
+import { searchController } from "./controllers/search.controller.ts";
 
 export interface AppOptions {
   /** Override service wiring (tests). */
@@ -59,10 +62,20 @@ export function createApp(options: AppOptions = {}) {
   const settings = settingsController(services);
   const rep = reportController(services);
   const line = lineController(services);
+  const seo = seoController(services);
+  const search = searchController(services);
+  const servePage = createPageHandler((request, env, url) => services({ request, env, url }));
 
   const router = new Router()
     .get("/api/health", health.check)
     .get("/api/public/site", site.getPublicSite)
+    // Page metadata for in-app navigation (Phase 13): the same data the Worker puts in <head>.
+    .get("/api/public/meta", seo.meta)
+    // Global search (spec §40–41, §59)
+    .get("/api/search", search.search)
+    .post("/api/search/click", search.click)
+    .get("/api/admin/search/analytics", search.analytics)
+    .post("/api/admin/search/reindex", search.reindex)
     // Authentication (spec §59)
     .post("/api/auth/login", auth.login)
     .post("/api/auth/logout", auth.logout)
@@ -175,6 +188,7 @@ export function createApp(options: AppOptions = {}) {
     .put("/api/admin/settings/booking-cta", settings.saveBookingCta)
     .get("/api/admin/settings/marketing", settings.marketing)
     .put("/api/admin/settings/marketing", settings.saveMarketing)
+    .get("/api/admin/i18n/coverage", seo.coverage)
     .get("/api/admin/seo", settings.seo)
     .put("/api/admin/seo/:pageKey", settings.saveSeo)
     .get("/api/admin/theme", settings.theme)
@@ -272,6 +286,15 @@ export function createApp(options: AppOptions = {}) {
         const drift = await s.availability.detectCampingDrift();
         if (drift) console.error(JSON.stringify({ level: "error", message: "camping_inventory_drift", nights: drift }));
       }
+      // Search index: rebuilt only when the content it is built from changed (checked every 5 minutes).
+      if (scheduledTime === undefined || new Date(scheduledTime).getUTCMinutes() % 5 === 0) {
+        try {
+          const rows = await s.search.rebuildIfStale();
+          if (rows !== null) console.log(JSON.stringify({ level: "info", message: "search_index_rebuilt", rows }));
+        } catch (error) {
+          console.error(JSON.stringify({ level: "error", message: "search_index_failed", error: String(error).slice(0, 200) }));
+        }
+      }
       try {
         const line = await s.notifications.tick();
         if (line.planned || line.sent || line.failed || line.retried) console.log(JSON.stringify({ level: "info", message: "line_notifications", ...line }));
@@ -289,8 +312,8 @@ export function createApp(options: AppOptions = {}) {
       if (url.pathname.startsWith("/media/")) {
         return serveMedia(request, env, url);
       }
-      // Everything else is the React app (static assets + SPA fallback).
-      return env.ASSETS.fetch(request);
+      // Everything else: robots.txt, sitemap.xml, redirects and the app shell with page metadata (Phase 13).
+      return servePage(request, env, url);
     },
   };
 }

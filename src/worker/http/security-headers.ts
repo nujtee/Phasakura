@@ -27,3 +27,19 @@ export function withSecurityHeaders(response: Response, requestId: string): Resp
     headers,
   });
 }
+
+/**
+ * Headers for HTML pages rendered by the Worker (Phase 13). Same policy as the static assets in
+ * `public/_headers` (kept identical by a test), so moving page rendering into the Worker changes
+ * nothing for the browser.
+ */
+export const PAGE_SECURITY_HEADERS: Record<string, string> = {
+  "Content-Security-Policy":
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Cross-Origin-Opener-Policy": "same-origin",
+};

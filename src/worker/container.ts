@@ -49,6 +49,11 @@ import { getLocale, parseLocale } from "../shared/i18n/locales.ts";
 import { ImageResolver } from "./media/image-resolver.ts";
 import { FontRepository } from "./repositories/font.repository.ts";
 import { FontService } from "./services/font.service.ts";
+import { SeoRepository } from "./repositories/seo.repository.ts";
+import { SeoService } from "./services/seo.service.ts";
+import { TranslationCoverageService } from "./services/translation-coverage.service.ts";
+import { SearchRepository } from "./repositories/search.repository.ts";
+import { SearchService } from "./services/search.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -79,6 +84,9 @@ export interface Services {
   line: LineService;
   notifications: NotificationService;
   fonts: FontService;
+  seo: SeoService;
+  translations: TranslationCoverageService;
+  search: SearchService;
 }
 
 export interface ServiceOptions {
@@ -174,6 +182,8 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     outbox, (row) => line.guestStatus(row));
   bookingsRef = bookings;
   const verifier = options.slipVerifier !== undefined ? options.slipVerifier : createSlipVerifier(env);
+  const accommodation = new AccommodationService(db, units, inventory, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, images);
+  const content = new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL, images);
 
   return {
     site,
@@ -184,7 +194,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     users: new UserManagementService(db, users, rbac, sessions, links, authorization, log, clock),
     logs: new AdminLogService(logRepo, authorization),
     media,
-    accommodation: new AccommodationService(db, units, inventory, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, images),
+    accommodation,
     availability,
     quotes,
     bookings,
@@ -198,10 +208,17 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       testEventCode: !!env.META_TEST_EVENT_CODE?.trim(),
     }, fontRepo),
     foodAdmin: new FoodAdminService(db, new FoodAdminRepository(db), inventory, authorization, log, clock),
-    content: new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL, images),
+    content,
     reports: new ReportService(new ReportRepository(db), inventory, authorization, log, clock),
     line,
     notifications,
     fonts: new FontService(db, fontRepo, media, mediaRepo, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
+    // Page metadata, sitemap, robots, redirects (Phase 13). Only production is indexable.
+    seo: new SeoService(new SeoRepository(db), site, accommodation, content, resolveBaseUrl(env, options.origin),
+      env.PUBLIC_MEDIA_BASE_URL, env.APP_ENV === "production"),
+    translations: new TranslationCoverageService(db, authorization),
+    // Global search (spec §40–41): index for matching only; results re-read from source, live availability.
+    search: new SearchService(db, new SearchRepository(db), accommodation, quotes, content, availability,
+      () => inventory.siteTimezone(), authorization, log, clock),
   };
 }

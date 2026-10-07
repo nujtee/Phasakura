@@ -7,6 +7,7 @@ import { useRouter } from "../router/Router.tsx";
 import { useSite } from "../site/SiteProvider.tsx";
 import { Footer } from "./Footer.tsx";
 import { Header } from "./Header.tsx";
+import { useHeadMeta } from "../seo/headMeta.ts";
 
 export function Layout({
   currentPage,
@@ -26,11 +27,11 @@ export function Layout({
   const mainRef = useRef<HTMLElement>(null);
   const firstRender = useRef(true);
 
-  // <html lang> and <title>. Full SEO metadata arrives in Phase 13.
+  // <html lang>; title, description, canonical, hreflang, Open Graph and JSON-LD follow the page (Phase 13).
   useEffect(() => {
     document.documentElement.lang = locale.code;
-    document.title = [title, site?.siteName].filter(Boolean).join(" | ");
-  }, [locale, title, site?.siteName]);
+  }, [locale]);
+  useHeadMeta(pathname, [title, site?.siteName].filter(Boolean).join(" | "));
 
   // Move focus to main content after client-side navigation (screen reader announcement).
   useEffect(() => {

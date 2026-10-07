@@ -1,0 +1,322 @@
+/* Global search (Phase 13): header button + modal search panel. Theme tokens only. */
+
+.search-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  cursor: pointer;
+}
+
+.search-toggle:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+}
+
+@media (min-width: 900px) {
+  .search-toggle {
+    border-color: transparent;
+    background: transparent;
+  }
+}
+
+html.has-search {
+  overflow: hidden;
+}
+
+.search-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 10vh - 32px);
+  margin: 8vh auto auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.search-dialog[open] {
+  display: flex;
+}
+
+.search-dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+@media (max-width: 639px) {
+  .search-dialog {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+}
+
+.search-dialog__panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+
+.search-form {
+  padding: max(8px, env(safe-area-inset-top)) 12px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.search-form__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 2px solid transparent;
+}
+
+.search-form__row:focus-within {
+  border-bottom-color: var(--color-primary);
+}
+
+.search-form__icon {
+  flex: none;
+  margin-left: 4px;
+  color: var(--color-muted);
+}
+
+.search-form__input {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1.125rem;
+}
+
+.search-form__input:focus,
+.search-form__input:focus-visible {
+  outline: none;
+}
+
+.search-form__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.search-form__close:hover {
+  color: var(--color-heading);
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.search-form__dates summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--color-primary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-form__date-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  padding-bottom: 4px;
+}
+
+.search-form__date-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+}
+
+.search-form__date-row input {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.search-form__clear {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.search-form__error {
+  margin: 4px 0 0;
+  color: var(--color-error);
+  font-size: 0.875rem;
+}
+
+.search-form__hint {
+  margin: 2px 0 10px;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+}
+
+.search-status {
+  min-height: 1.6em;
+  margin: 0;
+  padding: 10px 16px 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.search-empty {
+  margin: 4px 0 0;
+  padding: 0 16px;
+  color: var(--color-muted);
+}
+
+.search-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 8px max(16px, env(safe-area-inset-bottom));
+  transition: opacity var(--transition-fast);
+}
+
+.search-results.is-loading {
+  opacity: 0.6;
+}
+
+.search-group__title {
+  margin: 12px 8px 2px;
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.search-group__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.search-result {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+}
+
+.search-result:hover,
+.search-result:focus-visible {
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+}
+
+.search-result__img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-border) 60%, var(--color-surface));
+}
+
+.search-result__img--empty {
+  display: block;
+}
+
+.search-result__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.search-result__title {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.search-result--full .search-result__title {
+  color: var(--color-muted);
+}
+
+.search-result__summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.search-result__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+  font-size: 0.8125rem;
+}
+
+.search-result__price {
+  font-variant-numeric: tabular-nums;
+}
+
+.search-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.search-badge--ok {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface));
+}
+
+.search-badge--no {
+  color: var(--color-muted);
+  background: color-mix(in srgb, var(--color-muted) 10%, var(--color-surface));
+}
+
+.search-book {
+  display: flex;
+  margin: 12px 8px 0;
+}
+
+/* One close button is enough: hide the browser's own "clear" cross in the search field. */
+.search-form__input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
