@@ -8,32 +8,6 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/client/**/*.{ts,tsx}"],
-    languageOptions: { globals: globals.browser },
-    plugins: { "react-hooks": reactHooks },
-    rules: reactHooks.configs.recommended.rules,
-  },
-  {
-    files: ["src/worker/**/*.ts"],
-    languageOptions: { globals: globals.serviceworker },
-  },
-  {
-    files: ["tests/**/*.{ts,tsx}", "*.config.{js,ts}"],
-    languageOptions: { globals: globals.node },
-  },
-  {
-    // Command-line tools: Node globals, and printing to the terminal is their job.
-    files: ["scripts/**/*.ts"],
-    languageOptions: { globals: globals.node },
-    rules: { "no-console": "off" },
-  },
-  {
-    // Browser suites: Node runner + code that runs inside the page (page.evaluate).
-    files: ["tests/e2e/**/*.{js,mjs,mts}"],
-    languageOptions: { globals: { ...globals.node, ...globals.browser } },
-    rules: { "no-console": "off" },
-  },
-  {
     rules: {
       "no-console": ["warn", { allow: ["warn", "error"] }],
       // `_name` marks a value left out on purpose (e.g. `const { id: _id, ...rest } = row`).
@@ -56,4 +30,33 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["src/client/**/*.{ts,tsx}"],
+    languageOptions: { globals: globals.browser },
+    plugins: { "react-hooks": reactHooks },
+    rules: reactHooks.configs.recommended.rules,
+  },
+  {
+    // Worker logs are structured JSON lines read in Workers Logs (shape enforced by scripts/static-checks.ts).
+    files: ["src/worker/**/*.ts"],
+    languageOptions: { globals: globals.serviceworker },
+    rules: { "no-console": "off" },
+  },
+  {
+    files: ["tests/**/*.{ts,tsx}", "*.config.{js,ts}"],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    // Command-line tools: Node globals, and printing to the terminal is their job.
+    files: ["scripts/**/*.ts"],
+    languageOptions: { globals: globals.node },
+    rules: { "no-console": "off" },
+  },
+  {
+    // Browser suites: Node runner + code that runs inside the page (page.evaluate).
+    files: ["tests/e2e/**/*.{js,mjs,mts}"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: { "no-console": "off" },
+  },
+
 );

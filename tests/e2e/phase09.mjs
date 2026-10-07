@@ -55,7 +55,7 @@ const pa = await admin.newPage(); watch(pa);
 const req = admin.request;
 const today = day(0);
 const A = await book(req, { checkIn: today, checkOut: day(2), stay: { kind: "UNIT", unitId: "dev_house_01" } }, "0811111111");
-const B = await book(req, { checkIn: today, checkOut: day(1), stay: { kind: "UNIT", unitId: "dev_vip_01" } }, "0822222222");
+await book(req, { checkIn: today, checkOut: day(1), stay: { kind: "UNIT", unitId: "dev_vip_01" } }, "0822222222"); // occupies the VIP tent today
 const C = await book(req, { checkIn: today, checkOut: day(1), adults: 3, stay: { kind: "CAMPING", tents: 3 } }, "0833333333");
 const D = await book(req, { checkIn: day(3), checkOut: day(4), stay: { kind: "UNIT", unitId: "dev_house_02" }, food: [{ optionId: "dev_food_dinner_a", serviceDate: day(3), adults: 2 }] }, "0844444444");
 
