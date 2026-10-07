@@ -23,7 +23,7 @@ export function normalizeSearchText(text: string): string {
   return text
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[​-‍⁠﻿]/g, "")
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
     .replace(/[\s\p{P}\p{S}]+/gu, " ")
     .trim();
 }

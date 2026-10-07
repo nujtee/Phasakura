@@ -25,6 +25,11 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm run lint
+      - name: Lint report (every finding in one annotation)
+        if: failure()
+        run: |
+          npx eslint . -f json -o eslint-report.json || true
+          node -e "const r=require('./eslint-report.json');const l=r.flatMap(f=>f.messages.map(m=>f.filePath.replace(process.cwd()+'/','')+':'+m.line+' '+(m.severity===2?'E':'W')+' '+m.ruleId+' '+m.message.replace(/[\r\n%]/g,' ')));console.log('::error title=eslint '+l.length+'::'+l.join('%0A'))"
       - run: npm run check:static
       - name: Tests with coverage
         run: npm run test:coverage

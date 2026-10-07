@@ -23,7 +23,7 @@ export interface XlsxSheet {
 
 const enc = new TextEncoder();
 // eslint-disable-next-line no-control-regex
-const INVALID_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g;
+const INVALID_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
 
 export function xmlEscape(value: string): string {
   return value.replace(INVALID_XML, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

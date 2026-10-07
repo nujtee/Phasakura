@@ -22,9 +22,26 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Command-line tools: Node globals, and printing to the terminal is their job.
+    files: ["scripts/**/*.ts"],
+    languageOptions: { globals: globals.node },
+    rules: { "no-console": "off" },
+  },
+  {
+    // Browser suites: Node runner + code that runs inside the page (page.evaluate).
+    files: ["tests/e2e/**/*.{js,mjs,mts}"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: { "no-console": "off" },
+  },
+  {
     rules: {
       "no-console": ["warn", { allow: ["warn", "error"] }],
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      // `_name` marks a value left out on purpose (e.g. `const { id: _id, ...rest } = row`).
+      "@typescript-eslint/no-unused-vars": ["error", {
+        argsIgnorePattern: "^_", varsIgnorePattern: "^_", destructuredArrayIgnorePattern: "^_", ignoreRestSiblings: true, caughtErrors: "none",
+      }],
+      // Input sanitizing deliberately matches control characters (\u0000-\u001f) to strip or reject them.
+      "no-control-regex": "off",
       "@typescript-eslint/consistent-type-imports": "error",
       "no-restricted-syntax": [
         "error",
