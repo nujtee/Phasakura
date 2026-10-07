@@ -56,3 +56,24 @@ export function localDateTimeIn(timeZone: string, now: Date = new Date()): strin
   );
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
+
+/** Minutes the time zone is ahead of UTC at `now` (Asia/Bangkok → 420). */
+export function utcOffsetMinutes(timeZone: string, now: Date = new Date()): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    })
+      .formatToParts(now)
+      .map((p) => [p.type, p.value]),
+  );
+  const asUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+  return Math.round((asUtc - Math.floor(now.getTime() / 1000) * 1000) / 60_000);
+}
+
+/** First day of the month of a YYYY-MM-DD date, and of the following month. */
+export function monthRange(date: string): { start: string; next: string } {
+  const [y, m] = date.split("-").map(Number) as [number, number];
+  const start = `${y}-${String(m).padStart(2, "0")}-01`;
+  const next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+  return { start, next };
+}

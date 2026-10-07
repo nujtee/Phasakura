@@ -23,6 +23,11 @@ export interface Messages {
     navigation: string;
     languages: string;
     rights: string;
+    contact: string;
+    phone: string;
+    email: string;
+    line: string;
+    map: string;
   };
   common: {
     skipToContent: string;
@@ -30,6 +35,9 @@ export interface Messages {
     contentPending: string;
     loadError: string;
     retry: string;
+    close: string;
+    themePreview: string;
+    exitPreview: string;
   };
   accommodation: {
     houses: string;
@@ -90,6 +98,11 @@ export const th: Messages = {
     navigation: "เมนูท้ายเว็บไซต์",
     languages: "ภาษา",
     rights: "สงวนลิขสิทธิ์",
+    contact: "ติดต่อเรา",
+    phone: "โทร",
+    email: "อีเมล",
+    line: "LINE",
+    map: "แผนที่",
   },
   common: {
     skipToContent: "ข้ามไปยังเนื้อหาหลัก",
@@ -97,6 +110,9 @@ export const th: Messages = {
     contentPending: "เนื้อหาส่วนนี้จะแสดงเมื่อผู้ดูแลระบบเผยแพร่ข้อมูล",
     loadError: "ไม่สามารถโหลดข้อมูลได้ในขณะนี้",
     retry: "ลองใหม่",
+    close: "ปิด",
+    themePreview: "กำลังดูตัวอย่างธีมฉบับร่าง (เห็นเฉพาะผู้ดูแล)",
+    exitPreview: "ออกจากโหมดตัวอย่าง",
   },
   accommodation: {
     houses: "บ้านพัก",
@@ -167,6 +183,11 @@ export const en: Messages = {
     navigation: "Footer navigation",
     languages: "Languages",
     rights: "All rights reserved",
+    contact: "Contact",
+    phone: "Phone",
+    email: "Email",
+    line: "LINE",
+    map: "Map",
   },
   common: {
     skipToContent: "Skip to main content",
@@ -174,6 +195,9 @@ export const en: Messages = {
     contentPending: "This section will appear once it has been published.",
     loadError: "We couldn't load this right now.",
     retry: "Try again",
+    close: "Close",
+    themePreview: "Previewing the draft theme (admins only)",
+    exitPreview: "Exit preview",
   },
   accommodation: {
     houses: "Houses",
@@ -244,6 +268,11 @@ export const zhCN: Messages = {
     navigation: "页脚导航",
     languages: "语言",
     rights: "版权所有",
+    contact: "联系我们",
+    phone: "电话",
+    email: "邮箱",
+    line: "LINE",
+    map: "地图",
   },
   common: {
     skipToContent: "跳至主要内容",
@@ -251,6 +280,9 @@ export const zhCN: Messages = {
     contentPending: "此部分内容发布后将在此显示。",
     loadError: "暂时无法加载内容。",
     retry: "重试",
+    close: "关闭",
+    themePreview: "正在预览草稿主题（仅管理员可见）",
+    exitPreview: "退出预览",
   },
   accommodation: {
     houses: "房屋",

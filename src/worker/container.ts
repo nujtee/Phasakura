@@ -31,6 +31,14 @@ import { SecurityLogService } from "./services/security-log.service.ts";
 import { SessionService } from "./services/session.service.ts";
 import { SiteService } from "./services/site.service.ts";
 import { UserManagementService } from "./services/user-management.service.ts";
+import { CmsService } from "./cms/cms.service.ts";
+import { DashboardRepository } from "./repositories/dashboard.repository.ts";
+import { FoodAdminRepository } from "./repositories/food-admin.repository.ts";
+import { SettingsRepository } from "./repositories/settings.repository.ts";
+import { DashboardService } from "./services/dashboard.service.ts";
+import { FoodAdminService } from "./services/food-admin.service.ts";
+import { PublicContentService } from "./services/public-content.service.ts";
+import { SettingsService } from "./services/settings.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -52,6 +60,11 @@ export interface Services {
   pricingRules: PricingRuleService;
   payments: PaymentService;
   slips: SlipService;
+  dashboard: DashboardService;
+  cms: CmsService;
+  settings: SettingsService;
+  foodAdmin: FoodAdminService;
+  content: PublicContentService;
 }
 
 export interface ServiceOptions {
@@ -121,5 +134,13 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     slips: new SlipService(db, paymentRepo, bookings, pricing, env.MEDIA_PRIVATE, verifier, authorization, log, clock),
     payments: new PaymentService(db, paymentRepo, bookingRepo, mediaRepo, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
+    dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock),
+    cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
+    settings: new SettingsService(db, new SettingsRepository(db), authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL, {
+      capiToken: !!env.META_CAPI_ACCESS_TOKEN?.trim(),
+      testEventCode: !!env.META_TEST_EVENT_CODE?.trim(),
+    }),
+    foodAdmin: new FoodAdminService(db, new FoodAdminRepository(db), inventory, authorization, log, clock),
+    content: new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL),
   };
 }

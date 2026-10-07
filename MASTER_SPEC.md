@@ -19,9 +19,10 @@
 | 5 | Booking flow, pricing rules, food, snapshots, Booking ID, lookup, hold expiry | ✅ Done |
 | 6 | Camping capacity hardening (daily, multi-night, tents, race protection, integrity) | ✅ Done |
 | 7 | Payment (receiving accounts, QR, account snapshot, record / refund, status) | ✅ Done |
-| 8 | Slip verification (private R2 upload, manual queue, real auto-verification service adapter) | ✅ Done — รอ `NEXT PHASE` |
-| 9 | Admin dashboard | ⏳ Next |
-| 10–16 | ตาม B.60 | ⏳ Not started |
+| 8 | Slip verification (private R2 upload, manual queue, real auto-verification service adapter) | ✅ Done |
+| 9 | Admin dashboard (dashboard, calendar, stay actions, payments list, food menu/capacity/kitchen orders, website, branding, theme, booking CTA, marketing IDs, SEO, Home/Gallery/History CMS) | ✅ Done — รอ `NEXT PHASE` |
+| 10 | Reports | ⏳ Next |
+| 11–16 | ตาม B.60 | ⏳ Not started |
 
 ### A.2 Architecture Decisions (ADR)
 
@@ -50,6 +51,7 @@ src/
     controllers/     รับ Request → เรียก Service → คืน Response
     services/        Business logic
     repositories/    ติดต่อ D1 เท่านั้น (prepared statements)
+    cms/             generic back-office record engine (Phase 9)
     env.ts           Env bindings (D1, R2, vars)
   client/            React app
     main.tsx, App.tsx
@@ -57,7 +59,7 @@ src/
     components/      Header, Footer, LanguageSwitcher, Layout
     pages/           Home, Gallery, Booking, History, NotFound
     styles/          tokens.css (CSS variables), base.css
-migrations/          D1 migrations 0001–0010
+migrations/          D1 migrations 0001–0015 (see migrations/README.md)
 seeds/dev.sql        ข้อมูลตัวอย่างสำหรับ local เท่านั้น
 tests/               node:test test suites
 ```
@@ -176,7 +178,28 @@ All tables are `STRICT`. Every rule above has a test in `tests/db/`.
 | Provider contract | The EasySlip adapter follows the provider's v1 verify API (multipart `file`, Bearer key, `data.transRef/date/amount.amount/receiver.account…`). Its public field-level docs could not be fetched while building; **confirm the current contract before setting the key** — a mismatch only produces ERROR → manual review. |
 | Staff | `/admin/slips` (`slips.view`): queue by status, verification history with reasons. Slip images only via `GET /api/admin/payments/:id/slip` (session + `slips.view`, `private, no-store`, nosniff, audited `VIEW_SLIP`); `/media` never serves private objects. Verify / reject need `payments.verify`; reject reason stays internal; the guest gets a fresh hold (`hold_minutes`) and can pay/upload again; unpaid rejected holds expire normally. Recording a manual payment is refused while a slip waits (`SLIP_PENDING_REVIEW`) — no double counting. |
 
-### A.6 Verification notes (Phase 1–8)
+### A.13 Admin dashboard & back office (Phase 9)
+
+| Topic | Decision |
+|---|---|
+| Dashboard (§48) | `GET /api/admin/dashboard` (`dashboard.view`). Counts, tonight's free houses / VIP / tents, arrivals & departures, revenue, 14-day trend, 30-day summary — all from D1. **Widgets follow permissions**: customer names need `bookings.view`; money needs `payments.view` or `reports.view` (CONTENT_ADMIN sees counts only). **Revenue** = paid (`PAID`/`VERIFIED`) bookings in a sold status (`CONFIRMED`/`CHECKED_IN`/`CHECKED_OUT`/`NO_SHOW`) by **check-in date**, from booking snapshots (accommodation − discount, food, total). Visitors / page views / funnel steps are GA4 data (Phase 14) and shown as "—"; analytics never feed money figures. Days are property-time-zone days. |
+| Calendar (§49) | `GET /api/admin/calendar?from&to` (`calendar.view`, ≤ 62 days): every unit × night from the night-locks (multi-night stays show every night, check-out day free), admin blocks, camping used/max per night, bookings overlapping the range. Day / Week (Mon–Sun) / Month / Custom views; names and totals only with `bookings.view`. |
+| Stay actions | `POST /api/admin/bookings/:code/stay/check-in|check-out|no-show` (`bookings.edit`, audited). Check-in / no-show from the check-in date; nights stay reserved (the stay was sold). Migration 0015 trigger enforces the booking lifecycle in the DB: PENDING → CONFIRMED/EXPIRED/CANCELLED, CONFIRMED → CHECKED_IN/CANCELLED/NO_SHOW, CHECKED_IN → CHECKED_OUT; everything else `BOOKING_STATUS_TRANSITION`. |
+| Payments list | `GET /api/admin/payments` (`payments.view`) with status / method / Booking ID / date filters, cursor paging. |
+| Booking rules | `GET/PUT /api/admin/booking-settings` (edit: `settings.website`): hold minutes, max nights, max advance days, max tents — new bookings only. |
+| Generic CMS engine | `/api/admin/cms/:entity` for food categories, dishes, included meals, home slides & sections, gallery categories & images, history sections & timeline, SEO redirects. One field schema (`src/shared/cms-schema.ts`) drives server validation **and** the admin forms. Strict allow-list (unknown → `UNKNOWN_FIELD`, `status` only via publish, immutable codes), per-kind validation (plain text only — never HTML; links `/path` or `https://` only, no `javascript:` / `//host`; colours `#RRGGBB`), reference + image-purpose checks (`WRONG_MEDIA_PURPOSE`), one atomic batch with the audit entry, constraint errors → 409/422. Table/column names are constants, never request data. Permissions per entity: view `content.view` / `food.view` / `seo.edit`, edit `content.home|gallery|history` / `food.edit` / `seo.edit`, publish `content.publish`. New records go to the end of the list; reorder = `PUT …/order {ids}`. |
+| Content rules | Slides need a HOME_SLIDE image; publish → SCHEDULED until `startAt`, visitors see EXPIRED after `endAt` (computed, so no cron is needed); publishing a slide whose end has passed → `SLIDE_ENDED`. Gallery categories and timeline items need a Thai name/title; images show publicly only when published **and** in a published category (or none); a category with images cannot be deleted (`CATEGORY_NOT_EMPTY`). Gallery/history/dishes are soft-deleted; slides/sections/redirects are hard-deleted (content only, audit keeps the old values). |
+| Public content API (§59) | `GET /api/public/home`, `/home/slides`, `/gallery`, `/gallery/categories`, `/history`, `/history/timeline` (`?lang=`): published + in-window only, ACTIVE public images only, language → Thai fallback, static SQL, cacheable 60 s. Public page rendering (slideshow, masonry + lightbox, timeline) is Phase 12 together with responsive images. |
+| Food (§19–24) | Menu admin (dishes with pricing type / child pricing / set size / min-max, categories with deadlines, service time and service day, included meals per unit / unit type / camping). A new default daily limit also updates future days still on the old default; per-day overrides `PUT /api/admin/food/capacity/:categoryId/:date` (null = default; below sold → `CAPACITY_BELOW_USED`). Kitchen orders `GET/PATCH /api/admin/food-orders`: optimistic (`expectedStatus`), forward-only (DB trigger `FOOD_ORDER_STATUS_TRANSITION`), only once the booking is confirmed, cancellation only through the booking. Kitchen report: Phase 10. |
+| Website & branding (§36–37) | `PUT /api/admin/settings/website` (name / tagline / address / footer per language, contact, LINE OA & map https URLs) and `/branding` (main, mobile, login logo = LOGO images; favicon = FAVICON image). UPSERTs, so a fresh production DB works without the dev seed. The public site reads everything at runtime — no deploy. Default language, time zone and currency are fixed (shown read-only). |
+| Theme (§37–38) | Tokens = the CSS variables of §37 (+ text-on-primary). Values are a closed set: `#RRGGBB`, listed system font stacks (Thai + Chinese coverage, no external font requests — uploaded fonts Phase 12), radius 0–48 px, three shadow levels — so a theme can never inject CSS. 10 presets. Draft → preview (in-admin live preview + "preview on the live website" `?themePreview=1`, draft tokens served only to a session with `settings.theme`) → publish (previous version ARCHIVED) → rollback (an archived version becomes live again). One published version (unique index); archived/published tokens frozen by trigger (`THEME_VERSION_IMMUTABLE`). Applied on `:root` via CSSOM (CSP-safe), re-validated on the way out; admin keeps its neutral look. Contrast warnings below 4.5:1. |
+| Floating booking CTA (§39) | Settings → Booking CTA (`settings.booking_cta`): enabled, desktop/mobile visibility and position (mobile full-width bar default), size, icon, colour (or theme primary), animation (off with reduced motion), closeable (per session), pages, label per language. Links to `/{lang}/booking`. Never shown on the booking pages (cannot cover the booking form); pages reserve space for the mobile bar; iPhone safe area respected; `--cta-offset` for the LINE button / cookie banner (Phases 11 & 14). |
+| Marketing (§43–45) | `GET` `marketing.view`, `PUT` `marketing.edit`: GA4 ID, Pixel ID, CAPI on/off, Search Console code. **The CAPI token is never stored or returned**: the API only reports whether `META_CAPI_ACCESS_TOKEN` / `META_TEST_EVENT_CODE` exist as Cloudflare Secrets, and CAPI cannot be enabled without the token (`CAPI_TOKEN_MISSING`). Sending events + consent: Phase 14. |
+| SEO (§42) | Per page (home / gallery / booking / history) × language: title, description, https canonical, OG title / description / OG_IMAGE image, robots, JSON-LD (must be a JSON object, ≤ 8 KB, no `</script` / `<!--`). Redirects managed (reserved `/api`, `/media`, `/admin`, `/assets`, `/{lang}/admin` refused); serving metadata, sitemap and redirects: Phase 13. |
+| Admin UI | New pages: Dashboard, Calendar, Payments, Food menu (+ daily capacity grid), Food orders, Home, Gallery (multi-upload), History, SEO (+ redirects), GA4 / Meta Pixel / CAPI, Website (+ booking rules), Branding, Theme, Booking CTA; check-in / check-out / no-show on the booking page. All TH / EN / ZH-CN (`admin-cms-messages.ts`, parity tested). Still placeholders: Kitchen report & Reports (Phase 10), LINE (Phase 11), Privacy / cookies (Phase 14). |
+| Migration | `0015_admin_dashboard.sql` — triggers (booking lifecycle, kitchen order forward-only, frozen theme versions) + 5 indexes. Non-destructive (no table rebuild, no data change). |
+
+### A.6 Verification notes (Phase 1–9)
 
 - Workspace had no npm registry access; `package-lock.json` must be generated on first `npm install`.
 - Run on first install: `npm run lint`, `npm run build`, `npm run typecheck` (client part needs `@types/react`).
@@ -184,6 +207,7 @@ All tables are `STRICT`. Every rule above has a test in `tests/db/`.
 - Phase 6: 275 tests pass (12 new camping-capacity tests; race losers verified to be stopped by the DB CHECK); worker + client typecheck clean; 7/7 browser checks (mobile tent hint, admin drift + recalculate), zero console/CSP errors.
 - Phase 7: 285 tests pass (10 new payment tests); worker + client typecheck clean; 11/11 browser checks (admin account + QR + primary, guest payment instructions on mobile, record payment, cancel + refund), zero console/CSP errors.
 - Phase 8: 305 tests pass (20 new slip tests incl. provider adapter with fake fetch); worker + client typecheck clean; 14/14 browser checks (manual review path, auto-verified path, private slip 401 without session), zero console/CSP errors. No migration needed (Phase 2 schema already covers slips).
+- Phase 9: 330 tests pass (dashboard, calendar, stay lifecycle + DB trigger, payments list, booking rules, CMS engine for every entity, public content API, food capacity / kitchen orders, website, branding, theme draft/publish/rollback, CTA, marketing secret handling, SEO, dictionaries, public CTA/footer render); worker, client (React type shim) and test typecheck clean; 20/20 browser checks over HTTPS (dashboard, calendar, check-in, payments, kitchen, food menu, slide + gallery upload/publish, branding, theme publish + live preview, CTA, CAPI guard, SEO, permissions, mobile 390 px), zero console/CSP errors.
 
 ---
 

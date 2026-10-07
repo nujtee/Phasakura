@@ -7,6 +7,9 @@ import { slipController } from "./controllers/slip.controller.ts";
 import { authController } from "./controllers/auth.controller.ts";
 import { healthController } from "./controllers/health.controller.ts";
 import { siteController } from "./controllers/site.controller.ts";
+import { adminDashboardController } from "./controllers/admin-dashboard.controller.ts";
+import { cmsController } from "./controllers/cms.controller.ts";
+import { settingsController } from "./controllers/settings.controller.ts";
 import type { Env } from "./env.ts";
 import { HttpError, MethodNotAllowedError, TooManyRequestsError } from "./http/errors.ts";
 import { jsonError } from "./http/response.ts";
@@ -47,6 +50,9 @@ export function createApp(options: AppOptions = {}) {
   const book = bookingController(services);
   const pay = paymentController(services);
   const slip = slipController(services);
+  const dash = adminDashboardController(services);
+  const cms = cmsController(services);
+  const settings = settingsController(services);
 
   const router = new Router()
     .get("/api/health", health.check)
@@ -132,7 +138,52 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/admin/slips", slip.queue)
     .get("/api/admin/payments/:id/slip", slip.image)
     .post("/api/admin/payments/:id/verify", slip.verify)
-    .post("/api/admin/payments/:id/reject", slip.reject);
+    .post("/api/admin/payments/:id/reject", slip.reject)
+    // Dashboard & calendar (spec §48–49)
+    .get("/api/admin/dashboard", dash.dashboard)
+    .get("/api/admin/calendar", dash.calendar)
+    .get("/api/admin/payments", dash.payments)
+    .post("/api/admin/bookings/:code/stay/:action", dash.stay)
+    .get("/api/admin/booking-settings", dash.bookingSettings)
+    .put("/api/admin/booking-settings", dash.saveBookingSettings)
+    // Food capacity & kitchen orders (spec §22, §24)
+    .get("/api/admin/food/capacity", dash.foodCapacity)
+    .put("/api/admin/food/capacity/:categoryId/:date", dash.setFoodCapacity)
+    .get("/api/admin/food-orders", dash.foodOrders)
+    .patch("/api/admin/food-orders/:id", dash.updateFoodOrder)
+    // Generic CMS records: food menu, home, gallery, history, SEO redirects
+    .get("/api/admin/cms/:entity", cms.list)
+    .post("/api/admin/cms/:entity", cms.create)
+    .put("/api/admin/cms/:entity/order", cms.reorder)
+    .get("/api/admin/cms/:entity/:id", cms.get)
+    .patch("/api/admin/cms/:entity/:id", cms.update)
+    .delete("/api/admin/cms/:entity/:id", cms.remove)
+    .post("/api/admin/cms/:entity/:id/publish", cms.publish)
+    .post("/api/admin/cms/:entity/:id/unpublish", cms.unpublish)
+    // Website settings, branding, CTA, marketing, SEO, theme (spec §36–45)
+    .get("/api/admin/settings/website", settings.website)
+    .put("/api/admin/settings/website", settings.saveWebsite)
+    .get("/api/admin/settings/branding", settings.branding)
+    .put("/api/admin/settings/branding", settings.saveBranding)
+    .get("/api/admin/settings/booking-cta", settings.bookingCta)
+    .put("/api/admin/settings/booking-cta", settings.saveBookingCta)
+    .get("/api/admin/settings/marketing", settings.marketing)
+    .put("/api/admin/settings/marketing", settings.saveMarketing)
+    .get("/api/admin/seo", settings.seo)
+    .put("/api/admin/seo/:pageKey", settings.saveSeo)
+    .get("/api/admin/theme", settings.theme)
+    .get("/api/admin/theme/preview", settings.themePreview)
+    .put("/api/admin/theme/draft", settings.saveThemeDraft)
+    .delete("/api/admin/theme/draft", settings.discardThemeDraft)
+    .post("/api/admin/theme/publish", settings.publishTheme)
+    .post("/api/admin/theme/versions/:id/rollback", settings.rollbackTheme)
+    // Public content (spec §59)
+    .get("/api/public/home", settings.publicHome)
+    .get("/api/public/home/slides", settings.publicSlides)
+    .get("/api/public/gallery", settings.publicGallery)
+    .get("/api/public/gallery/categories", settings.publicGalleryCategories)
+    .get("/api/public/history", settings.publicHistory)
+    .get("/api/public/history/timeline", settings.publicTimeline);
 
   async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
     const requestId = newRequestId();

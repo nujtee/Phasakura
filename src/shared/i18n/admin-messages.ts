@@ -107,7 +107,7 @@ const th = {
   },
   dashboard: {
     welcome: "สวัสดี {name}",
-    intro: "แดชบอร์ดสรุปการจอง รายได้ และสถานะห้องพักจะพร้อมใช้งานใน Phase 9",
+    intro: "ภาพรวมการจอง รายได้ และที่พักว่างของวันนี้",
     yourRoles: "บทบาทของคุณ",
   },
   users: {
@@ -379,7 +379,7 @@ const en: AdminMessages = {
   },
   dashboard: {
     welcome: "Hello, {name}",
-    intro: "The bookings, revenue and occupancy dashboard arrives in Phase 9.",
+    intro: "Today’s bookings, revenue and availability at a glance.",
     yourRoles: "Your roles",
   },
   users: {
@@ -579,7 +579,7 @@ const zhCN: AdminMessages = {
     securityEvents: "安全事件", auditLogs: "审计日志", openMenu: "打开菜单", closeMenu: "关闭菜单",
     adminNavigation: "管理导航", changePassword: "修改密码", viewSite: "查看网站",
   },
-  dashboard: { welcome: "您好，{name}", intro: "预订、收入与入住概览仪表盘将在第 9 阶段提供。", yourRoles: "您的角色" },
+  dashboard: { welcome: "您好，{name}", intro: "今日预订、收入与空房概览。", yourRoles: "您的角色" },
   users: {
     title: "用户", newUser: "新增用户", editUser: "编辑用户", searchPlaceholder: "搜索姓名、邮箱或用户名",
     statusActive: "启用", statusSuspended: "已停用", statusDeleted: "已删除", name: "显示名称", email: "邮箱",

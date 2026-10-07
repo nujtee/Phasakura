@@ -345,6 +345,31 @@ export class BookingRepository {
       .bind(bookingId, now);
   }
 
+  /** Stay lifecycle step (check-in / check-out / no-show). Only from the expected status. */
+  transitionStatement(bookingId: string, from: string, to: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(`UPDATE bookings SET booking_status = ?3, updated_at = ?4 WHERE id = ?1 AND booking_status = ?2 RETURNING id`)
+      .bind(bookingId, from, to, now);
+  }
+
+  async settings(): Promise<{ hold_minutes: number; max_nights: number; max_advance_days: number; max_tents_per_booking: number; updated_at: string } | null> {
+    return this.db
+      .prepare("SELECT hold_minutes, max_nights, max_advance_days, max_tents_per_booking, updated_at FROM booking_settings WHERE id = 1")
+      .first();
+  }
+
+  saveSettingsStatement(s: { holdMinutes: number; maxNights: number; maxAdvanceDays: number; maxTentsPerBooking: number }, actorId: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO booking_settings (id, hold_minutes, max_nights, max_advance_days, max_tents_per_booking, updated_at, updated_by)
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (id) DO UPDATE SET hold_minutes = excluded.hold_minutes, max_nights = excluded.max_nights,
+           max_advance_days = excluded.max_advance_days, max_tents_per_booking = excluded.max_tents_per_booking,
+           updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      )
+      .bind(s.holdMinutes, s.maxNights, s.maxAdvanceDays, s.maxTentsPerBooking, now, actorId);
+  }
+
   cancelStatement(bookingId: string, actorId: string, reason: string, now: string): D1PreparedStatementLike {
     return this.db
       .prepare(

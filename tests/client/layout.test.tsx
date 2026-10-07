@@ -22,6 +22,12 @@ function site(overrides: Partial<PublicSiteDto> = {}): PublicSiteDto {
       main: { url: "/media/branding/main.webp", alt: "Site From D1", width: 240, height: 80 },
       mobile: { url: "/media/branding/mobile.webp", alt: "Site From D1", width: 80, height: 80 },
     },
+    theme: null,
+    favicon: null,
+    loginLogo: null,
+    contact: { phone: null, email: null, lineOaUrl: null, mapUrl: null, address: null },
+    footerText: null,
+    bookingCta: null,
     ...overrides,
   };
 }
@@ -34,8 +40,8 @@ function render(
   const page = opts.page === undefined ? "home" : opts.page;
   const value =
     opts.site === null
-      ? { status: "loading" as const, site: null, retry: () => {} }
-      : { status: "ready" as const, site: opts.site ?? site(), retry: () => {} };
+      ? { status: "loading" as const, site: null, retry: () => {}, preview: false, exitPreview: () => {} }
+      : { status: "ready" as const, site: opts.site ?? site(), retry: () => {}, preview: false, exitPreview: () => {} };
   return renderToStaticMarkup(
     <RouterProvider initialPath={opts.path ?? `/${locale.path}/`}>
       <I18nProvider locale={locale}>
@@ -138,5 +144,50 @@ describe("Footer", () => {
     const html = render("footer", { site: site({ siteName: '<img src=x onerror="alert(1)">', tagline: null }) });
     assert.ok(!html.includes("<img src=x"));
     assert.ok(html.includes("&lt;img src=x"));
+  });
+});
+
+describe("Floating booking button and footer contact (Phase 9)", () => {
+  const cta = {
+    enabled: true, showOnDesktop: true, showOnMobile: true, desktopPosition: "BOTTOM_RIGHT" as const, mobilePosition: "BOTTOM_BAR" as const,
+    size: "MD" as const, icon: "calendar" as const, color: "#aa3355", animation: "NONE" as const, closeable: false,
+    pages: ["*" as const], label: "Book Now",
+  };
+
+  async function renderCta(page: "home" | "booking" | "gallery", pages: string[] = ["*"]) {
+    const { FloatingBookingCta } = await import("../../src/client/components/FloatingBookingCta.tsx");
+    const locale = getLocale("en");
+    const value = { status: "ready" as const, site: site({ bookingCta: { ...cta, pages: pages as never } }), retry: () => {}, preview: false, exitPreview: () => {} };
+    return renderToStaticMarkup(
+      <RouterProvider initialPath="/en/">
+        <I18nProvider locale={locale}>
+          <SiteContext.Provider value={value}><FloatingBookingCta page={page} /></SiteContext.Provider>
+        </I18nProvider>
+      </RouterProvider>,
+    );
+  }
+
+  it("links to the booking page in the visitor's language, with the label from D1", async () => {
+    const html = await renderCta("home");
+    assert.ok(html.includes('href="/en/booking"'));
+    assert.ok(html.includes("Book Now"));
+    assert.ok(html.includes("cta--m-bottom_bar"));
+  });
+
+  it("is never shown on the booking page and respects the page list", async () => {
+    assert.equal(await renderCta("booking"), "");
+    assert.equal(await renderCta("gallery", ["home"]), "");
+    assert.notEqual(await renderCta("home", ["home"]), "");
+  });
+
+  it("footer shows contact details and footer text from D1", () => {
+    const html = render("footer", { site: site({
+      footerText: "Footer from D1",
+      contact: { phone: "081-234-5678", email: "hi@example.com", lineOaUrl: "https://line.me/R/ti/p/@x", mapUrl: null, address: "Mountain road" },
+    }) });
+    assert.ok(html.includes("Footer from D1"));
+    assert.ok(html.includes('href="tel:0812345678"'));
+    assert.ok(html.includes('href="mailto:hi@example.com"'));
+    assert.ok(html.includes('rel="noopener noreferrer"'));
   });
 });

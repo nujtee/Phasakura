@@ -9,8 +9,12 @@ import { Alert, Button, ConfirmDialog, detailMessage, errorMessage, useDateForma
 import { PaymentPanel } from "../payments/PaymentPanel.tsx";
 import { BookingStatusBadge, useStayDate } from "./shared.tsx";
 
+type StayAction = "check-in" | "check-out" | "no-show";
+
 export function BookingDetailPage({ code }: { code: string }) {
-  const { t, can, href, locale } = useAdmin();
+  const { t, c, can, href, locale } = useAdmin();
+  const [stayAction, setStayAction] = useState<StayAction | null>(null);
+  const [stayDone, setStayDone] = useState(false);
   const dateTime = useDateFormatter();
   const stayDate = useStayDate();
   const [b, setB] = useState<AdminBookingDto | null>(null);
@@ -43,6 +47,21 @@ export function BookingDetailPage({ code }: { code: string }) {
     }
   }
 
+  async function stay(action: StayAction) {
+    setStayAction(null);
+    setBusy(true);
+    setError(null);
+    setStayDone(false);
+    try {
+      setB(await apiRequest<AdminBookingDto>("POST", `/api/admin/bookings/${encodeURIComponent(code)}/stay/${action}`));
+      setStayDone(true);
+    } catch (err) {
+      setError(detailMessage(t, err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const baht = (s: number) => formatBaht(s, locale.code);
   const back = <p><Link to={href("bookings")}>← {t.bk.back}</Link></p>;
   if (!b) return <section>{back}{error ? <Alert kind="error">{error}</Alert> : <p role="status">{t.common.loading}</p>}</section>;
@@ -59,6 +78,21 @@ export function BookingDetailPage({ code }: { code: string }) {
         <BookingStatusBadge status={b.status} />
       </div>
       {done && <Alert kind="success">{t.bk.cancelled}</Alert>}
+      {stayDone && <Alert kind="success">{c.stay.done}</Alert>}
+      {can("bookings.edit") && (b.status === "CONFIRMED" || b.status === "CHECKED_IN") && (
+        <div className="adm-card">
+          <h2 className="adm-h2">{c.stay.title}</h2>
+          <div className="adm-row adm-row--wrap">
+            {b.status === "CONFIRMED" && <Button busy={busy} onClick={() => setStayAction("check-in")}>{c.stay.checkIn}</Button>}
+            {b.status === "CHECKED_IN" && <Button busy={busy} onClick={() => setStayAction("check-out")}>{c.stay.checkOut}</Button>}
+            {b.status === "CONFIRMED" && <Button variant="secondary" busy={busy} onClick={() => setStayAction("no-show")}>{c.stay.noShow}</Button>}
+          </div>
+          <ConfirmDialog open={!!stayAction} danger={stayAction === "no-show"}
+            message={stayAction === "check-in" ? c.stay.confirmCheckIn : stayAction === "check-out" ? c.stay.confirmCheckOut : c.stay.confirmNoShow}
+            confirmLabel={stayAction === "check-in" ? c.stay.checkIn : stayAction === "check-out" ? c.stay.checkOut : c.stay.noShow}
+            onConfirm={() => stayAction && void stay(stayAction)} onCancel={() => setStayAction(null)} />
+        </div>
+      )}
       {error && <Alert kind="error">{error}</Alert>}
 
       <div className="adm-grid2">

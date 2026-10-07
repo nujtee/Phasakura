@@ -11,6 +11,7 @@ export type PaymentStatus = "UNPAID" | "PENDING_VERIFICATION" | "VERIFIED" | "PA
 export type FoodPricingType = "PER_PERSON" | "PER_SET" | "PER_ITEM" | "PER_NIGHT";
 export type ChildPricing = "FREE" | "FULL" | "HALF" | "SPECIAL_PRICE";
 
+export const PAYMENT_STATUSES_ALL: readonly PaymentStatus[] = ["UNPAID", "PENDING_VERIFICATION", "VERIFIED", "PAID", "REJECTED", "REFUNDED"];
 export const BOOKING_CODE_PATTERN = /^BK-\d{8}-[A-Z0-9]{4}$/;
 export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
 

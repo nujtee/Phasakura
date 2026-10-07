@@ -16,6 +16,7 @@
 | `0012_booking_flow.sql` | breakfast service-day offset, booking idempotency key + privacy timestamp, kitchen-order capacity ledger, `booking_settings` (hold time, limits) — ADD COLUMN / new table only |
 | `0013_capacity_guards.sql` | triggers: own-tent booking requires camping enabled, unit booking requires ACTIVE unit; index for active own-tent items — no data change |
 | `0014_payments.sql` | payments: reference, note, refund_reason (ADD COLUMN); triggers: frozen money fields, refund is final, no payment on cancelled/expired bookings — no data change |
+| `0015_admin_dashboard.sql` | triggers: booking lifecycle (`BOOKING_STATUS_TRANSITION`), kitchen orders forward-only, published/archived theme versions frozen; indexes for dashboard, calendar and admin lists — no data change |
 
 ## Commands
 

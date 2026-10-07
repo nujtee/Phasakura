@@ -1,5 +1,6 @@
 import type { PaymentDto, PaymentMethod, ReceivingAccountDto, ReceivingAccountInput } from "../../shared/payment-types.ts";
-import { BOOKING_CODE_PATTERN } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, type PaymentStatus } from "../../shared/booking-types.ts";
+import type { AdminPaymentListItemDto } from "../../shared/dashboard-types.ts";
 import type { D1DatabaseLike } from "../env.ts";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors.ts";
 import type { BookingRepository, BookingRow } from "../repositories/booking.repository.ts";
@@ -46,6 +47,35 @@ export class PaymentService {
     private readonly mediaBaseUrl: string | undefined,
     private readonly clock: Clock,
   ) {}
+
+  // ================================================================ payments list
+
+  async listPayments(
+    actor: AuthContext,
+    f: { status: string | null; method: string | null; code: string | null; from: string | null; to: string | null; before: string | null; limit: number },
+    meta: RequestMeta,
+  ): Promise<{ items: AdminPaymentListItemDto[]; nextCursor: string | null }> {
+    await this.authz.requirePermission(actor, "payments.view", meta);
+    const rows = await this.repo.listAll({ ...f, limit: f.limit + 1 });
+    const page = rows.slice(0, f.limit);
+    return {
+      items: page.map((r) => ({
+        id: r.id,
+        bookingCode: r.booking_code,
+        amountSatang: r.amount_satang,
+        method: r.method,
+        status: r.status as PaymentStatus,
+        hasSlip: r.slip_asset_id !== null,
+        reference: r.reference,
+        submittedAt: r.submitted_at,
+        paidAt: r.paid_at,
+        verifiedAt: r.verified_at,
+        refundAmountSatang: r.refund_amount_satang,
+        refundedAt: r.refunded_at,
+      })),
+      nextCursor: rows.length > f.limit ? page[page.length - 1]!.submitted_at : null,
+    };
+  }
 
   // ================================================================ receiving accounts
 

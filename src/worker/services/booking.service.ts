@@ -9,6 +9,7 @@ import type {
   QuoteDto,
 } from "../../shared/booking-types.ts";
 import { BOOKING_CODE_PATTERN, maskPhone, normalizePhone } from "../../shared/booking-types.ts";
+import type { BookingSettingsDto, StayAction } from "../../shared/dashboard-types.ts";
 import { todayIn } from "../../shared/dates.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError, HttpError, NotFoundError, TooManyRequestsError, ValidationError } from "../http/errors.ts";
@@ -377,6 +378,66 @@ export class BookingService {
     await this.log.auditStatement(actor.userId, "CANCEL_BOOKING", "bookings", row.id,
       { status: row.booking_status, paymentStatus: row.payment_status }, { status: "CANCELLED", reason }, meta).run();
     return this.toAdmin((await this.repo.findByCode(row.booking_code))!);
+  }
+
+  /**
+   * Stay lifecycle (spec §13): check-in (CONFIRMED, from the check-in date), check-out (CHECKED_IN),
+   * no-show (CONFIRMED, from the check-in date). Nights stay reserved — the stay was sold.
+   * The DB trigger trg_bookings_status_transition rejects any other move.
+   */
+  async adminStay(actor: AuthContext, code: string, action: StayAction, meta: RequestMeta): Promise<AdminBookingDto> {
+    await this.authz.requirePermission(actor, "bookings.edit", meta);
+    const row = await this.expireIfDue(await this.findOr404(code));
+    const today = todayIn(await this.quotes.timezone(), this.clock());
+    const plan = {
+      "check-in": { from: "CONFIRMED", to: "CHECKED_IN", audit: "CHECK_IN" },
+      "check-out": { from: "CHECKED_IN", to: "CHECKED_OUT", audit: "CHECK_OUT" },
+      "no-show": { from: "CONFIRMED", to: "NO_SHOW", audit: "NO_SHOW" },
+    }[action];
+    if (row.booking_status !== plan.from) {
+      throw new ConflictError(`Booking must be ${plan.from} for this action`, "BOOKING_STATUS_INVALID");
+    }
+    if ((action === "check-in" || action === "no-show") && today < row.check_in) {
+      throw new ConflictError("The stay has not started yet", "STAY_NOT_STARTED");
+    }
+    if (action === "check-in" && today >= row.check_out) {
+      throw new ConflictError("The stay has already ended", "STAY_ENDED");
+    }
+    const now = iso(this.clock());
+    const results = await this.db.batch([
+      this.repo.transitionStatement(row.id, plan.from, plan.to, now),
+      this.log.auditStatement(actor.userId, plan.audit, "bookings", row.id, { status: plan.from }, { status: plan.to }, meta),
+    ]);
+    if (!(results[0]?.results.length)) throw new ConflictError("The booking changed meanwhile, please reload", "BOOKING_STATUS_INVALID");
+    return this.toAdmin((await this.repo.findByCode(row.booking_code))!);
+  }
+
+  async getSettings(actor: AuthContext, meta: RequestMeta): Promise<BookingSettingsDto> {
+    if (!this.authz.can(actor, "bookings.view")) await this.authz.requirePermission(actor, "settings.website", meta);
+    const s = await this.repo.settings();
+    return {
+      holdMinutes: s?.hold_minutes ?? 60,
+      maxNights: s?.max_nights ?? 30,
+      maxAdvanceDays: s?.max_advance_days ?? 365,
+      maxTentsPerBooking: s?.max_tents_per_booking ?? 10,
+      updatedAt: s?.updated_at ?? null,
+    };
+  }
+
+  /** Changes apply to new bookings only; existing holds keep their deadline. */
+  async saveSettings(
+    actor: AuthContext,
+    input: { holdMinutes: number; maxNights: number; maxAdvanceDays: number; maxTentsPerBooking: number },
+    meta: RequestMeta,
+  ): Promise<BookingSettingsDto> {
+    await this.authz.requirePermission(actor, "settings.website", meta);
+    const before = await this.getSettings(actor, meta);
+    await this.db.batch([
+      this.repo.saveSettingsStatement(input, actor.userId, iso(this.clock())),
+      this.log.auditStatement(actor.userId, "UPDATE_BOOKING_SETTINGS", "settings", "booking_settings",
+        { ...before, updatedAt: undefined }, input, meta),
+    ]);
+    return this.getSettings(actor, meta);
   }
 
   private async findOr404(code: string): Promise<BookingRow> {

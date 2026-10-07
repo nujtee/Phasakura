@@ -36,7 +36,7 @@ export function App() {
   return (
     <I18nProvider locale={route.locale}>
       <SiteProvider locale={route.locale}>
-        <Layout currentPage={navPage} title={title}>
+        <Layout currentPage={navPage} sitePage={page} title={title}>
           {renderPage(page, title, slug)}
         </Layout>
       </SiteProvider>

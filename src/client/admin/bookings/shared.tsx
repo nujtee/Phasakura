@@ -1,4 +1,4 @@
-import type { BookingStatus } from "../../../shared/booking-types.ts";
+import type { BookingStatus, PaymentStatus } from "../../../shared/booking-types.ts";
 import { useAdmin } from "../AdminContext.tsx";
 
 const TONE: Record<BookingStatus, string> = {
@@ -21,4 +21,18 @@ export function useStayDate() {
   const { locale } = useAdmin();
   const fmt = new Intl.DateTimeFormat(locale.code, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   return (date: string) => fmt.format(new Date(`${date}T00:00:00Z`));
+}
+
+const PAY_TONE: Record<PaymentStatus, string> = {
+  UNPAID: "warning",
+  PENDING_VERIFICATION: "warning",
+  VERIFIED: "active",
+  PAID: "active",
+  REJECTED: "deleted",
+  REFUNDED: "muted",
+};
+
+export function PaymentBadge({ status }: { status: PaymentStatus }) {
+  const { t } = useAdmin();
+  return <span className={`adm-badge adm-badge--${PAY_TONE[status]}`}>{t.bk[`p${status}`]}</span>;
 }

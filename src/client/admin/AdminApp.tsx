@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CurrentUserDto, PermissionCode } from "../../shared/auth-types.ts";
-import { getAdminMessages } from "../../shared/i18n/admin-messages.ts";
+import { getAdminMessages, type AdminMessages } from "../../shared/i18n/admin-messages.ts";
+import { getCmsMessages } from "../../shared/i18n/admin-cms-messages.ts";
 import type { Locale } from "../../shared/i18n/locales.ts";
 import { adminPath } from "../../shared/routes.ts";
 import { ApiError, apiGet, apiRequest, setUnauthorizedHandler } from "../api/client.ts";
@@ -28,6 +29,12 @@ import { RolesPage } from "./pages/RolesPage.tsx";
 import { SecurityEventsPage } from "./pages/SecurityEventsPage.tsx";
 import { UserFormPage } from "./pages/UserFormPage.tsx";
 import { UsersPage } from "./pages/UsersPage.tsx";
+import { CalendarPage } from "./bookings/CalendarPage.tsx";
+import { GalleryPage, HistoryPage, HomeContentPage } from "./content/ContentPages.tsx";
+import { FoodMenuPage, FoodOrdersPage } from "./food/FoodPages.tsx";
+import { PaymentsPage } from "./payments/PaymentsPage.tsx";
+import { BookingCtaPage, BrandingPage, MarketingPage, SeoPage, WebsiteSettingsPage } from "./settings/SettingsPages.tsx";
+import { ThemePage } from "./settings/ThemePage.tsx";
 import "../styles/admin.css";
 
 const PUBLIC_PAGES = new Set(["login", "forgot-password", "reset-password"]);
@@ -45,7 +52,12 @@ function useNoIndex() {
 
 export function AdminApp({ locale, segments }: { locale: Locale; segments: string[] }) {
   const { navigate } = useRouter();
-  const t = getAdminMessages(locale.code);
+  const c = getCmsMessages(locale.code);
+  // Error codes from Phase 9 endpoints live in the CMS dictionary; one lookup table for errorMessage().
+  const t: AdminMessages = useMemo(() => {
+    const base = getAdminMessages(locale.code);
+    return { ...base, errors: { ...c.errors, ...base.errors } };
+  }, [locale.code, c]);
   const [me, setMe] = useState<CurrentUserDto | null | undefined>(undefined);
   const [sessionExpired, setSessionExpired] = useState(false);
   useNoIndex();
@@ -92,6 +104,7 @@ export function AdminApp({ locale, segments }: { locale: Locale; segments: strin
     () => ({
       locale,
       t,
+      c,
       me: me ?? null,
       setMe: (next) => {
         if (next) setSessionExpired(false);
@@ -102,7 +115,7 @@ export function AdminApp({ locale, segments }: { locale: Locale; segments: strin
       href,
       logout,
     }),
-    [locale, t, me, go, href, logout],
+    [locale, t, c, me, go, href, logout],
   );
 
   const page = segments[0] ?? "";
@@ -158,6 +171,34 @@ function renderPage(segments: string[], notFound: string) {
       return <SlipsPage />;
     case "bookings":
       return id ? <BookingDetailPage key={id} code={id} /> : <BookingsPage />;
+    case "calendar":
+      return <CalendarPage />;
+    case "payments":
+      return <PaymentsPage />;
+    case "food":
+      return <FoodMenuPage />;
+    case "food-orders":
+      return <FoodOrdersPage />;
+    case "content-home":
+      return <HomeContentPage />;
+    case "content-gallery":
+      return <GalleryPage />;
+    case "content-history":
+      return <HistoryPage />;
+    case "seo":
+      return <SeoPage />;
+    case "ga4":
+    case "meta-pixel":
+    case "capi":
+      return <MarketingPage focus={page} />;
+    case "settings-website":
+      return <WebsiteSettingsPage />;
+    case "settings-branding":
+      return <BrandingPage />;
+    case "settings-theme":
+      return <ThemePage />;
+    case "settings-booking-cta":
+      return <BookingCtaPage />;
     case "roles":
       return <RolesPage />;
     case "permissions":

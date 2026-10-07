@@ -2,6 +2,7 @@
  * API contract types shared by the Worker and the React client.
  */
 import type { LocaleCode } from "./i18n/locales.ts";
+import type { PublicSiteExtrasDto } from "./settings-types.ts";
 
 export interface ApiSuccess<T> {
   data: T;
@@ -26,7 +27,7 @@ export interface MediaRef {
 
 /** GET /api/public/site */
 export interface PublicSiteDto {
-  /** false until an administrator has saved website settings (Phase 9). */
+  /** false until an administrator has saved website settings. */
   configured: boolean;
   language: LocaleCode;
   defaultLanguage: LocaleCode;
@@ -37,6 +38,13 @@ export interface PublicSiteDto {
     main: MediaRef | null;
     mobile: MediaRef | null;
   };
+  /** Published theme tokens, favicon, contact details and floating booking button (Phase 9). */
+  theme: PublicSiteExtrasDto["theme"];
+  favicon: string | null;
+  loginLogo: string | null;
+  contact: PublicSiteExtrasDto["contact"];
+  footerText: string | null;
+  bookingCta: PublicSiteExtrasDto["bookingCta"];
 }
 
 /** GET /api/health */

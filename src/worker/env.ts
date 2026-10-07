@@ -64,4 +64,8 @@ export interface Env {
   SLIP_VERIFY_PROVIDER?: string;
   /** Slip verification API key — Cloudflare Secret only (`wrangler secret put SLIP_VERIFICATION_API_KEY`). */
   SLIP_VERIFICATION_API_KEY?: string;
+  /** Meta Conversions API token — Cloudflare Secret only. Never stored in D1, never returned by the API. */
+  META_CAPI_ACCESS_TOKEN?: string;
+  /** Meta test event code — Cloudflare Secret (used in Phase 14 while testing CAPI). */
+  META_TEST_EVENT_CODE?: string;
 }

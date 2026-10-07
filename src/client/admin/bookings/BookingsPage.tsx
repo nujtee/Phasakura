@@ -15,11 +15,16 @@ export function BookingsPage() {
   const { t, href, locale } = useAdmin();
   const stayDate = useStayDate();
   const [status, setStatus] = useState<string>("");
-  const [payment, setPayment] = useState<string>("");
+  // Deep links from the dashboard, e.g. ?payment=UNPAID (allow-listed values only).
+  const initialPayment = (() => {
+    const p = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("payment");
+    return p && ["UNPAID", "PENDING_VERIFICATION", "VERIFIED", "PAID", "REJECTED", "REFUNDED"].includes(p) ? p : "";
+  })();
+  const [payment, setPayment] = useState<string>(initialPayment);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
-  const [filters, setFilters] = useState({ status: "", payment: "", from: "", to: "", q: "" });
+  const [filters, setFilters] = useState({ status: "", payment: initialPayment, from: "", to: "", q: "" });
 
   const buildUrl = useCallback((before: string | null) => {
     const params = new URLSearchParams({ limit: "30" });

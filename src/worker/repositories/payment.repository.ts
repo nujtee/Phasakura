@@ -401,4 +401,24 @@ export class PaymentRepository {
       )
       .bind(bookingId, holdUntil, now);
   }
+
+  /** All payments, newest first (admin payments list). */
+  async listAll(f: { status: string | null; method: string | null; code: string | null; from: string | null; to: string | null; before: string | null; limit: number }) {
+    const { results } = await this.db
+      .prepare(
+        `SELECT p.id, b.booking_code, p.amount_satang, p.method, p.status, p.slip_asset_id, p.reference, p.submitted_at,
+                p.paid_at, p.verified_at, p.refund_amount_satang, p.refunded_at
+           FROM payments p JOIN bookings b ON b.id = p.booking_id
+          WHERE (?1 IS NULL OR p.status = ?1) AND (?2 IS NULL OR p.method = ?2) AND (?3 IS NULL OR b.booking_code = ?3)
+            AND (?4 IS NULL OR p.submitted_at >= ?4) AND (?5 IS NULL OR p.submitted_at < ?5) AND (?6 IS NULL OR p.submitted_at < ?6)
+          ORDER BY p.submitted_at DESC, p.id DESC LIMIT ?7`,
+      )
+      .bind(f.status, f.method, f.code, f.from, f.to, f.before, f.limit)
+      .all<{
+        id: string; booking_code: string; amount_satang: number; method: string; status: string; slip_asset_id: string | null;
+        reference: string | null; submitted_at: string; paid_at: string | null; verified_at: string | null;
+        refund_amount_satang: number | null; refunded_at: string | null;
+      }>();
+    return results;
+  }
 }
