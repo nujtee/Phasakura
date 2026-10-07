@@ -14,6 +14,32 @@
 | Admin → **สถานะระบบ** | ความพร้อม 19 ข้อ, health, งานเบื้องหลัง (cron), งานค้าง, ข้อผิดพลาดล่าสุด (สิทธิ์ `system.view`: SUPER_ADMIN, MANAGER) |
 | `GET /api/health` | สำหรับ Uptime monitor: 200 = ปกติ, 503 = ฐานข้อมูล / schema / cron มีปัญหา |
 
+## สถานะ phasakura.com (อัปเดต 2026-10-07)
+
+| รายการ | สถานะ |
+|---|---|
+| โดเมน `phasakura.com` | จดผ่าน Cloudflare Registrar, nameserver ของ Cloudflare, ยังไม่มี DNS record (Custom Domain สร้างให้ตอน deploy) |
+| D1 `phasakura-db` | สร้างแล้ว (APAC) — `database_id` อยู่ใน `wrangler.jsonc`; มีตาราง `d1_migrations` ว่าง ยังไม่ได้ migrate |
+| `wrangler.jsonc` | `APP_BASE_URL=https://phasakura.com`, routes `phasakura.com` + `www.phasakura.com` (www → 301 ไป apex), `workers_dev: false` — `npm run preflight` 0 error |
+| R2 | **ยังไม่เปิดใช้ในบัญชี** — Dashboard → R2 Object Storage → เปิดใช้ก่อน แล้วสร้าง 2 bucket |
+| Workers Paid | ต้องตรวจ / อัปเกรดใน Dashboard → Workers & Pages → Plans |
+| Worker | ยังไม่ได้ deploy |
+
+ลำดับ deploy ครั้งแรก (บนเครื่องที่มี Node 22+):
+
+```bash
+npm install
+npx wrangler login
+npx wrangler r2 bucket create phasakura-media-public
+npx wrangler r2 bucket create phasakura-media-private
+npm run db:migrate:remote
+npm run admin:bootstrap -- --email <อีเมลแอดมิน> --name "<ชื่อ>" --out bootstrap.sql
+npx wrangler d1 execute phasakura-db --remote --file bootstrap.sql
+rm bootstrap.sql            # Windows: del bootstrap.sql
+npm run deploy
+npm run smoke -- https://phasakura.com
+```
+
 ---
 
 ## 1. สิ่งที่ต้องมีก่อน

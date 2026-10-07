@@ -14,13 +14,14 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const WRANGLER = readFileSync(join(ROOT, "wrangler.jsonc"), "utf8");
 const MIGRATIONS = Object.fromEntries(readdirSync(join(ROOT, "migrations")).filter((f) => f.endsWith(".sql")).map((f) => [f, readFileSync(join(ROOT, "migrations", f), "utf8")]));
 
-/** The repository config with the three owner-only values filled in. */
-const READY = WRANGLER
-  .replace('"APP_BASE_URL": ""', '"APP_BASE_URL": "https://www.phasakura.com"')
-  .replace("REPLACE_WITH_D1_DATABASE_ID", "0b0c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3")
-  .replace('// "routes": [\n  //   { "pattern": "www.your-domain.com", "custom_domain": true },\n  //   { "pattern": "your-domain.com", "custom_domain": true }\n  // ],',
-    '"routes": [{ "pattern": "www.phasakura.com", "custom_domain": true }, { "pattern": "phasakura.com", "custom_domain": true }],')
-  .replace('// "workers_dev": false,', '"workers_dev": false,');
+/** The repository config: production values for phasakura.com. */
+const READY = WRANGLER;
+/** The same config before the owner filled in the domain, the D1 id and the base URL (a fresh fork). */
+const BLANK = WRANGLER
+  .replace(/"APP_BASE_URL": "[^"]*"/, '"APP_BASE_URL": ""')
+  .replace(/"database_id": "[^"]*"/, '"database_id": "REPLACE_WITH_D1_DATABASE_ID"')
+  .replace(/\n  "routes": \[[\s\S]*?\],/, "")
+  .replace('"workers_dev": false,', "");
 
 function run(overrides: Partial<PreflightInput> = {}): Finding[] {
   return preflight({
@@ -38,15 +39,15 @@ describe("preflight (npm run preflight)", () => {
     assert.deepEqual(parseJsonc('{"q": "say \\"hi\\" // not a comment"}'), { q: 'say "hi" // not a comment' });
   });
 
-  it("the repository config fails only on the values the owner must fill in (domain, D1 id, base URL)", () => {
-    const found = errors(run({ wrangler: WRANGLER }));
+  it("a fresh config fails only on the values the owner must fill in (domain, D1 id, base URL)", () => {
+    const found = errors(run({ wrangler: BLANK }));
     assert.equal(found.length, 3, found.join("\n"));
     assert.ok(found.some((e) => e.startsWith("vars: APP_BASE_URL is empty")));
     assert.ok(found.some((e) => e.startsWith("d1: database_id")));
     assert.ok(found.some((e) => e.startsWith("domain: no routes")));
   });
 
-  it("a filled-in config passes; only manual slip checking remains a warning", () => {
+  it("the repository config (phasakura.com) passes; only manual slip checking remains a warning", () => {
     const f = run();
     assert.deepEqual(errors(f), []);
     assert.deepEqual(warns(f).map((w) => w.split(":")[0]), ["payments"]);
@@ -55,8 +56,8 @@ describe("preflight (npm run preflight)", () => {
   it("catches risky configuration", () => {
     const cases: [string, string, RegExp][] = [
       ['"APP_ENV": "production"', '"APP_ENV": "staging"', /APP_ENV/],
-      ['"APP_BASE_URL": "https://www.phasakura.com"', '"APP_BASE_URL": "https://www.phasakura.com/"', /no trailing slash/],
-      ['"APP_BASE_URL": "https://www.phasakura.com"', '"APP_BASE_URL": "http://www.phasakura.com"', /https/],
+      ['"APP_BASE_URL": "https://phasakura.com"', '"APP_BASE_URL": "https://phasakura.com/"', /no trailing slash/],
+      ['"APP_BASE_URL": "https://phasakura.com"', '"APP_BASE_URL": "http://phasakura.com"', /https/],
       ['"SLIP_VERIFY_PROVIDER": ""', '"SLIP_VERIFY_PROVIDER": "ocr"', /not supported/],
       ['"META_GRAPH_API_VERSION": "v23.0"', '"META_GRAPH_API_VERSION": "v23.0", "LINE_CHANNEL_SECRET": "abc"', /LINE_CHANNEL_SECRET is in vars/],
       ['"namespace_id": "1002"', '"namespace_id": "1001"', /unique/],
@@ -75,7 +76,7 @@ describe("preflight (npm run preflight)", () => {
     assert.ok(warns(run({ wrangler: READY.replace('"workers_dev": false,', '"workers_dev": true,') })).some((w) => /workers\.dev/.test(w)));
     assert.ok(warns(run({ wrangler: READY.replace('"preview_urls": false,', "") })).some((w) => /preview/.test(w)));
     assert.ok(warns(run({ wrangler: READY.replace('"head_sampling_rate": 1', '"head_sampling_rate": 0.1') })).some((w) => /dropped/.test(w)));
-    assert.ok(warns(run({ wrangler: READY.replace('{ "pattern": "www.phasakura.com", "custom_domain": true }, ', "") })).some((w) => /not one of the routes/.test(w)));
+    assert.ok(warns(run({ wrangler: READY.replace('    { "pattern": "phasakura.com", "custom_domain": true },\n', "") })).some((w) => /not one of the routes/.test(w)));
   });
 
   it("migrations: numbering, LATEST_MIGRATION in sync, no virtual tables (D1 export)", () => {

@@ -1,7 +1,7 @@
 // Cloudflare Worker configuration.
 // - No secrets in this file. Secrets go to `wrangler secret put <NAME>` (production)
 //   or `.dev.vars` (local, gitignored). See `.dev.vars.example`.
-// - D1 database_id is not a secret; replace the placeholder after `wrangler d1 create`.
+// - D1 database_id is not a secret (phasakura-db, location hint APAC, created 2026-10-07).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "phasakura",
@@ -14,15 +14,15 @@
     "head_sampling_rate": 1
   },
 
-  // Production domain (Phase 16) — uncomment with YOUR hostname(s) once the zone is on Cloudflare.
-  // A Custom Domain creates the DNS record and the TLS certificate automatically (no CNAME may exist yet).
-  // APP_BASE_URL below must be one of these hostnames. With routes set, workers.dev is off by default.
-  // "routes": [
-  //   { "pattern": "www.your-domain.com", "custom_domain": true },
-  //   { "pattern": "your-domain.com", "custom_domain": true }
-  // ],
+  // Production domain (Phase 16): phasakura.com (Cloudflare Registrar, zone on Cloudflare).
+  // Custom Domains create the DNS records and TLS certificates automatically. APP_BASE_URL is the apex;
+  // www.phasakura.com reaches the same Worker and is redirected (301) to it (src/worker/http/canonical-host.ts).
+  "routes": [
+    { "pattern": "phasakura.com", "custom_domain": true },
+    { "pattern": "www.phasakura.com", "custom_domain": true }
+  ],
   // Keep *.workers.dev off in production (duplicate site, skips the zone's security settings).
-  // "workers_dev": false,
+  "workers_dev": false,
   // Version preview URLs would run unreleased code against the production D1 / R2 — keep them off.
   "preview_urls": false,
 
@@ -49,8 +49,8 @@
   // Non-secret configuration. `.dev.vars` overrides these locally.
   "vars": {
     "APP_ENV": "production",
-    // Canonical https origin used in password reset / invite links and in LINE messages, e.g. "https://www.example.com"
-    "APP_BASE_URL": "",
+    // Canonical https origin: canonical / hreflang / sitemap URLs, password reset / invite links, LINE messages.
+    "APP_BASE_URL": "https://phasakura.com",
     "PUBLIC_MEDIA_BASE_URL": "",
     // Slip verification service ("easyslip" or empty = staff verify every slip).
     // The API key is a secret: `wrangler secret put SLIP_VERIFICATION_API_KEY` — never here.
@@ -67,7 +67,7 @@
     {
       "binding": "DB",
       "database_name": "phasakura-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "8f013af9-6464-4ed2-8aa1-f426fbb707b8",
       "migrations_dir": "migrations"
     }
   ],
