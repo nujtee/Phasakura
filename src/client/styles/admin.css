@@ -1944,3 +1944,193 @@
 @media (max-width: 600px) {
   .adm-trend__col:nth-child(even) .adm-trend__label { visibility: hidden; }
 }
+
+/* ===================================================================== Reports (Phase 10) */
+.rpt-controls .adm-filters {
+  margin: 12px 0 0;
+}
+
+.rpt-actions {
+  margin-top: 12px;
+}
+
+.rpt-table {
+  margin: 20px 0 28px;
+}
+
+.rpt-grid th[scope="row"] {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rpt-grid .rpt-text {
+  min-width: 120px;
+}
+
+.rpt-grid tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--color-border);
+}
+
+.rpt-chart {
+  margin: 0 0 12px;
+}
+
+.rpt-bars {
+  display: grid;
+  align-items: end;
+  gap: 3px;
+  height: 140px;
+  padding-top: 6px;
+}
+
+.rpt-bars__col {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  height: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.rpt-bars__bar {
+  align-self: end;
+  min-height: 2px;
+  background: var(--color-primary);
+  border-radius: 3px 3px 0 0;
+}
+
+.rpt-bars__label {
+  font-size: 0.6875rem;
+  color: var(--color-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+.rpt-notes {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+}
+
+/* Printable report (PDF via the browser's print dialog) */
+.rpt-print {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px max(16px, env(safe-area-inset-right)) 48px max(16px, env(safe-area-inset-left));
+  background: #fff;
+  color: #111;
+  min-height: 100vh;
+}
+
+.rpt-print__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.rpt-print__head {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid #222;
+}
+
+.rpt-print__logo {
+  max-height: 56px;
+  max-width: 180px;
+  object-fit: contain;
+}
+
+.rpt-print__site {
+  margin: 0;
+  font-weight: 700;
+}
+
+.rpt-print__title {
+  margin: 2px 0 4px;
+  font-size: 1.375rem;
+}
+
+.rpt-print__meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #444;
+}
+
+.rpt-print .adm-table {
+  width: 100%;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  .rpt-print {
+    padding: 0;
+    max-width: none;
+    min-height: 0;
+  }
+
+  .rpt-print__toolbar {
+    display: none;
+  }
+
+  .rpt-print .adm-table {
+    font-size: 8.5pt;
+    border-collapse: collapse;
+  }
+
+  .rpt-print .adm-table th,
+  .rpt-print .adm-table td {
+    padding: 3px 6px;
+    border-bottom: 0.5pt solid #bbb;
+  }
+
+  .rpt-print thead {
+    display: table-header-group;
+  }
+
+  .rpt-print tr {
+    break-inside: avoid;
+  }
+
+  .rpt-print h2 {
+    break-after: avoid;
+    font-size: 11pt;
+  }
+
+  .rpt-print .rpt-notes {
+    color: #333;
+  }
+}
+
+/* Numeric cells right-aligned inside tables too (beats `.adm-table td { text-align: left }`). */
+.adm-table .adm-num {
+  text-align: right;
+}
+
+/* Row headers in report tables read like data, not like column headers. */
+.rpt-grid tbody th {
+  font-size: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--color-heading);
+  background: transparent;
+}
+
+.rpt-grid .rpt-nowrap {
+  white-space: nowrap;
+}

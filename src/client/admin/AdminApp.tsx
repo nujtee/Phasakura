@@ -35,6 +35,8 @@ import { FoodMenuPage, FoodOrdersPage } from "./food/FoodPages.tsx";
 import { PaymentsPage } from "./payments/PaymentsPage.tsx";
 import { BookingCtaPage, BrandingPage, MarketingPage, SeoPage, WebsiteSettingsPage } from "./settings/SettingsPages.tsx";
 import { ThemePage } from "./settings/ThemePage.tsx";
+import { ReportPrintPage } from "./reports/ReportPrintPage.tsx";
+import { ReportsPage } from "./reports/ReportsPage.tsx";
 import "../styles/admin.css";
 
 const PUBLIC_PAGES = new Set(["login", "forgot-password", "reset-password"]);
@@ -138,6 +140,9 @@ export function AdminApp({ locale, segments }: { locale: Locale; segments: strin
           : <LoginPage expired={sessionExpired} />;
   } else if (me.mustChangePassword) {
     content = <ChangePasswordPage forced />;
+  } else if (page === "reports" && segments[1] === "print" && segments.length === 2) {
+    // Printable report (PDF): full page, no admin chrome.
+    content = <ReportPrintPage />;
   } else {
     content = <AdminLayout currentPath={page}>{renderPage(segments, t.common.notFound)}</AdminLayout>;
   }
@@ -173,6 +178,10 @@ function renderPage(segments: string[], notFound: string) {
       return id ? <BookingDetailPage key={id} code={id} /> : <BookingsPage />;
     case "calendar":
       return <CalendarPage />;
+    case "reports":
+      return id ? <PlaceholderPage title={notFound} /> : <ReportsPage />;
+    case "kitchen":
+      return <ReportsPage key="kitchen" fixedType="kitchen" />;
     case "payments":
       return <PaymentsPage />;
     case "food":

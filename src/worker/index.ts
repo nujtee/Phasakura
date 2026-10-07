@@ -10,6 +10,7 @@ import { siteController } from "./controllers/site.controller.ts";
 import { adminDashboardController } from "./controllers/admin-dashboard.controller.ts";
 import { cmsController } from "./controllers/cms.controller.ts";
 import { settingsController } from "./controllers/settings.controller.ts";
+import { reportController } from "./controllers/report.controller.ts";
 import type { Env } from "./env.ts";
 import { HttpError, MethodNotAllowedError, TooManyRequestsError } from "./http/errors.ts";
 import { jsonError } from "./http/response.ts";
@@ -53,6 +54,7 @@ export function createApp(options: AppOptions = {}) {
   const dash = adminDashboardController(services);
   const cms = cmsController(services);
   const settings = settingsController(services);
+  const rep = reportController(services);
 
   const router = new Router()
     .get("/api/health", health.check)
@@ -183,7 +185,10 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/public/gallery", settings.publicGallery)
     .get("/api/public/gallery/categories", settings.publicGalleryCategories)
     .get("/api/public/history", settings.publicHistory)
-    .get("/api/public/history/timeline", settings.publicTimeline);
+    .get("/api/public/history/timeline", settings.publicTimeline)
+    // Reports (spec §50)
+    .get("/api/admin/reports/:type", rep.run)
+    .get("/api/admin/reports/:type/export", rep.exportXlsx);
 
   async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
     const requestId = newRequestId();

@@ -39,6 +39,8 @@ import { DashboardService } from "./services/dashboard.service.ts";
 import { FoodAdminService } from "./services/food-admin.service.ts";
 import { PublicContentService } from "./services/public-content.service.ts";
 import { SettingsService } from "./services/settings.service.ts";
+import { ReportRepository } from "./repositories/report.repository.ts";
+import { ReportService } from "./services/report.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -65,6 +67,7 @@ export interface Services {
   settings: SettingsService;
   foodAdmin: FoodAdminService;
   content: PublicContentService;
+  reports: ReportService;
 }
 
 export interface ServiceOptions {
@@ -142,5 +145,6 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     }),
     foodAdmin: new FoodAdminService(db, new FoodAdminRepository(db), inventory, authorization, log, clock),
     content: new PublicContentService(db, clock, env.PUBLIC_MEDIA_BASE_URL),
+    reports: new ReportService(new ReportRepository(db), inventory, authorization, log, clock),
   };
 }

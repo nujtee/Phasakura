@@ -38,7 +38,7 @@ export const ADMIN_NAV: NavGroup[] = [
     items: [
       { ready: true, path: "food", label: (t) => t.nav.foodMenu, permission: "food.view" },
       { ready: true, path: "food-orders", label: (t) => t.nav.foodOrders, permission: "food_orders.view" },
-      { path: "kitchen", label: (t) => t.nav.kitchen, permission: "kitchen.view" },
+      { ready: true, path: "kitchen", label: (t) => t.nav.kitchen, permission: "kitchen.view" },
     ],
   },
   {
@@ -49,7 +49,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { ready: true, path: "receiving-accounts", label: (t) => t.nav.receivingAccounts, permission: "receiving_accounts.view" },
     ],
   },
-  { label: null, items: [{ path: "reports", label: (t) => t.nav.reports, permission: "reports.view" }] },
+  { label: null, items: [{ ready: true, path: "reports", label: (t) => t.nav.reports, permission: "reports.view" }] },
   {
     label: (t) => t.nav.websiteGroup,
     items: [
