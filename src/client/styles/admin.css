@@ -917,6 +917,15 @@
   gap: 0 16px;
 }
 
+.adm-amenities > p {
+  grid-column: 1 / -1;
+  margin: 0 0 8px;
+}
+
+.adm-subform__title {
+  margin-top: 0;
+}
+
 .adm-linkbtn--danger {
   color: var(--color-error);
 }

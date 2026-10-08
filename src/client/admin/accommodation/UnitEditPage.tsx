@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { AdminUnitDto, AmenityDto, MediaTextDto, UnitTranslationDto, UnitType } from "../../../shared/accommodation-types.ts";
 import { SATANG_PER_BAHT, parseBahtToSatang } from "../../../shared/booking-rules.ts";
 import { LOCALES, type LocaleCode } from "../../../shared/i18n/locales.ts";
-import { apiGet, apiRequest } from "../../api/client.ts";
+import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
+import { format } from "../../../shared/i18n/admin-messages.ts";
 import { uploadImage } from "../../media/prepareImage.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, errorMessage, Field, fieldErrors } from "../ui.tsx";
+import { amenityCode, nextAmenityCode } from "./amenity-code.ts";
 import { AvailabilityGrid } from "./AvailabilityGrid.tsx";
 import { TYPE_PATH, unitName, UnitStatusBadge } from "./UnitsPage.tsx";
 
@@ -211,6 +213,14 @@ function TranslationsForm({ unit, canEdit, onSaved, onError }: {
 
 // ---------------------------------------------------------------- amenities
 
+const NO_AMENITY = { code: "", th: "", en: "", "zh-CN": "" };
+type Notice = { kind: "success" | "error"; text: string } | null;
+
+/**
+ * Amenities of the unit: tick from the list and Save; or add new ones in a row — each "Add" creates
+ * the amenity, ticks it, saves the unit's selection and leaves an empty form for the next one.
+ * Messages appear here, next to the form (the page alert is far above on a long page).
+ */
 function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
   unit: AdminUnitDto; canEdit: boolean; onSaved: (u: AdminUnitDto) => void; onError: (e: unknown) => void;
 }) {
@@ -218,19 +228,38 @@ function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
   const [all, setAll] = useState<AmenityDto[]>([]);
   const [selected, setSelected] = useState<string[]>(unit.amenityIds);
   const [adding, setAdding] = useState(false);
-  const [nw, setNw] = useState({ code: "", th: "", en: "", "zh-CN": "" });
+  const [nw, setNw] = useState(NO_AMENITY);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [notice, setNotice] = useState<Notice>(null);
+  const [addNotice, setAddNotice] = useState<Notice>(null);
+  const [addErrors, setAddErrors] = useState<Record<string, string>>({});
+  const formRef = useRef<HTMLFormElement>(null);
+  const returnFocus = useRef(false);
+  const titleId = useId();
+  const openId = useId();
+  const focusFirstField = () => formRef.current?.querySelector<HTMLInputElement>("input")?.focus();
 
   useEffect(() => {
     void apiGet<AmenityDto[]>("/api/admin/amenities").then(setAll).catch(onError);
   }, [onError]);
+  useEffect(() => {
+    if (adding) formRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    else if (returnFocus.current) document.getElementById(openId)?.focus();
+    returnFocus.current = false;
+  }, [adding, openId]);
+
+  const saveSelection = (ids: string[]) =>
+    apiRequest<AdminUnitDto>("PUT", `/api/admin/accommodations/${encodeURIComponent(unit.id)}/amenities`, { amenityIds: ids });
 
   async function save() {
     setBusy(true);
+    setNotice(null);
     try {
-      onSaved(await apiRequest<AdminUnitDto>("PUT", `/api/admin/accommodations/${encodeURIComponent(unit.id)}/amenities`, { amenityIds: selected }));
+      onSaved(await saveSelection(selected));
+      setNotice({ kind: "success", text: t.common.saved });
     } catch (err) {
-      onError(err);
+      setNotice({ kind: "error", text: detailMessage(t, err) });
     } finally {
       setBusy(false);
     }
@@ -238,47 +267,99 @@ function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
 
   async function create(e: FormEvent) {
     e.preventDefault();
+    if (creating) return;
+    setAddNotice(null);
+    const names = Object.fromEntries(
+      Object.entries({ th: nw.th, en: nw.en, "zh-CN": nw["zh-CN"] }).map(([k, v]) => [k, v.trim()] as const).filter(([, v]) => v),
+    );
+    if (!names.th) {
+      setAddErrors({ th: t.errors.DEFAULT_LANGUAGE_REQUIRED });
+      focusFirstField();
+      return;
+    }
+    setAddErrors({});
+    setCreating(true);
     try {
-      const names = Object.fromEntries(Object.entries({ th: nw.th, en: nw.en, "zh-CN": nw["zh-CN"] }).filter(([, v]) => v.trim()));
-      const created = await apiRequest<AmenityDto>("POST", "/api/admin/amenities", { code: nw.code.trim(), names });
+      // An automatic code that is already taken is retried with a suffix (wifi → wifi_2); a typed one is the admin's to change.
+      const first = amenityCode(nw.code, nw.en);
+      const post = async (): Promise<AmenityDto> => {
+        let code = first.code;
+        for (let attempt = 1; ; attempt++) {
+          try {
+            return await apiRequest<AmenityDto>("POST", "/api/admin/amenities", { code, names });
+          } catch (err) {
+            if (!(first.auto && attempt < 6 && err instanceof ApiError && err.code === "AMENITY_CODE_TAKEN")) throw err;
+            code = nextAmenityCode(first.code, attempt);
+          }
+        }
+      };
+      const created = await post();
+      const ids = [...selected, created.id];
       setAll((a) => [...a, created]);
-      setSelected((s) => [...s, created.id]);
-      setNw({ code: "", th: "", en: "", "zh-CN": "" });
-      setAdding(false);
+      setSelected(ids);
+      setNw(NO_AMENITY);
+      try {
+        onSaved(await saveSelection(ids));
+        setAddNotice({ kind: "success", text: format(t.acc.amenityAdded, { name: names.th }) });
+      } catch {
+        setAddNotice({ kind: "error", text: format(t.acc.amenityAddedNotSaved, { name: names.th }) });
+      }
+      focusFirstField();
     } catch (err) {
-      onError(err);
+      const fields = fieldErrors(t, err);
+      const errors: Record<string, string> = {};
+      for (const [key, text] of Object.entries(fields)) {
+        if (key === "code") errors.code = text;
+        else if (key === "names") errors.th = text;
+        else if (key.startsWith("names.")) errors[key.slice("names.".length)] = text;
+      }
+      if (err instanceof ApiError && err.code === "AMENITY_CODE_TAKEN") errors.code = t.errors.AMENITY_CODE_TAKEN;
+      setAddErrors(errors);
+      if (Object.keys(errors).length === 0) setAddNotice({ kind: "error", text: detailMessage(t, err) });
+    } finally {
+      setCreating(false);
     }
   }
 
+  const shown = all.filter((a) => a.status === "ACTIVE" || selected.includes(a.id));
   return (
     <div className="adm-card">
       <h2 className="adm-h2">{t.acc.amenities}</h2>
       <fieldset className="adm-fieldset adm-amenities" disabled={!canEdit}>
         <legend className="visually-hidden">{t.acc.amenities}</legend>
-        {all.filter((a) => a.status === "ACTIVE" || selected.includes(a.id)).map((a) => (
+        {shown.map((a) => (
           <label key={a.id} className="adm-check">
             <input type="checkbox" checked={selected.includes(a.id)}
               onChange={(e) => setSelected((s) => (e.target.checked ? [...s, a.id] : s.filter((x) => x !== a.id)))} />
             {a.names[locale.code] ?? a.names.th ?? a.code}
           </label>
         ))}
+        {shown.length === 0 && <p className="adm-muted adm-small">{t.acc.amenitiesNone}</p>}
       </fieldset>
+      {notice && <Alert kind={notice.kind}>{notice.text}</Alert>}
       {canEdit && (
         <div className="adm-row adm-row--wrap">
           <Button onClick={() => void save()} busy={busy}>{t.common.save}</Button>
-          <Button variant="ghost" onClick={() => setAdding((v) => !v)} aria-expanded={adding}>+ {t.acc.addAmenity}</Button>
+          {!adding && <Button id={openId} variant="ghost" onClick={() => setAdding(true)}>+ {t.acc.addAmenity}</Button>}
         </div>
       )}
-      {adding && (
-        <form onSubmit={create} className="adm-subform" noValidate>
+      {canEdit && adding && (
+        <form ref={formRef} onSubmit={create} className="adm-subform" noValidate aria-labelledby={titleId}>
+          <h3 className="adm-h3 adm-subform__title" id={titleId}>{t.acc.amenityNewTitle}</h3>
+          {addNotice && <Alert kind={addNotice.kind}>{addNotice.text}</Alert>}
           <div className="adm-grid2">
-            <Field label={t.acc.amenityCode} required value={nw.code} onChange={(e) => setNw({ ...nw, code: e.target.value })} maxLength={40} />
             {LOCALES.map((l) => (
-              <Field key={l.code} label={`${t.acc.amenityName} (${l.label})`} required={l.code === "th"} lang={l.code}
-                value={nw[l.code]} onChange={(e) => setNw({ ...nw, [l.code]: e.target.value })} maxLength={80} />
+              <Field key={l.code} label={`${t.acc.amenityName} (${l.label})`}
+                required={l.code === "th"} lang={l.code} value={nw[l.code]} error={addErrors[l.code]} maxLength={80}
+                onChange={(e) => setNw({ ...nw, [l.code]: e.target.value })} />
             ))}
+            <Field label={t.acc.amenityCode} hint={t.acc.amenityCodeHint} value={nw.code} error={addErrors.code} maxLength={40}
+              autoCapitalize="none" spellCheck={false} onChange={(e) => setNw({ ...nw, code: e.target.value })} />
           </div>
-          <Button type="submit">{t.acc.addAmenity}</Button>
+          <div className="adm-row adm-row--wrap">
+            <Button type="submit" busy={creating}>{t.acc.amenityAdd}</Button>
+            <Button variant="ghost" onClick={() => { returnFocus.current = true; setAdding(false); setAddNotice(null); setAddErrors({}); }}>{t.common.close}</Button>
+          </div>
         </form>
       )}
     </div>

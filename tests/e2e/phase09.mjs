@@ -262,6 +262,54 @@ await check("website settings + booking rules", async () => {
   await pa.getByText("Saved").first().waitFor();
 });
 
+await check("amenities: add several in a row (form stays open), saved to the house, errors next to the field", async () => {
+  const p = await pa.context().newPage();
+  // 409 for the deliberately taken code (and the automatic retry) is expected here; anything else is not.
+  p.on("console", (m) => { if (m.type() === "error" && !/status of 409/.test(m.text())) consoleErrors.push(`${p.url()} :: ${m.text()}`); });
+  await p.goto(`${BASE}/th/admin/houses/dev_house_01`);
+  const card = p.locator(".adm-card", { has: p.getByRole("heading", { name: "สิ่งอำนวยความสะดวก", level: 2 }) });
+  await card.waitFor();
+  await card.getByRole("button", { name: "+ เพิ่มรายการใหม่" }).click();
+  const form = card.getByRole("form", { name: "เพิ่มสิ่งอำนวยความสะดวกใหม่" });
+  const thai = form.getByLabel("ชื่อ (ไทย)");
+  await thai.waitFor();
+  if (!(await thai.evaluate((el) => el === document.activeElement))) throw new Error("focus in the first field");
+  const add = async (th, en, code) => {
+    await thai.fill(th);
+    await form.getByLabel("ชื่อ (English)").fill(en);
+    await form.getByLabel("รหัส (ไม่บังคับ)").fill(code);
+    await form.getByRole("button", { name: "เพิ่ม", exact: true }).click();
+  };
+  // 1st, 2nd (Thai only → automatic code), 3rd (English "WiFi" → code "wifi" is taken by the seed → wifi_2): no reopening.
+  await add("ที่จอดรถ", "Parking", "");
+  await form.getByText("เพิ่ม “ที่จอดรถ” และเลือกให้ที่พักนี้แล้ว").waitFor();
+  if (await thai.inputValue() !== "") throw new Error("form emptied for the next one");
+  if (!(await thai.evaluate((el) => el === document.activeElement))) throw new Error("focus back in the first field");
+  await add("สระว่ายน้ำ", "", "");
+  await form.getByText("เพิ่ม “สระว่ายน้ำ” และเลือกให้ที่พักนี้แล้ว").waitFor();
+  await add("ไวไฟความเร็วสูง", "WiFi", "");
+  await form.getByText("เพิ่ม “ไวไฟความเร็วสูง” และเลือกให้ที่พักนี้แล้ว").waitFor();
+  for (const name of ["ที่จอดรถ", "สระว่ายน้ำ", "ไวไฟความเร็วสูง"]) {
+    if (!(await card.getByRole("checkbox", { name }).isChecked())) throw new Error(`${name} ticked`);
+  }
+  // A typed code that is taken: the message is at the code field, the form keeps what was typed.
+  await add("ที่จอดรถในร่ม", "", "parking");
+  await form.getByText("รหัสนี้ถูกใช้แล้ว").waitFor();
+  if (await thai.inputValue() !== "ที่จอดรถในร่ม") throw new Error("typed name kept after an error");
+  // Missing Thai name: message at the Thai field, nothing sent.
+  await thai.fill("");
+  await form.getByRole("button", { name: "เพิ่ม", exact: true }).click();
+  await form.getByText("ต้องมีภาษาไทย").waitFor();
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/amenities-add.png` });
+  // Saved to the house (not only ticked on screen).
+  await p.reload();
+  await card.waitFor();
+  for (const name of ["ที่จอดรถ", "สระว่ายน้ำ", "ไวไฟความเร็วสูง"]) {
+    if (!(await card.getByRole("checkbox", { name }).isChecked())) throw new Error(`${name} saved`);
+  }
+  await p.close();
+});
+
 // ---------------------------------------------------------------- permissions
 await check("content admin: no money on dashboard, no payments menu", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 } });
