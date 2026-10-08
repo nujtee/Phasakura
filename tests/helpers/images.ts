@@ -4,7 +4,7 @@ function be32(n: number) {
   return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
 }
 
-export function pngBytes(width = 800, height = 600): Uint8Array {
+export function pngBytes(width = 800, height = 600): Uint8Array<ArrayBuffer> {
   return new Uint8Array([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // signature
     0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...be32(width), ...be32(height), 8, 2, 0, 0, 0, 0, 0, 0, 0,

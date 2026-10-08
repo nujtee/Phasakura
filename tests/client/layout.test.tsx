@@ -25,7 +25,7 @@ function site(overrides: Partial<PublicSiteDto> = {}): PublicSiteDto {
     theme: null,
     favicon: null,
     loginLogo: null,
-    contact: { phone: null, email: null, lineOaUrl: null, mapUrl: null, address: null },
+    contact: { phone: null, email: null, lineOaUrl: null, mapUrl: null, address: null, coordinates: null },
     footerText: null,
     bookingCta: null,
     lineButton: null,
@@ -187,12 +187,34 @@ describe("Floating booking button and footer contact (Phase 9)", () => {
   it("footer shows contact details and footer text from D1", () => {
     const html = render("footer", { site: site({
       footerText: "Footer from D1",
-      contact: { phone: "081-234-5678", email: "hi@example.com", lineOaUrl: "https://line.me/R/ti/p/@x", mapUrl: null, address: "Mountain road" },
+      contact: { phone: "081-234-5678", email: "hi@example.com", lineOaUrl: "https://line.me/R/ti/p/@x", mapUrl: null, address: "Mountain road", coordinates: null },
     }) });
     assert.ok(html.includes("Footer from D1"));
     assert.ok(html.includes('href="tel:0812345678"'));
     assert.ok(html.includes('href="mailto:hi@example.com"'));
     assert.ok(html.includes('rel="noopener noreferrer"'));
+    // Phone and e-mail on one line.
+    assert.match(html, /<p class="site-footer__reach"><span>โทร: <a href="tel:0812345678">081-234-5678<\/a><\/span><span>อีเมล: <a href="mailto:hi@example.com">/);
+    assert.ok(!html.includes("footer-map"), "no map without a map link or coordinates");
+  });
+
+  it("footer map: the link with a small map of the place (site's own tile URLs, attribution), or just the link", () => {
+    const contact = { phone: null, email: null, lineOaUrl: null, address: null };
+    const withMap = render("footer", { site: site({ contact: { ...contact, mapUrl: "https://maps.app.goo.gl/abc", coordinates: { latitude: 18.6139152, longitude: 98.5062681 } } }) });
+    const link = /<a class="footer-map__link" href="https:\/\/maps.app.goo.gl\/abc" rel="noopener noreferrer" target="_blank"><span class="footer-map__label">แผนที่<\/span>/;
+    assert.match(withMap, link);
+    const tiles = [...withMap.matchAll(/<img src="(\/map-tiles\/15\/\d+\/\d+\.png)" alt="" width="256" height="256" loading="lazy"/g)].map((m) => m[1]);
+    assert.ok(tiles.length >= 1 && tiles.length <= 6, `tiles: ${tiles.join(", ")}`);
+    assert.ok(tiles.includes("/map-tiles/15/25350/14659.png"), "the tile that holds the place");
+    assert.match(withMap, /© <a href="https:\/\/www.openstreetmap.org\/copyright"/);
+    assert.ok(!/https?:\/\/tile\./.test(withMap), "no third-party tile server in the page");
+
+    const linkOnly = render("footer", { site: site({ contact: { ...contact, mapUrl: "https://maps.app.goo.gl/abc", coordinates: null } }) });
+    assert.match(linkOnly, /<p><a href="https:\/\/maps.app.goo.gl\/abc" rel="noopener noreferrer" target="_blank">แผนที่<\/a><\/p>/);
+    assert.ok(!linkOnly.includes("map-tiles"));
+
+    const coordsOnly = render("footer", { site: site({ contact: { ...contact, mapUrl: null, coordinates: { latitude: 18.6139152, longitude: 98.5062681 } } }) });
+    assert.match(coordsOnly, /href="https:\/\/www.openstreetmap.org\/\?mlat=18.613915&amp;mlon=98.506268#map=16\/18.613915\/98.506268"/);
   });
 });
 

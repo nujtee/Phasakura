@@ -138,6 +138,9 @@ Google: สร้าง key ใหม่แล้วลบ key เก่า) →
 - **Search Console**: Domain property ยืนยันด้วย DNS TXT (แนะนำ) แล้ว Submit `https://www.your-domain.com/sitemap.xml`;
   ตรวจ URL Inspection หน้าแรกทั้ง 3 ภาษา
 - เขียน **นโยบายความเป็นส่วนตัว** (Settings → Privacy) ก่อนเปิด GA4 / Pixel — banner คุกกี้ขึ้นเองเมื่อเปิด tracker
+- **แผนที่ย่อท้ายเว็บ**: ใส่ ละติจูด / ลองจิจูด ใน Settings → Website (ลิงก์แผนที่ = ปลายทางเมื่อคลิก) แผนที่เป็นภาพ
+  OpenStreetMap ที่ Worker ดึงผ่าน `/map-tiles/…` (เบราว์เซอร์ผู้เข้าชมไม่ติดต่อบุคคลที่สาม, cache ที่ edge 7 วัน,
+  ให้เฉพาะ tile รอบพิกัดของที่พัก) — ถ้าดึงไม่ได้ ภาพจะซ่อนเอง เหลือคำว่า "แผนที่" ที่คลิกได้
 
 ## 6. Backup & restore
 
@@ -211,6 +214,7 @@ LINE / CAPI ไม่ถูกส่ง), `cron: unknown` = ยังไม่�
 | `/api/health` 503, `schema: outdated` | `npm run db:backup` แล้ว `npm run db:migrate:remote` |
 | `cron: stale` | Cloudflare → Worker → Settings → Triggers: ต้องมี `* * * * *`; ดู Logs ของ cron; ดู "งานเบื้องหลัง" ในสถานะระบบว่างานไหนล้ม |
 | `database: unavailable` | ดู https://www.cloudflarestatus.com และ Logs |
+| แผนที่ย่อท้ายเว็บไม่ขึ้น | ตรวจว่ามี ละติจูด / ลองจิจูด ใน Settings → Website; Logs ค้น `map_tile_unavailable` (เหตุจาก tile.openstreetmap.org) |
 | ข้อมูลผิด / ถูกลบ | หยุดแก้ไขเพิ่ม → `npm run db:backup` → Time Travel ไปก่อนเกิดเหตุ (ข้อ 6) |
 | Secret รั่ว | หมุนค่าใหม่ทันที (ข้อ 4), ดู Audit / Security events |
 | บัญชีแอดมินถูกใช้ผิด | SUPER_ADMIN อีกคนระงับบัญชีนั้น (ระงับ = ตัดทุก session) แล้วตรวจ Audit logs |

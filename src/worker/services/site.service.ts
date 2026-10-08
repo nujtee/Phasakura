@@ -91,6 +91,7 @@ export class SiteService {
         lineOaUrl: nonEmpty(record?.contact?.lineOaUrl),
         mapUrl: nonEmpty(record?.contact?.mapUrl),
         address: nonEmpty(translation?.address) ?? nonEmpty(fallback?.address),
+        coordinates: coordinates(record?.contact?.latitude, record?.contact?.longitude),
       },
       footerText: nonEmpty(translation?.footerText) ?? nonEmpty(fallback?.footerText),
       bookingCta: toCta(record?.cta ?? null, nonEmpty(label)),
@@ -105,6 +106,13 @@ export class SiteService {
         : null,
     };
   }
+}
+
+/** Both latitude and longitude, in range (the database CHECKs them too), or none. */
+function coordinates(latitude: number | null | undefined, longitude: number | null | undefined): PublicSiteDto["contact"]["coordinates"] {
+  if (typeof latitude !== "number" || typeof longitude !== "number") return null;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  return { latitude, longitude };
 }
 
 /** GA4 / Pixel IDs only when switched on and well-formed (they end up in a script URL / call). */

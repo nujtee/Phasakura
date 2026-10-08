@@ -41,7 +41,10 @@ export interface CtaRecord {
 
 export interface SiteSettingsRecord {
   defaultLanguage: string | null;
-  contact?: { phone: string | null; email: string | null; lineOaUrl: string | null; mapUrl: string | null };
+  contact?: {
+    phone: string | null; email: string | null; lineOaUrl: string | null; mapUrl: string | null;
+    latitude?: number | null; longitude?: number | null;
+  };
   translations: SiteTranslationRecord[];
   branding: BrandingRecord | null;
   themeTokensJson?: string | null;
@@ -71,6 +74,8 @@ interface SettingsRow {
   contact_email?: string | null;
   line_oa_url?: string | null;
   map_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 interface TranslationRow {
   language_code: string;
@@ -105,7 +110,7 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
     try {
       // One round trip. Every statement is static SQL — no user input is interpolated.
       results = await this.db.batch([
-        this.db.prepare("SELECT default_language, contact_phone, contact_email, line_oa_url, map_url FROM site_settings WHERE id = 1"),
+        this.db.prepare("SELECT default_language, contact_phone, contact_email, line_oa_url, map_url, latitude, longitude FROM site_settings WHERE id = 1"),
         this.db.prepare("SELECT language_code, site_name, tagline, address, footer_text FROM site_setting_translations"),
         this.db.prepare(
           `SELECT lm.object_key AS logo_main_key, lm.width AS logo_main_width, lm.height AS logo_main_height,
@@ -213,6 +218,8 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
         email: settings.contact_email ?? null,
         lineOaUrl: settings.line_oa_url ?? null,
         mapUrl: settings.map_url ?? null,
+        latitude: settings.latitude ?? null,
+        longitude: settings.longitude ?? null,
       },
       translations,
       branding,

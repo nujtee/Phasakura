@@ -346,6 +346,109 @@
   align-items: center;
 }
 
+/* Phone and e-mail share one line; on a narrow screen the e-mail moves to the next. */
+.site-footer__reach {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 24px;
+}
+
+/* ===================================================================== Footer map thumbnail */
+/* 320 × 160 at most: src/shared/map-tiles.ts fetches the tiles for that size. */
+.footer-map {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+}
+
+.site-footer__contact .footer-map__link {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  text-decoration: none;
+}
+
+.footer-map__label {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  text-decoration: underline;
+}
+
+.footer-map__view {
+  position: relative;
+  display: block;
+  aspect-ratio: 2 / 1;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  /* Shown until the tiles arrive (they load lazily, when the footer comes into view). */
+  background: color-mix(in srgb, var(--color-border) 45%, var(--color-surface));
+  transition: border-color var(--transition-fast);
+}
+
+.footer-map__link:hover .footer-map__view {
+  border-color: var(--color-primary);
+}
+
+.footer-map__tiles {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+.footer-map__tiles img {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  max-width: none;
+  user-select: none;
+}
+
+/* The pin's tip marks the place, in the middle of the thumbnail. */
+.footer-map__pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -100%);
+  fill: var(--color-primary);
+  stroke: #fff;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.35));
+}
+
+.footer-map__pin circle {
+  fill: #fff;
+  stroke: none;
+}
+
+/* Map tiles are always light, so the licence note keeps its own light chip in every theme. */
+.footer-map__credit {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  padding: 1px 6px;
+  border-radius: 4px 0 calc(var(--radius-md) - 1px) 0;
+  background: rgb(255 255 255 / 0.85);
+  color: rgb(0 0 0 / 0.75);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.site-footer__contact .footer-map__credit a {
+  display: inline;
+  min-height: 0;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footer-map__view {
+    transition: none;
+  }
+}
+
 /* ===================================================================== Theme preview bar (admins only) */
 .theme-preview-bar {
   position: sticky;

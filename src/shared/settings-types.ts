@@ -151,7 +151,11 @@ export interface PublicSiteExtrasDto {
   theme: ThemeTokens | null;
   favicon: string | null;
   loginLogo: string | null;
-  contact: { phone: string | null; email: string | null; lineOaUrl: string | null; mapUrl: string | null; address: string | null };
+  contact: {
+    phone: string | null; email: string | null; lineOaUrl: string | null; mapUrl: string | null; address: string | null;
+    /** Settings → Website latitude / longitude (both set), for the footer map thumbnail. */
+    coordinates: { latitude: number; longitude: number } | null;
+  };
   footerText: string | null;
   bookingCta: (Omit<BookingCtaDto, "labels"> & { label: string | null }) | null;
   /** Trackers that are switched on (null = off). Loaded only after the matching consent (Phase 14). */

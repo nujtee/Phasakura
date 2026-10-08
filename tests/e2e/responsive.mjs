@@ -151,6 +151,69 @@ await check("landscape phone (844 × 390): header does not cover the page, booki
   await ctx.close();
 });
 
+// ------------------------------------------------------------------ footer contact + map
+for (const vp of [VIEWPORTS[1], VIEWPORTS[4]]) {
+  await check(`footer at ${vp.name}: phone and e-mail on one line, a small map of the place under "แผนที่"`, async () => {
+    const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: vp.width, height: vp.height }, isMobile: vp.mobile, hasTouch: vp.mobile, locale: "th-TH" });
+    const page = await ctx.newPage(); watch(page);
+    const foreign = [];
+    page.on("request", (r) => { if (new URL(r.url()).origin !== BASE) foreign.push(r.url()); });
+    await page.goto(`${BASE}/th/history`);
+    const footer = page.locator(".site-footer");
+    await footer.scrollIntoViewIfNeeded();
+    const reach = footer.locator(".site-footer__reach > span");
+    assert(await reach.count() === 2, "phone and e-mail");
+    const [phone, email] = [await reach.nth(0).boundingBox(), await reach.nth(1).boundingBox()];
+    if (vp.width >= 1024) assert(Math.abs(phone.y - email.y) < 2, `same line: ${phone.y} / ${email.y}`);
+
+    const link = footer.getByRole("link", { name: "แผนที่", exact: true });
+    assert(await link.getAttribute("href") === "https://maps.example.test/phasakura", "opens the map link from Settings");
+    assert(await link.getAttribute("target") === "_blank", "new tab");
+    const view = footer.locator(".footer-map__view");
+    await view.waitFor();
+    await page.waitForFunction(() => [...document.querySelectorAll(".footer-map__tiles img")].every((i) => i.complete && i.naturalWidth === 256), null, { timeout: 10_000 });
+    const box = await view.boundingBox();
+    assert(box.width <= 320.5 && box.width >= 200, `thumbnail width ${box.width}`);
+    assert(Math.abs(box.width / box.height - 2) < 0.05, `2:1 (${box.width} × ${box.height})`);
+    const label = await link.locator(".footer-map__label").boundingBox();
+    assert(label.y + label.height <= box.y + 1, "map sits right under the word");
+    // Pin tip in the middle of the thumbnail; tiles cover the whole thumbnail.
+    const pin = await footer.locator(".footer-map__pin").boundingBox();
+    assert(Math.abs(pin.x + pin.width / 2 - (box.x + box.width / 2)) < 2 && Math.abs(pin.y + pin.height - (box.y + box.height / 2)) < 2, "pin on the place");
+    const covered = await view.evaluate((v) => {
+      const r = v.getBoundingClientRect();
+      const t = [...v.querySelectorAll("img")].map((i) => i.getBoundingClientRect());
+      return [[r.left + 2, r.top + 2], [r.right - 2, r.top + 2], [r.left + 2, r.bottom - 2], [r.right - 2, r.bottom - 2]]
+        .every(([x, y]) => t.some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom));
+    });
+    assert(covered, "tiles cover the corners");
+    const credit = footer.locator(".footer-map__credit");
+    assert(await credit.isVisible() && /OpenStreetMap/.test(await credit.innerText()), "OpenStreetMap attribution");
+    const c = await credit.boundingBox();
+    assert(c.x >= box.x && c.x + c.width <= box.x + box.width + 0.5 && c.y + c.height <= box.y + box.height + 0.5, "attribution on the map");
+    assert(foreign.length === 0, `no third-party requests: ${foreign.join(", ")}`);
+    const tiles = (await (await page.request.get(`${BASE}/__e2e/tiles`)).json()).requests;
+    assert(tiles.length >= 1 && tiles.every((u) => u.startsWith("https://tile.openstreetmap.org/15/")), `fetched by the server: ${tiles.join(", ")}`);
+    if (SHOTS) await footer.screenshot({ path: `${SHOTS}/footer-map-${vp.name}.png` });
+    await ctx.close();
+  });
+}
+
+await check("footer map: when a tile cannot be loaded the thumbnail goes away and the link stays", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 }, locale: "th-TH" });
+  const page = await ctx.newPage(); watch(page);
+  await page.route("**/map-tiles/**", (route) => route.fulfill({ status: 502, body: "down" }));
+  // The failed tiles are the point of this check, not console noise.
+  page.removeAllListeners("console");
+  await page.goto(`${BASE}/th/history`);
+  const footer = page.locator(".site-footer");
+  await footer.scrollIntoViewIfNeeded();
+  await footer.locator(".footer-map").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
+  assert(await footer.locator(".footer-map").count() === 0, "thumbnail removed");
+  assert(await footer.getByRole("link", { name: "แผนที่", exact: true }).getAttribute("href") === "https://maps.example.test/phasakura", "link kept");
+  await ctx.close();
+});
+
 // ------------------------------------------------------------------ admin
 const adminCtx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 }, locale: "en-US" });
 {

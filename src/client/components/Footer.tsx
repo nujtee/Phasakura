@@ -3,6 +3,7 @@ import { useConsent } from "../consent/ConsentProvider.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
 import { useSite } from "../site/SiteProvider.tsx";
+import { FooterMap } from "./FooterMap.tsx";
 import { LanguageSwitcher } from "./LanguageSwitcher.tsx";
 import { MAIN_MENU } from "./navigation.ts";
 
@@ -25,14 +26,18 @@ export function Footer({ currentPage }: { currentPage: PublicPage | null }) {
           {site?.footerText && <p className="site-footer__text">{site.footerText}</p>}
         </div>
 
-        {site && (site.contact.phone || site.contact.email || site.contact.lineOaUrl || site.contact.address) && (
+        {site && (site.contact.phone || site.contact.email || site.contact.lineOaUrl || site.contact.address || site.contact.mapUrl || site.contact.coordinates) && (
           <address className="site-footer__contact" aria-label={t.footer.contact}>
             <p className="site-footer__heading">{t.footer.contact}</p>
             {site.contact.address && <p>{site.contact.address}</p>}
-            {site.contact.phone && <p>{t.footer.phone}: <a href={`tel:${site.contact.phone.replace(/[^\d+]/g, "")}`}>{site.contact.phone}</a></p>}
-            {site.contact.email && <p>{t.footer.email}: <a href={`mailto:${site.contact.email}`}>{site.contact.email}</a></p>}
+            {(site.contact.phone || site.contact.email) && (
+              <p className="site-footer__reach">
+                {site.contact.phone && <span>{t.footer.phone}: <a href={`tel:${site.contact.phone.replace(/[^\d+]/g, "")}`}>{site.contact.phone}</a></span>}
+                {site.contact.email && <span>{t.footer.email}: <a href={`mailto:${site.contact.email}`}>{site.contact.email}</a></span>}
+              </p>
+            )}
             {site.contact.lineOaUrl && <p><a href={site.contact.lineOaUrl} rel="noopener noreferrer" target="_blank">{t.footer.line}</a></p>}
-            {site.contact.mapUrl && <p><a href={site.contact.mapUrl} rel="noopener noreferrer" target="_blank">{t.footer.map}</a></p>}
+            <FooterMap label={t.footer.map} mapUrl={site.contact.mapUrl} coordinates={site.contact.coordinates} />
           </address>
         )}
 

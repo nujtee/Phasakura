@@ -11,6 +11,7 @@ import { hashPassword } from "../../src/worker/security/password.ts";
 import { FakeLine } from "../helpers/fake-line.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
 import { fakeGoogle, fakeMeta } from "../helpers/fake-http.ts";
+import { crc32, deflateSync } from "node:zlib";
 
 const PORT = Number(process.env.PORT ?? 4190);
 const DIST = process.env.DIST!;
@@ -60,7 +61,41 @@ const env = {
 const line = new FakeLine();
 const meta = fakeMeta();
 const google = fakeGoogle();
-const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch } });
+// Footer map: the site's place (Settings → Website) and a stand-in for the OpenStreetMap tile server.
+db.run("UPDATE site_settings SET map_url = 'https://maps.example.test/phasakura', latitude = 18.6139152, longitude = 98.5062681 WHERE id = 1");
+const tileRequests: string[] = [];
+const mapFetch = async (url: string) => { tileRequests.push(url); return new Response(fakeTile(), { headers: { "Content-Type": "image/png" } }); };
+const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch, mapFetch } });
+
+/** A real, decodable 256 × 256 PNG that looks a little like a map tile (land, two roads, a park). */
+function fakeTile(): Uint8Array<ArrayBuffer> {
+  const size = 256;
+  const raw = Buffer.alloc((size * 3 + 1) * size);
+  for (let y = 0; y < size; y++) {
+    raw[y * (size * 3 + 1)] = 0; // filter: none
+    for (let x = 0; x < size; x++) {
+      let c = [242, 239, 233];
+      if (x > 150 && x < 220 && y > 20 && y < 90) c = [200, 230, 190];
+      if (Math.abs(y - 140) < 5 || Math.abs(x - 90) < 4) c = [255, 255, 255];
+      if (Math.abs(y - 140) === 5 || Math.abs(x - 90) === 4) c = [210, 205, 200];
+      raw.set(c, y * (size * 3 + 1) + 1 + x * 3);
+    }
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, "latin1");
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
+    return Buffer.concat([head, data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr.set([8, 2, 0, 0, 0], 8); // 8-bit RGB
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+  return new Uint8Array(png);
+}
 
 async function serviceAccountKey(): Promise<string> {
   const pair = (await crypto.subtle.generateKey(
@@ -74,6 +109,7 @@ async function serviceAccountKey(): Promise<string> {
 async function debugRoute(path: string, method: string, body: Buffer | undefined): Promise<Response | null> {
   const json = (v: unknown) => new Response(JSON.stringify(v), { headers: { "Content-Type": "application/json" } });
   if (path === "/__e2e/line" && method === "GET") return json({ pushes: line.pushes, replies: line.replies });
+  if (path === "/__e2e/tiles" && method === "GET") return json({ requests: tileRequests });
   if (path === "/__e2e/line/next" && method === "POST") { line.nextPush.push(JSON.parse(String(body)).status); return json({ ok: true }); }
   if (path === "/__e2e/meta" && method === "GET") {
     return json(meta.requests.map((r) => ({ url: r.url, testEventCode: r.json?.test_event_code ?? null, hasToken: r.json?.access_token === "e2e-capi-secret-token", data: r.json?.data })));

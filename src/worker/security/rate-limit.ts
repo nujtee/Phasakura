@@ -17,7 +17,7 @@ const BINDING: Record<RateGroup, keyof Env> = { PUBLIC: "RL_PUBLIC", WRITE: "RL_
 
 export function rateGroup(method: string, path: string): RateGroup | null {
   if (path === "/api/health" || path === "/api/line/webhook") return null; // monitoring; LINE servers (signed)
-  if (path.startsWith("/media/") || path.startsWith("/assets/")) return null; // cacheable files
+  if (path.startsWith("/media/") || path.startsWith("/assets/") || path.startsWith("/map-tiles/")) return null; // cacheable files
   if (path.startsWith("/api/auth/")) return "AUTH";
   if (path.startsWith("/api/admin/")) return "ADMIN";
   if (method !== "GET" && method !== "HEAD") return "WRITE";

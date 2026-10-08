@@ -60,6 +60,7 @@ import { PrivacyService } from "./services/privacy.service.ts";
 import { Ga4ReportService } from "./services/ga4-report.service.ts";
 import { MonitoringRepository } from "./repositories/monitoring.repository.ts";
 import { MonitoringService } from "./services/monitoring.service.ts";
+import { edgeCache, MapTileService } from "./services/map-tile.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -99,6 +100,8 @@ export interface Services {
   privacy: PrivacyService;
   /** Heartbeats, server error log, System status (Phase 16). */
   monitoring: MonitoringService;
+  /** Footer map thumbnail tiles (OpenStreetMap, through the Worker). */
+  mapTiles: MapTileService;
 }
 
 export interface ServiceOptions {
@@ -114,6 +117,8 @@ export interface ServiceOptions {
   metaFetch?: FetchLike;
   /** Google APIs (GA4 Data API, OAuth) — tests use a fake. */
   googleFetch?: FetchLike;
+  /** Tests / e2e: fetch used for OpenStreetMap map tiles. */
+  mapFetch?: FetchLike;
 }
 
 /** Absolute links (reset / invite) use APP_BASE_URL when configured (https only). */
@@ -256,6 +261,11 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     }),
     privacy,
     securityLog: log,
+    // Footer map thumbnail: tiles around Settings → Website latitude / longitude only.
+    mapTiles: new MapTileService(async () => {
+      const s = await new SettingsRepository(db).site();
+      return s && s.latitude !== null && s.longitude !== null ? { latitude: s.latitude, longitude: s.longitude } : null;
+    }, { fetch: options.mapFetch, cache: edgeCache(), siteUrl: resolveBaseUrl(env, options.origin) }),
     // Global search (spec §40–41): index for matching only; results re-read from source, live availability.
     search: new SearchService(db, new SearchRepository(db), accommodation, quotes, content, availability,
       () => inventory.siteTimezone(), authorization, log, clock),

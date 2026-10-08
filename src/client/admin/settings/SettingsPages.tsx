@@ -158,7 +158,8 @@ export function WebsiteSettingsPage() {
         <h2 className="adm-h2">{c.bset.title}</h2>
         <p className="adm-field__hint">{c.bset.note}</p>
         {rules.message && <Alert kind={rules.message.kind}>{rules.message.text}</Alert>}
-        <fieldset className="adm-fieldset" disabled={rules.busy || !can("settings.website")}>
+        {/* Locked until the current rules have loaded: a value typed earlier would be overwritten or saved alone. */}
+        <fieldset className="adm-fieldset" disabled={rules.busy || !rules.data || !can("settings.website")}>
           <div className="adm-grid2">
             {(["holdMinutes", "maxNights", "maxAdvanceDays", "maxTentsPerBooking"] as const).map((k) => (
               <Field key={k} label={c.bset[k]} type="number" min={1} value={ruleForm[k] ?? ""} error={rules.errors[k]}

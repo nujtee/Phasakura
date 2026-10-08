@@ -8,6 +8,7 @@ import { FakeLine } from "./fake-line.ts";
 import { fakeGoogle, fakeMeta } from "./fake-http.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
 import { SqliteD1 } from "./sqlite-d1.ts";
+import { pngBytes } from "./images.ts";
 
 /** Indirection so a test can set `h.verifier(...)` after the app is created. */
 const harnessVerifier: { current: SlipVerifier | null } = { current: null };
@@ -46,6 +47,9 @@ export class Harness {
   /** Fake Meta Graph API (Conversions API) and Google APIs (GA4 Data API). */
   readonly meta = fakeMeta();
   readonly google = fakeGoogle();
+  /** Fake OpenStreetMap tile server: every tile request the app makes, and the answer it gets. */
+  readonly tileRequests: { url: string; headers: Record<string, string> }[] = [];
+  tileResponse: () => Response | Promise<Response> = () => new Response(pngBytes(256, 256), { headers: { "Content-Type": "image/png" } });
   readonly app = createApp({
     requestId: () => "req",
     serviceOptions: {
@@ -57,6 +61,10 @@ export class Harness {
       lineFetch: (input: string, init?: RequestInit) => this.line.fetch(input, init),
       metaFetch: (input: string, init?: RequestInit) => this.meta.fetch(input, init),
       googleFetch: (input: string, init?: RequestInit) => this.google.fetch(input, init),
+      mapFetch: async (input: string, init?: RequestInit) => {
+        this.tileRequests.push({ url: input, headers: Object.fromEntries(new Headers(init?.headers).entries()) });
+        return this.tileResponse();
+      },
     },
   });
   readonly env: ReturnType<typeof makeEnv>;
