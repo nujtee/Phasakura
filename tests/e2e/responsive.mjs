@@ -190,14 +190,71 @@ await check("admin on a phone: the side menu is reachable and closes after choos
   const page = await adminCtx.newPage(); watch(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/en/admin`);
-  const toggle = page.locator("button[aria-expanded]").first();
+  const toggle = page.locator(".adm-topbar__menu");
   await toggle.waitFor();
   await toggle.click();
-  await page.getByRole("link", { name: "Bookings" }).first().click();
+  const group = page.locator("#adm-sidebar").getByRole("button", { name: "Bookings" });
+  if (await group.getAttribute("aria-expanded") === "false") await group.click();
+  await page.locator("#adm-sidebar").getByRole("link", { name: "Bookings" }).click();
   await page.waitForURL(/\/en\/admin\/bookings$/);
   await page.waitForTimeout(300);
   assert(await toggle.getAttribute("aria-expanded") === "false", "menu closed after navigating");
   await page.close();
+});
+
+await check("admin side menu: bold headings, indented \"-\" sub-pages, a heading click opens and a second click closes", async () => {
+  // A fresh browser: nothing remembered about which groups were open.
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 }, locale: "en-US", storageState: await adminCtx.storageState() });
+  await ctx.addInitScript(() => { if (!sessionStorage.getItem("pk_e2e_nav")) { localStorage.removeItem("pk_admin_nav_open"); sessionStorage.setItem("pk_e2e_nav", "1"); } });
+  const page = await ctx.newPage(); watch(page);
+  await page.goto(`${BASE}/en/admin`);
+  const nav = page.locator("#adm-sidebar nav");
+  const heading = nav.getByRole("button", { name: "Bookings" });
+  await heading.waitFor();
+  const calendar = nav.getByRole("link", { name: "Calendar" });
+  assert(await heading.getAttribute("aria-expanded") === "false", "groups start collapsed");
+  assert(!(await calendar.isVisible()), "sub-pages hidden while collapsed");
+  const weight = (loc) => loc.evaluate((el) => Number(getComputedStyle(el).fontWeight));
+  assert(await weight(heading) >= 700, "group heading is bold");
+  assert(await weight(nav.getByRole("link", { name: "Dashboard" })) >= 700, "single top-level page is bold");
+
+  await heading.click();
+  assert(await heading.getAttribute("aria-expanded") === "true", "first click opens");
+  await calendar.waitFor();
+  assert(await weight(calendar) < 700, "sub-page is regular weight");
+  const box = async (loc) => (await loc.boundingBox());
+  const dash = calendar.locator(".adm-nav__dash");
+  assert(await dash.innerText() === "-", "sub-page starts with -");
+  assert(await dash.getAttribute("aria-hidden") === "true", "the dash is not read out");
+  const textLeft = await calendar.evaluate((el) => { const r = document.createRange(); r.selectNodeContents(el.lastChild); return r.getBoundingClientRect().left; });
+  const headingTextLeft = await heading.locator("span").evaluate((el) => el.getBoundingClientRect().left);
+  assert(textLeft > headingTextLeft + 20, `sub-page indented (${textLeft} vs ${headingTextLeft})`);
+  assert((await box(dash)).x > headingTextLeft + 8, "dash sits to the right of the heading text");
+
+  await heading.click();
+  assert(await heading.getAttribute("aria-expanded") === "false", "second click closes");
+  await calendar.waitFor({ state: "hidden" });
+
+  // Keyboard: Enter on the heading toggles it too.
+  await heading.focus();
+  await page.keyboard.press("Enter");
+  assert(await heading.getAttribute("aria-expanded") === "true", "Enter opens");
+  await page.keyboard.press("Enter");
+  assert(await heading.getAttribute("aria-expanded") === "false", "Enter closes");
+
+  // The group of the page on screen opens on arrival; open groups are remembered after a reload.
+  await page.goto(`${BASE}/en/admin/houses`);
+  const accommodation = nav.getByRole("button", { name: "Accommodation" });
+  await accommodation.waitFor();
+  assert(await accommodation.getAttribute("aria-expanded") === "true", "current page's group is open");
+  assert(await nav.getByRole("link", { name: "Houses" }).getAttribute("aria-current") === "page", "current page marked");
+  await nav.getByRole("button", { name: "Finance" }).click();
+  await page.reload();
+  await accommodation.waitFor();
+  assert(await nav.getByRole("button", { name: "Finance" }).getAttribute("aria-expanded") === "true", "open group remembered");
+  assert(await heading.getAttribute("aria-expanded") === "false", "closed group stays closed");
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-nav-desktop.png`, clip: { x: 0, y: 0, width: 320, height: 900 } });
+  await ctx.close();
 });
 
 await check("no console or CSP errors", async () => {

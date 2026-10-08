@@ -274,8 +274,12 @@ await check("content admin: no money on dashboard, no payments menu", async () =
   await p.getByText("Check-ins today").waitFor();
   if (await p.getByText("Revenue (paid bookings, by check-in date)").count()) throw new Error("revenue visible");
   if (await p.getByText("Arriving today").count()) throw new Error("arrivals visible");
-  if (await p.locator("nav").getByRole("link", { name: "Payment", exact: true }).count()) throw new Error("payments menu visible");
-  await p.getByRole("link", { name: "Gallery" }).first().waitFor();
+  const nav = p.locator("#adm-sidebar nav");
+  if (await nav.getByRole("button", { name: "Finance" }).count()) throw new Error("finance menu group visible");
+  if (await nav.getByRole("link", { name: "Payments", exact: true, includeHidden: true }).count()) throw new Error("payments menu visible");
+  // Menu groups start collapsed: open "Website" to reach its pages.
+  await nav.getByRole("button", { name: "Website" }).click();
+  await nav.getByRole("link", { name: "Gallery" }).waitFor();
   await ctx.close();
 });
 

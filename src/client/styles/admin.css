@@ -124,7 +124,7 @@
 }
 
 .adm-nav__group {
-  margin-bottom: 12px;
+  margin-bottom: 4px;
 }
 
 .adm-nav__group ul {
@@ -165,6 +165,69 @@
 
 .adm-nav__link--soon {
   color: var(--color-muted);
+}
+
+/* Sidebar tree: bold top-level entries (group headings and single pages), indented "- " sub-pages. */
+.adm-nav__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adm-nav__toggle:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+/* The group that holds the page on screen stays recognisable while collapsed. */
+.adm-nav__toggle--current {
+  color: var(--color-primary);
+}
+
+.adm-nav__chevron {
+  flex: none;
+  color: var(--color-muted);
+  transition: transform var(--transition-fast);
+}
+
+.adm-nav__toggle[aria-expanded="true"] .adm-nav__chevron {
+  transform: rotate(90deg);
+}
+
+.adm-nav__sub[hidden] {
+  display: none;
+}
+
+/* Also when it is the current page (beats the 600 of aria-current). */
+.adm-nav__link.adm-nav__link--top {
+  font-weight: 700;
+}
+
+.adm-nav__link--sub {
+  gap: 8px;
+  padding-left: 28px;
+}
+
+.adm-nav__dash {
+  color: var(--color-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-nav__chevron {
+    transition: none;
+  }
 }
 
 .adm-main {

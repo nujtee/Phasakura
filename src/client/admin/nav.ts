@@ -10,14 +10,18 @@ export interface NavItem {
 }
 
 export interface NavGroup {
+  /** Stable key: the collapsed / expanded state of a group is remembered by it. */
+  id: string;
+  /** Groups with a label collapse under it; groups without one are top-level entries. */
   label: ((t: AdminMessages) => string) | null;
   items: NavItem[];
 }
 
 /** Admin sidebar (spec §35). Each item is shown only if the user holds its permission. */
 export const ADMIN_NAV: NavGroup[] = [
-  { label: null, items: [{ path: "", label: (t) => t.nav.dashboard, permission: "dashboard.view", ready: true }] },
+  { id: "dashboard", label: null, items: [{ path: "", label: (t) => t.nav.dashboard, permission: "dashboard.view", ready: true }] },
   {
+    id: "bookings",
     label: (t) => t.nav.bookingsGroup,
     items: [
       { ready: true, path: "bookings", label: (t) => t.nav.bookings, permission: "bookings.view" },
@@ -25,6 +29,7 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    id: "accommodation",
     label: (t) => t.nav.accommodationGroup,
     items: [
       { ready: true, path: "houses", label: (t) => t.nav.houses, permission: "accommodation.view" },
@@ -34,6 +39,7 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    id: "food",
     label: (t) => t.nav.foodGroup,
     items: [
       { ready: true, path: "food", label: (t) => t.nav.foodMenu, permission: "food.view" },
@@ -42,6 +48,7 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    id: "finance",
     label: (t) => t.nav.financeGroup,
     items: [
       { ready: true, path: "payments", label: (t) => t.nav.payments, permission: "payments.view" },
@@ -49,8 +56,9 @@ export const ADMIN_NAV: NavGroup[] = [
       { ready: true, path: "receiving-accounts", label: (t) => t.nav.receivingAccounts, permission: "receiving_accounts.view" },
     ],
   },
-  { label: null, items: [{ ready: true, path: "reports", label: (t) => t.nav.reports, permission: "reports.view" }] },
+  { id: "reports", label: null, items: [{ ready: true, path: "reports", label: (t) => t.nav.reports, permission: "reports.view" }] },
   {
+    id: "website",
     label: (t) => t.nav.websiteGroup,
     items: [
       { ready: true, path: "content-home", label: (t) => t.nav.home, permission: "content.home" },
@@ -60,6 +68,7 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    id: "marketing",
     label: (t) => t.nav.marketingGroup,
     items: [
       { ready: true, path: "ga4", label: (t) => t.nav.ga4, permission: "marketing.view" },
@@ -68,6 +77,7 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    id: "settings",
     label: (t) => t.nav.settingsGroup,
     items: [
       { ready: true, path: "settings-website", label: (t) => t.nav.website, permission: "settings.website" },
@@ -79,6 +89,7 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    id: "administration",
     label: (t) => t.nav.adminGroup,
     items: [
       { path: "users", label: (t) => t.nav.users, permission: "users.view", ready: true },
@@ -88,6 +99,7 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
   {
+    id: "system",
     label: null,
     items: [
       { path: "audit-logs", label: (t) => t.nav.auditLogs, permission: "audit_logs.view", ready: true },
