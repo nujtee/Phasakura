@@ -926,6 +926,25 @@
   margin-top: 0;
 }
 
+/* Camping → tarp area add-on: its own box inside the settings form. */
+.adm-tarp {
+  margin: 16px 0;
+}
+
+.adm-tarp > legend {
+  margin: 0;
+  padding: 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.adm-table__caption {
+  caption-side: top;
+  padding: 8px 0;
+  text-align: left;
+  font-weight: 700;
+}
+
 .adm-linkbtn--danger {
   color: var(--color-error);
 }

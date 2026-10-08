@@ -116,6 +116,11 @@
     grid-column: auto;
   }
 
+  /* Booking page: tents are chosen in the camping card, not in the top search. */
+  .stay-search--no-tents {
+    grid-template-columns: 1fr 1fr 96px 128px auto;
+  }
+
   .detail__aside .stay-search {
     grid-template-columns: 1fr 1fr;
   }

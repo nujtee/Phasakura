@@ -29,7 +29,11 @@ export function quoteItems(q: QuoteDto): TrackItem[] {
   const food = q.food.filter((f) => f.subtotalSatang > 0).map((f): TrackItem => ({
     id: f.optionId, name: f.name, category: "FOOD", price: baht(f.unitPriceSatang), quantity: Math.max(1, f.quantity || f.adults + f.children),
   }));
-  return [stay, ...food];
+  // Camping add-on: price for the whole stay per area.
+  const tarp: TrackItem[] = q.tarp
+    ? [{ id: "camping_tarp", name: "Tarp area", category: "CAMPING", price: baht(q.tarp.subtotalSatang / q.tarp.quantity), quantity: q.tarp.quantity }]
+    : [];
+  return [stay, ...tarp, ...food];
 }
 
 const count = (v: FoodCart[string] | undefined) => (v ? Math.max(v.quantity, v.adults + v.children) : 0);

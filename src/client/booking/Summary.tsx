@@ -32,6 +32,7 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
       <p className="summary__item">
         <strong>{quote.item.name}</strong>
         {quote.item.type === "OWN_TENT" && <> · {fill(bt.tentsLine, { n: quote.item.quantity })}</>}
+        {quote.tarp && <> + {bt.tarpLine}</>}
       </p>
       <p className="summary__meta">
         {fill(bt.stayLine, { checkIn: dateText(quote.checkIn), checkOut: dateText(quote.checkOut), n: quote.nights })}
@@ -46,6 +47,12 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
             <dd>{baht(quote.item.pricingType === "PER_ADULT_NIGHT" ? n.priceSatang * quote.adults : n.priceSatang)}</dd>
           </div>
         ))}
+        {quote.tarp && (
+          <div className="summary__line summary__line--sub">
+            <dt>{fill(bt.tarpNights, { n: quote.tarp.nights })}</dt>
+            <dd>{baht(quote.tarp.subtotalSatang)}</dd>
+          </div>
+        )}
         <div className="summary__line">
           <dt>{bt.accommodation}</dt>
           <dd>{baht(quote.accommodationSubtotalSatang)}</dd>

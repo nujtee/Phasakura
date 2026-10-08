@@ -66,8 +66,9 @@ function parseQuote(body: Record<string, unknown>, v: Validator): QuoteInput {
   else if (s.kind === "UNIT" && Object.keys(s).every((k) => k === "kind" || k === "unitId")) {
     if (typeof s.unitId !== "string" || !ID_PATTERN.test(s.unitId)) v.errors["stay.unitId"] = "INVALID_ID";
     else stay = { kind: "UNIT", unitId: s.unitId };
-  } else if (s.kind === "CAMPING" && Object.keys(s).every((k) => k === "kind" || k === "tents")) {
-    stay = { kind: "CAMPING", tents: int(v, s.tents, "stay.tents", 1, 100) };
+  } else if (s.kind === "CAMPING" && Object.keys(s).every((k) => k === "kind" || k === "tents" || k === "tarp")) {
+    if (s.tarp !== undefined && typeof s.tarp !== "boolean") v.errors["stay.tarp"] = "INVALID_VALUE";
+    stay = { kind: "CAMPING", tents: int(v, s.tents, "stay.tents", 1, 100), ...(s.tarp === true ? { tarp: true } : {}) };
   } else v.errors.stay = "INVALID_VALUE";
 
   const food: FoodSelection[] = [];

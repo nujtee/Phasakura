@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import type { AdminAvailabilityDto, CampingIntegrityDto, CampingNightDto, CampingSettingsDto } from "../../../shared/accommodation-types.ts";
+import type { AdminAvailabilityDto, CampingIntegrityDto, CampingNightDto, CampingSettingsDto, TarpNightDto } from "../../../shared/accommodation-types.ts";
 import { SATANG_PER_BAHT, parseBahtToSatang } from "../../../shared/booking-rules.ts";
 import { addDays, todayIn, DEFAULT_TIMEZONE } from "../../../shared/dates.ts";
 import { LOCALES, type LocaleCode } from "../../../shared/i18n/locales.ts";
@@ -35,7 +35,7 @@ export function CampingPage() {
         onChanged={() => setReload((r) => r + 1)}
         onError={(err) => setMessage({ kind: "error", text: detailMessage(t, err) })}
         onDone={(text) => setMessage({ kind: "success", text })} />
-      <NightlyCapacity canEdit={canEdit} reload={reload}
+      <NightlyCapacity canEdit={canEdit} reload={reload} showTarps={settings.tarpEnabled}
         onError={(err) => setMessage({ kind: "error", text: detailMessage(t, err) })}
         onSaved={() => setMessage({ kind: "success", text: t.common.saved })} />
     </section>
@@ -52,6 +52,9 @@ function SettingsForm({ settings, canEdit, onSaved, onError }: {
     price: String(settings.pricePerAdultNightSatang / SATANG_PER_BAHT),
     childFreeUnderAge: String(settings.childFreeUnderAge),
     maxGuestsPerTent: settings.maxGuestsPerTent ? String(settings.maxGuestsPerTent) : "",
+    tarpEnabled: settings.tarpEnabled,
+    tarpPrice: String(settings.tarpPricePerNightSatang / SATANG_PER_BAHT),
+    maxTarpsPerNight: String(settings.maxTarpsPerNight),
   });
   const [tr, setTr] = useState(() => Object.fromEntries(LOCALES.map((l) => [l.code, {
     name: settings.translations[l.code]?.name ?? "", description: settings.translations[l.code]?.description ?? "",
@@ -63,6 +66,8 @@ function SettingsForm({ settings, canEdit, onSaved, onError }: {
     e.preventDefault();
     const price = parseBahtToSatang(f.price);
     if (price === null) return setErrors({ pricePerAdultNightSatang: t.errors.INVALID_PRICE });
+    const tarpPrice = parseBahtToSatang(f.tarpPrice || "0");
+    if (tarpPrice === null) return setErrors({ tarpPricePerNightSatang: t.errors.INVALID_PRICE });
     setBusy(true);
     setErrors({});
     try {
@@ -75,6 +80,9 @@ function SettingsForm({ settings, canEdit, onSaved, onError }: {
         childFreeUnderAge: Number(f.childFreeUnderAge),
         maxGuestsPerTent: f.maxGuestsPerTent ? Number(f.maxGuestsPerTent) : null,
         coverAssetId: settings.coverAssetId,
+        tarpEnabled: f.tarpEnabled,
+        tarpPricePerNightSatang: tarpPrice,
+        maxTarpsPerNight: Number(f.maxTarpsPerNight || 0),
         translations,
       }));
     } catch (err) {
@@ -105,6 +113,21 @@ function SettingsForm({ settings, canEdit, onSaved, onError }: {
           <Field label={t.acc.maxGuestsPerTent} type="number" min={1} max={50} value={f.maxGuestsPerTent}
             onChange={(e) => setF({ ...f, maxGuestsPerTent: e.target.value })} />
         </div>
+        <fieldset className="adm-subform adm-tarp">
+          <legend className="adm-h3">{t.acc.tarpTitle}</legend>
+          <label className="adm-check">
+            <input type="checkbox" checked={f.tarpEnabled} onChange={(e) => setF({ ...f, tarpEnabled: e.target.checked })} />
+            {t.acc.tarpEnabled}
+          </label>
+          <div className="adm-grid2">
+            <Field label={t.acc.tarpPrice} inputMode="decimal" value={f.tarpPrice} disabled={!can("pricing.edit")}
+              hint={!can("pricing.edit") ? t.acc.needsPricing : undefined}
+              onChange={(e) => setF({ ...f, tarpPrice: e.target.value })} error={errors.tarpPricePerNightSatang} />
+            <Field label={t.acc.maxTarpsPerNight} type="number" min={0} max={1000} value={f.maxTarpsPerNight}
+              onChange={(e) => setF({ ...f, maxTarpsPerNight: e.target.value })} error={errors.maxTarpsPerNight} />
+          </div>
+          <p className="adm-field__hint">{t.acc.tarpHint}</p>
+        </fieldset>
         {LOCALES.map((l) => (
           <div key={l.code} className="adm-grid2" lang={l.code}>
             <Field label={`${t.acc.name} (${l.label})`} required={l.code === "th"} value={tr[l.code].name} maxLength={120}
@@ -154,8 +177,8 @@ function IntegrityPanel({ canEdit, reload, onChanged, onError, onDone }: {
         <p className="adm-muted">✓ {t.acc.integrityOk}</p>
       ) : (
         <>
-          <p role="alert"><strong>{t.acc.integrityDrift.replace("{n}", String(data.drift.length))}</strong></p>
-          <div className="adm-tablewrap">
+          <p role="alert"><strong>{t.acc.integrityDrift.replace("{n}", String(data.drift.length + data.tarpDrift.length))}</strong></p>
+          {data.drift.length > 0 && <div className="adm-tablewrap">
             <table className="adm-table">
               <thead><tr><th scope="col">{t.acc.date}</th><th scope="col" className="adm-num">{t.acc.byBookings}</th><th scope="col" className="adm-num">{t.acc.counter}</th><th scope="col" className="adm-num">{t.acc.capacity}</th></tr></thead>
               <tbody>
@@ -169,7 +192,25 @@ function IntegrityPanel({ canEdit, reload, onChanged, onError, onDone }: {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
+          {data.tarpDrift.length > 0 && (
+            <div className="adm-tablewrap">
+              <table className="adm-table">
+                <caption className="adm-table__caption">{t.acc.tarpDriftTitle}</caption>
+                <thead><tr><th scope="col">{t.acc.date}</th><th scope="col" className="adm-num">{t.acc.byBookings}</th><th scope="col" className="adm-num">{t.acc.counter}</th><th scope="col" className="adm-num">{t.acc.capacity}</th></tr></thead>
+                <tbody>
+                  {data.tarpDrift.slice(0, 31).map((d) => (
+                    <tr key={d.date}>
+                      <td className="adm-nowrap">{fmt.format(new Date(`${d.date}T00:00:00Z`))}</td>
+                      <td className="adm-num">{d.expected}</td>
+                      <td className="adm-num">{d.actual}</td>
+                      <td className={`adm-num ${d.maxTarps !== null && d.expected > d.maxTarps ? "adm-text-error" : ""}`}>{d.maxTarps ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
       <div className="adm-row">
@@ -182,17 +223,19 @@ function IntegrityPanel({ canEdit, reload, onChanged, onError, onDone }: {
   );
 }
 
-function NightlyCapacity({ canEdit, reload, onError, onSaved }: {
-  canEdit: boolean; reload: number; onError: (e: unknown) => void; onSaved: () => void;
+function NightlyCapacity({ canEdit, reload, showTarps, onError, onSaved }: {
+  canEdit: boolean; reload: number; showTarps: boolean; onError: (e: unknown) => void; onSaved: () => void;
 }) {
   const { t, locale } = useAdmin();
   const [from, setFrom] = useState(() => todayIn(DEFAULT_TIMEZONE));
   const [nights, setNights] = useState<CampingNightDto[]>([]);
+  const [tarps, setTarps] = useState<TarpNightDto[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const grid = await apiGet<AdminAvailabilityDto>(`/api/admin/availability?from=${from}&days=${DAYS}`);
     setNights(grid.camping);
+    setTarps(grid.tarps ?? []);
     setDrafts({});
   }, [from]);
 
@@ -212,6 +255,9 @@ function NightlyCapacity({ canEdit, reload, onError, onSaved }: {
   };
 
   const fmt = new Intl.DateTimeFormat(locale.code, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  const tarpBy = new Map(tarps.map((n) => [n.date, n]));
+  // Tarp column while the option is on, or while any shown night still has a tarp area booked.
+  const tarpColumn = showTarps || tarps.some((n) => n.used > 0);
   return (
     <div className="adm-card">
       <div className="adm-pagehead">
@@ -229,6 +275,7 @@ function NightlyCapacity({ canEdit, reload, onError, onSaved }: {
               <th scope="col">{t.acc.capacity}</th>
               <th scope="col">{t.acc.used}</th>
               <th scope="col">{t.acc.remaining}</th>
+              {tarpColumn && <th scope="col">{t.acc.tarps} ({t.acc.used}/{t.acc.capacity})</th>}
               {canEdit && <th scope="col">{t.acc.setCapacity}</th>}
             </tr>
           </thead>
@@ -239,6 +286,10 @@ function NightlyCapacity({ canEdit, reload, onError, onSaved }: {
                 <td>{n.capacity} {n.isOverride && <span className="adm-chip">{t.acc.override}</span>}</td>
                 <td>{n.used}</td>
                 <td><strong className={n.remaining === 0 ? "adm-text-error" : ""}>{n.remaining}</strong></td>
+                {tarpColumn && (() => {
+                  const a = tarpBy.get(n.date);
+                  return <td className={a && a.remaining === 0 && a.capacity > 0 ? "adm-text-error" : undefined}>{a ? `${a.used}/${a.capacity}` : "—"}</td>;
+                })()}
                 {canEdit && (
                   <td>
                     <form className="adm-inline" onSubmit={(e) => { e.preventDefault(); void setNight(n.date, Number(drafts[n.date])); }}>

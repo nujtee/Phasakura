@@ -181,6 +181,14 @@ export class BookingService {
       for (const night of p.nights) {
         statements.push(...repo.reserveTentsStatements(night, p.tents, at));
       }
+      // Tarp area: its own nightly limit (CHECK) and a price snapshot; triggers re-check camping + option offered.
+      if (p.tarp) {
+        for (const night of p.nights) statements.push(...repo.reserveTarpStatements(night, p.tarp.quantity, at));
+        statements.push(repo.insertTarpStatement({
+          id: newId(), bookingId, quantity: p.tarp.quantity, pricePerNight: p.tarp.pricePerNightSatang,
+          nights: p.tarp.nights, subtotal: p.tarp.subtotalSatang, now: at,
+        }));
+      }
     }
 
     // Immutable price snapshot (spec §17).
@@ -363,6 +371,7 @@ export class BookingService {
         itemType: r.item_type,
         itemName: r.item_name,
         quantity: r.quantity,
+        tarps: r.tarps,
         customerName: r.customer_name,
         customerPhone: r.customer_phone,
         totalSatang: r.total_satang,
@@ -466,12 +475,13 @@ export class BookingService {
   // ================================================================ DTOs (from snapshots, never from current prices)
 
   private async toPublic(row: BookingRow): Promise<PublicBookingDto> {
-    const [items, included, food, snapshot, lineUpdates] = await Promise.all([
+    const [items, included, food, snapshot, lineUpdates, tarp] = await Promise.all([
       this.repo.items(row.id),
       this.repo.includedMeals(row.id),
       this.repo.food(row.id),
       this.payments.snapshot(row.id),
       this.lineStatus ? this.lineStatus(row) : Promise.resolve({ available: false, linked: false }),
+      this.repo.tarp(row.id),
     ]);
     // Payment details only while the booking is still waiting for money.
     const awaitingPayment = row.booking_status === "PENDING" && (row.payment_status === "UNPAID" || row.payment_status === "REJECTED");
@@ -508,6 +518,9 @@ export class BookingService {
         nightly: item.nightly_prices_json ? (JSON.parse(item.nightly_prices_json) as NightPriceDto[]) : [],
         subtotalSatang: item.snapshot_subtotal_satang,
       },
+      tarp: tarp ? {
+        quantity: tarp.quantity, pricePerNightSatang: tarp.price_per_night_satang, nights: tarp.number_of_nights, subtotalSatang: tarp.subtotal_satang,
+      } : null,
       includedMeals: included.map((m) => ({
         categoryCode: m.category_code, name: m.meal_name_snapshot, personsPerNight: m.persons_per_night_snapshot, nights: m.number_of_nights,
       })),
@@ -570,6 +583,12 @@ export function mapInventoryError(error: unknown): unknown {
   }
   if (/CHECK constraint failed: .*tents_used/.test(message)) {
     return new ConflictError("Not enough camping space for these nights", "CAMPING_FULL");
+  }
+  if (/CHECK constraint failed: .*tarps_used/.test(message)) {
+    return new ConflictError("No tarp area left for these nights", "TARP_FULL");
+  }
+  if (/TARP_DISABLED/.test(message)) {
+    return new ConflictError("The tarp area option is not offered", "TARP_UNAVAILABLE");
   }
   if (/NOT NULL constraint failed: payment_account_snapshots/.test(message)) {
     return new ConflictError("Online booking is temporarily unavailable", "PAYMENT_NOT_CONFIGURED");

@@ -9,6 +9,7 @@ import type {
   NightPriceDto,
   QuoteDto,
   StaySelection,
+  TarpLineDto,
 } from "../../shared/booking-types.ts";
 import { DEFAULT_TIMEZONE, addDays, dayOfWeek, localDateTimeIn, todayIn } from "../../shared/dates.ts";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors.ts";
@@ -63,6 +64,8 @@ export interface PreparedBooking {
   unit: UnitRow | null;
   camping: CampingSettingsRow | null;
   tents: number;
+  /** Tarp area add-on (camping only). */
+  tarp: TarpLineDto | null;
   included: PreparedIncludedMeal[];
   foodLines: PreparedFoodLine[];
   settings: BookingSettingsRow;
@@ -149,6 +152,7 @@ export class QuoteService {
     let unit: UnitRow | null = null;
     let camping: CampingSettingsRow | null = null;
     let tents = 0;
+    let tarp: TarpLineDto | null = null;
     let item: QuoteDto["item"];
 
     if (input.stay.kind === "UNIT") {
@@ -199,6 +203,19 @@ export class QuoteService {
         // Per adult per night; children under the free age stay free (spec §14).
         subtotalSatang: sum(nightly) * input.adults,
       };
+
+      // Tarp area: one per booking, a fixed price per night, its own nightly limit.
+      if (input.stay.tarp) {
+        if (camping.tarp_enabled !== 1) throw new ConflictError("The tarp area option is not offered", "TARP_UNAVAILABLE");
+        const areas = await this.availability.tarpNights(nights);
+        if (areas.some((n) => n.remaining < 1)) throw new ConflictError("No tarp area left for these nights", "TARP_FULL");
+        tarp = {
+          quantity: 1,
+          pricePerNightSatang: camping.tarp_price_per_night_satang,
+          nights: nights.length,
+          subtotalSatang: camping.tarp_price_per_night_satang * nights.length,
+        };
+      }
     }
 
     const menu = await this.menu(input.lang);
@@ -207,7 +224,7 @@ export class QuoteService {
     const extra = await this.extraFood(input, nights, menu);
 
     const foodLines = [...included.lines, ...extra];
-    const accommodationSubtotalSatang = item.subtotalSatang;
+    const accommodationSubtotalSatang = item.subtotalSatang + (tarp?.subtotalSatang ?? 0);
     const foodSubtotalSatang = foodLines.reduce((acc, l) => acc + l.dto.subtotalSatang, 0);
     return {
       quote: {
@@ -217,6 +234,7 @@ export class QuoteService {
         adults: input.adults,
         children: input.children,
         item,
+        tarp,
         includedMeals: included.meals.map((m) => m.dto),
         food: foodLines.map((l) => l.dto),
         accommodationSubtotalSatang,
@@ -229,6 +247,7 @@ export class QuoteService {
       unit,
       camping,
       tents,
+      tarp,
       included: included.meals,
       foodLines,
       settings,

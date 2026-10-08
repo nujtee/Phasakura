@@ -19,6 +19,8 @@ export interface StayRow {
   quantity: number;
   unit_name_snapshot: string;
   nightly_prices_json: string | null;
+  /** Tarp areas of the booking (camping add-on). */
+  tarps: number;
 }
 
 export interface FoodLineRow {
@@ -95,7 +97,8 @@ export class ReportRepository {
       .prepare(
         `SELECT b.id AS booking_id, b.booking_code, b.payment_status, b.check_in, b.check_out, b.adults, b.children,
                 b.accommodation_subtotal_satang, b.discount_satang,
-                i.item_type, i.unit_id, i.quantity, s.unit_name_snapshot, s.nightly_prices_json
+                i.item_type, i.unit_id, i.quantity, s.unit_name_snapshot, s.nightly_prices_json,
+                (SELECT COALESCE(SUM(t.quantity), 0) FROM booking_tarps t WHERE t.booking_id = b.id AND t.status = 'ACTIVE') AS tarps
            FROM bookings b
            JOIN booking_items i ON i.booking_id = b.id
            JOIN booking_price_snapshots s ON s.booking_item_id = i.id

@@ -196,6 +196,7 @@ describe("server error log", () => {
     const h = new Harness();
     h.db.exec("DROP TABLE error_events");
     h.db.exec("DROP TABLE system_heartbeats");
+    h.db.exec("DROP TABLE booking_tarps"); // …and the newer 0021 (the schema probe looks for the latest table)
     h.db.exec("DROP TABLE gallery_image_translations");
     h.db.exec("DROP TABLE gallery_images");
     assert.equal((await quiet(() => h.api("GET", "/api/public/gallery"))).status, 500, "the original error, not a monitoring one");

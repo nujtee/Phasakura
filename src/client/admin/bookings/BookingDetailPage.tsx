@@ -100,7 +100,7 @@ export function BookingDetailPage({ code }: { code: string }) {
         <div className="adm-card">
           <h2 className="adm-h2">{t.bk.stay}</h2>
           <dl className="adm-dl">
-            <dt>{t.bk.item}</dt><dd>{b.item.name}{b.item.type === "OWN_TENT" && ` · ${format(t.bk.tents, { n: b.item.quantity })}`}</dd>
+            <dt>{t.bk.item}</dt><dd>{b.item.name}{b.item.type === "OWN_TENT" && ` · ${format(t.bk.tents, { n: b.item.quantity })}`}{b.tarp && ` + ${t.bk.tarp}`}</dd>
             <dt>{t.bk.stay}</dt><dd>{stayDate(b.checkIn)} → {stayDate(b.checkOut)} ({format(t.bk.nights, { n: b.nights })})</dd>
             <dt>{t.bk.guest}</dt><dd>{format(t.bk.guests, { adults: b.adults, children: b.children })}</dd>
             <dt>{t.bk.payment}</dt><dd>{t.bk[`p${b.paymentStatus}`]}</dd>
@@ -134,6 +134,12 @@ export function BookingDetailPage({ code }: { code: string }) {
                   <td className="adm-num">{baht(n.priceSatang)} {b.item.pricingType === "PER_ADULT_NIGHT" ? t.bk.perAdultNight : t.bk.perNight}</td>
                 </tr>
               ))}
+              {b.tarp && (
+                <tr>
+                  <td>{format(t.bk.tarpNights, { n: b.tarp.nights })}</td>
+                  <td className="adm-num">{baht(b.tarp.subtotalSatang)} ({baht(b.tarp.pricePerNightSatang)} {t.bk.perNight})</td>
+                </tr>
+              )}
               <tr className="adm-table__total"><th scope="row">{t.bk.accommodationSubtotal}</th><td className="adm-num">{baht(b.accommodationSubtotalSatang)}</td></tr>
             </tbody>
           </table>

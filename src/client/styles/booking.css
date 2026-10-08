@@ -596,6 +596,121 @@ button.button--secondary {
   margin-top: 8px;
 }
 
+.camping-hint--error {
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface));
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+/* ---------- Camping booking form (inside the camping card) ---------- */
+.camping-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.camping-form__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.camping-form__dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.camping-form__counts {
+  display: grid;
+  gap: 4px;
+}
+
+/* Phones: label left, stepper right, one row per count. */
+.camping-form__count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.camping-form__label {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.camping-form__hint {
+  margin: -6px 0 0;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.camping-form__option {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  cursor: pointer;
+}
+
+.camping-form__option input {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  flex: none;
+  accent-color: var(--color-primary);
+}
+
+.camping-form__option span {
+  display: grid;
+  gap: 2px;
+}
+
+.camping-form__option small {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.camping-form__option:has(input:checked) {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+}
+
+.camping-form__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.camping-form__foot .button {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+@media (min-width: 640px) {
+  .camping-form__counts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .camping-form__count {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+}
+
 /* ---------- Payment instructions ---------- */
 .pay {
   margin: 20px 0;

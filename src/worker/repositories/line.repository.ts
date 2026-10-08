@@ -488,7 +488,8 @@ export class LineRepository {
         .bind(list),
       this.db
         .prepare(
-          `SELECT i.booking_id, i.item_type, i.quantity, s.unit_name_snapshot
+          `SELECT i.booking_id, i.item_type, i.quantity, s.unit_name_snapshot,
+                  (SELECT COALESCE(SUM(t.quantity), 0) FROM booking_tarps t WHERE t.booking_id = i.booking_id) AS tarps
              FROM booking_items i JOIN booking_price_snapshots s ON s.booking_item_id = i.id
             WHERE i.booking_id IN (SELECT value FROM json_each(?1)) ORDER BY i.created_at, i.id`,
         )
@@ -505,7 +506,7 @@ export class LineRepository {
         .bind(list, lang),
     ]);
     type B = { id: string; booking_code: string; customer_name: string; check_in: string; check_out: string; nights: number; adults: number; children: number; booking_status: string; payment_status: string; total_satang: number };
-    type I = { booking_id: string; item_type: MsgBooking["itemType"]; quantity: number; unit_name_snapshot: string };
+    type I = { booking_id: string; item_type: MsgBooking["itemType"]; quantity: number; unit_name_snapshot: string; tarps: number };
     type F = { booking_id: string; service_date: string; option_name_snapshot: string; quantity: number; service_time: string | null; category: string };
     const firstItem = new Map<string, I>();
     for (const i of (items?.results ?? []) as I[]) if (!firstItem.has(i.booking_id)) firstItem.set(i.booking_id, i);
@@ -518,6 +519,7 @@ export class LineRepository {
       return {
         code: r.booking_code, customerName: r.customer_name, checkIn: r.check_in, checkOut: r.check_out, nights: r.nights,
         itemType: item?.item_type ?? "HOUSE", itemName: item?.unit_name_snapshot ?? "—", tents: item?.item_type === "OWN_TENT" ? item.quantity : 0,
+        tarps: item?.item_type === "OWN_TENT" ? item.tarps : 0,
         adults: r.adults, children: r.children, bookingStatus: r.booking_status, paymentStatus: r.payment_status,
         totalSatang: r.total_satang, food: foodBy.get(r.id) ?? [],
       };

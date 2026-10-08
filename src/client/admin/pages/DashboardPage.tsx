@@ -152,7 +152,7 @@ function Trend({ data, label, baht, bookings }: {
 }
 
 function StayList({ title, empty, rows }: { title: string; empty: string; rows: StayRowDto[] }) {
-  const { c, href, locale } = useAdmin();
+  const { t, c, href, locale } = useAdmin();
   return (
     <div className="adm-card">
       <h2 className="adm-h2">{title} ({rows.length})</h2>
@@ -162,7 +162,7 @@ function StayList({ title, empty, rows }: { title: string; empty: string; rows: 
             <li key={r.bookingCode}>
               <Link to={href("bookings", r.bookingCode)} className="adm-mono">{r.bookingCode}</Link>
               <span>{r.customerName}</span>
-              <span className="adm-muted">{r.itemName}{r.itemType === "OWN_TENT" ? ` × ${r.quantity}` : ""} · {format(c.cal.guests, { adults: r.adults, children: r.children })}</span>
+              <span className="adm-muted">{r.itemName}{r.itemType === "OWN_TENT" ? ` × ${r.quantity}` : ""}{r.tarps > 0 ? ` + ${t.bk.tarp}` : ""} · {format(c.cal.guests, { adults: r.adults, children: r.children })}</span>
               <span className="adm-row adm-row--wrap"><BookingStatusBadge status={r.status} /> <PaymentBadge status={r.paymentStatus} /> {formatBaht(r.totalSatang, locale.code)}</span>
             </li>
           ))}

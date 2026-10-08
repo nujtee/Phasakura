@@ -303,12 +303,12 @@ export class ReportService {
       for (const [date, amount] of allocateNights(s, net)) {
         if (date < c.from || date > c.to) continue;
         add(byPeriod, periodKey(date, c.group), {
-          tentsSold: s.quantity, adults: s.adults, children: s.children, guestNights: s.adults + s.children, revenue: amount,
+          tentsSold: s.quantity, tarpsSold: s.tarps ?? 0, adults: s.adults, children: s.children, guestNights: s.adults + s.children, revenue: amount,
         });
       }
     }
     const table = periodTable("byPeriod", c.periods, [
-      col("capacity", "int"), col("tentsSold", "int"), col("occupancy", "percent"), col("adults", "int"), col("children", "int"),
+      col("capacity", "int"), col("tentsSold", "int"), col("occupancy", "percent"), col("tarpsSold", "int"), col("adults", "int"), col("children", "int"),
       col("revenue", "money"),
     ], byPeriod, "tentsSold");
     for (const r of table.rows) r.occupancy = pct(r.tentsSold as number, r.capacity as number);

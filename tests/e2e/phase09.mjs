@@ -310,6 +310,59 @@ await check("amenities: add several in a row (form stays open), saved to the hou
   await p.close();
 });
 
+await check("camping: owner offers a tarp area; a guest books dates, 2 adults + 1 child, 1 tent + tarp on a phone; admin sees it", async () => {
+  // Owner (EN admin): Camping → tarp area on, ฿150 per area per night, 2 areas per night.
+  const p = await pa.context().newPage(); watch(p);
+  await p.goto(`${BASE}/en/admin/camping`);
+  const box = p.locator("fieldset.adm-tarp");
+  await box.waitFor();
+  await box.getByLabel("Offer a tarp area").check();
+  await box.getByLabel("Price / area / night (THB)").fill("150");
+  await box.getByLabel("Tarp areas per night").fill("2");
+  await p.locator("form.adm-card").first().getByRole("button", { name: "Save" }).click();
+  await p.getByText("Saved").first().waitFor();
+  await p.getByRole("columnheader", { name: /Tarp/ }).waitFor();
+  await p.close();
+
+  // Guest (TH, 390 px): the camping card has its own form.
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: "th-TH" });
+  const g = await ctx.newPage(); watch(g);
+  await g.goto(`${BASE}/th/booking#sec-camping`);
+  const form = g.getByRole("form", { name: "เลือกวันที่ จำนวนคน และจำนวนเต็นท์" });
+  await form.waitFor();
+  await form.getByLabel("เช็คอิน").fill(day(20));
+  await form.getByLabel("เช็คเอาท์").fill(day(22));
+  await form.getByRole("button", { name: "เพิ่ม เด็ก" }).click();
+  if ((await form.getByRole("group", { name: "ผู้ใหญ่" }).locator("output").textContent()) !== "2") throw new Error("2 adults");
+  if ((await form.getByRole("group", { name: "เด็ก" }).locator("output").textContent()) !== "1") throw new Error("1 child");
+  await form.getByText("+฿150 / คืน · 1 พื้นที่ต่อการจอง").waitFor();
+  await form.getByRole("checkbox", { name: /เพิ่มพื้นที่กางทาร์ป/ }).check();
+  if (SHOTS) await form.screenshot({ path: `${SHOTS}/camping-form-phone.png` });
+  await form.getByRole("button", { name: "จองลานกางเต็นท์" }).click();
+
+  await g.getByRole("heading", { name: "สั่งอาหารล่วงหน้า" }).waitFor();
+  await g.locator(".flow-stay").getByText("1 เต็นท์ + พื้นที่กางทาร์ป").waitFor();
+  const summary = g.locator(".summary").first();
+  await summary.getByText("พื้นที่กางทาร์ป × 2 คืน").waitFor();
+  if (!/฿300/.test(await summary.locator(".summary__line", { hasText: "พื้นที่กางทาร์ป × 2 คืน" }).innerText())) throw new Error("tarp ฿150 × 2 nights");
+  await g.getByRole("button", { name: /ถัดไป/ }).click();
+  await g.getByLabel("ชื่อ-นามสกุล").fill("Tarp Camper");
+  await g.getByLabel("เบอร์โทรศัพท์").fill("0899999999");
+  await g.getByRole("button", { name: /ถัดไป/ }).click();
+  await g.getByRole("checkbox", { name: /ข้าพเจ้ายอมรับนโยบายความเป็นส่วนตัว/ }).check();
+  await g.getByRole("button", { name: /ยืนยันการจอง/ }).click();
+  await g.getByRole("heading", { name: "จองเรียบร้อย" }).waitFor();
+  const code = (await g.locator(".confirmation__value").first().innerText()).trim();
+  await g.locator(".summary").getByText("พื้นที่กางทาร์ป × 2 คืน").waitFor();
+  if (SHOTS) await g.screenshot({ path: `${SHOTS}/camping-tarp-confirmation.png`, fullPage: true });
+  await ctx.close();
+
+  // Admin: list and detail show the tarp area.
+  await pa.goto(`${BASE}/en/admin/bookings/${code}`);
+  await pa.getByText("Tarp area × 2 nights").waitFor();
+  await pa.getByText(/1 tents \+ tarp area/).waitFor();
+});
+
 // ---------------------------------------------------------------- permissions
 await check("content admin: no money on dashboard, no payments menu", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 } });

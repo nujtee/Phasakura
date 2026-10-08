@@ -19,7 +19,7 @@
 | รายการ | สถานะ |
 |---|---|
 | โดเมน `phasakura.com` | จดผ่าน Cloudflare Registrar, nameserver ของ Cloudflare — Custom Domain (apex + www) สร้าง DNS / ใบรับรองให้ตอน deploy ครั้งแรก |
-| D1 `phasakura-db` | สร้างแล้ว (APAC) และ **migrate ครบ 0001–0020 แล้ว** — ตรวจด้วย fingerprint เทียบกับไฟล์ migration: schema 84,667 bytes / seed data 13,376 bytes ตรงกันทุกไบต์, 214 objects, 34 triggers, `d1_migrations` 20 แถว (wrangler เห็นว่าไม่มี migration ค้าง) |
+| D1 `phasakura-db` | สร้างแล้ว (APAC) และ **migrate ครบ 0001–0021 แล้ว** — 0001–0020 ตรวจด้วย fingerprint เทียบกับไฟล์ migration (schema 84,667 bytes / seed data 13,376 bytes ตรงกันทุกไบต์); 0021 (พื้นที่กางทาร์ป) apply 2026-10-09 00:40 น. (จุดย้อนกลับ Time Travel: ก่อน 2026-10-08T17:38Z) — 221 objects, 38 triggers ตรงกับฐานข้อมูลที่สร้างจากไฟล์, `d1_migrations` 21 แถว |
 | R2 | `phasakura-media-public`, `phasakura-media-private` สร้างแล้ว (bucket `phasakura` ที่สร้างเองไม่ได้ใช้ — ลบได้) |
 | `wrangler.jsonc` | `APP_BASE_URL=https://phasakura.com`, routes `phasakura.com` + `www.phasakura.com` (www → 301 ไป apex), `workers_dev: false` — `npm run preflight` 0 error |
 | SUPER_ADMIN คนแรก | `suriya.rth@gmail.com` (รหัสผ่านชั่วคราว — ต้องเปลี่ยนตอนเข้าครั้งแรก) |

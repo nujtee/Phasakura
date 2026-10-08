@@ -34,7 +34,7 @@ export function StaySearch({
   };
 
   return (
-    <form className="stay-search" onSubmit={submit} aria-describedby={error ? `${id}-err` : undefined}>
+    <form className={`stay-search${showTents ? "" : " stay-search--no-tents"}`} onSubmit={submit} aria-describedby={error ? `${id}-err` : undefined}>
       <div className="stay-search__field">
         <label htmlFor={`${id}-in`}>{t.accommodation.checkIn}</label>
         <input id={`${id}-in`} type="date" required min={limits.min} max={limits.max} value={q.checkIn}

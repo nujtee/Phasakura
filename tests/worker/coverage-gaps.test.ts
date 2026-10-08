@@ -167,7 +167,10 @@ describe("deploy order: the site keeps working while new migrations are not appl
       const app = createApp({ requestId: () => "req" });
       const env = makeEnv(db, { ASSETS: { fetch: async () => new Response("<!doctype html><html><head><title></title></head><body><div id=root></div></body></html>", { headers: { "Content-Type": "text/html" } }) } });
       const get = (path: string) => app.fetch(new Request(`https://phasakura.test${path}`), env);
-      for (const path of ["/api/public/site?lang=th", "/th/", "/en/gallery", "/robots.txt"]) {
+      // Camping / booking reads stay up while the tarp-area migration (0021) lags behind the deploy.
+      const campingPaths = upTo >= files.findIndex((f) => f.startsWith("0020"))
+        ? ["/api/public/accommodations?lang=th", "/th/booking", "/api/public/availability?checkIn=2027-02-01&checkOut=2027-02-03&tents=1"] : [];
+      for (const path of ["/api/public/site?lang=th", "/th/", "/en/gallery", "/robots.txt", ...campingPaths]) {
         const res = await get(path);
         assert.ok(res.status < 500, `${path} → ${res.status} ${(await res.text()).slice(0, 200)}`);
       }

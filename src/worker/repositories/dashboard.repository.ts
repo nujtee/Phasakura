@@ -8,7 +8,8 @@ const PAID = "('PAID', 'VERIFIED')";
 const BOOKING_WITH_ITEM = `
   SELECT b.booking_code, b.customer_name, b.check_in, b.check_out, b.nights, b.adults, b.children,
          b.booking_status, b.payment_status, b.total_satang,
-         i.item_type, i.unit_id, i.quantity, s.unit_name_snapshot AS item_name
+         i.item_type, i.unit_id, i.quantity, s.unit_name_snapshot AS item_name,
+         (SELECT COALESCE(SUM(t.quantity), 0) FROM booking_tarps t WHERE t.booking_id = b.id) AS tarps
     FROM bookings b
     JOIN booking_items i ON i.id = (SELECT id FROM booking_items WHERE booking_id = b.id ORDER BY created_at, id LIMIT 1)
     JOIN booking_price_snapshots s ON s.booking_item_id = i.id`;
@@ -28,6 +29,7 @@ export interface BookingItemListRow {
   unit_id: string | null;
   quantity: number;
   item_name: string;
+  tarps: number;
 }
 
 export interface RevenueRow {

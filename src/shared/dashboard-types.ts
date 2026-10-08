@@ -10,6 +10,8 @@ export interface StayRowDto {
   itemType: ItemType;
   itemName: string;
   quantity: number;
+  /** Tarp areas booked with own-tent camping (0 = none). */
+  tarps: number;
   adults: number;
   children: number;
   checkIn: string;
@@ -104,6 +106,7 @@ export interface CalendarBookingDto {
   unitId: string | null;
   itemName: string;
   quantity: number;
+  tarps: number;
   adults: number;
   children: number;
   checkIn: string;

@@ -16,10 +16,10 @@ export const PAYMENT_STATUSES_ALL: readonly PaymentStatus[] = ["UNPAID", "PENDIN
 export const BOOKING_CODE_PATTERN = /^BK-\d{8}-[A-Z0-9]{4}$/;
 export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
 
-/** What the guest chose: one unit, or own-tent camping with N tents. */
+/** What the guest chose: one unit, or own-tent camping with N tents (and optionally one tarp area). */
 export type StaySelection =
   | { kind: "UNIT"; unitId: string }
-  | { kind: "CAMPING"; tents: number };
+  | { kind: "CAMPING"; tents: number; tarp?: boolean };
 
 export interface FoodSelection {
   optionId: string;
@@ -72,6 +72,14 @@ export interface QuoteItemDto {
   subtotalSatang: number;
 }
 
+/** Camping add-on: extra space for a tarp next to the tents, priced per area per night (one per booking). */
+export interface TarpLineDto {
+  quantity: number;
+  pricePerNightSatang: number;
+  nights: number;
+  subtotalSatang: number;
+}
+
 export interface IncludedMealDto {
   categoryCode: string;
   name: string;
@@ -100,6 +108,8 @@ export interface QuoteDto {
   adults: number;
   children: number;
   item: QuoteItemDto;
+  /** Tarp area (camping only); its price is part of accommodationSubtotalSatang. */
+  tarp: TarpLineDto | null;
   includedMeals: IncludedMealDto[];
   food: FoodLineDto[];
   accommodationSubtotalSatang: number;
@@ -137,6 +147,8 @@ export interface AdminBookingSummaryDto {
   itemType: BookingItemType;
   itemName: string;
   quantity: number;
+  /** Tarp areas booked with own-tent camping (0 = none). */
+  tarps: number;
   customerName: string;
   customerPhone: string;
   totalSatang: number;

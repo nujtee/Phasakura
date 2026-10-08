@@ -278,6 +278,7 @@ export function accommodationController(services: ServicesFor) {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly([
         "isEnabled", "maxTentsPerNight", "pricePerAdultNightSatang", "childFreeUnderAge", "maxGuestsPerTent", "coverAssetId", "translations",
+        "tarpEnabled", "tarpPricePerNightSatang", "maxTarpsPerNight",
       ]);
       const input = {
         isEnabled: v.boolean("isEnabled", false),
@@ -286,6 +287,10 @@ export function accommodationController(services: ServicesFor) {
         childFreeUnderAge: int(v, body, "childFreeUnderAge", 0, 18, true)!,
         maxGuestsPerTent: nullableInt(v, body, "maxGuestsPerTent", 1, 50) ?? null,
         coverAssetId: body.coverAssetId === null ? null : (v.string("coverAssetId", { pattern: ID_PATTERN }) ?? null),
+        // Tarp area add-on; left out = unchanged.
+        tarpEnabled: body.tarpEnabled === undefined ? undefined : v.boolean("tarpEnabled", false),
+        tarpPricePerNightSatang: int(v, body, "tarpPricePerNightSatang", 0, MAX_PRICE_SATANG, false),
+        maxTarpsPerNight: int(v, body, "maxTarpsPerNight", 0, 1000, false),
       };
       v.assertValid();
       const t = body.translations === undefined ? undefined : translations(body.translations, (tv) => {

@@ -98,6 +98,8 @@ export interface PublicCampingDto {
   maxGuestsPerTent: number | null;
   maxTentsPerNight: number;
   cover: PublicImageDto | null;
+  /** Tarp area add-on (per area per night, one per booking); null when not offered. */
+  tarp: { pricePerNightSatang: number } | null;
 }
 
 export interface PublicAccommodationsDto {
@@ -134,7 +136,17 @@ export interface AvailabilityDto {
     /** Tents the guests need (max guests per tent); 1 when unlimited. */
     minTents: number;
     maxTentsPerBooking: number;
+    /** Tarp areas: offered at all, the fewest left on any night, nights without one. */
+    tarp: { offered: boolean; remaining: number; shortNights: string[] };
   };
+}
+
+/** Tarp areas of one night (admin). */
+export interface TarpNightDto {
+  date: string;
+  capacity: number;
+  used: number;
+  remaining: number;
 }
 
 export interface CampingSettingsDto {
@@ -144,6 +156,10 @@ export interface CampingSettingsDto {
   childFreeUnderAge: number;
   maxGuestsPerTent: number | null;
   coverAssetId: string | null;
+  /** Tarp area add-on: offered, price per area per night, areas per night. */
+  tarpEnabled: boolean;
+  tarpPricePerNightSatang: number;
+  maxTarpsPerNight: number;
   translations: Partial<Record<LocaleCode, { name: string; description: string | null; seoTitle: string | null; seoDescription: string | null }>>;
 }
 
@@ -163,6 +179,8 @@ export interface AdminAvailabilityDto {
     nights: Record<string, { state: NightState; bookingCode?: string; blockReason?: string }>;
   }[];
   camping: CampingNightDto[];
+  /** Tarp areas per night (empty when the option is off and nothing is booked). */
+  tarps: TarpNightDto[];
 }
 
 /** GET /api/admin/camping/integrity — counters vs bookings, from today on. */
@@ -171,4 +189,6 @@ export interface CampingIntegrityDto {
   consistent: boolean;
   /** Nights whose counter disagrees with the bookings (expected = from bookings). */
   drift: { date: string; expected: number; actual: number; maxTents: number | null }[];
+  /** Same check for the tarp-area counters. */
+  tarpDrift: { date: string; expected: number; actual: number; maxTarps: number | null }[];
 }

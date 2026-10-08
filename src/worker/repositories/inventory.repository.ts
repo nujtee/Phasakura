@@ -10,6 +10,9 @@ export interface CampingSettingsRow {
   cover_key: string | null;
   cover_width: number | null;
   cover_height: number | null;
+  tarp_enabled: number;
+  tarp_price_per_night_satang: number;
+  max_tarps_per_night: number;
 }
 
 export interface CampingTranslationRow {
@@ -43,6 +46,30 @@ export interface CampingDriftRow {
   max_tents: number | null;
 }
 
+export interface TarpNightRow {
+  stay_date: string;
+  max_tarps: number;
+  tarps_used: number;
+}
+
+export interface TarpDriftRow {
+  stay_date: string;
+  expected: number;
+  actual: number;
+  max_tarps: number | null;
+}
+
+/** Tarp areas actually held per night = Σ quantity of ACTIVE booking_tarps whose stay covers the night. */
+const HELD_TARPS_CTE = `
+  WITH RECURSIVE held(qty, d, check_out) AS (
+    SELECT t.quantity, MAX(b.check_in, ?1), b.check_out
+      FROM booking_tarps t JOIN bookings b ON b.id = t.booking_id
+     WHERE t.status = 'ACTIVE' AND b.check_out > ?1
+    UNION ALL
+    SELECT qty, date(d, '+1 day'), check_out FROM held WHERE date(d, '+1 day') < check_out
+  ),
+  expected AS (SELECT d AS stay_date, SUM(qty) AS tarps FROM held GROUP BY d)`;
+
 /**
  * Tents actually held per night = Σ quantity of ACTIVE own-tent items whose stay covers
  * the night. This is the truth the `tents_used` counter must always equal.
@@ -57,20 +84,41 @@ const HELD_TENTS_CTE = `
   ),
   expected AS (SELECT d AS stay_date, SUM(qty) AS tents FROM held GROUP BY d)`;
 
+/** A table / column of a newer migration that this database does not have yet. */
+export function isMissingSchema(error: unknown): boolean {
+  return /no such (table|column)/i.test(String(error));
+}
+
 /** Camping settings + inventory reads, and date-range lookups used by AvailabilityService. */
 export class InventoryRepository {
   constructor(private readonly db: D1DatabaseLike) {}
 
-  campingSettings(): Promise<CampingSettingsRow | null> {
-    return this.db
-      .prepare(
-        `SELECT c.is_enabled, c.max_tents_per_night, c.price_per_adult_night_satang, c.child_free_under_age,
-                c.max_guests_per_tent, c.cover_asset_id, m.object_key AS cover_key, m.width AS cover_width, m.height AS cover_height
-           FROM camping_settings c
-           LEFT JOIN media_assets m ON m.id = c.cover_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'
-          WHERE c.id = 1`,
-      )
-      .first<CampingSettingsRow>();
+  async campingSettings(): Promise<CampingSettingsRow | null> {
+    try {
+      return await this.db
+        .prepare(
+          `SELECT c.is_enabled, c.max_tents_per_night, c.price_per_adult_night_satang, c.child_free_under_age,
+                  c.max_guests_per_tent, c.cover_asset_id, m.object_key AS cover_key, m.width AS cover_width, m.height AS cover_height,
+                  c.tarp_enabled, c.tarp_price_per_night_satang, c.max_tarps_per_night
+             FROM camping_settings c
+             LEFT JOIN media_assets m ON m.id = c.cover_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'
+            WHERE c.id = 1`,
+        )
+        .first<CampingSettingsRow>();
+    } catch (error) {
+      // Deployed before migration 0021: camping keeps working, without the tarp option.
+      if (!isMissingSchema(error)) throw error;
+      return this.db
+        .prepare(
+          `SELECT c.is_enabled, c.max_tents_per_night, c.price_per_adult_night_satang, c.child_free_under_age,
+                  c.max_guests_per_tent, c.cover_asset_id, m.object_key AS cover_key, m.width AS cover_width, m.height AS cover_height,
+                  0 AS tarp_enabled, 0 AS tarp_price_per_night_satang, 0 AS max_tarps_per_night
+             FROM camping_settings c
+             LEFT JOIN media_assets m ON m.id = c.cover_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'
+            WHERE c.id = 1`,
+        )
+        .first<CampingSettingsRow>();
+    }
   }
 
   async campingTranslations(): Promise<CampingTranslationRow[]> {
@@ -82,20 +130,99 @@ export class InventoryRepository {
 
   upsertCampingSettingsStatement(s: {
     isEnabled: boolean; maxTentsPerNight: number; pricePerAdultNightSatang: number; childFreeUnderAge: number;
-    maxGuestsPerTent: number | null; coverAssetId: string | null; updatedBy: string; now: string;
+    maxGuestsPerTent: number | null; coverAssetId: string | null; tarpEnabled: boolean; tarpPricePerNightSatang: number;
+    maxTarpsPerNight: number; updatedBy: string; now: string;
   }): D1PreparedStatementLike {
     return this.db
       .prepare(
         `INSERT INTO camping_settings (id, is_enabled, max_tents_per_night, price_per_adult_night_satang, child_free_under_age,
-           max_guests_per_tent, cover_asset_id, updated_at, updated_by)
-         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+           max_guests_per_tent, cover_asset_id, updated_at, updated_by, tarp_enabled, tarp_price_per_night_satang, max_tarps_per_night)
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT (id) DO UPDATE SET is_enabled = excluded.is_enabled, max_tents_per_night = excluded.max_tents_per_night,
            price_per_adult_night_satang = excluded.price_per_adult_night_satang, child_free_under_age = excluded.child_free_under_age,
            max_guests_per_tent = excluded.max_guests_per_tent, cover_asset_id = excluded.cover_asset_id,
-           updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+           updated_at = excluded.updated_at, updated_by = excluded.updated_by, tarp_enabled = excluded.tarp_enabled,
+           tarp_price_per_night_satang = excluded.tarp_price_per_night_satang, max_tarps_per_night = excluded.max_tarps_per_night`,
       )
       .bind(s.isEnabled ? 1 : 0, s.maxTentsPerNight, s.pricePerAdultNightSatang, s.childFreeUnderAge, s.maxGuestsPerTent,
-        s.coverAssetId, s.now, s.updatedBy);
+        s.coverAssetId, s.now, s.updatedBy, s.tarpEnabled ? 1 : 0, s.tarpPricePerNightSatang, s.maxTarpsPerNight);
+  }
+
+  /** New tarp-area capacity for every night from `fromDate` (no per-night overrides); CHECK aborts if below areas sold. */
+  applyDefaultTarpCapacityStatement(maxTarps: number, fromDate: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE camping_tarp_night_inventory SET max_tarps = ?1, updated_at = ?3 WHERE stay_date >= ?2")
+      .bind(maxTarps, fromDate, now);
+  }
+
+  async tarpNights(from: string, toExclusive: string): Promise<TarpNightRow[]> {
+    try {
+      const { results } = await this.db
+        .prepare(
+          `SELECT stay_date, max_tarps, tarps_used FROM camping_tarp_night_inventory
+            WHERE stay_date >= ?1 AND stay_date < ?2 ORDER BY stay_date`,
+        )
+        .bind(from, toExclusive)
+        .all<TarpNightRow>();
+      return results;
+    } catch (error) {
+      if (isMissingSchema(error)) return []; // before migration 0021
+      throw error;
+    }
+  }
+
+  /** Nights from `fromDate` where the tarp counter disagrees with the bookings. Empty = consistent. */
+  async tarpDrift(fromDate: string): Promise<TarpDriftRow[]> {
+    try {
+      return await this.tarpDriftRows(fromDate);
+    } catch (error) {
+      if (isMissingSchema(error)) return []; // before migration 0021
+      throw error;
+    }
+  }
+
+  private async tarpDriftRows(fromDate: string): Promise<TarpDriftRow[]> {
+    const { results } = await this.db
+      .prepare(
+        `${HELD_TARPS_CTE},
+         actual AS (SELECT stay_date, tarps_used, max_tarps FROM camping_tarp_night_inventory WHERE stay_date >= ?1),
+         dates AS (SELECT stay_date FROM expected UNION SELECT stay_date FROM actual)
+         SELECT dates.stay_date, COALESCE(e.tarps, 0) AS expected, COALESCE(a.tarps_used, 0) AS actual, a.max_tarps
+           FROM dates
+           LEFT JOIN expected e ON e.stay_date = dates.stay_date
+           LEFT JOIN actual a ON a.stay_date = dates.stay_date
+          WHERE COALESCE(e.tarps, 0) <> COALESCE(a.tarps_used, 0)
+          ORDER BY dates.stay_date
+          LIMIT 400`,
+      )
+      .bind(fromDate)
+      .all<TarpDriftRow>();
+    return results;
+  }
+
+  /** Resets the tarp counters from `fromDate` to the bookings' truth (one batch with the tents; CHECK guards overselling). */
+  recalculateTarpStatements(fromDate: string, now: string): D1PreparedStatementLike[] {
+    return [
+      this.db
+        .prepare(
+          `${HELD_TARPS_CTE}
+           INSERT OR IGNORE INTO camping_tarp_night_inventory (stay_date, max_tarps, tarps_used, updated_at)
+           SELECT e.stay_date, s.max_tarps_per_night, 0, ?2 FROM expected e, camping_settings s WHERE s.id = 1`,
+        )
+        .bind(fromDate, now),
+      this.db
+        .prepare(
+          `UPDATE camping_tarp_night_inventory
+              SET tarps_used = (SELECT COALESCE(SUM(t.quantity), 0)
+                                  FROM booking_tarps t JOIN bookings b ON b.id = t.booking_id
+                                 WHERE t.status = 'ACTIVE'
+                                   AND b.check_in <= camping_tarp_night_inventory.stay_date
+                                   AND b.check_out > camping_tarp_night_inventory.stay_date),
+                  updated_at = ?2
+            WHERE stay_date >= ?1`,
+        )
+        .bind(fromDate, now),
+    ];
   }
 
   upsertCampingTranslationStatement(lang: string, t: { name: string; description: string | null; seoTitle: string | null; seoDescription: string | null }) {

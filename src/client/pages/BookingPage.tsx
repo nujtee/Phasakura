@@ -26,11 +26,12 @@ import {
 import { Confirmation } from "../booking/Confirmation.tsx";
 import { FoodStep } from "../booking/FoodStep.tsx";
 import { BookingSummary, useDateText } from "../booking/Summary.tsx";
+import { CampingBooker } from "../booking/CampingBooker.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
 import { IMAGE_SIZES } from "../../shared/media-types.ts";
 import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
 
-type Choice = { kind: "UNIT"; unit: PublicUnitDto } | { kind: "CAMPING"; tents: number };
+type Choice = { kind: "UNIT"; unit: PublicUnitDto } | { kind: "CAMPING"; tents: number; tarp: boolean };
 type Step = "choose" | "food" | "details" | "review" | "done";
 const WIZARD: Step[] = ["food", "details", "review"];
 
@@ -91,21 +92,24 @@ export function BookingPage() {
   const [idemKey, setIdemKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [booking, setBooking] = useState<PublicBookingDto | null>(null);
+  /** Last tarp choice, kept when the guest goes back to change the stay. */
+  const [campingTarp, setCampingTarp] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { site } = useSite();
   /** Funnel steps sent once per chosen stay. */
   const sent = useRef({ viewFood: false, begin: false });
 
-  const search = useCallback(async (q: StayQuery) => {
+  /** `quiet`: the caller shows the error itself (camping form), not the search box at the top. */
+  const search = useCallback(async (q: StayQuery, quiet = false) => {
     setQuery(q);
-    setBusy(true);
+    if (!quiet) setBusy(true);
     setSearchError(null);
     const result = await fetchAvailability(q, t);
     setBusy(false);
     setAvailability(result.data ?? null);
     setSearched(result.data ? q : null);
-    setSearchError(result.error ?? null);
-    return result.data ?? null;
+    if (!quiet) setSearchError(result.error ?? null);
+    return result;
   }, [t]);
 
   // Deep link: run the search once, then pre-select the unit if it is free.
@@ -113,7 +117,7 @@ export function BookingPage() {
   useEffect(() => {
     if (autoRan.current || !data || !initial.unitSlug) return;
     autoRan.current = true;
-    void search(initial.query).then((a) => {
+    void search(initial.query).then(({ data: a }) => {
       const unit = [...data.houses, ...data.vipTents].find((u) => u.slug === initial.unitSlug);
       const state = a?.units.find((u) => u.unitId === unit?.id);
       if (unit && state?.available && state.fitsGuests) choose({ kind: "UNIT", unit }, initial.query);
@@ -126,7 +130,7 @@ export function BookingPage() {
     checkOut: q.checkOut,
     adults: q.adults,
     children: q.children,
-    stay: c.kind === "UNIT" ? { kind: "UNIT", unitId: c.unit.id } : { kind: "CAMPING", tents: c.tents },
+    stay: c.kind === "UNIT" ? { kind: "UNIT", unitId: c.unit.id } : { kind: "CAMPING", tents: c.tents, ...(c.tarp ? { tarp: true } : {}) },
     food: cartToSelections(foodCart, (id) => catalogue?.categories.some((cat) => cat.options.some((o) => o.id === id && o.pricingType === "PER_PERSON")) ?? false),
     lang: locale.code,
   }), [catalogue, locale.code]);
@@ -216,7 +220,7 @@ export function BookingPage() {
         setNotice(bt.priceChanged);
         setQuote(await fetchQuote(request(searched, choice, cart)).catch(() => quote));
         setIdemKey(newIdempotencyKey());
-      } else if (err instanceof ApiError && ["UNIT_UNAVAILABLE", "CAMPING_FULL", "ACCOMMODATION_NOT_FOUND", "CAMPING_UNAVAILABLE"].includes(err.code)) {
+      } else if (err instanceof ApiError && ["UNIT_UNAVAILABLE", "CAMPING_FULL", "ACCOMMODATION_NOT_FOUND", "CAMPING_UNAVAILABLE", "TARP_FULL", "TARP_UNAVAILABLE"].includes(err.code)) {
         setStep("choose");
         setChoice(null);
         void search(searched);
@@ -286,7 +290,7 @@ export function BookingPage() {
         <section className="flow-stay" aria-label={bt.yourStay}>
           <div>
             <strong>{itemName}</strong>
-            {choice.kind === "CAMPING" && <> · {fill(bt.tentsLine, { n: choice.tents })}</>}
+            {choice.kind === "CAMPING" && <> · {fill(bt.tentsLine, { n: choice.tents })}{choice.tarp && ` + ${bt.tarpLine}`}</>}
             <div className="flow-stay__meta">
               {fill(bt.stayLine, { checkIn: dateText(searched.checkIn), checkOut: dateText(searched.checkOut), n: quote?.nights ?? "" })}
               {" · "}
@@ -398,7 +402,7 @@ export function BookingPage() {
       <h1 className="page__title" tabIndex={-1} ref={headingRef}>{t.pages.booking.title}</h1>
       <p className="page__lead">{t.accommodation.chooseDates}</p>
 
-      <StaySearch initial={query} busy={busy} error={searchError} childAge={data?.camping.childFreeUnderAge}
+      <StaySearch initial={query} busy={busy} error={searchError} childAge={data?.camping.childFreeUnderAge} showTents={false}
         onSearch={(q) => void search(q)} />
       {!availability && <p className="notice" role="note">{bt.searchFirst}</p>}
       <p className="lookup-link"><Link to={bookingLookupPath(locale)}>{bt.lookupLink} →</Link></p>
@@ -437,41 +441,9 @@ export function BookingPage() {
                     <span>{t.accommodation.perAdultPerNight}</span>
                   </p>
                   <p className="unit-card__meta">{fill(t.accommodation.childrenFree, { age: data.camping.childFreeUnderAge })}</p>
-                  {availability && searched && (
-                    <>
-                      <p className={`unit-card__badge-inline ${availability.camping.fitsTents ? "is-ok" : "is-bad"}`} role="status">
-                        {availability.camping.remaining > 0
-                          ? fill(t.accommodation.tentsRemaining, { n: availability.camping.remaining })
-                          : t.accommodation.campingFull}
-                      </p>
-                      {availability.camping.reason === "TOO_FEW_TENTS" && (
-                        <p className="camping-hint" role="note">
-                          {fill(bt.campingTooFewTents, {
-                            guests: searched.adults + searched.children, n: availability.camping.minTents, per: data.camping.maxGuestsPerTent ?? "",
-                          })}{" "}
-                          {availability.camping.minTents <= availability.camping.maxTentsPerBooking && (
-                            <button type="button" className="button button--secondary"
-                              onClick={() => void search({ ...searched, tents: availability.camping.minTents })}>
-                              {fill(bt.useTents, { n: availability.camping.minTents })}
-                            </button>
-                          )}
-                        </p>
-                      )}
-                      {availability.camping.reason === "TOO_MANY_TENTS" && (
-                        <p className="camping-hint" role="note">{fill(bt.campingTooManyTents, { n: availability.camping.maxTentsPerBooking })}</p>
-                      )}
-                      {availability.camping.reason === "FULL" && availability.camping.shortNights.length > 0 && availability.camping.remaining > 0 && (
-                        <p className="camping-hint" role="note">
-                          {fill(bt.campingShortNights, { tents: searched.tents, dates: availability.camping.shortNights.map(dateText).join(", ") })}
-                        </p>
-                      )}
-                      {availability.camping.fitsTents && (
-                        <button type="button" className="button button--primary" onClick={() => choose({ kind: "CAMPING", tents: searched.tents })}>
-                          {bt.selectCamping} · {fill(bt.tentsLine, { n: searched.tents })}
-                        </button>
-                      )}
-                    </>
-                  )}
+                  <CampingBooker camping={data.camping} initial={searched ?? query} initialTarp={campingTarp}
+                    onCheck={(q) => search(q, true)}
+                    onBook={(q, tarp) => { setCampingTarp(tarp); choose({ kind: "CAMPING", tents: q.tents, tarp }, q); }} />
                 </>
               )}
             </div>

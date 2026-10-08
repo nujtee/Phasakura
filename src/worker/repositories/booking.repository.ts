@@ -86,6 +86,15 @@ export interface AdminBookingListRow {
   item_type: "HOUSE" | "VIP_TENT" | "OWN_TENT";
   item_name: string;
   quantity: number;
+  tarps: number;
+}
+
+export interface BookingTarpRow {
+  quantity: number;
+  price_per_night_satang: number;
+  number_of_nights: number;
+  subtotal_satang: number;
+  status: string;
 }
 
 const BOOKING_COLUMNS = `id, booking_code, language_code, source, check_in, check_out, nights, adults, children, customer_name,
@@ -124,6 +133,19 @@ export class BookingRepository {
     return results;
   }
 
+  /** Tarp area snapshot of a booking (camping add-on), if it has one. */
+  async tarp(bookingId: string): Promise<BookingTarpRow | null> {
+    try {
+      return await this.db
+        .prepare("SELECT quantity, price_per_night_satang, number_of_nights, subtotal_satang, status FROM booking_tarps WHERE booking_id = ?1")
+        .bind(bookingId)
+        .first<BookingTarpRow>();
+    } catch (error) {
+      if (/no such table/i.test(String(error))) return null; // before migration 0021
+      throw error;
+    }
+  }
+
   async includedMeals(bookingId: string): Promise<BookingIncludedRow[]> {
     const { results } = await this.db
       .prepare(
@@ -156,7 +178,8 @@ export class BookingRepository {
       .prepare(
         `SELECT b.id, b.booking_code, b.booking_status, b.payment_status, b.check_in, b.check_out, b.nights, b.adults, b.children,
                 b.customer_name, b.customer_phone, b.total_satang, b.expires_at, b.created_at,
-                i.item_type, s.unit_name_snapshot AS item_name, i.quantity
+                i.item_type, s.unit_name_snapshot AS item_name, i.quantity,
+                (SELECT COALESCE(SUM(t.quantity), 0) FROM booking_tarps t WHERE t.booking_id = b.id) AS tarps
            FROM bookings b
            JOIN booking_items i ON i.id = (SELECT id FROM booking_items WHERE booking_id = b.id ORDER BY created_at, id LIMIT 1)
            JOIN booking_price_snapshots s ON s.booking_item_id = i.id
@@ -255,6 +278,33 @@ export class BookingRepository {
         .prepare("UPDATE camping_night_inventory SET tents_used = tents_used + ?2, updated_at = ?3 WHERE stay_date = ?1")
         .bind(date, tents, now),
     ];
+  }
+
+  /** Tarp areas: same pattern as tents — night row at the current default, then take; CHECK rejects overflow. */
+  reserveTarpStatements(date: string, quantity: number, now: string): D1PreparedStatementLike[] {
+    return [
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO camping_tarp_night_inventory (stay_date, max_tarps, tarps_used, updated_at)
+           SELECT ?1, max_tarps_per_night, 0, ?2 FROM camping_settings WHERE id = 1`,
+        )
+        .bind(date, now),
+      this.db
+        .prepare("UPDATE camping_tarp_night_inventory SET tarps_used = tarps_used + ?2, updated_at = ?3 WHERE stay_date = ?1")
+        .bind(date, quantity, now),
+    ];
+  }
+
+  /** Tarp price snapshot (immutable money fields; triggers check camping + option offered). */
+  insertTarpStatement(t: {
+    id: string; bookingId: string; quantity: number; pricePerNight: number; nights: number; subtotal: number; now: string;
+  }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO booking_tarps (id, booking_id, quantity, price_per_night_satang, number_of_nights, subtotal_satang, status, captured_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ACTIVE', ?7)`,
+      )
+      .bind(t.id, t.bookingId, t.quantity, t.pricePerNight, t.nights, t.subtotal, t.now);
   }
 
   insertPriceSnapshotStatement(s: {
@@ -417,6 +467,18 @@ export class BookingRepository {
         .prepare(`UPDATE food_orders SET capacity_reserved = 0, status = 'CANCELLED', updated_at = ?2 WHERE booking_id = ?1 AND ${ended}`)
         .bind(bookingId, now),
       this.db.prepare(`UPDATE booking_food_items SET status = 'CANCELLED' WHERE booking_id = ?1 AND status = 'ACTIVE' AND ${ended}`).bind(bookingId),
+      // Tarp areas: give the nights back, then mark the snapshot cancelled (counter first: it reads the ACTIVE rows).
+      this.db
+        .prepare(
+          `UPDATE camping_tarp_night_inventory
+              SET tarps_used = MAX(0, tarps_used - (SELECT COALESCE(SUM(quantity), 0) FROM booking_tarps
+                                                    WHERE booking_id = ?1 AND status = 'ACTIVE')),
+                  updated_at = ?4
+            WHERE stay_date >= ?2 AND stay_date < ?3 AND ${ended}
+              AND EXISTS (SELECT 1 FROM booking_tarps WHERE booking_id = ?1 AND status = 'ACTIVE')`,
+        )
+        .bind(bookingId, checkIn, checkOut, now),
+      this.db.prepare(`UPDATE booking_tarps SET status = 'CANCELLED' WHERE booking_id = ?1 AND status = 'ACTIVE' AND ${ended}`).bind(bookingId),
       this.db.prepare(`UPDATE booking_items SET status = 'CANCELLED' WHERE booking_id = ?1 AND status = 'ACTIVE' AND ${ended}`).bind(bookingId),
     ];
   }

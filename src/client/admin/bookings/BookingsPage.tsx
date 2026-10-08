@@ -103,7 +103,7 @@ export function BookingsPage() {
                 </td>
                 <td className="adm-small">
                   {b.itemName}
-                  {b.itemType === "OWN_TENT" && <div className="adm-muted">{format(t.bk.tents, { n: b.quantity })}</div>}
+                  {b.itemType === "OWN_TENT" && <div className="adm-muted">{format(t.bk.tents, { n: b.quantity })}{b.tarps > 0 && ` + ${t.bk.tarp}`}</div>}
                 </td>
                 <td className="adm-num">{formatBaht(b.totalSatang, locale.code)}</td>
                 <td>

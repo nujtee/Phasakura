@@ -5,12 +5,13 @@ import type {
   CampingNightDto,
   CampingSettingsDto,
   NightState,
+  TarpNightDto,
 } from "../../shared/accommodation-types.ts";
 import { STAY_RULES } from "../../shared/booking-rules.ts";
 import { DEFAULT_TIMEZONE, addDays, diffDays, isIsoDate, stayNights, todayIn } from "../../shared/dates.ts";
 import { DEFAULT_LOCALE_CODE, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
-import { ConflictError, NotFoundError, ValidationError } from "../http/errors.ts";
+import { ConflictError, HttpError, NotFoundError, ValidationError } from "../http/errors.ts";
 import type { AccommodationRepository } from "../repositories/accommodation.repository.ts";
 import type { InventoryRepository } from "../repositories/inventory.repository.ts";
 import type { MediaRepository } from "../repositories/media.repository.ts";
@@ -83,6 +84,8 @@ export class AvailabilityService {
       : input.tents > maxTentsPerBooking ? "TOO_MANY_TENTS"
         : input.tents < minTents ? "TOO_FEW_TENTS"
           : shortNights.length || !enabled ? "FULL" : null;
+    const tarpOffered = enabled && settings?.tarp_enabled === 1;
+    const tarps = tarpOffered ? await this.tarpNights(nights) : [];
     return {
       checkIn: input.checkIn,
       checkOut: input.checkOut,
@@ -103,8 +106,30 @@ export class AvailabilityService {
         shortNights,
         minTents,
         maxTentsPerBooking,
+        tarp: {
+          offered: tarpOffered,
+          remaining: tarps.length ? Math.min(...tarps.map((n) => n.remaining)) : 0,
+          shortNights: tarps.filter((n) => n.remaining < 1).map((n) => n.date),
+        },
       },
     };
+  }
+
+  /** Tarp areas per night: inventory row if it exists, else the current default (no per-night overrides). */
+  async tarpNights(nights: string[]): Promise<TarpNightDto[]> {
+    if (!nights.length) return [];
+    const [settings, rows] = await Promise.all([
+      this.inventory.campingSettings(),
+      this.inventory.tarpNights(nights[0]!, addDays(nights[nights.length - 1]!, 1)),
+    ]);
+    const byDate = new Map(rows.map((r) => [r.stay_date, r]));
+    const defaultMax = settings?.max_tarps_per_night ?? 0;
+    return nights.map((date) => {
+      const row = byDate.get(date);
+      const capacity = row?.max_tarps ?? defaultMax;
+      const used = row?.tarps_used ?? 0;
+      return { date, capacity, used, remaining: Math.max(0, capacity - used) };
+    });
   }
 
   /** Camping capacity per night: inventory row if it exists, else the current default. */
@@ -161,6 +186,7 @@ export class AvailabilityService {
         };
       }),
       camping: this.authz.can(actor, "camping.view") ? await this.campingNights(dates) : [],
+      tarps: this.authz.can(actor, "camping.view") ? await this.tarpNights(dates) : [],
     };
   }
 
@@ -212,11 +238,12 @@ export class AvailabilityService {
 
   private async readIntegrity(): Promise<CampingIntegrityDto> {
     const from = await this.today();
-    const drift = await this.inventory.campingDrift(from);
+    const [drift, tarpDrift] = await Promise.all([this.inventory.campingDrift(from), this.inventory.tarpDrift(from)]);
     return {
       checkedFrom: from,
-      consistent: drift.length === 0,
+      consistent: drift.length === 0 && tarpDrift.length === 0,
       drift: drift.map((d) => ({ date: d.stay_date, expected: d.expected, actual: d.actual, maxTents: d.max_tents })),
+      tarpDrift: tarpDrift.map((d) => ({ date: d.stay_date, expected: d.expected, actual: d.actual, maxTarps: d.max_tarps })),
     };
   }
 
@@ -229,11 +256,13 @@ export class AvailabilityService {
     try {
       await this.db.batch([
         ...this.inventory.recalculateCampingStatements(before.checkedFrom, now),
-        this.log.auditStatement(actor.userId, "RECALCULATE_CAMPING", "camping", "camping", { drift: before.drift }, { recalculatedFrom: before.checkedFrom }, meta),
+        ...this.inventory.recalculateTarpStatements(before.checkedFrom, now),
+        this.log.auditStatement(actor.userId, "RECALCULATE_CAMPING", "camping", "camping",
+          { drift: before.drift, tarpDrift: before.tarpDrift }, { recalculatedFrom: before.checkedFrom }, meta),
       ]);
     } catch (error) {
       if (/CHECK constraint failed/.test(String(error))) {
-        throw new ConflictError("Some nights have more tents booked than their capacity", "OVERSOLD_NIGHTS");
+        throw new ConflictError("Some nights have more tents or tarp areas booked than their capacity", "OVERSOLD_NIGHTS");
       }
       throw error;
     }
@@ -250,10 +279,10 @@ export class AvailabilityService {
     const recent = await this.log.countRecent(["CAMPING_INVENTORY_DRIFT"], INTEGRITY_ALERT_INTERVAL_MS);
     if (recent === 0) {
       await this.log.event("CAMPING_INVENTORY_DRIFT", "CRITICAL", { ip: null, userAgent: null }, {
-        details: { nights: result.drift.length, first: result.drift[0]?.date ?? null },
+        details: { nights: result.drift.length, tarpNights: result.tarpDrift.length, first: result.drift[0]?.date ?? result.tarpDrift[0]?.date ?? null },
       });
     }
-    return result.drift.length;
+    return result.drift.length + result.tarpDrift.length;
   }
 
   // ================================================================ camping settings
@@ -272,6 +301,9 @@ export class AvailabilityService {
       childFreeUnderAge: s?.child_free_under_age ?? 12,
       maxGuestsPerTent: s?.max_guests_per_tent ?? null,
       coverAssetId: s?.cover_asset_id ?? null,
+      tarpEnabled: s?.tarp_enabled === 1,
+      tarpPricePerNightSatang: s?.tarp_price_per_night_satang ?? 0,
+      maxTarpsPerNight: s?.max_tarps_per_night ?? 0,
       translations: Object.fromEntries(translations.map((t) => [t.language_code, {
         name: t.name, description: t.description, seoTitle: t.seo_title, seoDescription: t.seo_description,
       }])),
@@ -280,14 +312,24 @@ export class AvailabilityService {
 
   async updateCampingSettings(
     actor: AuthContext,
-    input: Omit<CampingSettingsDto, "translations"> & { translations?: CampingSettingsDto["translations"] },
+    patch: Omit<CampingSettingsDto, "translations" | "tarpEnabled" | "tarpPricePerNightSatang" | "maxTarpsPerNight">
+      & Partial<Pick<CampingSettingsDto, "tarpEnabled" | "tarpPricePerNightSatang" | "maxTarpsPerNight">>
+      & { translations?: CampingSettingsDto["translations"] },
     meta: RequestMeta,
   ): Promise<CampingSettingsDto> {
     await this.authz.requirePermission(actor, "camping.edit", meta);
     const current = await this.readCampingSettings();
-    if (input.pricePerAdultNightSatang !== current.pricePerAdultNightSatang) {
+    // Tarp fields left out (an older admin page) keep their current values.
+    const input = {
+      ...patch,
+      tarpEnabled: patch.tarpEnabled ?? current.tarpEnabled,
+      tarpPricePerNightSatang: patch.tarpPricePerNightSatang ?? current.tarpPricePerNightSatang,
+      maxTarpsPerNight: patch.maxTarpsPerNight ?? current.maxTarpsPerNight,
+    };
+    if (input.pricePerAdultNightSatang !== current.pricePerAdultNightSatang || input.tarpPricePerNightSatang !== current.tarpPricePerNightSatang) {
       await this.authz.requirePermission(actor, "pricing.edit", meta);
     }
+    if (input.tarpEnabled && input.maxTarpsPerNight < 1) throw new ValidationError({ maxTarpsPerNight: "TARP_CAPACITY_REQUIRED" });
     const translations = { ...current.translations, ...(input.translations ?? {}) };
     if (input.isEnabled && !translations[DEFAULT_LOCALE_CODE]?.name) {
       throw new ValidationError({ isEnabled: "ADD_TRANSLATION_BEFORE_ACTIVATING" });
@@ -304,6 +346,7 @@ export class AvailabilityService {
       this.inventory.upsertCampingSettingsStatement({ ...input, updatedBy: actor.userId, now }),
       ...Object.entries(input.translations ?? {}).flatMap(([lang, t]) => (t ? [this.inventory.upsertCampingTranslationStatement(lang, t)] : [])),
       this.inventory.applyDefaultCapacityStatement(input.maxTentsPerNight, await this.today()),
+      this.inventory.applyDefaultTarpCapacityStatement(input.maxTarpsPerNight, await this.today(), now),
       this.log.auditStatement(actor.userId, "UPDATE_SETTINGS", "camping", "camping", omitTranslations(current), omitTranslations(input), meta),
     ];
     if (input.pricePerAdultNightSatang !== current.pricePerAdultNightSatang) {
@@ -317,6 +360,10 @@ export class AvailabilityService {
     try {
       await this.db.batch(statements);
     } catch (error) {
+      if (/CHECK constraint failed: tarps_used/.test(String(error))) {
+        throw new HttpError(409, "BELOW_TARPS_SOLD", "Some upcoming nights already have more tarp areas booked than the new limit",
+          { maxTarpsPerNight: "BELOW_TARPS_SOLD" });
+      }
       if (/CHECK constraint failed/.test(String(error))) {
         throw new ConflictError("Some upcoming nights already have more tents booked than the new capacity", "BELOW_TENTS_SOLD");
       }

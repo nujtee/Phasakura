@@ -170,7 +170,7 @@ export function CalendarPage() {
                       <tr key={b.bookingCode}>
                         <td className="adm-nowrap"><Link to={href("bookings", b.bookingCode)} className="adm-mono">{b.bookingCode}</Link></td>
                         <td>{b.customerName ?? "—"}<div className="adm-small adm-muted">{format(c.cal.guests, { adults: b.adults, children: b.children })}</div></td>
-                        <td>{b.itemName}{b.itemType === "OWN_TENT" && ` × ${b.quantity}`}</td>
+                        <td>{b.itemName}{b.itemType === "OWN_TENT" && ` × ${b.quantity}`}{b.tarps > 0 && ` + ${t.bk.tarp}`}</td>
                         <td className="adm-nowrap">{stayDate(b.checkIn)} → {stayDate(b.checkOut)}<div className="adm-small adm-muted">{format(c.cal.nights, { n: b.nights })}</div></td>
                         <td><BookingStatusBadge status={b.status} /> <PaymentBadge status={b.paymentStatus} /></td>
                         <td className="adm-num">{b.totalSatang === null ? "—" : formatBaht(b.totalSatang, locale.code)}</td>

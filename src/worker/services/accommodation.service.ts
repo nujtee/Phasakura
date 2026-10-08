@@ -83,6 +83,7 @@ export class AccommodationService {
         maxGuestsPerTent: camping?.max_guests_per_tent ?? null,
         maxTentsPerNight: camping?.max_tents_per_night ?? 0,
         cover: coverUrl ? { url: coverUrl, alt: ct?.name ?? "", caption: null, width: camping?.cover_width ?? null, height: camping?.cover_height ?? null, srcset: coverSrcset } : null,
+        tarp: camping?.tarp_enabled === 1 && camping.max_tarps_per_night > 0 ? { pricePerNightSatang: camping.tarp_price_per_night_satang } : null,
       },
     };
   }

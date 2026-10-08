@@ -23,6 +23,8 @@ export interface MsgBooking {
   itemType: "HOUSE" | "VIP_TENT" | "OWN_TENT";
   itemName: string;
   tents: number;
+  /** Tarp areas booked with the tents (camping add-on). */
+  tarps?: number;
   adults: number;
   children: number;
   bookingStatus: string;
@@ -53,6 +55,7 @@ const th = {
   houseVip: "บ้านพัก/VIP",
   camping: "ลานกางเต็นท์",
   tents: "{n} เต็นท์",
+  tarp: "พื้นที่กางทาร์ป",
   guests: "ผู้เข้าพัก",
   guestsValue: "ผู้ใหญ่ {a} · เด็ก {c}",
   food: "อาหาร",
@@ -113,6 +116,7 @@ const en: Texts = {
   houseVip: "House/VIP",
   camping: "Camping",
   tents: "{n} tent(s)",
+  tarp: "tarp area",
   guests: "Guests",
   guestsValue: "{a} adult(s) · {c} child(ren)",
   food: "Food",
@@ -171,6 +175,7 @@ const zh: Texts = {
   houseVip: "房屋/VIP",
   camping: "露营",
   tents: "{n} 顶帐篷",
+  tarp: "天幕区",
   guests: "入住人数",
   guestsValue: "成人 {a} · 儿童 {c}",
   food: "餐饮",
@@ -267,7 +272,7 @@ export class LineFormatter {
 
   stayLine(b: MsgBooking): string {
     return b.itemType === "OWN_TENT"
-      ? `${this.t.camping}: ${fill(this.t.tents, { n: b.tents })}`
+      ? `${this.t.camping}: ${fill(this.t.tents, { n: b.tents })}${b.tarps ? ` + ${this.t.tarp}` : ""}`
       : `${this.t.houseVip}: ${b.itemName}`;
   }
 
