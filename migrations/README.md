@@ -23,6 +23,7 @@
 | `0019_privacy_marketing.sql` | `privacy_settings` (+ seeded row) and texts per language, `booking_marketing` (consent + browser ids, only with Marketing consent, erased after 8 days), `marketing_events` (Meta CAPI outbox, no personal data); trigger: a SENT event is final; `marketing_settings.ga4_property_id` (new nullable column) and `analytics_report_cache` (GA4 Data API numbers for the dashboard) — additive only, no data change |
 | `0020_system_monitoring.sql` | `system_heartbeats` (last run of the cron and its tasks — `/api/health` reports a stopped cron), `error_events` (server errors without personal data, 30 days), permission `system.view` for SUPER_ADMIN and MANAGER — additive only |
 | `0021_camping_tarp.sql` | camping add-on "tarp area": `camping_settings.tarp_enabled / tarp_price_per_night_satang / max_tarps_per_night` (ADD COLUMN with defaults: off, 0, 0), `camping_tarp_night_inventory` (nightly counter, CHECK no overselling), `booking_tarps` (per-booking price snapshot, money fields frozen); triggers: tarp only with own-tent camping and only while offered — additive only, no data change |
+| `0022_d1_glob_limits.sql` | **table rebuild (announced)**: `bookings`, `home_slides`, `booking_cta_settings` re-created with the same columns, indexes and triggers; only three CHECKs rewritten (booking code, `#RRGGBB` colours) because D1 refuses LIKE/GLOB patterns over 50 bytes ("pattern too complex" — every booking insert failed). Production: all three tables were empty; rollback = D1 Time Travel |
 
 ## Commands
 
@@ -37,6 +38,8 @@ npm run db:migrate:remote    # production — take a backup first (below)
 
 - Never edit an applied migration. Every schema change is a **new** numbered file.
 - Never change the production database without a migration file here.
+- D1 refuses LIKE / GLOB patterns longer than **50 bytes** at run time (local SQLite does not): keep
+  CHECK patterns short — `tests/db/schema.test.ts` fails on any longer pattern in the schema.
 - Before any destructive migration (DROP, table rebuild, data rewrite): announce the risk,
   then back up and prepare a rollback:
 

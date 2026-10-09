@@ -1,4 +1,5 @@
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
+import { containsPattern } from "./sql-like.ts";
 
 export interface UserRow {
   id: string;
@@ -82,7 +83,7 @@ export class UserRepository {
       if (filter.status === "ALL_ACTIVE" || filter.status === undefined) where.push("u.status <> 'DELETED'");
       else where.push(`u.status = ${next(filter.status)}`);
       if (filter.query) {
-        const p = next(`%${filter.query.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+        const p = next(containsPattern(filter.query));
         where.push(`(u.email LIKE ${p} ESCAPE '\\' OR u.display_name LIKE ${p} ESCAPE '\\' OR u.username LIKE ${p} ESCAPE '\\')`);
       }
       return { sql: where.length ? `WHERE ${where.join(" AND ")}` : "", values };

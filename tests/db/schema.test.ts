@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { DEV_SEED_FILE, MIGRATIONS_DIR, SqliteD1, migrationFiles } from "../helpers/sqlite-d1.ts";
+import { containsPattern, D1_PATTERN_MAX_BYTES } from "../../src/worker/repositories/sql-like.ts";
 
 const db = SqliteD1.migrated();
 
@@ -24,6 +25,48 @@ function indexedColumns(table: string): Set<string> {
   return cols;
 }
 
+describe("Cloudflare D1 limits", () => {
+  it("every LIKE / GLOB pattern in the schema fits D1's 50-byte limit (else: 'pattern too complex' on D1 only)", () => {
+    const tooLong: string[] = [];
+    for (const r of db.all<{ name: string; sql: string }>("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL")) {
+      for (const m of r.sql.matchAll(/(?:GLOB|LIKE)\s+'((?:[^']|'')*)'/gi)) {
+        if (Buffer.byteLength(m[1]!) > D1_PATTERN_MAX_BYTES) tooLong.push(`${r.name}: ${m[1]}`);
+      }
+      // Patterns built in SQL (|| concatenation) cannot be measured here: keep them out of the schema.
+      assert.doesNotMatch(r.sql, /(?:GLOB|LIKE)\s+'[^']*'\s*\|\|/i, r.name);
+    }
+    assert.deepEqual(tooLong, []);
+  });
+
+  it("booking codes and colours are still checked by the database", () => {
+    const ins = (code: string) => () => db.run(`INSERT INTO bookings (id, booking_code, language_code, check_in, check_out, nights, adults,
+      customer_name, customer_phone, customer_phone_normalized, accommodation_subtotal_satang, subtotal_satang, total_satang)
+      VALUES ('${code}', '${code}', 'th', '2027-02-01', '2027-02-02', 1, 2, 'X', '0812345678', '0812345678', 1, 1, 1)`);
+    db.exec("SAVEPOINT d1_limits");
+    try {
+      assert.doesNotThrow(ins("BK-20270201-A7K2"));
+      for (const bad of ["BK-2027020-A7K2X", "BK-20270201-a7k2", "XX-20270201-A7K2", "BK-20270201_A7K2", "BK-2027020A-A7K2", "BK-20270201-A7K"]) {
+        assert.throws(ins(bad), /CHECK constraint failed/, bad);
+      }
+      assert.doesNotThrow(() => db.run("INSERT INTO booking_cta_settings (id, color) VALUES (1, '#1a2B3c')"));
+      assert.throws(() => db.run("UPDATE booking_cta_settings SET color = '#12345G' WHERE id = 1"), /CHECK constraint failed/);
+      assert.throws(() => db.run("UPDATE booking_cta_settings SET color = '123456' WHERE id = 1"), /CHECK constraint failed/);
+    } finally {
+      db.exec("ROLLBACK TO d1_limits");
+      db.exec("RELEASE d1_limits");
+    }
+  });
+
+  it("search terms become LIKE patterns within the limit (whole characters, escaped)", () => {
+    const thai = "สมชายใจดีมีสุขรักษ์ไทยเที่ยวป่า"; // 31 characters, 3 bytes each
+    const p = containsPattern(thai);
+    assert.ok(Buffer.byteLength(p) <= D1_PATTERN_MAX_BYTES, `${Buffer.byteLength(p)} bytes`);
+    assert.ok(thai.startsWith(p.slice(1, -1)), "a prefix of the term, never a broken character");
+    assert.equal(containsPattern("50%_off\\"), "%50\\%\\_off\\\\%");
+    assert.equal(Buffer.byteLength(containsPattern("x".repeat(200))), 50);
+  });
+});
+
 describe("migrations", () => {
   it("are numbered sequentially with no gaps", () => {
     const numbers = migrationFiles().map((f) => Number(f.slice(0, 4)));
@@ -33,8 +76,32 @@ describe("migrations", () => {
     );
   });
 
-  it("contain no destructive statements", () => {
-    for (const file of migrationFiles()) {
+  /**
+   * Announced table rebuilds (spec §53: announcement + backup + rollback plan in the file). A rebuild
+   * may only DROP a table it re-creates from `<table>__new` with every row copied, and must re-create
+   * every trigger it drops.
+   */
+  const ANNOUNCED_REBUILDS = ["0022_d1_glob_limits.sql"];
+
+  it("announced rebuilds only replace tables (copy every row, rename back) and restore dropped triggers", () => {
+    for (const file of ANNOUNCED_REBUILDS) {
+      const raw = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
+      assert.match(raw, /DESTRUCTIVE/);
+      assert.match(raw, /Backup \/ rollback/);
+      const sql = raw.replace(/--.*$/gm, "");
+      assert.doesNotMatch(sql, /\bDELETE\s+FROM\b|\bDROP\s+(INDEX|VIEW)\b|\bALTER\s+TABLE\s+\w+\s+DROP\b/i, file);
+      for (const [, table] of sql.matchAll(/\bDROP\s+TABLE\s+(\w+)/gi)) {
+        assert.match(sql, new RegExp(`INSERT INTO ${table}__new \\(([^)]+)\\) SELECT \\1 FROM ${table};`), `${table}: all rows copied`);
+        assert.match(sql, new RegExp(`ALTER TABLE ${table}__new RENAME TO ${table};`), `${table}: renamed back`);
+      }
+      for (const [, trigger] of sql.matchAll(/\bDROP\s+TRIGGER\s+(\w+)/gi)) {
+        assert.match(sql, new RegExp(`CREATE TRIGGER ${trigger}\\b`), `${trigger}: re-created`);
+      }
+    }
+  });
+
+  it("contain no destructive statements (other than announced rebuilds)", () => {
+    for (const file of migrationFiles().filter((f) => !ANNOUNCED_REBUILDS.includes(f))) {
       const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8").replace(/--.*$/gm, "");
       assert.doesNotMatch(sql, /\bDROP\s+(TABLE|INDEX|VIEW|TRIGGER)\b/i, file);
       assert.doesNotMatch(sql, /\bALTER\s+TABLE\s+\w+\s+DROP\b/i, file);

@@ -5,9 +5,16 @@ import type { HealthRepository } from "../repositories/health.repository.ts";
  * The newest migration this code expects (Phase 16). A test keeps it equal to the last file in
  * migrations/, so a deploy whose migrations were not applied shows up as `schema: "outdated"`.
  */
-export const LATEST_MIGRATION = "0021_camping_tarp.sql";
-/** Its newest table: the schema probe where D1's migration list cannot be read. */
-const LATEST_TABLE = "booking_tarps";
+export const LATEST_MIGRATION = "0022_d1_glob_limits.sql";
+/**
+ * Schema probe where D1's migration list cannot be read: what the newest migrations created or changed
+ * (0020 error_events, 0021 booking_tarps, 0022 the rewritten bookings CHECK). All must be there.
+ */
+const LATEST_PROBES: { table: string; contains?: string }[] = [
+  { table: "error_events" },
+  { table: "booking_tarps" },
+  { table: "bookings", contains: "substr(booking_code, 1, 3)" },
+];
 /** The cron runs every minute; 5 minutes without a finished run means it stopped. */
 export const CRON_STALE_MS = 5 * 60_000;
 
@@ -29,8 +36,8 @@ export class HealthService {
       if (typeof latest === "string") schema = migrationNumber(latest) >= migrationNumber(LATEST_MIGRATION) ? "ok" : "outdated";
       else if (latest === null) schema = "outdated";
       else {
-        const has = await this.repository.hasTable(LATEST_TABLE);
-        schema = has === undefined ? "unknown" : has ? "ok" : "outdated";
+        const found = await Promise.all(LATEST_PROBES.map((p) => this.repository.hasTable(p.table, p.contains)));
+        schema = found.includes(undefined) ? "unknown" : found.every(Boolean) ? "ok" : "outdated";
       }
       const last = await this.repository.cronLastRun();
       if (last) cron = this.now().getTime() - new Date(last).getTime() <= CRON_STALE_MS ? "ok" : "stale";

@@ -1,4 +1,5 @@
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
+import { containsPattern } from "./sql-like.ts";
 
 export interface BookingRow {
   id: string;
@@ -186,7 +187,7 @@ export class BookingRepository {
           WHERE (?1 IS NULL OR b.booking_status = ?1)
             AND (?2 IS NULL OR b.check_out > ?2)
             AND (?3 IS NULL OR b.check_in <= ?3)
-            AND (?4 IS NULL OR b.booking_code = ?4 OR b.customer_phone_normalized = ?5 OR b.customer_name LIKE '%' || ?6 || '%' ESCAPE '\\')
+            AND (?4 IS NULL OR b.booking_code = ?4 OR b.customer_phone_normalized = ?5 OR b.customer_name LIKE ?6 ESCAPE '\\')
             AND (?7 IS NULL OR b.created_at < ?7)
             AND (?9 IS NULL OR b.payment_status = ?9)
           ORDER BY b.created_at DESC, b.id DESC LIMIT ?8`,
@@ -197,7 +198,7 @@ export class BookingRepository {
         filter.to ?? null,
         filter.q ?? null,
         filter.qPhone ?? null,
-        filter.q ? filter.q.replace(/[\\%_]/g, (c) => `\\${c}`) : null,
+        filter.q ? containsPattern(filter.q) : null,
         filter.before ?? null,
         filter.limit,
         filter.payment ?? null,
