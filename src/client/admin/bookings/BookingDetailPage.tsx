@@ -26,6 +26,7 @@ export function BookingDetailPage({ code }: { code: string }) {
   const [done, setDone] = useState(false);
 
   const [version, setVersion] = useState(0);
+  const [paymentNotice, setPaymentNotice] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     apiGet<AdminBookingDto>(`/api/admin/bookings/${encodeURIComponent(code)}`, controller.signal)
@@ -38,6 +39,7 @@ export function BookingDetailPage({ code }: { code: string }) {
     setConfirming(false);
     setBusy(true);
     setError(null);
+    setPaymentNotice(null);
     try {
       setB(await apiRequest<AdminBookingDto>("POST", `/api/admin/bookings/${encodeURIComponent(code)}/cancel`, { reason: reason.trim() }));
       setDone(true);
@@ -53,6 +55,7 @@ export function BookingDetailPage({ code }: { code: string }) {
     setBusy(true);
     setError(null);
     setStayDone(false);
+    setPaymentNotice(null);
     try {
       setB(await apiRequest<AdminBookingDto>("POST", `/api/admin/bookings/${encodeURIComponent(code)}/stay/${action}`));
       setStayDone(true);
@@ -172,7 +175,8 @@ export function BookingDetailPage({ code }: { code: string }) {
         <p className="adm-total">{t.bk.total}: <strong>{baht(b.totalSatang)}</strong></p>
       </div>
 
-      {can("payments.view") && <PaymentPanel key={`${b.status}-${b.paymentStatus}-${b.payments.length}`} booking={b} onChanged={() => setVersion((v) => v + 1)} />}
+      {can("payments.view") && <PaymentPanel key={`${b.status}-${b.paymentStatus}-${b.payments.length}`} booking={b} notice={paymentNotice}
+        onChanged={(text) => { setPaymentNotice(text ?? null); setVersion((v) => v + 1); }} />}
 
       {cancellable && (
         <div className="adm-card adm-card--danger">

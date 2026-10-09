@@ -199,8 +199,9 @@ await check("booking page: staff decline (pay again) then approve the slip witho
   await dialog.getByLabel(/Reason \(sent to the guest\)/).fill("ยอดเงินไม่ตรง กรุณาส่งสลิปใหม่");
   await dialog.getByLabel(/Let the guest pay again/).check();
   await dialog.getByRole("button", { name: "Decline / cancel" }).click();
-  await pa.getByText("Declined — the guest was told the reason.").waitFor();
+  // The panel is rebuilt with the reloaded booking: the note must still be there afterwards.
   await review.waitFor({ state: "detached" });
+  await pa.getByText("Declined — the guest was told the reason.").waitFor({ timeout: 5000 });
   let d = (await (await req.get(`${BASE}/api/admin/bookings/${E.bookingCode}`, { headers: H })).json()).data;
   assert(d.status === "PENDING" && d.paymentStatus === "REJECTED", JSON.stringify([d.status, d.paymentStatus]));
   await cron();
@@ -213,8 +214,8 @@ await check("booking page: staff decline (pay again) then approve the slip witho
   await review.getByLabel("Transaction reference (optional)").fill("E2EREF0001");
   await review.getByRole("button", { name: "Approve" }).click();
   await pa.locator("dialog[open]").getByRole("button", { name: "Approve" }).click();
-  await pa.getByText("Approved — the booking is confirmed and the guest was told.").waitFor();
   await review.waitFor({ state: "detached" });
+  await pa.getByText("Approved — the booking is confirmed and the guest was told.").waitFor({ timeout: 5000 });
   d = (await (await req.get(`${BASE}/api/admin/bookings/${E.bookingCode}`, { headers: H })).json()).data;
   assert(d.status === "CONFIRMED" && d.paymentStatus === "VERIFIED", JSON.stringify([d.status, d.paymentStatus]));
   assert(d.payments.filter((p) => p.status === "VERIFIED").length === 1 && d.payments.filter((p) => p.status === "REJECTED").length === 1, JSON.stringify(d.payments.map((p) => p.status)));

@@ -16,11 +16,17 @@ function bangkokToIso(local: string): string {
 }
 
 /** Payment section of the admin booking page: account snapshot, payments, record & refund. */
-export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto; onChanged: () => void }) {
+/**
+ * The booking page remounts this panel when the booking's status / payments change, so a success note is
+ * handed up with onChanged(text) and comes back as `notice` — otherwise "Approved" would vanish at once.
+ */
+export function PaymentPanel({ booking, notice = null, onChanged }: {
+  booking: AdminBookingDto; notice?: string | null; onChanged: (notice?: string) => void;
+}) {
   const { t, can, locale, href } = useAdmin();
   const dateTime = useDateFormatter();
   const baht = (s: number) => formatBaht(s, locale.code);
-  const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
+  const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(notice ? { kind: "success", text: notice } : null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [form, setForm] = useState({
     amount: String(booking.totalSatang / SATANG_PER_BAHT),
@@ -48,7 +54,7 @@ export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto;
       await apiRequest("POST", `/api/admin/payments/${encodeURIComponent(pending.id)}/verify`, txRef.trim() ? { transactionRef: txRef.trim() } : {});
       setTxRef("");
       setMessage({ kind: "success", text: t.slip.verifiedDone });
-      onChanged();
+      onChanged(t.slip.verifiedDone);
     } catch (err) {
       setMessage({ kind: "error", text: detailMessage(t, err) });
     } finally {
@@ -64,7 +70,7 @@ export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto;
       await apiRequest("POST", `/api/admin/payments/${encodeURIComponent(pending.id)}/reject`, { reason, cancelBooking });
       setDeclining(false);
       setMessage({ kind: "success", text: cancelBooking ? t.slip.cancelledDone : t.slip.rejectedDone });
-      onChanged();
+      onChanged(cancelBooking ? t.slip.cancelledDone : t.slip.rejectedDone);
     } catch (err) {
       setDeclining(false);
       setMessage({ kind: "error", text: detailMessage(t, err) });
@@ -86,7 +92,7 @@ export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto;
         ...(form.reference.trim() ? { reference: form.reference.trim() } : {}), ...(form.note.trim() ? { note: form.note.trim() } : {}),
       });
       setMessage({ kind: "success", text: t.pay.recorded });
-      onChanged();
+      onChanged(t.pay.recorded);
     } catch (err) {
       setErrors(fieldErrors(t, err));
       setMessage({ kind: "error", text: detailMessage(t, err) });
@@ -106,7 +112,7 @@ export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto;
         { amountSatang, reason: refund.reason.trim() });
       setRefund(null);
       setMessage({ kind: "success", text: t.pay.refunded });
-      onChanged();
+      onChanged(t.pay.refunded);
     } catch (err) {
       setMessage({ kind: "error", text: detailMessage(t, err) });
     } finally {
