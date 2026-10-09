@@ -19,15 +19,6 @@ function watch(page) {
   page.on("console", (m) => { if (m.type() === "error" && !/status of (401|404|409|422|429)/.test(m.text())) consoleErrors.push(`${page.url()} :: ${m.text()}`); });
   page.on("pageerror", (e) => consoleErrors.push(`${page.url()} :: pageerror ${e.message}`));
 }
-const until = async (fn, ms = 10000) => {
-  const end = Date.now() + ms;
-  for (;;) {
-    const v = await fn();
-    if (v) return v;
-    if (Date.now() > end) throw new Error("timeout");
-    await new Promise((r) => setTimeout(r, 250));
-  }
-};
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ["--no-sandbox"] });
 const admin = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1366, height: 900 }, locale: "en-US" });
