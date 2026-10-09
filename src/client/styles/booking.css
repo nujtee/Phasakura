@@ -819,6 +819,140 @@ button.button--secondary {
   }
 }
 
+.pay__left {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+/* ---------- Payment channels (PromptPay / bank / QR / PayPal) ---------- */
+.pay-channels {
+  margin: 4px 0 16px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.pay-channels__legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.pay-channels__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pay-channel {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.pay-channel input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--color-primary);
+}
+
+.pay-channel__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pay-channel__text strong {
+  color: var(--color-heading);
+  font-size: 0.9375rem;
+}
+
+.pay-channel__text small {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.pay-channel.is-selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.pay-channel:has(input:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+
+.pay-panel {
+  padding-top: 4px;
+}
+
+.pay-panel__text {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.pay-panel__how {
+  margin: 0;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.pay-qr {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 12px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+
+.pay-qr .qr {
+  width: min(220px, 64vw);
+  height: auto;
+  display: block;
+}
+
+.pay-qr__brand {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #1f2622;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-qr__save {
+  margin-top: 2px;
+}
+
+.pay-paypal {
+  display: grid;
+  gap: 10px;
+}
+
+.pay-paypal__button {
+  justify-self: start;
+}
+
+@media (min-width: 640px) {
+  .pay-channels__list {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+}
+
 /* ---------- Slip upload ---------- */
 .slip {
   display: grid;

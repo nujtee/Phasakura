@@ -109,7 +109,7 @@ export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto;
                     {p.verifiedByName && <div className="adm-muted">{t.pay.by} {p.verifiedByName}</div>}
                   </td>
                   <td className="adm-small">
-                    {t.pay[`m${p.method}`]}
+                    {p.channel ? t.pay[`c${p.channel}`] : t.pay[`m${p.method}`]}
                     {p.reference && <div className="adm-muted">{t.pay.ref}: {p.reference}</div>}
                     {p.note && <div className="adm-muted">{p.note}</div>}
                     {p.slipUrl && can("slips.view") && <div><a href={p.slipUrl} target="_blank" rel="noopener">{t.slip.viewSlip}</a></div>}

@@ -90,4 +90,11 @@ export interface Env {
   LINE_CHANNEL_ACCESS_TOKEN?: string;
   /** LINE channel secret (webhook signature) — Cloudflare Secret only. */
   LINE_CHANNEL_SECRET?: string;
+  /** Resend API key for e-mail notifications — Cloudflare Secret only. */
+  RESEND_API_KEY?: string;
+  /** PayPal REST app (Checkout) — Cloudflare Secrets only. */
+  PAYPAL_CLIENT_ID?: string;
+  PAYPAL_CLIENT_SECRET?: string;
+  /** "sandbox" while testing with sandbox app credentials; anything else / unset = live PayPal. */
+  PAYPAL_ENV?: string;
 }

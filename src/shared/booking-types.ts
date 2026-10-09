@@ -132,6 +132,10 @@ export interface PublicBookingDto extends QuoteDto {
   lineUpdates: GuestLineDto;
   /** Where and how much to pay — present only while the booking awaits payment. */
   paymentInstructions: PaymentInstructionsDto | null;
+  /** Why the last payment was not accepted (shown while the guest can pay again). */
+  paymentRejectedReason: string | null;
+  /** Why staff cancelled the booking. */
+  cancelReason: string | null;
 }
 
 export interface AdminBookingSummaryDto {

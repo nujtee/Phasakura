@@ -127,3 +127,38 @@ describe("Phase 13 dictionaries (SEO, search, translation coverage)", () => {
     assert.equal(searchTh.placeholder, "ค้นหาที่พัก อาหาร หรือกิจกรรม...", "spec §40 wording");
   });
 });
+
+describe("payment settings / e-mail dictionaries (migration 0023)", () => {
+  it("TH, EN and ZH-CN have identical keys and no empty strings", async () => {
+    const { notifyTh, notifyEn, notifyZhCN } = await import("../../src/shared/i18n/admin-notify-messages.ts");
+    const ref = keys(notifyTh).sort();
+    for (const dict of [notifyEn, notifyZhCN]) {
+      assert.deepEqual(keys(dict).sort(), ref);
+      assert.ok(values(dict).every((v) => v.trim().length > 0));
+    }
+  });
+
+  it("every e-mail type, status and skip reason the server writes has a label; every API error a message", async () => {
+    const { notifyTh } = await import("../../src/shared/i18n/admin-notify-messages.ts");
+    const { EMAIL_TYPES, EMAIL_STATUSES } = await import("../../src/shared/email-types.ts");
+    const { PAYMENT_CHANNELS } = await import("../../src/shared/payment-types.ts");
+    for (const t of EMAIL_TYPES) assert.ok(notifyTh.email.typesLabel[t], t);
+    for (const s of EMAIL_STATUSES) assert.ok(notifyTh.email.statuses[s], s);
+    for (const r of ["EMAIL_DISABLED", "EMAIL_SENDER_MISSING", "NOT_RELEVANT", "RECIPIENT_INACTIVE", "RECIPIENT_OPTED_OUT", "GUEST_DISABLED", "NO_GUEST_EMAIL", "EXPIRED"]) {
+      assert.ok((notifyTh.email.reasons as Record<string, string>)[r], r);
+    }
+    for (const c of PAYMENT_CHANNELS) {
+      assert.ok(notifyTh.payment.channels[c], c);
+      assert.ok((adminTh.pay as Record<string, string>)[`c${c}`], c);
+    }
+    for (const code of ["AT_LEAST_ONE", "PAYPAL_NOT_CONFIGURED", "EMAIL_KEY_MISSING", "EMAIL_RECIPIENT_EXISTS"]) {
+      assert.ok((notifyTh.errors as Record<string, string>)[code], code);
+    }
+  });
+
+  it("e-mail texts (server side): TH, EN and ZH-CN have the same keys", async () => {
+    const { EMAIL_TEXT_DICTIONARIES } = await import("../../src/worker/email/email-templates.ts");
+    const ref = keys(EMAIL_TEXT_DICTIONARIES.th).sort();
+    for (const dict of [EMAIL_TEXT_DICTIONARIES.en, EMAIL_TEXT_DICTIONARIES["zh-CN"]]) assert.deepEqual(keys(dict).sort(), ref);
+  });
+});

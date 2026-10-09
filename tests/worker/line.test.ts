@@ -46,12 +46,12 @@ async function enable(h: Harness, admin: string, extra: Partial<typeof SETTINGS>
   return r.data;
 }
 
-async function recipient(h: Harness, admin: string, targetId: string, flags: { checkin?: boolean; food?: boolean; payment?: boolean; language?: string; name?: string } = {}) {
+async function recipient(h: Harness, admin: string, targetId: string, flags: { checkin?: boolean; food?: boolean; payment?: boolean; booking?: boolean; language?: string; name?: string } = {}) {
   const r = await h.api<LineRecipientDto>("POST", "/api/admin/line/recipients", {
     token: admin,
     body: {
       targetId, name: flags.name ?? `Chat ${targetId.slice(0, 3)}`, language: flags.language ?? "th",
-      notifyCheckin: flags.checkin ?? false, notifyFood: flags.food ?? false, notifyPayment: flags.payment ?? false,
+      notifyCheckin: flags.checkin ?? false, notifyFood: flags.food ?? false, notifyPayment: flags.payment ?? false, notifyBooking: flags.booking ?? false,
     },
   });
   assert.equal(r.status, 201, JSON.stringify(r.body));

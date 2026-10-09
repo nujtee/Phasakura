@@ -73,7 +73,7 @@ export function PaymentsPage() {
                   {baht(p.amountSatang)}
                   {p.refundAmountSatang !== null && <div className="adm-small adm-muted">{format(c.payList.refunded, { amount: baht(p.refundAmountSatang) })}</div>}
                 </td>
-                <td>{methodLabel(p.method)}{p.hasSlip && can("slips.view") && <> · <Link to={href("slips")}>{c.payList.slip}</Link></>}</td>
+                <td>{p.channel ? (t.pay as Record<string, string>)[`c${p.channel}`] ?? p.channel : methodLabel(p.method)}{p.hasSlip && can("slips.view") && <> · <Link to={href("slips")}>{c.payList.slip}</Link></>}</td>
                 <td><PaymentBadge status={p.status} /></td>
                 <td className="adm-small">
                   {dateTime(p.submittedAt)}

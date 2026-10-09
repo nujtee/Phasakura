@@ -1,9 +1,11 @@
 import type { PublicBookingDto } from "../../shared/booking-types.ts";
-import type { SlipQueueItemDto, SlipUploadResultDto, SlipVerificationDto } from "../../shared/payment-types.ts";
+import type {
+  PaymentChannel, SlipChannel, SlipQueueDto, SlipQueueItemDto, SlipRejectInput, SlipUploadResultDto, SlipVerificationDto,
+} from "../../shared/payment-types.ts";
 import type { D1DatabaseLike, R2BucketLike } from "../env.ts";
 import { ConflictError, HttpError, NotFoundError, TooManyRequestsError, ValidationError } from "../http/errors.ts";
 import { sniffImage } from "../media/image-sniff.ts";
-import type { PaymentRepository, VerificationRow } from "../repositories/payment.repository.ts";
+import type { PaymentRepository, SlipPaymentRow, VerificationRow } from "../repositories/payment.repository.ts";
 import type { PricingRepository } from "../repositories/pricing.repository.ts";
 import { newId } from "../security/tokens.ts";
 import { evaluateSlip, type SlipVerifier } from "../slip/slip-verifier.ts";
@@ -64,7 +66,7 @@ export class SlipService {
 
   // ================================================================ guest upload
 
-  async submit(code: string, phone: string, file: File, meta: RequestMeta): Promise<{ booking: PublicBookingDto } & SlipUploadResultDto> {
+  async submit(code: string, phone: string, file: File, meta: RequestMeta, channel: SlipChannel = "BANK_TRANSFER"): Promise<{ booking: PublicBookingDto } & SlipUploadResultDto> {
     const booking = await this.bookings.guestBooking(code, phone, meta);
     if (booking.booking_status !== "PENDING" || (booking.payment_status !== "UNPAID" && booking.payment_status !== "REJECTED")) {
       throw new ConflictError("This booking is not waiting for a payment slip", "SLIP_NOT_ACCEPTED");
@@ -104,7 +106,7 @@ export class SlipService {
       const results = await this.db.batch([
         this.repo.claimForSlipStatement(booking.id, at),
         this.repo.insertSlipAssetStatement({ id: assetId, bookingId: booking.id, key, mime: image.mime, size: bytes.length, width: image.width, height: image.height, sha256, now: at }),
-        this.repo.insertSlipPaymentStatement({ id: paymentId, bookingId: booking.id, amount: booking.total_satang, assetId, sha256, now: at }),
+        this.repo.insertSlipPaymentStatement({ id: paymentId, bookingId: booking.id, amount: booking.total_satang, assetId, sha256, channel, now: at }),
         this.log.eventStatement("SLIP_UPLOADED", "INFO", meta, { identifier: booking.booking_code }),
         ...(this.outbox ? await this.outbox.slipSubmitted(paymentId, booking.id, at) : []),
       ]);
@@ -123,13 +125,15 @@ export class SlipService {
   }
 
   /**
-   * Asks the real verification service. Auto-confirms only when every check passes;
-   * every other outcome is recorded and left for staff. Never throws to the guest.
+   * Asks the real verification service. In AUTO mode the booking is confirmed only when every check
+   * passes; in MANUAL mode (and on any failure) the result is recorded for staff, who are notified.
+   * Never throws to the guest.
    */
   private async autoVerify(paymentId: string, bytes: Uint8Array, mime: string): Promise<SlipUploadResultDto["outcome"]> {
     const verifier = this.verifier!;
     const payment = await this.repo.findSlipPayment(paymentId);
     if (!payment) return "PENDING_REVIEW";
+    const mode = (await this.repo.settings()).approval_mode;
     const now = iso(this.clock());
     const base = { id: newId(), paymentId, method: "AUTO" as const, provider: verifier.provider, verifiedBy: null, now };
     try {
@@ -160,6 +164,16 @@ export class SlipService {
         await this.repo.insertVerificationStatement({ ...record, result: "FAILED", failureCode: failure, transactionRef: slip.transactionRef }).run();
         return "PENDING_REVIEW";
       }
+      if (mode === "MANUAL") {
+        // Correct slip, but staff approve: the PASSED row also reserves the bank transaction (no second use).
+        try {
+          await this.repo.insertVerificationStatement({ ...record, result: "PASSED", failureCode: null, transactionRef: slip.transactionRef }).run();
+        } catch (error) {
+          if (!/UNIQUE constraint failed: slip_verifications\.transaction_ref/.test(String(error))) throw error;
+          await this.repo.insertVerificationStatement({ ...record, id: newId(), result: "FAILED", failureCode: "DUPLICATE_TRANSACTION", transactionRef: slip.transactionRef }).run();
+        }
+        return "PENDING_REVIEW";
+      }
       try {
         await this.db.batch([
           this.repo.insertVerificationStatement({ ...record, result: "PASSED", failureCode: null, transactionRef: slip.transactionRef }),
@@ -187,27 +201,16 @@ export class SlipService {
 
   // ================================================================ staff
 
-  async queue(actor: AuthContext, status: string, before: string | null, limit: number, meta: RequestMeta): Promise<{ items: SlipQueueItemDto[]; nextCursor: string | null }> {
+  async queue(actor: AuthContext, status: string, before: string | null, limit: number, meta: RequestMeta): Promise<SlipQueueDto> {
     await this.authz.requirePermission(actor, "slips.view", meta);
-    const rows = await this.repo.slipQueue(status, limit + 1, before);
+    const [rows, settings] = await Promise.all([this.repo.slipQueue(status, limit + 1, before), this.repo.settings()]);
     const page = rows.slice(0, limit);
     const checks = await this.repo.verifications(page.map((r) => r.id));
     return {
-      items: page.map((r) => ({
-        paymentId: r.id,
-        bookingCode: r.booking_code,
-        bookingStatus: r.booking_status,
-        customerName: r.customer_name,
-        checkIn: r.check_in,
-        checkOut: r.check_out,
-        totalSatang: r.total_satang,
-        amountSatang: r.amount_satang,
-        status: r.status as SlipQueueItemDto["status"],
-        submittedAt: r.submitted_at,
-        slipUrl: `/api/admin/payments/${r.id}/slip`,
-        verifications: checks.filter((c) => c.payment_id === r.id).map(toVerificationDto),
-      })),
+      items: page.map((r) => toQueueItem(r, checks.filter((c) => c.payment_id === r.id))),
       nextCursor: status !== "PENDING_VERIFICATION" && rows.length > limit ? page[page.length - 1]!.submitted_at : null,
+      approvalMode: settings.approval_mode,
+      verifierConfigured: this.verifier !== null,
     };
   }
 
@@ -235,16 +238,18 @@ export class SlipService {
   async verify(actor: AuthContext, paymentId: string, input: { transactionRef: string | null }, meta: RequestMeta): Promise<SlipQueueItemDto> {
     await this.authz.requirePermission(actor, "payments.verify", meta);
     const payment = await this.pending(paymentId);
-    if (input.transactionRef && (await this.repo.transactionRefUsed(input.transactionRef))) {
+    if (input.transactionRef && (await this.repo.transactionRefUsed(input.transactionRef, paymentId))) {
       throw new ConflictError("This bank transaction was already used for another payment", "DUPLICATE_TRANSACTION");
     }
+    // The automatic check of this same slip may already hold this reference (MANUAL mode): don't record it twice.
+    const own = input.transactionRef ? (await this.repo.verifications([paymentId])).some((v) => v.result === "PASSED" && v.transaction_ref === input.transactionRef) : false;
     const now = iso(this.clock());
     try {
       const results = await this.db.batch([
         this.repo.markVerifiedStatement(paymentId, null, actor.userId, now),
         this.repo.insertVerificationStatement({
           id: newId(), paymentId, method: "MANUAL", provider: null, result: "PASSED", failureCode: null, amount: payment.amount_satang,
-          transferredAt: null, senderBank: null, receiverBank: null, receiverMasked: null, transactionRef: input.transactionRef,
+          transferredAt: null, senderBank: null, receiverBank: null, receiverMasked: null, transactionRef: own ? null : input.transactionRef,
           redacted: null, verifiedBy: actor.userId, now,
         }),
         this.repo.confirmVerifiedStatement(payment.booking_id, now),
@@ -262,43 +267,72 @@ export class SlipService {
     return this.item(paymentId);
   }
 
-  async reject(actor: AuthContext, paymentId: string, reason: string, meta: RequestMeta): Promise<SlipQueueItemDto> {
+  /**
+   * Staff turn a payment down with a reason the guest will read (LINE / e-mail). Either the guest gets a
+   * fresh hold to pay again, or (cancelBooking) the booking is cancelled and its nights / tents / food released.
+   */
+  async reject(actor: AuthContext, paymentId: string, input: SlipRejectInput, meta: RequestMeta): Promise<SlipQueueItemDto> {
     await this.authz.requirePermission(actor, "payments.verify", meta);
+    if (input.cancelBooking) await this.authz.requirePermission(actor, "bookings.cancel", meta);
     const payment = await this.pending(paymentId);
     const now = this.clock();
     const hold = (await this.pricing.bookingSettings()).hold_minutes;
     const at = iso(now);
-    const results = await this.db.batch([
-      this.repo.markRejectedStatement(paymentId, reason, actor.userId, at),
+    const reasonText = input.reason;
+    const statements = [
+      this.repo.markRejectedStatement(paymentId, reasonText, actor.userId, at),
       this.repo.insertVerificationStatement({
         id: newId(), paymentId, method: "MANUAL", provider: null, result: "FAILED", failureCode: "REJECTED_BY_STAFF", amount: null,
         transferredAt: null, senderBank: null, receiverBank: null, receiverMasked: null, transactionRef: null, redacted: null,
         verifiedBy: actor.userId, now: at,
       }),
-      // The guest gets a fresh hold to pay or upload a correct slip.
+      // The guest gets a fresh hold to pay or upload a correct slip…
       this.repo.bookingRejectedStatement(payment.booking_id, iso(addMs(now, hold * 60_000)), at),
-    ]);
+    ];
+    if (input.cancelBooking) {
+      // …or the booking ends here (cancel + release + guest / kitchen notices, same batch).
+      const row = await this.bookings.guestBookingById(payment.booking_id);
+      statements.push(...(await this.bookings.cancelStatements({ ...row, booking_status: "PENDING" }, actor.userId, reasonText, at)));
+    } else if (this.outbox?.paymentRejected) {
+      statements.push(...(await this.outbox.paymentRejected(paymentId, payment.booking_id, at)));
+    }
+    const results = await this.db.batch(statements);
     if (!results[0]?.results.length) throw new ConflictError("This slip was already handled", "SLIP_ALREADY_HANDLED");
-    await this.log.auditStatement(actor.userId, "REJECT_SLIP", "payments", paymentId, { status: "PENDING_VERIFICATION" },
-      { status: "REJECTED", bookingCode: payment.booking_code, reason }, meta).run();
+    await this.log.auditStatement(actor.userId, input.cancelBooking ? "REJECT_SLIP_CANCEL_BOOKING" : "REJECT_SLIP", "payments", paymentId,
+      { status: "PENDING_VERIFICATION" }, { status: "REJECTED", bookingCode: payment.booking_code, reason: reasonText, cancelBooking: input.cancelBooking }, meta).run();
     return this.item(paymentId);
   }
 
-  private async pending(paymentId: string) {
+  private async pending(paymentId: string): Promise<SlipPaymentRow> {
     const payment = await this.repo.findSlipPayment(paymentId);
-    if (!payment || !payment.slip_key) throw new NotFoundError("Slip not found", "SLIP_NOT_FOUND");
+    // A slip, or a PayPal payment that PayPal holds for review (no slip image).
+    if (!payment || (!payment.slip_key && payment.channel !== "PAYPAL")) throw new NotFoundError("Slip not found", "SLIP_NOT_FOUND");
     if (payment.status !== "PENDING_VERIFICATION") throw new ConflictError("This slip was already handled", "SLIP_ALREADY_HANDLED");
     return payment;
   }
 
   private async item(paymentId: string): Promise<SlipQueueItemDto> {
     const r = (await this.repo.findSlipPayment(paymentId))!;
-    const checks = await this.repo.verifications([paymentId]);
-    return {
-      paymentId: r.id, bookingCode: r.booking_code, bookingStatus: r.booking_status, customerName: r.customer_name,
-      checkIn: r.check_in, checkOut: r.check_out, totalSatang: r.total_satang, amountSatang: r.amount_satang,
-      status: r.status as SlipQueueItemDto["status"], submittedAt: r.submitted_at, slipUrl: `/api/admin/payments/${r.id}/slip`,
-      verifications: checks.map(toVerificationDto),
-    };
+    return toQueueItem(r, await this.repo.verifications([paymentId]));
   }
+}
+
+function toQueueItem(r: SlipPaymentRow, checks: VerificationRow[]): SlipQueueItemDto {
+  return {
+    paymentId: r.id,
+    channel: (r.channel as PaymentChannel | null) ?? null,
+    bookingCode: r.booking_code,
+    bookingStatus: r.booking_status,
+    customerName: r.customer_name,
+    checkIn: r.check_in,
+    checkOut: r.check_out,
+    totalSatang: r.total_satang,
+    amountSatang: r.amount_satang,
+    status: r.status as SlipQueueItemDto["status"],
+    submittedAt: r.submitted_at,
+    slipUrl: r.slip_key ? `/api/admin/payments/${r.id}/slip` : null,
+    reference: r.reference,
+    rejectedReason: r.rejected_reason,
+    verifications: checks.map(toVerificationDto),
+  };
 }

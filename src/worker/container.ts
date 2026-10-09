@@ -61,6 +61,11 @@ import { Ga4ReportService } from "./services/ga4-report.service.ts";
 import { MonitoringRepository } from "./repositories/monitoring.repository.ts";
 import { MonitoringService } from "./services/monitoring.service.ts";
 import { edgeCache, MapTileService } from "./services/map-tile.service.ts";
+import { EmailRepository } from "./repositories/email.repository.ts";
+import { EmailOutbox, EmailService } from "./services/email.service.ts";
+import { createPaypalApi, paypalEnvironment, type FetchLike as PaypalFetch } from "./paypal/paypal-api.ts";
+import { PaypalService } from "./services/paypal.service.ts";
+import type { FetchLike as EmailFetch } from "./email/resend.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -102,6 +107,10 @@ export interface Services {
   monitoring: MonitoringService;
   /** Footer map thumbnail tiles (OpenStreetMap, through the Worker). */
   mapTiles: MapTileService;
+  /** E-mail notifications through Resend (migration 0023). */
+  email: EmailService;
+  /** PayPal Checkout (migration 0023). */
+  paypal: PaypalService;
 }
 
 export interface ServiceOptions {
@@ -119,6 +128,10 @@ export interface ServiceOptions {
   googleFetch?: FetchLike;
   /** Tests / e2e: fetch used for OpenStreetMap map tiles. */
   mapFetch?: FetchLike;
+  /** Tests / e2e: fetch used for the Resend e-mail API. */
+  emailFetch?: EmailFetch;
+  /** Tests / e2e: fetch used for the PayPal REST API. */
+  paypalFetch?: PaypalFetch;
 }
 
 /** Absolute links (reset / invite) use APP_BASE_URL when configured (https only). */
@@ -182,13 +195,15 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const lineRepo = new LineRepository(db);
   // Outbox rows written inside the payment / slip / cancel batches: LINE (Phase 11) + Meta CAPI Purchase (Phase 14).
   const marketingRepo = new MarketingRepository(db);
-  const outbox = new CompositeOutbox([new Outbox(lineRepo), new MarketingOutbox(marketingRepo)]);
+  const emailRepo = new EmailRepository(db);
+  // + e-mail (migration 0023): staff and guest messages through Resend.
+  const outbox = new CompositeOutbox([new Outbox(lineRepo), new MarketingOutbox(marketingRepo), new EmailOutbox(emailRepo)]);
+  const siteInfo = async (lang: string) => {
+    const s = await publicSite(lang);
+    return { name: s.siteName, address: s.contact.address, phone: s.contact.phone, mapUrl: s.contact.mapUrl };
+  };
   const notifications = new NotificationService(
-    db, lineRepo, new ReportRepository(db),
-    async (lang) => {
-      const s = await publicSite(lang);
-      return { name: s.siteName, address: s.contact.address, phone: s.contact.phone, mapUrl: s.contact.mapUrl };
-    },
+    db, lineRepo, new ReportRepository(db), siteInfo,
     () => inventory.siteTimezone(), clock,
     { token: env.LINE_CHANNEL_ACCESS_TOKEN?.trim() || null, fetch: options.lineFetch, linkBase: configuredBaseUrl(env) },
   );
@@ -201,8 +216,9 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       siteLineUrl: async () => (await publicSite("th")).contact.lineOaUrl,
       siteName: async (lang) => (await publicSite(lang)).siteName,
     });
+  const paypalApi = createPaypalApi(env, options.paypalFetch);
   const bookings = new BookingService(db, bookingRepo, quotes, authorization, log, clock, paymentRepo, env.PUBLIC_MEDIA_BASE_URL,
-    outbox, (row) => line.guestStatus(row), marketingRepo);
+    outbox, (row) => line.guestStatus(row), marketingRepo, paypalApi !== null);
   bookingsRef = bookings;
   const verifier = options.slipVerifier !== undefined ? options.slipVerifier : createSlipVerifier(env);
   const accommodation = new AccommodationService(db, units, inventory, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, images);
@@ -229,7 +245,17 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     quotes,
     bookings,
     slips: new SlipService(db, paymentRepo, bookings, pricing, env.MEDIA_PRIVATE, verifier, authorization, log, clock, outbox),
-    payments: new PaymentService(db, paymentRepo, bookingRepo, mediaRepo, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, outbox),
+    payments: new PaymentService(db, paymentRepo, bookingRepo, mediaRepo, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock, outbox, {
+      verifier: { configured: verifier !== null, provider: verifier?.provider ?? null },
+      paypal: { configured: paypalApi !== null, environment: paypalEnvironment(env) },
+    }),
+    paypal: new PaypalService(db, paymentRepo, bookings, paypalApi, log, clock, outbox, {
+      baseUrl: resolveBaseUrl(env, options.origin),
+      siteName: async (lang) => (await publicSite(lang)).siteName,
+    }),
+    email: new EmailService(db, emailRepo, lineRepo, authorization, log, clock, {
+      apiKey: env.RESEND_API_KEY?.trim() || null, fetch: options.emailFetch, linkBase: configuredBaseUrl(env), siteInfo,
+    }),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
     dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock, (from, to) => ga4.dashboard(from, to)),
     cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),

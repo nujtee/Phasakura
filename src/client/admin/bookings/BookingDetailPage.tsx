@@ -179,7 +179,8 @@ export function BookingDetailPage({ code }: { code: string }) {
           <h2 className="adm-h2">{t.bk.cancel}</h2>
           <div className="adm-field">
             <label htmlFor="cancel-reason">{t.bk.cancelReason}<span aria-hidden="true"> *</span></label>
-            <textarea id="cancel-reason" rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <textarea id="cancel-reason" rows={2} maxLength={500} value={reason} aria-describedby="cancel-reason-hint" onChange={(e) => setReason(e.target.value)} />
+            <p id="cancel-reason-hint" className="adm-field__hint">{t.bk.cancelReasonHint}</p>
           </div>
           <Button variant="danger" disabled={reason.trim().length < 3} busy={busy} onClick={() => setConfirming(true)}>{t.bk.cancel}</Button>
           <ConfirmDialog open={confirming} danger message={t.bk.cancelConfirm} confirmLabel={t.bk.cancel}

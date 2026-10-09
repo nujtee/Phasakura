@@ -10,7 +10,7 @@ import { MemoryBucket } from "../helpers/fake-env.ts";
 import { hashPassword } from "../../src/worker/security/password.ts";
 import { FakeLine } from "../helpers/fake-line.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
-import { fakeGoogle, fakeMeta } from "../helpers/fake-http.ts";
+import { fakeGoogle, fakeMeta, fakeResend, FakePaypal } from "../helpers/fake-http.ts";
 import { crc32, deflateSync } from "node:zlib";
 
 const PORT = Number(process.env.PORT ?? 4190);
@@ -47,6 +47,8 @@ const env = {
   // Meta Conversions API and GA4 Data API (the APIs themselves are the in-process fakes below).
   // E2E_NO_CAPI=1: no token, like a deployment before the secret is set (Phase 9 e2e checks that case).
   META_CAPI_ACCESS_TOKEN: process.env.E2E_NO_CAPI === "1" ? undefined : "e2e-capi-secret-token", GA4_SERVICE_ACCOUNT_KEY: await serviceAccountKey(),
+  // E-mail (Resend) and PayPal Checkout (sandbox): the APIs are the in-process fakes below.
+  RESEND_API_KEY: "e2e-resend-key", PAYPAL_CLIENT_ID: "e2e-paypal-client", PAYPAL_CLIENT_SECRET: "e2e-paypal-secret", PAYPAL_ENV: "sandbox",
   ASSETS: {
     fetch: async (req: Request) => {
       const url = new URL(req.url);
@@ -61,11 +63,13 @@ const env = {
 const line = new FakeLine();
 const meta = fakeMeta();
 const google = fakeGoogle();
+const resend = fakeResend();
+const paypal = new FakePaypal();
 // Footer map: the site's place (Settings → Website) and a stand-in for the OpenStreetMap tile server.
 db.run("UPDATE site_settings SET map_url = 'https://maps.example.test/phasakura', latitude = 18.6139152, longitude = 98.5062681 WHERE id = 1");
 const tileRequests: string[] = [];
 const mapFetch = async (url: string) => { tileRequests.push(url); return new Response(fakeTile(), { headers: { "Content-Type": "image/png" } }); };
-const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch, mapFetch } });
+const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch, mapFetch, emailFetch: resend.fetch, paypalFetch: paypal.fetch } });
 
 /** A real, decodable 256 × 256 PNG that looks a little like a map tile (land, two roads, a park). */
 function fakeTile(): Uint8Array<ArrayBuffer> {
@@ -115,6 +119,11 @@ async function debugRoute(path: string, method: string, body: Buffer | undefined
     return json(meta.requests.map((r) => ({ url: r.url, testEventCode: r.json?.test_event_code ?? null, hasToken: r.json?.access_token === "e2e-capi-secret-token", data: r.json?.data })));
   }
   if (path === "/__e2e/google" && method === "GET") return json(google.requests.map((r) => r.url));
+  if (path === "/__e2e/email" && method === "GET") {
+    return json(resend.requests.map((r) => ({ to: r.json?.to, from: r.json?.from, subject: r.json?.subject, text: r.json?.text, key: r.headers.get("Idempotency-Key") })));
+  }
+  if (path === "/__e2e/paypal" && method === "GET") return json({ requests: paypal.requests.map((r) => `${r.method} ${new URL(r.url).pathname}`) });
+  if (path === "/__e2e/paypal/mode" && method === "POST") { paypal.captureMode = JSON.parse(String(body)).mode; return json({ ok: true }); }
   if (path === "/__e2e/cron" && method === "POST") { await app.scheduled(env); return json({ ok: true }); }
   if (path === "/__e2e/webhook" && method === "POST") {
     const raw = String(body);

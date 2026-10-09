@@ -137,6 +137,8 @@ export interface AdminPaymentListItemDto {
   bookingCode: string;
   amountSatang: number;
   method: string;
+  /** Channel the guest chose online (PROMPTPAY, BANK_TRANSFER, QR_CODE, PAYPAL); null = recorded by staff. */
+  channel: string | null;
   status: PaymentStatus;
   hasSlip: boolean;
   reference: string | null;

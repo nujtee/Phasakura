@@ -36,8 +36,21 @@ export function Confirmation({
   const timeText = useDateTimeText();
   const [copied, setCopied] = useState(false);
 
+  const paying = booking.status === "PENDING";
+  const labels = [bt.stepFood, bt.stepDetails, bt.stepReview, bt.stepPay];
   return (
     <div className="confirmation">
+      <ol className="flow-steps" aria-label={fill(bt.progress, { n: 4, total: 4 })}>
+        {labels.map((label, i) => {
+          const isPay = i === labels.length - 1;
+          const state = !isPay || !paying ? "is-done" : "is-current";
+          return (
+            <li key={label} className={state} aria-current={isPay && paying ? "step" : undefined}>
+              <span className="flow-steps__n" aria-hidden="true">{!isPay || !paying ? "✓" : i + 1}</span> {label}
+            </li>
+          );
+        })}
+      </ol>
       <div className="confirmation__head">
         <span className="confirmation__check" aria-hidden="true">✓</span>
         <h1 className="page__title" tabIndex={-1} ref={headingRef}>{bt.doneTitle}</h1>
@@ -58,9 +71,11 @@ export function Confirmation({
       </p>
       <SlipStatus booking={booking} />
       {booking.paymentInstructions ? (
-        <PaymentInstructions payment={booking.paymentInstructions} expiresAt={booking.expiresAt}>
-          <SlipUpload bookingCode={booking.bookingCode} phone={phone} onDone={(r) => { paymentSubmittedEvent(r.booking); setBooking(r.booking); }} />
-        </PaymentInstructions>
+        <PaymentInstructions payment={booking.paymentInstructions} expiresAt={booking.expiresAt} bookingCode={booking.bookingCode} phone={phone}
+          slip={(channel) => (
+            <SlipUpload bookingCode={booking.bookingCode} phone={phone} channel={channel}
+              onDone={(r) => { paymentSubmittedEvent(r.booking); setBooking(r.booking); }} />
+          )} />
       ) : booking.expiresAt && <p className="notice" role="note">{fill(bt.holdUntil, { time: timeText(booking.expiresAt) })}</p>}
 
       <LineUpdates booking={booking} phone={phone} onChange={setBooking} />

@@ -279,8 +279,9 @@ export function BookingPage() {
 
     return (
       <div className="page container booking-flow">
-        <ol className="flow-steps" aria-label={fill(bt.progress, { n: index + 1, total: WIZARD.length })}>
-          {[bt.stepFood, bt.stepDetails, bt.stepReview].map((label, i) => (
+        <ol className="flow-steps" aria-label={fill(bt.progress, { n: index + 1, total: WIZARD.length + 1 })}>
+          {/* The payment step follows on the confirmation page, once the booking holds the stay. */}
+          {[bt.stepFood, bt.stepDetails, bt.stepReview, bt.stepPay].map((label, i) => (
             <li key={label} className={i < index ? "is-done" : i === index ? "is-current" : undefined} aria-current={i === index ? "step" : undefined}>
               <span className="flow-steps__n" aria-hidden="true">{i + 1}</span> {label}
             </li>

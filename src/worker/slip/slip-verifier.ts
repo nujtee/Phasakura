@@ -156,7 +156,9 @@ function str(v: unknown): string | null {
 
 /** Strict parse of the provider answer; null when anything required is missing or odd. */
 export function parseEasySlip(body: unknown): VerifiedSlip | null {
-  const data = (body as { data?: Record<string, unknown> })?.data;
+  const outer = (body as { data?: Record<string, unknown> })?.data;
+  // v1 answers { data: { transRef, … } }; newer answers wrap the same slip fields in data.rawSlip.
+  const data = (outer && typeof outer.rawSlip === "object" && outer.rawSlip ? outer.rawSlip : outer) as Record<string, unknown> | undefined;
   if (!data || typeof data !== "object") return null;
   const transRef = str(data.transRef);
   const date = str(data.date);
@@ -178,10 +180,13 @@ export function parseEasySlip(body: unknown): VerifiedSlip | null {
   };
 }
 
-/** Provider from configuration; null = manual verification only. The key lives in Cloudflare Secrets. */
+/**
+ * Provider from configuration; null = manual verification only. The key lives in Cloudflare Secrets.
+ * EasySlip is the supported service, so a key without a provider name means EasySlip.
+ */
 export function createSlipVerifier(env: { SLIP_VERIFY_PROVIDER?: string; SLIP_VERIFICATION_API_KEY?: string }, fetchImpl: FetchLike = fetch): SlipVerifier | null {
-  const provider = env.SLIP_VERIFY_PROVIDER?.trim().toLowerCase();
   const key = env.SLIP_VERIFICATION_API_KEY?.trim();
+  const provider = env.SLIP_VERIFY_PROVIDER?.trim().toLowerCase() || (key ? "easyslip" : "");
   if (!provider || !key) return null;
   if (provider === "easyslip") return new EasySlipVerifier(key, (input, init) => fetchImpl(input, init));
   return null;

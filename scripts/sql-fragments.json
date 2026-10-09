@@ -19,6 +19,10 @@
   "src/worker/repositories/booking.repository.ts": [
     "ended"
   ],
+  "src/worker/repositories/email.repository.ts": [
+    "flag",
+    "guard"
+  ],
   "src/worker/repositories/food-admin.repository.ts": [
     "chunk.map((_, j) => `?${j + 1}`).join(\", \")"
   ],

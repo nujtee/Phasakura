@@ -33,3 +33,11 @@ PUBLIC_MEDIA_BASE_URL=
 # Long-lived channel access token (Messaging API tab) and channel secret (Basic settings tab).
 # LINE_CHANNEL_ACCESS_TOKEN=
 # LINE_CHANNEL_SECRET=
+
+# E-mail notifications (migration 0023) — Resend (https://resend.com) API key; the sender domain must be verified there.
+# RESEND_API_KEY=
+
+# PayPal Checkout (migration 0023) — PayPal Developer → Apps & Credentials → REST app (client id + secret).
+# PAYPAL_ENV=sandbox   (unset = live PayPal)
+# PAYPAL_CLIENT_ID=
+# PAYPAL_CLIENT_SECRET=

@@ -23,10 +23,18 @@ export interface CapiSettings {
 }
 
 /** The outbox interface the payment / slip / booking services write to (LINE + marketing combined). */
+/**
+ * Transactional outbox hooks: each returns statements that go into the SAME D1 batch as the change,
+ * guarded so they only insert when that change happened. Optional hooks may be left out by a part.
+ */
 export interface OutboxLike {
   bookingConfirmed(bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
   slipSubmitted(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
   bookingCancelled(bookingId: string, wasConfirmed: boolean, now: string): Promise<D1PreparedStatementLike[]>;
+  /** A guest made a booking (inside the booking batch). */
+  bookingCreated?(bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
+  /** Staff turned a slip down (the guest may pay again). */
+  paymentRejected?(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
 }
 
 export class CompositeOutbox implements OutboxLike {
@@ -39,6 +47,12 @@ export class CompositeOutbox implements OutboxLike {
   }
   async bookingCancelled(bookingId: string, wasConfirmed: boolean, now: string) {
     return (await Promise.all(this.parts.map((p) => p.bookingCancelled(bookingId, wasConfirmed, now)))).flat();
+  }
+  async bookingCreated(bookingId: string, now: string) {
+    return (await Promise.all(this.parts.map((p) => p.bookingCreated?.(bookingId, now) ?? Promise.resolve([])))).flat();
+  }
+  async paymentRejected(paymentId: string, bookingId: string, now: string) {
+    return (await Promise.all(this.parts.map((p) => p.paymentRejected?.(paymentId, bookingId, now) ?? Promise.resolve([])))).flat();
   }
 }
 

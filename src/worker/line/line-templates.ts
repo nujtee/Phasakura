@@ -31,6 +31,11 @@ export interface MsgBooking {
   paymentStatus: string;
   totalSatang: number;
   food: MsgFood[];
+  /** Why staff cancelled (guest messages). */
+  cancelReason?: string | null;
+  /** Payment deadline of a PENDING booking. */
+  expiresAt?: string | null;
+  createdAt?: string;
 }
 
 export interface KitchenDish {
@@ -83,7 +88,7 @@ const th = {
   seeYou: "แล้วพบกันเร็ว ๆ นี้",
   testTitle: "✅ ทดสอบการแจ้งเตือน",
   testBody: "แชตนี้ (“{name}”) เชื่อมต่อแล้ว และจะได้รับ: {kinds}",
-  kinds: { checkin: "เช็กอินล่วงหน้า", food: "อาหาร/ครัว", payment: "การชำระเงิน", nothing: "ยังไม่ได้เลือกประเภท" },
+  kinds: { booking: "การจองใหม่", checkin: "เช็กอินล่วงหน้า", food: "อาหาร/ครัว", payment: "การชำระเงิน", nothing: "ยังไม่ได้เลือกประเภท" },
   staffLinked: "✅ เชื่อมต่อแล้ว: แชตนี้ (“{name}”) จะได้รับการแจ้งเตือน{site}",
   guestLinked: "✅ เชื่อมต่อการจอง {code} กับ LINE แล้ว เราจะส่งการยืนยันและการแจ้งเตือนก่อนวันเข้าพักทางแชตนี้ ยกเลิกได้ทุกเมื่อในหน้าการจอง",
   guestOneToOne: "กรุณาส่งรหัสนี้ในแชตส่วนตัวกับบัญชีนี้ (ไม่ใช่ในกลุ่ม)",
@@ -97,6 +102,23 @@ const th = {
     REJECTED: "สลิปไม่ผ่าน รอชำระใหม่", REFUNDED: "คืนเงินแล้ว",
   } as Record<string, string>,
   methods: { BANK_TRANSFER: "โอนเงิน", PROMPTPAY: "พร้อมเพย์", CASH: "เงินสด", OTHER: "อื่น ๆ" } as Record<string, string>,
+  channels: { PROMPTPAY: "พร้อมเพย์", BANK_TRANSFER: "โอนเข้าบัญชี", QR_CODE: "สแกน QR Code", PAYPAL: "PayPal" } as Record<string, string>,
+  newBookingTitle: "🆕 การจองใหม่ — รอชำระเงิน",
+  payBy: "ชำระภายใน",
+  autoPassed: "ตรวจสลิปอัตโนมัติ: ถูกต้อง — รอแอดมินอนุมัติ",
+  autoFailed: "ตรวจสลิปอัตโนมัติไม่ผ่าน: {reason} — กรุณาตรวจสอบ",
+  failures: {
+    AMOUNT_MISMATCH: "ยอดเงินไม่ตรง", DATE_OUT_OF_RANGE: "วันเวลาโอนไม่ตรงกับการจอง", RECEIVER_MISMATCH: "บัญชีผู้รับไม่ตรง",
+    RECEIVER_UNCONFIRMED: "ยืนยันบัญชีผู้รับไม่ได้", DUPLICATE_TRANSACTION: "สลิปนี้ถูกใช้แล้ว", other: "ระบบตรวจไม่ได้ ({code})",
+  } as Record<string, string>,
+  guestRejectedTitle: "⚠️ การชำระเงินยังไม่ผ่านการตรวจสอบ",
+  guestRejectedIntro: "คุณ{name} สลิปสำหรับการจอง {code} ยังไม่ผ่านการตรวจสอบ",
+  reason: "เหตุผล",
+  payAgainUntil: "กรุณาชำระเงินหรือส่งสลิปใหม่ภายใน {time}",
+  payAgain: "กรุณาชำระเงินหรือส่งสลิปใหม่ที่หน้าการจอง",
+  guestCancelledTitle: "❌ การจองถูกยกเลิก",
+  guestCancelledIntro: "คุณ{name} การจอง {code} ถูกยกเลิกแล้ว",
+  questions: "หากมีข้อสงสัย กรุณาติดต่อ",
   itemTypes: { HOUSE: "บ้านพัก", VIP_TENT: "VIP Tent", OWN_TENT: "ลานกางเต็นท์" } as Record<string, string>,
 };
 
@@ -144,7 +166,7 @@ const en: Texts = {
   seeYou: "See you soon!",
   testTitle: "✅ Test notification",
   testBody: "This chat (“{name}”) is connected and will receive: {kinds}",
-  kinds: { checkin: "upcoming check-ins", food: "food / kitchen", payment: "payments", nothing: "no types selected yet" },
+  kinds: { booking: "new bookings", checkin: "upcoming check-ins", food: "food / kitchen", payment: "payments", nothing: "no types selected yet" },
   staffLinked: "✅ Connected: this chat (“{name}”) will receive notifications{site}.",
   guestLinked: "✅ Booking {code} is now linked to LINE. We will send your confirmation and a reminder before your stay here. You can stop this any time on your booking page.",
   guestOneToOne: "Please send this code in a one-to-one chat with this account (not in a group).",
@@ -158,6 +180,23 @@ const en: Texts = {
     REJECTED: "Slip rejected — awaiting payment", REFUNDED: "Refunded",
   },
   methods: { BANK_TRANSFER: "bank transfer", PROMPTPAY: "PromptPay", CASH: "cash", OTHER: "other" },
+  channels: { PROMPTPAY: "PromptPay", BANK_TRANSFER: "bank transfer", QR_CODE: "QR code", PAYPAL: "PayPal" },
+  newBookingTitle: "🆕 New booking — awaiting payment",
+  payBy: "Pay by",
+  autoPassed: "Automatic slip check: correct — waiting for your approval",
+  autoFailed: "Automatic slip check failed: {reason} — please review",
+  failures: {
+    AMOUNT_MISMATCH: "amount does not match", DATE_OUT_OF_RANGE: "transfer time does not fit the booking", RECEIVER_MISMATCH: "wrong receiving account",
+    RECEIVER_UNCONFIRMED: "receiving account could not be confirmed", DUPLICATE_TRANSACTION: "slip already used", other: "could not be checked ({code})",
+  },
+  guestRejectedTitle: "⚠️ Your payment could not be accepted yet",
+  guestRejectedIntro: "{name}, the slip for booking {code} was not accepted.",
+  reason: "Reason",
+  payAgainUntil: "Please pay or send a new slip by {time}.",
+  payAgain: "Please pay or send a new slip on your booking page.",
+  guestCancelledTitle: "❌ Your booking was cancelled",
+  guestCancelledIntro: "{name}, booking {code} has been cancelled.",
+  questions: "Questions? Contact us",
   itemTypes: { HOUSE: "House", VIP_TENT: "VIP Tent", OWN_TENT: "Camping" },
 };
 
@@ -203,7 +242,7 @@ const zh: Texts = {
   seeYou: "期待您的光临！",
   testTitle: "✅ 测试通知",
   testBody: "此聊天（“{name}”）已连接，将收到：{kinds}",
-  kinds: { checkin: "入住提醒", food: "餐饮/厨房", payment: "付款", nothing: "尚未选择类型" },
+  kinds: { booking: "新预订", checkin: "入住提醒", food: "餐饮/厨房", payment: "付款", nothing: "尚未选择类型" },
   staffLinked: "✅ 已连接：此聊天（“{name}”）将收到通知{site}。",
   guestLinked: "✅ 预订 {code} 已与 LINE 连接。我们会在此发送确认信息和入住前提醒。您可以随时在预订页面停止。",
   guestOneToOne: "请在与本账号的一对一聊天中发送此代码（不要在群组中）。",
@@ -217,6 +256,23 @@ const zh: Texts = {
     REJECTED: "凭证未通过 — 待重新付款", REFUNDED: "已退款",
   },
   methods: { BANK_TRANSFER: "银行转账", PROMPTPAY: "PromptPay", CASH: "现金", OTHER: "其他" },
+  channels: { PROMPTPAY: "PromptPay", BANK_TRANSFER: "银行转账", QR_CODE: "扫码支付", PAYPAL: "PayPal" },
+  newBookingTitle: "🆕 新预订 — 待付款",
+  payBy: "付款截止",
+  autoPassed: "自动核验凭证：正确 — 等待管理员批准",
+  autoFailed: "自动核验凭证未通过：{reason} — 请人工审核",
+  failures: {
+    AMOUNT_MISMATCH: "金额不符", DATE_OUT_OF_RANGE: "转账时间与预订不符", RECEIVER_MISMATCH: "收款账户不符",
+    RECEIVER_UNCONFIRMED: "无法确认收款账户", DUPLICATE_TRANSACTION: "凭证已被使用", other: "无法核验（{code}）",
+  },
+  guestRejectedTitle: "⚠️ 您的付款暂未通过审核",
+  guestRejectedIntro: "{name}，预订 {code} 的转账凭证未通过审核。",
+  reason: "原因",
+  payAgainUntil: "请在 {time} 前付款或重新上传凭证。",
+  payAgain: "请在预订页面付款或重新上传凭证。",
+  guestCancelledTitle: "❌ 您的预订已取消",
+  guestCancelledIntro: "{name}，预订 {code} 已取消。",
+  questions: "如有疑问，请联系",
   itemTypes: { HOUSE: "房屋", VIP_TENT: "VIP 帐篷", OWN_TENT: "露营" },
 };
 
@@ -259,6 +315,21 @@ export class LineFormatter {
 
   money(satang: number): string {
     return formatBaht(satang, this.lang in DICTS ? this.lang : "th");
+  }
+
+  /** An instant (ISO) as date + time in the property's time zone. */
+  dateTime(instant: string, timeZone = "Asia/Bangkok"): string {
+    const code = this.lang in DICTS ? this.lang : "th";
+    return new Intl.DateTimeFormat(code, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(instant));
+  }
+
+  failure(code: string): string {
+    return this.t.failures[code] ?? fill(this.t.failures.other!, { code });
+  }
+
+  paidBy(method: string | null, channel: string | null): string | null {
+    if (channel) return this.t.channels[channel] ?? channel;
+    return method ? this.t.methods[method] ?? method : null;
   }
 
   payment(b: Pick<MsgBooking, "paymentStatus" | "bookingStatus">): string {
@@ -331,24 +402,73 @@ export function foodOrderText(f: LineFormatter, b: MsgBooking, cancelled: boolea
   ].join("\n");
 }
 
-export function paymentReviewText(f: LineFormatter, b: MsgBooking, amountSatang: number, link: string | null): string {
+/** `check`: the newest automatic slip check (null = none ran). */
+export function paymentReviewText(
+  f: LineFormatter, b: MsgBooking, amountSatang: number, link: string | null,
+  extra: { channel?: string | null; check?: { result: string; failure_code: string | null } | null } = {},
+): string {
   const t = f.t;
+  const check = extra.check;
   return [
     t.reviewTitle,
     `${b.code} · ${b.customerName}`,
-    `${t.amount}: ${f.money(amountSatang)}`,
+    `${t.amount}: ${f.money(amountSatang)}${extra.channel ? ` · ${t.channels[extra.channel] ?? extra.channel}` : ""}`,
     `${t.checkIn}: ${f.date(b.checkIn)} (${fill(t.nights, { n: b.nights })})`,
     f.stayLine(b),
+    ...(check ? [check.result === "PASSED" ? t.autoPassed : fill(t.autoFailed, { reason: f.failure(check.failure_code ?? "INTERNAL") })] : []),
     ...(link ? [`${t.open}: ${link}`] : []),
   ].join("\n");
 }
 
-export function paymentConfirmedText(f: LineFormatter, b: MsgBooking, method: string | null): string {
+export function paymentConfirmedText(f: LineFormatter, b: MsgBooking, method: string | null, channel: string | null = null): string {
   const t = f.t;
+  const by = f.paidBy(method, channel);
   return [
     t.confirmedTitle,
     f.bookingBlock(b),
-    `${t.total}: ${f.money(b.totalSatang)}${method ? ` · ${t.paidBy}: ${t.methods[method] ?? method}` : ""}`,
+    `${t.total}: ${f.money(b.totalSatang)}${by ? ` · ${t.paidBy}: ${by}` : ""}`,
+  ].join("\n");
+}
+
+/** Staff: a guest booked (awaiting payment until the deadline). */
+export function newBookingText(f: LineFormatter, b: MsgBooking, link: string | null): string {
+  const t = f.t;
+  return [
+    t.newBookingTitle,
+    f.bookingBlock(b),
+    `${t.total}: ${f.money(b.totalSatang)}`,
+    ...(b.expiresAt ? [`${t.payBy}: ${f.dateTime(b.expiresAt)}`] : []),
+    ...(link ? [`${t.open}: ${link}`] : []),
+  ].join("\n");
+}
+
+/** Guest: the slip was turned down; the reason, and until when they can pay again. */
+export function guestPaymentRejectedText(f: LineFormatter, b: MsgBooking, p: { reason: string | null; link: string | null; siteName: string | null }): string {
+  const t = f.t;
+  return [
+    t.guestRejectedTitle,
+    fill(t.guestRejectedIntro, { name: b.customerName, code: b.code }),
+    ...(p.reason ? [`${t.reason}: ${p.reason}`] : []),
+    "",
+    b.expiresAt ? fill(t.payAgainUntil, { time: f.dateTime(b.expiresAt) }) : t.payAgain,
+    `${t.amount}: ${f.money(b.totalSatang)}`,
+    ...(p.link ? [`${t.viewBooking}: ${p.link}`] : []),
+    ...(p.siteName ? ["", p.siteName] : []),
+  ].join("\n");
+}
+
+/** Guest: staff cancelled the booking, with their reason. */
+export function guestCancelledText(f: LineFormatter, b: MsgBooking, p: { siteName: string | null; phone: string | null }): string {
+  const t = f.t;
+  return [
+    t.guestCancelledTitle,
+    fill(t.guestCancelledIntro, { name: b.customerName, code: b.code }),
+    ...(b.cancelReason ? [`${t.reason}: ${b.cancelReason}`] : []),
+    "",
+    `${t.checkIn}: ${f.date(b.checkIn)} → ${f.date(b.checkOut)}`,
+    f.stayLine(b),
+    ...(p.phone ? ["", `${t.questions}: ${p.phone}`] : []),
+    ...(p.siteName ? ["", p.siteName] : []),
   ].join("\n");
 }
 
@@ -386,9 +506,9 @@ export function guestCheckinText(
   ].join("\n");
 }
 
-export function testText(f: LineFormatter, p: { name: string; checkin: boolean; food: boolean; payment: boolean; siteName: string | null }): string {
+export function testText(f: LineFormatter, p: { name: string; checkin: boolean; food: boolean; payment: boolean; booking?: boolean; siteName: string | null }): string {
   const t = f.t;
-  const kinds = [p.checkin && t.kinds.checkin, p.food && t.kinds.food, p.payment && t.kinds.payment].filter(Boolean).join(", ") || t.kinds.nothing;
+  const kinds = [p.booking && t.kinds.booking, p.checkin && t.kinds.checkin, p.food && t.kinds.food, p.payment && t.kinds.payment].filter(Boolean).join(", ") || t.kinds.nothing;
   return [t.testTitle, ...(p.siteName ? [p.siteName] : []), fill(t.testBody, { name: p.name, kinds })].join("\n");
 }
 

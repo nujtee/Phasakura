@@ -261,12 +261,12 @@ describe("staff verification", () => {
     const item = queue.data.items[0]!;
     assert.equal(item.bookingCode, b.bookingCode);
 
-    const img = await h.get(item.slipUrl, { Cookie: `__Host-sid=${viewer}` });
+    const img = await h.get(item.slipUrl!, { Cookie: `__Host-sid=${viewer}` });
     assert.equal(img.status, 200);
     assert.equal(img.headers.get("Content-Type"), "image/png");
     assert.equal(img.headers.get("Cache-Control"), "private, no-store");
     assert.equal(img.headers.get("X-Content-Type-Options"), "nosniff");
-    assert.equal((await h.get(item.slipUrl)).status, 401, "no session, no slip");
+    assert.equal((await h.get(item.slipUrl!)).status, 401, "no session, no slip");
     assert.equal(h.audits("VIEW_SLIP").length, 1);
 
     assert.equal((await h.api("POST", `/api/admin/payments/${item.paymentId}/verify`, { token: viewer, body: {} })).status, 403);
@@ -298,7 +298,8 @@ describe("staff verification", () => {
     assert.equal(look.data.paymentStatus, "REJECTED");
     assert.equal(look.data.expiresAt, "2027-01-10T04:30:00.000Z", "fresh 60-minute hold from the rejection");
     assert.ok(look.data.paymentInstructions);
-    assert.equal(JSON.stringify(look.data).includes("ยอดไม่ตรง"), false, "staff notes stay internal");
+    // The reason is written for the guest (the admin form says so): shown with the payment details.
+    assert.equal(look.data.paymentRejectedReason, "ยอดไม่ตรง");
 
     assert.equal((await h.slip(b.bookingCode, PHONE, slipImage(61))).status, 201);
     const detail = await h.api<AdminBookingDto>("GET", `/api/admin/bookings/${b.bookingCode}`, { token: await admin(h, ["bookings.view"]) });
@@ -329,5 +330,14 @@ describe("staff verification", () => {
     const res = await h.api("POST", `/api/admin/bookings/${b.bookingCode}/payments/${paymentId}/refund`, { token: staff, body: { amountSatang: 700000, reason: "full refund" } });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(h.db.get<{ payment_status: string }>("SELECT payment_status FROM bookings")!.payment_status, "REFUNDED");
+  });
+});
+
+describe("slip verifier configuration", () => {
+  it("a key without a provider name means EasySlip (the supported service); no key = staff check every slip", () => {
+    assert.equal(createSlipVerifier({ SLIP_VERIFY_PROVIDER: "", SLIP_VERIFICATION_API_KEY: "k" })?.provider, "easyslip");
+    assert.equal(createSlipVerifier({ SLIP_VERIFICATION_API_KEY: "k" })?.provider, "easyslip");
+    assert.equal(createSlipVerifier({ SLIP_VERIFY_PROVIDER: "", SLIP_VERIFICATION_API_KEY: " " }), null);
+    assert.equal(createSlipVerifier({}), null);
   });
 });

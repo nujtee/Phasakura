@@ -19,7 +19,10 @@ export const NOTIFICATION_TYPES = [
   "FOOD_CANCELLED", // staff (kitchen): a confirmed booking with food was cancelled
   "PAYMENT_REVIEW", // staff: a slip waits for manual review
   "PAYMENT_CONFIRMED", // staff: a booking is paid and confirmed
+  "NEW_BOOKING", // staff: a guest made a booking (awaiting payment)
   "GUEST_CONFIRMED", // guest: payment received, booking confirmed
+  "GUEST_PAYMENT_REJECTED", // guest: the slip was not accepted (with the reason) — pay again
+  "GUEST_CANCELLED", // guest: the booking was cancelled (with the reason)
   "GUEST_CHECKIN", // guest: check-in reminder
   "TEST", // staff: test message from the admin
 ] as const;
@@ -80,6 +83,8 @@ export interface LineRecipientDto {
   notifyCheckin: boolean;
   notifyFood: boolean;
   notifyPayment: boolean;
+  /** Every new booking (migration 0023). */
+  notifyBooking: boolean;
   active: boolean;
   linkedVia: "CODE" | "MANUAL";
   createdAt: string;
@@ -92,6 +97,8 @@ export interface LineRecipientInput {
   notifyCheckin: boolean;
   notifyFood: boolean;
   notifyPayment: boolean;
+  /** Optional for older clients: unchanged when left out. */
+  notifyBooking?: boolean;
 }
 
 export interface LineLinkCodeDto {

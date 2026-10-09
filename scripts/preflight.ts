@@ -48,6 +48,10 @@ export const SECRETS: { name: string; needs: string }[] = [
   { name: "META_PIXEL_ID", needs: "optional: overrides the Pixel ID from Admin → Marketing for CAPI" },
   { name: "META_TEST_EVENT_CODE", needs: "testing only — remove after Events Manager → Test events" },
   { name: "GA4_SERVICE_ACCOUNT_KEY", needs: "GA4 numbers on the dashboard (Admin → Marketing → GA4 property ID)" },
+  { name: "RESEND_API_KEY", needs: "e-mail notifications (Admin → Settings → E-mail notifications)" },
+  { name: "PAYPAL_CLIENT_ID", needs: "PayPal Checkout (Admin → Finance → Payment settings)" },
+  { name: "PAYPAL_CLIENT_SECRET", needs: "PayPal Checkout (Admin → Finance → Payment settings)" },
+  { name: "PAYPAL_ENV", needs: "optional: \"sandbox\" while testing with sandbox PayPal credentials (unset = live)" },
 ];
 const SECRET_NAMES = new Set(SECRETS.map((s) => s.name));
 const KNOWN_SLIP_PROVIDERS = new Set(["easyslip"]);
@@ -127,7 +131,7 @@ export function preflight(input: PreflightInput): Finding[] {
   const media = str(vars.PUBLIC_MEDIA_BASE_URL).trim();
   if (media && !/^https:\/\/[a-z0-9.-]+(\/[^\s]*)?$/i.test(media)) add("error", "vars", "PUBLIC_MEDIA_BASE_URL must be an https URL (or empty to serve /media/* through the Worker)");
   const provider = str(vars.SLIP_VERIFY_PROVIDER).trim();
-  if (!provider) add("warn", "payments", "SLIP_VERIFY_PROVIDER is empty — staff verify every slip by hand (allowed; automatic checks need a real verification service)");
+  if (!provider) add("warn", "payments", "SLIP_VERIFY_PROVIDER is empty — EasySlip is used once SLIP_VERIFICATION_API_KEY is set; without the key staff verify every slip by hand (allowed)");
   else if (!KNOWN_SLIP_PROVIDERS.has(provider)) add("error", "payments", `SLIP_VERIFY_PROVIDER "${provider}" is not supported (known: ${[...KNOWN_SLIP_PROVIDERS].join(", ")})`);
   else add("ok", "payments", `slip verification: ${provider}`);
   if (vars.META_GRAPH_API_VERSION !== undefined && !/^v\d+\.\d+$/.test(str(vars.META_GRAPH_API_VERSION))) add("error", "vars", "META_GRAPH_API_VERSION must look like v23.0");

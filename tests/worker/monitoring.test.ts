@@ -255,7 +255,9 @@ describe("Admin → System status (system.view)", () => {
     assert.equal(level.primaryAccount, "error");
     assert.equal(level.line, "error", "LINE on without its secrets");
     assert.equal(level.metaTestCode, "warning", "test event code left on in production");
-    assert.equal(level.slipVerification, "warning", "no provider → manual checking");
+    // A key alone means EasySlip, the supported service (migration 0023 work); its value is never shown.
+    assert.equal(level.slipVerification, "ok");
+    assert.equal(res.data.checks.find((c) => c.key === "slipVerification")?.value, "easyslip");
     assert.equal(level.superAdmins, "warning", "a single super admin");
     assert.equal(level.rateLimits, "warning");
     assert.equal(level.cron, "warning", "never ran");

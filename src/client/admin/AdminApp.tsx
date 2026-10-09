@@ -14,6 +14,7 @@ import { BookingDetailPage } from "./bookings/BookingDetailPage.tsx";
 import { BookingsPage } from "./bookings/BookingsPage.tsx";
 import { PricingRulesPage } from "./bookings/PricingRulesPage.tsx";
 import { ReceivingAccountsPage } from "./payments/ReceivingAccountsPage.tsx";
+import { PaymentSettingsPage } from "./payments/PaymentSettingsPage.tsx";
 import { SlipsPage } from "./payments/SlipsPage.tsx";
 import { UnitEditPage } from "./accommodation/UnitEditPage.tsx";
 import { UnitsPage } from "./accommodation/UnitsPage.tsx";
@@ -37,6 +38,7 @@ import { PaymentsPage } from "./payments/PaymentsPage.tsx";
 import { BookingCtaPage, BrandingPage, MarketingPage, SeoPage, WebsiteSettingsPage } from "./settings/SettingsPages.tsx";
 import { ThemePage } from "./settings/ThemePage.tsx";
 import { LinePage } from "./settings/LinePage.tsx";
+import { EmailPage } from "./settings/EmailPage.tsx";
 import { PrivacySettingsPage } from "./settings/PrivacySettingsPage.tsx";
 import { SystemStatusPage } from "./pages/SystemStatusPage.tsx";
 import { ReportPrintPage } from "./reports/ReportPrintPage.tsx";
@@ -178,6 +180,8 @@ function renderPage(segments: string[], notFound: string) {
       return <PricingRulesPage />;
     case "receiving-accounts":
       return <ReceivingAccountsPage />;
+    case "payment-settings":
+      return <PaymentSettingsPage />;
     case "slips":
       return <SlipsPage />;
     case "bookings":
@@ -216,6 +220,8 @@ function renderPage(segments: string[], notFound: string) {
       return <BookingCtaPage />;
     case "settings-line":
       return <LinePage />;
+    case "settings-email":
+      return <EmailPage />;
     case "settings-privacy":
       return <PrivacySettingsPage />;
     case "roles":

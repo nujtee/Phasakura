@@ -1490,6 +1490,142 @@
   border-radius: var(--radius-md);
 }
 
+/* Approval mode note above the queue, PayPal items (no slip image), decline dialog (migration 0023). */
+.adm-slip-mode {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+}
+
+.adm-slip-mode p {
+  margin: 0;
+}
+
+.adm-slip__paypal {
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  min-height: 140px;
+  padding: 16px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.adm-slip__ok {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.adm-slip__actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .adm-slip__actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+}
+
+.slip-decline {
+  width: min(520px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.slip-decline textarea {
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.slip-decline__choice {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+
+/* ---------- Payment settings / e-mail notifications (migration 0023) ---------- */
+.pay-settings__channels {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.pay-settings__channel small,
+.pay-settings__mode small {
+  display: block;
+}
+
+.pay-settings__channel.is-unavailable > span {
+  color: var(--color-muted);
+}
+
+.pay-settings__missing {
+  color: var(--color-warning);
+}
+
+.pay-settings__modes {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+@media (min-width: 760px) {
+  .pay-settings__modes {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.pay-settings__mode {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.pay-settings__mode input {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  flex: none;
+  accent-color: var(--color-primary);
+}
+
+.pay-settings__mode span {
+  display: grid;
+  gap: 4px;
+}
+
+.pay-settings__mode small {
+  color: var(--color-muted);
+  line-height: 1.45;
+}
+
+.pay-settings__mode.is-selected {
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+}
+
+.pay-settings__mode:has(input:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+
+.email-add {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--color-border);
+}
+
 /* ===================================================================== Phase 9 */
 
 .adm-sr {

@@ -231,7 +231,7 @@ function RecipientsTab() {
     try {
       const saved = await apiRequest<LineRecipientDto>("PATCH", `/api/admin/line/recipients/${id}`, {
         name: next.name, language: next.language, notifyCheckin: next.notifyCheckin, notifyFood: next.notifyFood,
-        notifyPayment: next.notifyPayment, active: next.active,
+        notifyPayment: next.notifyPayment, notifyBooking: next.notifyBooking, active: next.active,
       });
       setList((l) => l?.map((x) => (x.id === id ? saved : x)) ?? null);
       return true;
@@ -306,7 +306,7 @@ function RecipientsTab() {
                       </td>
                       <td>
                         <div className="line-types">
-                          {([["notifyCheckin", m.rec.checkin], ["notifyFood", m.rec.food], ["notifyPayment", m.rec.payment]] as const).map(([k, label]) => (
+                          {([["notifyBooking", m.rec.booking], ["notifyCheckin", m.rec.checkin], ["notifyFood", m.rec.food], ["notifyPayment", m.rec.payment]] as const).map(([k, label]) => (
                             <label key={k} className="adm-check">
                               <input type="checkbox" checked={r[k]} disabled={busy} onChange={(e) => void patch(r.id, { [k]: e.currentTarget.checked })} />
                               <span>{label}</span>
@@ -431,7 +431,7 @@ function ManualAdd({ onAdded }: { onAdded: (r: LineRecipientDto) => void }) {
   const { locale } = useAdmin();
   const m = useLineMessages();
   const errors = useLineErrors();
-  const empty = { targetId: "", name: "", language: locale.code as LocaleCode, notifyCheckin: true, notifyFood: false, notifyPayment: false };
+  const empty = { targetId: "", name: "", language: locale.code as LocaleCode, notifyBooking: true, notifyCheckin: true, notifyFood: false, notifyPayment: false };
   const [f, setF] = useState(empty);
   const [fieldErr, setFieldErr] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<Msg>(null);
@@ -472,6 +472,7 @@ function ManualAdd({ onAdded }: { onAdded: (r: LineRecipientDto) => void }) {
             </select>
           </div>
           <div className="line-types">
+            <label className="adm-check"><input type="checkbox" checked={f.notifyBooking} onChange={(e) => setF({ ...f, notifyBooking: e.currentTarget.checked })} /><span>{m.rec.booking}</span></label>
             <label className="adm-check"><input type="checkbox" checked={f.notifyCheckin} onChange={(e) => setF({ ...f, notifyCheckin: e.currentTarget.checked })} /><span>{m.rec.checkin}</span></label>
             <label className="adm-check"><input type="checkbox" checked={f.notifyFood} onChange={(e) => setF({ ...f, notifyFood: e.currentTarget.checked })} /><span>{m.rec.food}</span></label>
             <label className="adm-check"><input type="checkbox" checked={f.notifyPayment} onChange={(e) => setF({ ...f, notifyPayment: e.currentTarget.checked })} /><span>{m.rec.payment}</span></label>

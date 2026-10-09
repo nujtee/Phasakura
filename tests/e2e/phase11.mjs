@@ -91,6 +91,10 @@ await check("pair a staff group with a one-time code (webhook), choose its notif
   await pa.getByText("Connected: Front desk").waitFor({ timeout: 10000 });
   const row = pa.locator("tr", { hasText: "Front desk" });
   await row.waitFor();
+  // New chats get "new booking" notices by default; this suite counts payment / kitchen messages only.
+  if (!(await row.getByLabel("New bookings").isChecked())) throw new Error("new bookings should be on by default");
+  await row.getByLabel("New bookings").uncheck();
+  await until(async () => !(await row.getByLabel("New bookings").isChecked()) && !(await row.getByLabel("New bookings").isDisabled()));
   await row.getByLabel("Payments").check();
   await until(async () => (await row.getByLabel("Payments").isChecked()) && !(await row.getByLabel("Payments").isDisabled()));
   await row.getByLabel("Food / kitchen").check();

@@ -56,3 +56,68 @@ export function fakeGoogle(numbers = { users: 321, views: 1234, events: { view_a
     };
   });
 }
+
+/** Resend e-mail API: accepts every message (id per message). */
+export const fakeResend = () => {
+  let n = 0;
+  return new FakeHttp(["api.resend.com"], () => ({ id: `re_fake_${++n}` }));
+};
+
+/**
+ * PayPal REST (sandbox host): OAuth token, create order, capture, get order — with a little state so a
+ * capture can be repeated, lost or refused like the real API.
+ *   captureMode: COMPLETED | PENDING | DECLINED | LOST (taken, but the answer is lost: 500) | WRONG_AMOUNT
+ */
+export class FakePaypal extends FakeHttp {
+  readonly orders = new Map<string, { value: string; customId: string | null; captured: null | { id: string; status: string; value: string } }>();
+  captureMode: "COMPLETED" | "PENDING" | "DECLINED" | "LOST" | "WRONG_AMOUNT" = "COMPLETED";
+  private seq = 0;
+
+  constructor() {
+    super(["api-m.sandbox.paypal.com", "api-m.paypal.com"], () => ({}));
+    this.respond = (req) => this.answer(req);
+  }
+
+  get captures(): FakeRequest[] {
+    return this.requests.filter((r) => r.url.endsWith("/capture"));
+  }
+
+  private captureBody(id: string, c: { id: string; status: string; value: string }, customId: string | null) {
+    return {
+      id, status: c.status === "COMPLETED" ? "COMPLETED" : "COMPLETED",
+      purchase_units: [{ payments: { captures: [{
+        id: c.id, status: c.status, amount: { currency_code: "THB", value: c.value }, custom_id: customId,
+        ...(c.status === "PENDING" ? { status_details: { reason: "PENDING_REVIEW" } } : {}),
+      }] } }],
+    };
+  }
+
+  private answer(req: FakeRequest): Response {
+    const path = new URL(req.url).pathname;
+    if (path === "/v1/oauth2/token") return jsonResponse({ access_token: "A21AA-fake-token", token_type: "Bearer", expires_in: 32400 });
+    if (path === "/v2/checkout/orders" && req.method === "POST") {
+      const unit = (req.json?.purchase_units as { amount: { value: string }; custom_id?: string }[])[0]!;
+      const id = `5O190127TN36471${String(++this.seq).padStart(2, "0")}`;
+      this.orders.set(id, { value: unit.amount.value, customId: unit.custom_id ?? null, captured: null });
+      return jsonResponse({ id, status: "PAYER_ACTION_REQUIRED", links: [
+        { href: `https://api-m.sandbox.paypal.com/v2/checkout/orders/${id}`, rel: "self", method: "GET" },
+        { href: `https://www.sandbox.paypal.com/checkoutnow?token=${id}`, rel: "payer-action", method: "GET" },
+      ] });
+    }
+    const m = /^\/v2\/checkout\/orders\/([^/]+)(\/capture)?$/.exec(path);
+    const order = m ? this.orders.get(m[1]!) : undefined;
+    if (!m || !order) return jsonResponse({ name: "RESOURCE_NOT_FOUND", details: [{ issue: "INVALID_RESOURCE_ID" }] }, 404);
+    if (!m[2]) {
+      return jsonResponse(order.captured ? this.captureBody(m[1]!, order.captured, order.customId) : { id: m[1], status: "APPROVED", purchase_units: [{}] });
+    }
+    if (order.captured) return jsonResponse({ name: "UNPROCESSABLE_ENTITY", details: [{ issue: "ORDER_ALREADY_CAPTURED" }] }, 422);
+    if (this.captureMode === "DECLINED") return jsonResponse({ name: "UNPROCESSABLE_ENTITY", details: [{ issue: "INSTRUMENT_DECLINED" }] }, 422);
+    order.captured = {
+      id: `3C67902${String(this.seq).padStart(2, "0")}${m[1]!.slice(-4)}`,
+      status: this.captureMode === "PENDING" ? "PENDING" : "COMPLETED",
+      value: this.captureMode === "WRONG_AMOUNT" ? "1.00" : order.value,
+    };
+    if (this.captureMode === "LOST") return new Response("upstream error", { status: 500 });
+    return jsonResponse(this.captureBody(m[1]!, order.captured, order.customId), 201);
+  }
+}

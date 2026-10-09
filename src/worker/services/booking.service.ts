@@ -16,7 +16,8 @@ import { ConflictError, HttpError, NotFoundError, TooManyRequestsError, Validati
 import type { BookingRepository, BookingRow } from "../repositories/booking.repository.ts";
 import type { PaymentRepository } from "../repositories/payment.repository.ts";
 import { publicMediaUrl } from "./media-url.ts";
-import { toPaymentDto } from "./payment.service.ts";
+import { availableChannels, toPaymentDto } from "./payment.service.ts";
+import { promptpayPayload } from "../../shared/promptpay.ts";
 import { newId } from "../security/tokens.ts";
 import { addMs, iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
@@ -70,6 +71,8 @@ export class BookingService {
     private readonly lineStatus: ((row: BookingRow) => Promise<GuestLineDto>) | null = null,
     /** Marketing attribution + Conversions API Lead (Phase 14). */
     private readonly marketing: MarketingRepository | null = null,
+    /** PayPal Checkout can be offered (Cloudflare Secrets present). */
+    private readonly paypalReady: boolean = false,
   ) {}
 
   async quote(input: QuoteInput): Promise<QuoteDto> {
@@ -111,8 +114,11 @@ export class BookingService {
     const today = todayIn(await this.quotes.timezone(), now);
     for (let attempt = 0; attempt < BOOKING_LIMITS.codeAttempts; attempt++) {
       const code = generateBookingCode(today);
+      const bookingId = newId();
       try {
-        await this.db.batch(this.createStatements(prepared, input, phoneNormalized, code, now, meta));
+        // Staff notices (LINE / e-mail) are queued in the same batch: only if the booking really exists.
+        const notices = this.outbox?.bookingCreated ? await this.outbox.bookingCreated(bookingId, iso(now)) : [];
+        await this.db.batch([...this.createStatements(prepared, input, phoneNormalized, code, bookingId, now, meta), ...notices]);
         const row = await this.repo.findByCode(code);
         return { booking: await this.toPublic(row!), replayed: false };
       } catch (error) {
@@ -137,10 +143,9 @@ export class BookingService {
     return this.toPublic(existing);
   }
 
-  private createStatements(p: PreparedBooking, input: CreateBookingInput, phoneNormalized: string, code: string, now: Date, meta: RequestMeta): D1PreparedStatementLike[] {
+  private createStatements(p: PreparedBooking, input: CreateBookingInput, phoneNormalized: string, code: string, bookingId: string, now: Date, meta: RequestMeta): D1PreparedStatementLike[] {
     const repo = this.repo;
     const at = iso(now);
-    const bookingId = newId();
     const itemId = newId();
     const q = p.quote;
     const statements: D1PreparedStatementLike[] = [
@@ -395,15 +400,23 @@ export class BookingService {
       throw new ConflictError("Only pending or confirmed bookings can be cancelled", "BOOKING_NOT_CANCELLABLE");
     }
     const now = iso(this.clock());
-    const results = await this.db.batch([
-      this.repo.cancelStatement(row.id, actor.userId, reason, now),
-      ...this.repo.releaseStatements(row.id, row.check_in, row.check_out, now),
-      ...(this.outbox ? await this.outbox.bookingCancelled(row.id, row.booking_status === "CONFIRMED", now) : []),
-    ]);
+    const results = await this.db.batch(await this.cancelStatements(row, actor.userId, reason, now));
     if (!(results[0]?.results.length)) throw new ConflictError("The booking changed meanwhile, please reload", "BOOKING_NOT_CANCELLABLE");
     await this.log.auditStatement(actor.userId, "CANCEL_BOOKING", "bookings", row.id,
       { status: row.booking_status, paymentStatus: row.payment_status }, { status: "CANCELLED", reason }, meta).run();
     return this.toAdmin((await this.repo.findByCode(row.booking_code))!);
+  }
+
+  /**
+   * Cancels a PENDING / CONFIRMED booking and gives back what it held; the guest (LINE / e-mail) and the
+   * kitchen are told in the same batch. The first statement RETURNs the id when the cancel happened.
+   */
+  async cancelStatements(row: BookingRow, actorId: string, reason: string, now: string): Promise<D1PreparedStatementLike[]> {
+    return [
+      this.repo.cancelStatement(row.id, actorId, reason, now),
+      ...this.repo.releaseStatements(row.id, row.check_in, row.check_out, now),
+      ...(this.outbox ? await this.outbox.bookingCancelled(row.id, row.booking_status === "CONFIRMED", now) : []),
+    ];
   }
 
   /**
@@ -475,16 +488,19 @@ export class BookingService {
   // ================================================================ DTOs (from snapshots, never from current prices)
 
   private async toPublic(row: BookingRow): Promise<PublicBookingDto> {
-    const [items, included, food, snapshot, lineUpdates, tarp] = await Promise.all([
+    // Payment details only while the booking is still waiting for money.
+    const awaitingPayment = row.booking_status === "PENDING" && (row.payment_status === "UNPAID" || row.payment_status === "REJECTED");
+    const [items, included, food, snapshot, lineUpdates, tarp, paySettings, payments] = await Promise.all([
       this.repo.items(row.id),
       this.repo.includedMeals(row.id),
       this.repo.food(row.id),
       this.payments.snapshot(row.id),
       this.lineStatus ? this.lineStatus(row) : Promise.resolve({ available: false, linked: false }),
       this.repo.tarp(row.id),
+      awaitingPayment ? this.payments.settings() : Promise.resolve(null),
+      awaitingPayment && row.payment_status === "REJECTED" ? this.payments.payments(row.id) : Promise.resolve([]),
     ]);
-    // Payment details only while the booking is still waiting for money.
-    const awaitingPayment = row.booking_status === "PENDING" && (row.payment_status === "UNPAID" || row.payment_status === "REJECTED");
+    const rejected = payments.filter((p) => p.status === "REJECTED").at(-1);
     const item = items[0]!;
     return {
       bookingCode: row.booking_code,
@@ -495,14 +511,20 @@ export class BookingService {
       expiresAt: row.booking_status === "PENDING" ? row.expires_at : null,
       createdAt: row.created_at,
       lineUpdates,
-      paymentInstructions: awaitingPayment && snapshot ? {
+      paymentInstructions: awaitingPayment && snapshot && paySettings ? {
         bankName: snapshot.bank_name_snapshot,
         accountName: snapshot.account_name_snapshot,
         accountNumber: snapshot.account_number_snapshot,
         promptpayNumber: snapshot.promptpay_number_snapshot,
         qrUrl: publicMediaUrl(snapshot.payment_qr_snapshot, this.mediaBaseUrl),
         amountDueSatang: row.total_satang,
+        channels: availableChannels(paySettings, {
+          promptpay: snapshot.promptpay_number_snapshot, accountNumber: snapshot.account_number_snapshot, qr: snapshot.payment_qr_snapshot,
+        }, this.paypalReady),
+        promptpayPayload: snapshot.promptpay_number_snapshot && row.total_satang > 0 ? promptpayPayload(snapshot.promptpay_number_snapshot, row.total_satang) : null,
       } : null,
+      paymentRejectedReason: rejected?.rejected_reason ?? null,
+      cancelReason: row.booking_status === "CANCELLED" ? row.cancel_reason : null,
       checkIn: row.check_in,
       checkOut: row.check_out,
       nights: row.nights,

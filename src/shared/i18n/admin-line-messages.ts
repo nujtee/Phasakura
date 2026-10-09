@@ -52,6 +52,7 @@ const th = {
     active: "เปิดใช้งาน",
     inactive: "ปิดอยู่",
     kinds: { USER: "บุคคล", GROUP: "กลุ่ม", ROOM: "ห้องแชต" },
+    booking: "การจองใหม่",
     checkin: "เช็กอินล่วงหน้า",
     food: "อาหาร/ครัว",
     payment: "การชำระเงิน",
@@ -107,6 +108,7 @@ const th = {
       CHECKIN_DIGEST: "เช็กอินล่วงหน้า", FOOD_DIGEST: "อาหารที่ต้องเตรียม", FOOD_ORDER: "คำสั่งอาหารใหม่", FOOD_CANCELLED: "ยกเลิกอาหาร",
       PAYMENT_REVIEW: "สลิปรอตรวจ", PAYMENT_CONFIRMED: "ชำระเงินแล้ว", GUEST_CONFIRMED: "ลูกค้า: ยืนยันการจอง",
       GUEST_CHECKIN: "ลูกค้า: เตือนเช็กอิน", TEST: "ทดสอบ",
+      NEW_BOOKING: "การจองใหม่", GUEST_PAYMENT_REJECTED: "ลูกค้า: การชำระเงินไม่ผ่าน", GUEST_CANCELLED: "ลูกค้า: ยกเลิกการจอง",
     },
     statuses: { PENDING: "รอส่ง", SENT: "ส่งแล้ว", FAILED: "ไม่สำเร็จ", CANCELLED: "ข้าม/ยกเลิก" },
     reasons: {
@@ -183,6 +185,7 @@ const en: AdminLineMessages = {
     active: "Active",
     inactive: "Off",
     kinds: { USER: "Person", GROUP: "Group", ROOM: "Room" },
+    booking: "New bookings",
     checkin: "Upcoming check-ins",
     food: "Food / kitchen",
     payment: "Payments",
@@ -238,6 +241,7 @@ const en: AdminLineMessages = {
       CHECKIN_DIGEST: "Upcoming check-ins", FOOD_DIGEST: "Food to prepare", FOOD_ORDER: "New food order", FOOD_CANCELLED: "Food cancelled",
       PAYMENT_REVIEW: "Slip to review", PAYMENT_CONFIRMED: "Paid", GUEST_CONFIRMED: "Guest: booking confirmed",
       GUEST_CHECKIN: "Guest: check-in reminder", TEST: "Test",
+      NEW_BOOKING: "New booking", GUEST_PAYMENT_REJECTED: "Guest: payment declined", GUEST_CANCELLED: "Guest: booking cancelled",
     },
     statuses: { PENDING: "Waiting", SENT: "Sent", FAILED: "Failed", CANCELLED: "Skipped" },
     reasons: {
@@ -312,6 +316,7 @@ const zhCN: AdminLineMessages = {
     active: "启用",
     inactive: "已关闭",
     kinds: { USER: "个人", GROUP: "群组", ROOM: "聊天室" },
+    booking: "新预订",
     checkin: "入住提前通知",
     food: "餐饮/厨房",
     payment: "付款",
@@ -367,6 +372,7 @@ const zhCN: AdminLineMessages = {
       CHECKIN_DIGEST: "入住提前通知", FOOD_DIGEST: "需准备的餐饮", FOOD_ORDER: "新餐饮订单", FOOD_CANCELLED: "餐饮取消",
       PAYMENT_REVIEW: "待审核凭证", PAYMENT_CONFIRMED: "已付款", GUEST_CONFIRMED: "客人：预订确认",
       GUEST_CHECKIN: "客人：入住提醒", TEST: "测试",
+      NEW_BOOKING: "新预订", GUEST_PAYMENT_REJECTED: "客人：付款未通过", GUEST_CANCELLED: "客人：预订取消",
     },
     statuses: { PENDING: "等待中", SENT: "已发送", FAILED: "失败", CANCELLED: "已跳过" },
     reasons: {

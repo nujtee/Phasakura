@@ -1,4 +1,6 @@
-import { ACCOUNT_NUMBER_PATTERN, PAYMENT_METHODS, PROMPTPAY_PATTERN, type ReceivingAccountInput } from "../../shared/payment-types.ts";
+import {
+  ACCOUNT_NUMBER_PATTERN, PAYMENT_CHANNELS, PAYMENT_METHODS, PROMPTPAY_PATTERN, type PaymentChannel, type PaymentSettingsInput, type ReceivingAccountInput,
+} from "../../shared/payment-types.ts";
 import { BOOKING_CODE_PATTERN } from "../../shared/booking-types.ts";
 import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
 import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
@@ -55,8 +57,34 @@ function parseAccount(body: Record<string, unknown>, partial: boolean): Partial<
   return out;
 }
 
+/** { approvalMode: "AUTO" | "MANUAL", channels: { PROMPTPAY, BANK_TRANSFER, QR_CODE, PAYPAL: boolean } } */
+function parsePaymentSettings(body: Record<string, unknown>): PaymentSettingsInput {
+  const v = new Validator(body).allowOnly(["approvalMode", "channels"]);
+  const approvalMode = v.oneOf("approvalMode", ["AUTO", "MANUAL"] as const, { required: true })!;
+  const raw = body.channels;
+  const channels = {} as Record<PaymentChannel, boolean>;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) v.errors.channels = "REQUIRED";
+  else {
+    const c = raw as Record<string, unknown>;
+    for (const key of Object.keys(c)) if (!(PAYMENT_CHANNELS as readonly string[]).includes(key)) v.errors[`channels.${key}`] = "UNKNOWN_FIELD";
+    for (const ch of PAYMENT_CHANNELS) {
+      if (typeof c[ch] !== "boolean") v.errors[`channels.${ch}`] = "EXPECTED_BOOLEAN";
+      else channels[ch] = c[ch] as boolean;
+    }
+  }
+  v.assertValid();
+  return { approvalMode, channels };
+}
+
 export function paymentController(services: ServicesFor) {
   return {
+    // ------------------------------------------------------------------ payment settings (channels, approval mode)
+    settings: withPermission("receiving_accounts.view", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).payments.getSettings(auth, requestMeta(ctx)))),
+
+    saveSettings: withPermission("receiving_accounts.edit", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).payments.saveSettings(auth, parsePaymentSettings(await readJsonObject(ctx.request)), requestMeta(ctx)))),
+
     // ------------------------------------------------------------------ receiving accounts
     accounts: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).payments.listAccounts(auth, requestMeta(ctx)))),
 

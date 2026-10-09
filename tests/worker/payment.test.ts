@@ -97,6 +97,9 @@ describe("payment account snapshot", () => {
     assert.deepEqual(first.paymentInstructions, {
       bankName: "DEV BANK (ตัวอย่าง)", accountName: "DEV SAMPLE ACCOUNT", accountNumber: "000-0-00000-0",
       promptpayNumber: "0000000000", qrUrl: null, amountDueSatang: 700000,
+      // Owner's channels × what this account has (no QR image, PayPal not configured); Thai QR with the amount.
+      channels: ["PROMPTPAY", "BANK_TRANSFER"],
+      promptpayPayload: "00020101021229370016A000000677010111011300660000000005802TH530376454077000.0063043C6C",
     });
     const editor = await admin(h, ["receiving_accounts.edit"]);
     await h.api("PATCH", "/api/admin/receiving-accounts/dev_account_01", { token: editor, body: { bankName: "Renamed Bank", accountNumber: "999-9-99999-9" } });

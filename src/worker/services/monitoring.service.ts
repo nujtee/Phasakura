@@ -121,8 +121,9 @@ export class MonitoringService {
       c("bootstrapPassword", facts.superAdminsMustChange ? "warning" : "ok", facts.superAdminsMustChange ? String(facts.superAdminsMustChange) : null),
       c("siteName", facts.siteName ? "ok" : "error", facts.siteName),
       c("primaryAccount", facts.primaryAccount ? "ok" : "error", facts.primaryAccount ? "yes" : "no"),
-      c("slipVerification", env.SLIP_VERIFY_PROVIDER?.trim() && has(env.SLIP_VERIFICATION_API_KEY) ? "ok" : "warning",
-        env.SLIP_VERIFY_PROVIDER?.trim() && has(env.SLIP_VERIFICATION_API_KEY) ? env.SLIP_VERIFY_PROVIDER.trim() : "manual"),
+      // A key alone means EasySlip (the supported service).
+      c("slipVerification", has(env.SLIP_VERIFICATION_API_KEY) ? "ok" : "warning",
+        has(env.SLIP_VERIFICATION_API_KEY) ? env.SLIP_VERIFY_PROVIDER?.trim() || "easyslip" : "manual"),
       c("line", facts.lineEnabled ? (lineSecrets ? "ok" : "error") : "ok", facts.lineEnabled ? "on" : "off"),
       c("ga4", "ok", m?.ga4_enabled === 1 ? m.ga4_measurement_id : "off"),
       c("ga4Data", m?.ga4_property_id ? (parseServiceAccountKey(env.GA4_SERVICE_ACCOUNT_KEY) ? "ok" : "warning") : "ok", m?.ga4_property_id ? "on" : "off"),

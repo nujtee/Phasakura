@@ -19,7 +19,7 @@
 | รายการ | สถานะ |
 |---|---|
 | โดเมน `phasakura.com` | จดผ่าน Cloudflare Registrar, nameserver ของ Cloudflare — Custom Domain (apex + www) สร้าง DNS / ใบรับรองให้ตอน deploy ครั้งแรก |
-| D1 `phasakura-db` | สร้างแล้ว (APAC) และ **migrate ครบ 0001–0022 แล้ว** (0022 = สร้างตาราง bookings / home_slides / booking_cta_settings ใหม่ให้ D1 ตรวจ CHECK ได้ — apply 2026-10-09 08:48 น. ตอนตารางยังว่าง, จุดย้อนกลับ Time Travel ก่อน 2026-10-09T01:47Z) — 0001–0020 ตรวจด้วย fingerprint เทียบกับไฟล์ migration (schema 84,667 bytes / seed data 13,376 bytes ตรงกันทุกไบต์); 0021 (พื้นที่กางทาร์ป) apply 2026-10-09 00:40 น. (จุดย้อนกลับ Time Travel: ก่อน 2026-10-08T17:38Z) — 221 objects, 38 triggers ตรงกับฐานข้อมูลที่สร้างจากไฟล์, `d1_migrations` 21 แถว |
+| D1 `phasakura-db` | สร้างแล้ว (APAC) และ **migrate ครบ 0001–0023 แล้ว** (0023 = ช่องทางชำระเงิน / Auto-Manual approve / PayPal / อีเมล — เพิ่มอย่างเดียว, apply 2026-10-09 09:47 น., จุดย้อนกลับ Time Travel ก่อน 2026-10-09T02:46Z — +20 objects: 5 ตาราง, 6 index, 4 trigger, `d1_migrations` 23 แถว) (0022 = สร้างตาราง bookings / home_slides / booking_cta_settings ใหม่ให้ D1 ตรวจ CHECK ได้ — apply 2026-10-09 08:48 น. ตอนตารางยังว่าง, จุดย้อนกลับ Time Travel ก่อน 2026-10-09T01:47Z) — 0001–0020 ตรวจด้วย fingerprint เทียบกับไฟล์ migration (schema 84,667 bytes / seed data 13,376 bytes ตรงกันทุกไบต์); 0021 (พื้นที่กางทาร์ป) apply 2026-10-09 00:40 น. (จุดย้อนกลับ Time Travel: ก่อน 2026-10-08T17:38Z) — 221 objects, 38 triggers ตรงกับฐานข้อมูลที่สร้างจากไฟล์, `d1_migrations` 21 แถว |
 | R2 | `phasakura-media-public`, `phasakura-media-private` สร้างแล้ว (bucket `phasakura` ที่สร้างเองไม่ได้ใช้ — ลบได้) |
 | `wrangler.jsonc` | `APP_BASE_URL=https://phasakura.com`, routes `phasakura.com` + `www.phasakura.com` (www → 301 ไป apex), `workers_dev: false` — `npm run preflight` 0 error |
 | SUPER_ADMIN คนแรก | `suriya.rth@gmail.com` (รหัสผ่านชั่วคราว — ต้องเปลี่ยนตอนเข้าครั้งแรก) |
@@ -122,6 +122,12 @@ npx wrangler secret list            # ดูได้แค่ชื่อ
 | `META_PIXEL_ID` | ไม่บังคับ (ทับ Pixel ID ใน Admin สำหรับ CAPI) |
 | `META_TEST_EVENT_CODE` | ช่วงทดสอบเท่านั้น — **ลบหลังทดสอบ** (สถานะระบบเตือนถ้ายังอยู่ใน production) |
 | `GA4_SERVICE_ACCOUNT_KEY` | ตัวเลข GA4 บน Dashboard (ใส่ property ID ใน Admin → Marketing → GA4) |
+| `RESEND_API_KEY` | อีเมลแจ้งเตือน (Admin → ตั้งค่า → อีเมลแจ้งเตือน) — ต้องยืนยันโดเมนผู้ส่งใน Resend (เพิ่ม DNS ที่ Resend ให้) |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | PayPal Checkout (Admin → การเงิน → ตั้งค่าการชำระเงิน) — PayPal Developer → Apps & Credentials → สร้าง REST app (Live) |
+| `PAYPAL_ENV` | ไม่บังคับ: `sandbox` เฉพาะตอนทดสอบด้วย credentials ของ sandbox (ไม่ตั้ง = PayPal จริง) |
+
+`SLIP_VERIFICATION_API_KEY` อย่างเดียว (ไม่ตั้ง `SLIP_VERIFY_PROVIDER`) = ใช้ EasySlip — **อย่าเปิด IP whitelist ใน EasySlip**
+(Cloudflare Workers ไม่มี IP ขาออกคงที่) โหมด Auto / Manual approve เลือกใน Admin → การเงิน → ตั้งค่าการชำระเงิน
 
 ถ้าสงสัยว่า secret รั่ว: สร้างค่าใหม่ที่ผู้ให้บริการ (LINE: reissue channel secret / token, Meta: generate token ใหม่,
 Google: สร้าง key ใหม่แล้วลบ key เก่า) → `wrangler secret put` → ตรวจด้วย "Check connection" / "Send test event"

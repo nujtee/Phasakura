@@ -22,6 +22,8 @@ export interface LineRecipientRow {
   notify_checkin: number;
   notify_food: number;
   notify_payment: number;
+  /** Migration 0023; undefined before it (treated as on). */
+  notify_booking?: number;
   active: number;
   linked_via: "CODE" | "MANUAL";
   deleted_at: string | null;
@@ -65,7 +67,7 @@ export interface NotificationListRow extends NotificationRow {
 }
 
 /** Recipient flags a notification kind is filtered on — fixed strings, never request data. */
-export type RecipientFlag = "notify_checkin" | "notify_food" | "notify_payment";
+export type RecipientFlag = "notify_checkin" | "notify_food" | "notify_payment" | "notify_booking";
 
 const NOTIFICATION_COLUMNS = `id, notification_type, idempotency_key, booking_id, language_code, recipient, status, attempts, max_attempts,
   next_attempt_at, last_error, payload_json, scheduled_for, sent_at, created_at`;
@@ -131,16 +133,16 @@ export class LineRepository {
   }
 
   insertRecipientStatement(r: {
-    id: string; targetId: string; name: string; language: string; checkin: boolean; food: boolean; payment: boolean;
+    id: string; targetId: string; name: string; language: string; checkin: boolean; food: boolean; payment: boolean; booking: boolean;
     via: "CODE" | "MANUAL"; actorId: string | null; now: string;
   }): D1PreparedStatementLike {
     return this.db
       .prepare(
-        `INSERT INTO line_recipients (id, target_id, name, language_code, notify_checkin, notify_food, notify_payment, active, linked_via,
+        `INSERT INTO line_recipients (id, target_id, name, language_code, notify_checkin, notify_food, notify_payment, notify_booking, active, linked_via,
            created_at, created_by, updated_at, updated_by)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?9, ?10, ?9, ?10)`,
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?11, 1, ?8, ?9, ?10, ?9, ?10)`,
       )
-      .bind(r.id, r.targetId, r.name, r.language, r.checkin ? 1 : 0, r.food ? 1 : 0, r.payment ? 1 : 0, r.via, r.now, r.actorId);
+      .bind(r.id, r.targetId, r.name, r.language, r.checkin ? 1 : 0, r.food ? 1 : 0, r.payment ? 1 : 0, r.via, r.now, r.actorId, r.booking ? 1 : 0);
   }
 
   /** A chat that was removed (or left) comes back: same row, new name/language, active again. */
@@ -153,14 +155,14 @@ export class LineRepository {
       .bind(id, r.name, r.language, r.via, r.now, r.actorId);
   }
 
-  updateRecipientStatement(id: string, r: { name: string; language: string; checkin: boolean; food: boolean; payment: boolean; active: boolean }, actorId: string, now: string): D1PreparedStatementLike {
+  updateRecipientStatement(id: string, r: { name: string; language: string; checkin: boolean; food: boolean; payment: boolean; booking: boolean; active: boolean }, actorId: string, now: string): D1PreparedStatementLike {
     return this.db
       .prepare(
         `UPDATE line_recipients SET name = ?2, language_code = ?3, notify_checkin = ?4, notify_food = ?5, notify_payment = ?6,
-           active = ?7, updated_at = ?8, updated_by = ?9
+           notify_booking = ?10, active = ?7, updated_at = ?8, updated_by = ?9
           WHERE id = ?1 AND deleted_at IS NULL RETURNING id`,
       )
-      .bind(id, r.name, r.language, r.checkin ? 1 : 0, r.food ? 1 : 0, r.payment ? 1 : 0, r.active ? 1 : 0, now, actorId);
+      .bind(id, r.name, r.language, r.checkin ? 1 : 0, r.food ? 1 : 0, r.payment ? 1 : 0, r.active ? 1 : 0, now, actorId, r.booking ? 1 : 0);
   }
 
   /** Soft delete: logs keep their recipient name. */
@@ -336,6 +338,37 @@ export class LineRepository {
       [now]);
   }
 
+  /** A guest booked (same batch as the booking insert; marker: created_at = now). */
+  newBookingStatement(bookingId: string, now: string): D1PreparedStatementLike {
+    return this.staffOutbox("NEW_BOOKING", "notify_booking", `NEW_BOOKING:${bookingId}:staff:`, bookingId, null, now, now,
+      "EXISTS (SELECT 1 FROM bookings b WHERE b.id = ?3 AND b.created_at = ?7)", [now]);
+  }
+
+  /** One guest message (only when the guest linked LINE to this booking and guest messages are on). */
+  private guestOutbox(type: string, key: string, bookingId: string, payload: unknown, now: string, guard: string, guardBinds: unknown[]): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT OR IGNORE INTO notification_logs (id, channel, notification_type, idempotency_key, booking_id, language_code, recipient,
+           payload_json, scheduled_for, created_at, updated_at)
+         SELECT lower(hex(randomblob(16))), 'LINE', ?1, ?2, b.id, b.language_code, 'guest:' || b.id, ?4, ?5, ?5, ?5
+           FROM bookings b JOIN booking_line_links l ON l.booking_id = b.id
+          WHERE b.id = ?3 AND ${GUEST_ENABLED} AND ${guard}`,
+      )
+      .bind(type, key, bookingId, payload === null ? null : JSON.stringify(payload), now, ...guardBinds);
+  }
+
+  /** Staff turned a slip down in this batch: the guest hears why and that they can pay again. */
+  guestPaymentRejectedStatement(paymentId: string, bookingId: string, now: string): D1PreparedStatementLike {
+    return this.guestOutbox("GUEST_PAYMENT_REJECTED", `GUEST_PAYMENT_REJECTED:${paymentId}`, bookingId, { paymentId }, now,
+      "EXISTS (SELECT 1 FROM payments p WHERE p.id = ?6 AND p.status = 'REJECTED')", [paymentId]);
+  }
+
+  /** Staff cancelled the booking in this batch (marker: cancelled_at = now): the guest hears why. */
+  guestCancelledStatement(bookingId: string, now: string): D1PreparedStatementLike {
+    return this.guestOutbox("GUEST_CANCELLED", `GUEST_CANCELLED:${bookingId}`, bookingId, null, now,
+      "b.booking_status = 'CANCELLED' AND b.cancelled_at = ?6", [now]);
+  }
+
   /** Daily digests for `date` (+ guest reminders). Safe to run every minute: keys are per date. */
   digestStatements(date: string, daysBefore: number, now: string): D1PreparedStatementLike[] {
     const payload = { date, daysBefore };
@@ -482,7 +515,8 @@ export class LineRepository {
     const [b, items, food] = await this.db.batch([
       this.db
         .prepare(
-          `SELECT id, booking_code, customer_name, check_in, check_out, nights, adults, children, booking_status, payment_status, total_satang
+          `SELECT id, booking_code, customer_name, check_in, check_out, nights, adults, children, booking_status, payment_status, total_satang,
+                  cancel_reason, expires_at, created_at
              FROM bookings WHERE id IN (SELECT value FROM json_each(?1)) ORDER BY check_in, booking_code`,
         )
         .bind(list),
@@ -505,7 +539,10 @@ export class LineRepository {
         )
         .bind(list, lang),
     ]);
-    type B = { id: string; booking_code: string; customer_name: string; check_in: string; check_out: string; nights: number; adults: number; children: number; booking_status: string; payment_status: string; total_satang: number };
+    type B = {
+      id: string; booking_code: string; customer_name: string; check_in: string; check_out: string; nights: number; adults: number; children: number;
+      booking_status: string; payment_status: string; total_satang: number; cancel_reason: string | null; expires_at: string | null; created_at: string;
+    };
     type I = { booking_id: string; item_type: MsgBooking["itemType"]; quantity: number; unit_name_snapshot: string; tarps: number };
     type F = { booking_id: string; service_date: string; option_name_snapshot: string; quantity: number; service_time: string | null; category: string };
     const firstItem = new Map<string, I>();
@@ -522,6 +559,7 @@ export class LineRepository {
         tarps: item?.item_type === "OWN_TENT" ? item.tarps : 0,
         adults: r.adults, children: r.children, bookingStatus: r.booking_status, paymentStatus: r.payment_status,
         totalSatang: r.total_satang, food: foodBy.get(r.id) ?? [],
+        cancelReason: r.cancel_reason, expiresAt: r.booking_status === "PENDING" ? r.expires_at : null, createdAt: r.created_at,
       };
     });
   }
@@ -547,15 +585,23 @@ export class LineRepository {
     return row !== null;
   }
 
-  latestPaidMethod(bookingId: string): Promise<{ method: string } | null> {
+  latestPaidMethod(bookingId: string): Promise<{ method: string; channel: string | null } | null> {
     return this.db
-      .prepare("SELECT method FROM payments WHERE booking_id = ?1 AND status IN ('PAID', 'VERIFIED') ORDER BY verified_at DESC, id LIMIT 1")
+      .prepare("SELECT method, channel FROM payments WHERE booking_id = ?1 AND status IN ('PAID', 'VERIFIED') ORDER BY verified_at DESC, id LIMIT 1")
       .bind(bookingId)
       .first();
   }
 
-  payment(paymentId: string): Promise<{ status: string; amount_satang: number } | null> {
-    return this.db.prepare("SELECT status, amount_satang FROM payments WHERE id = ?1").bind(paymentId).first();
+  payment(paymentId: string): Promise<{ status: string; amount_satang: number; channel: string | null; rejected_reason: string | null } | null> {
+    return this.db.prepare("SELECT status, amount_satang, channel, rejected_reason FROM payments WHERE id = ?1").bind(paymentId).first();
+  }
+
+  /** Newest automatic check of a payment (for the staff review message). */
+  latestAutoCheck(paymentId: string): Promise<{ result: string; failure_code: string | null } | null> {
+    return this.db
+      .prepare("SELECT result, failure_code FROM slip_verifications WHERE payment_id = ?1 AND method = 'AUTO' ORDER BY created_at DESC, id DESC LIMIT 1")
+      .bind(paymentId)
+      .first();
   }
 
   bookingLanguage(bookingId: string): Promise<{ language_code: string; booking_code: string; booking_status: string; check_out: string } | null> {

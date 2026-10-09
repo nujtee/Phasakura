@@ -5,7 +5,7 @@ import type { PasswordResetDelivery } from "../../src/worker/services/password-l
 import type { SlipVerifier } from "../../src/worker/slip/slip-verifier.ts";
 import { makeEnv, type MemoryBucket } from "./fake-env.ts";
 import { FakeLine } from "./fake-line.ts";
-import { fakeGoogle, fakeMeta } from "./fake-http.ts";
+import { fakeGoogle, fakeMeta, fakeResend, FakePaypal } from "./fake-http.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
 import { SqliteD1 } from "./sqlite-d1.ts";
 import { pngBytes } from "./images.ts";
@@ -47,6 +47,9 @@ export class Harness {
   /** Fake Meta Graph API (Conversions API) and Google APIs (GA4 Data API). */
   readonly meta = fakeMeta();
   readonly google = fakeGoogle();
+  /** Fake Resend (e-mail) and PayPal REST API (migration 0023). */
+  readonly resend = fakeResend();
+  readonly paypal = new FakePaypal();
   /** Fake OpenStreetMap tile server: every tile request the app makes, and the answer it gets. */
   readonly tileRequests: { url: string; headers: Record<string, string> }[] = [];
   tileResponse: () => Response | Promise<Response> = () => new Response(pngBytes(256, 256), { headers: { "Content-Type": "image/png" } });
@@ -61,6 +64,8 @@ export class Harness {
       lineFetch: (input: string, init?: RequestInit) => this.line.fetch(input, init),
       metaFetch: (input: string, init?: RequestInit) => this.meta.fetch(input, init),
       googleFetch: (input: string, init?: RequestInit) => this.google.fetch(input, init),
+      emailFetch: (input: string, init: RequestInit) => this.resend.fetch(input, init),
+      paypalFetch: (input: string, init: RequestInit) => this.paypal.fetch(input, init),
       mapFetch: async (input: string, init?: RequestInit) => {
         this.tileRequests.push({ url: input, headers: Object.fromEntries(new Headers(init?.headers).entries()) });
         return this.tileResponse();
@@ -119,12 +124,13 @@ export class Harness {
     harnessVerifier.current = v;
   }
 
-  /** Multipart slip upload (public). */
-  async slip<T = unknown>(code: string, phone: string, file: { bytes: Uint8Array; name: string; type: string }) {
+  /** Multipart slip upload (public); `channel` = the way to pay the guest chose. */
+  async slip<T = unknown>(code: string, phone: string, file: { bytes: Uint8Array; name: string; type: string }, channel?: string) {
     const form = new FormData();
     form.set("bookingCode", code);
     form.set("phone", phone);
     form.set("file", new File([file.bytes as BlobPart], file.name, { type: file.type }));
+    if (channel) form.set("channel", channel);
     const res = await this.app.fetch(
       new Request(`${ORIGIN}/api/public/bookings/slip`, {
         method: "POST",
@@ -135,6 +141,17 @@ export class Harness {
     );
     const body = (await res.json()) as { data?: T; error?: ApiErrorBody["error"] };
     return { status: res.status, data: body.data as T, error: body.error };
+  }
+
+  /** Resend / PayPal secrets as Cloudflare Secrets would provide them (null = not set). */
+  emailKey(key: string | null = "re_test_key") {
+    this.env.RESEND_API_KEY = key ?? undefined;
+  }
+
+  paypalSecrets(id: string | null = "paypal-client-id", secret: string | null = "paypal-client-secret") {
+    this.env.PAYPAL_CLIENT_ID = id ?? undefined;
+    this.env.PAYPAL_CLIENT_SECRET = secret ?? undefined;
+    this.env.PAYPAL_ENV = "sandbox";
   }
 
   /** LINE secrets as Cloudflare Secrets would provide them. */

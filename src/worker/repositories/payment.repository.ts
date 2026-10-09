@@ -24,11 +24,42 @@ export interface AccountSnapshotRow {
   captured_at: string;
 }
 
+export interface PaymentSettingsRow {
+  approval_mode: "AUTO" | "MANUAL";
+  promptpay_enabled: number;
+  bank_transfer_enabled: number;
+  qr_enabled: number;
+  paypal_enabled: number;
+  updated_at: string;
+}
+
+/** Before migration 0023 (or a missing row): what the code did until then. */
+export const DEFAULT_PAYMENT_SETTINGS: PaymentSettingsRow = {
+  approval_mode: "AUTO", promptpay_enabled: 1, bank_transfer_enabled: 1, qr_enabled: 1, paypal_enabled: 0, updated_at: "",
+};
+
+export interface PaypalOrderRow {
+  id: string;
+  booking_id: string;
+  amount_satang: number;
+  currency: string;
+  environment: "sandbox" | "live";
+  status: "CREATED" | "CAPTURING" | "CAPTURED" | "PENDING" | "FAILED" | "CANCELLED";
+  hold_expires_at: string | null;
+  prior_payment_status: "UNPAID" | "REJECTED" | null;
+  capture_id: string | null;
+  payment_id: string | null;
+  failure_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PaymentRow {
   id: string;
   booking_id: string;
   amount_satang: number;
   method: "BANK_TRANSFER" | "PROMPTPAY" | "CASH" | "OTHER";
+  channel: "PROMPTPAY" | "BANK_TRANSFER" | "QR_CODE" | "PAYPAL" | null;
   status: "UNPAID" | "PENDING_VERIFICATION" | "VERIFIED" | "PAID" | "REJECTED" | "REFUNDED";
   reference: string | null;
   note: string | null;
@@ -39,6 +70,7 @@ export interface PaymentRow {
   refunded_at: string | null;
   refund_amount_satang: number | null;
   refund_reason: string | null;
+  rejected_reason: string | null;
   slip_asset_id: string | null;
 }
 
@@ -55,6 +87,9 @@ export interface SlipPaymentRow {
   check_out: string;
   amount_satang: number;
   status: string;
+  channel: PaymentRow["channel"];
+  reference: string | null;
+  rejected_reason: string | null;
   submitted_at: string;
   slip_key: string | null;
   slip_mime: string | null;
@@ -81,7 +116,8 @@ export interface VerificationRow {
 const SLIP_PAYMENT_SELECT = `
   SELECT p.id, p.booking_id, b.booking_code, b.booking_status, b.payment_status AS booking_payment_status,
          b.created_at AS booking_created_at, b.total_satang, b.customer_name, b.check_in, b.check_out,
-         p.amount_satang, p.status, p.submitted_at, m.object_key AS slip_key, m.mime_type AS slip_mime, p.slip_sha256
+         p.amount_satang, p.status, p.channel, p.reference, p.rejected_reason, p.submitted_at,
+         m.object_key AS slip_key, m.mime_type AS slip_mime, p.slip_sha256
     FROM payments p
     JOIN bookings b ON b.id = p.booking_id
     LEFT JOIN media_assets m ON m.id = p.slip_asset_id AND m.bucket = 'PRIVATE' AND m.purpose = 'PAYMENT_SLIP'`;
@@ -95,6 +131,35 @@ const ACCOUNT_SELECT = `
 /** Receiving accounts, account snapshots and payments. Statements are composed into atomic batches by services. */
 export class PaymentRepository {
   constructor(private readonly db: D1DatabaseLike) {}
+
+  // ------------------------------------------------------------------ payment settings (0023)
+
+  async settings(): Promise<PaymentSettingsRow> {
+    try {
+      return (await this.db
+        .prepare(
+          `SELECT approval_mode, promptpay_enabled, bank_transfer_enabled, qr_enabled, paypal_enabled, updated_at
+             FROM payment_settings WHERE id = 1`,
+        )
+        .first<PaymentSettingsRow>()) ?? DEFAULT_PAYMENT_SETTINGS;
+    } catch (error) {
+      // Code deployed before migration 0023: behave as before it.
+      if (/no such table/i.test(String(error))) return DEFAULT_PAYMENT_SETTINGS;
+      throw error;
+    }
+  }
+
+  saveSettingsStatement(s: { approvalMode: string; promptpay: boolean; bankTransfer: boolean; qr: boolean; paypal: boolean }, actorId: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO payment_settings (id, approval_mode, promptpay_enabled, bank_transfer_enabled, qr_enabled, paypal_enabled, updated_at, updated_by)
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT (id) DO UPDATE SET approval_mode = excluded.approval_mode, promptpay_enabled = excluded.promptpay_enabled,
+           bank_transfer_enabled = excluded.bank_transfer_enabled, qr_enabled = excluded.qr_enabled,
+           paypal_enabled = excluded.paypal_enabled, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      )
+      .bind(s.approvalMode, s.promptpay ? 1 : 0, s.bankTransfer ? 1 : 0, s.qr ? 1 : 0, s.paypal ? 1 : 0, now, actorId);
+  }
 
   // ------------------------------------------------------------------ receiving accounts
 
@@ -193,9 +258,9 @@ export class PaymentRepository {
   async payments(bookingId: string): Promise<PaymentRow[]> {
     const { results } = await this.db
       .prepare(
-        `SELECT p.id, p.booking_id, p.amount_satang, p.method, p.status, p.reference, p.note, p.paid_at, p.submitted_at,
+        `SELECT p.id, p.booking_id, p.amount_satang, p.method, p.channel, p.status, p.reference, p.note, p.paid_at, p.submitted_at,
                 p.verified_at, u.display_name AS verified_by_name, p.refunded_at, p.refund_amount_satang, p.refund_reason,
-                p.slip_asset_id
+                p.rejected_reason, p.slip_asset_id
            FROM payments p LEFT JOIN users u ON u.id = p.verified_by
           WHERE p.booking_id = ?1 ORDER BY p.submitted_at, p.id`,
       )
@@ -269,10 +334,11 @@ export class PaymentRepository {
     return row !== null;
   }
 
-  async transactionRefUsed(ref: string): Promise<boolean> {
+  /** Was this bank transaction already accepted — for another payment than `exceptPaymentId`? */
+  async transactionRefUsed(ref: string, exceptPaymentId: string | null = null): Promise<boolean> {
     const row = await this.db
-      .prepare("SELECT 1 AS x FROM slip_verifications WHERE transaction_ref = ?1 AND result = 'PASSED'")
-      .bind(ref)
+      .prepare("SELECT 1 AS x FROM slip_verifications WHERE transaction_ref = ?1 AND result = 'PASSED' AND (?2 IS NULL OR payment_id <> ?2)")
+      .bind(ref, exceptPaymentId)
       .first();
     return row !== null;
   }
@@ -302,14 +368,15 @@ export class PaymentRepository {
       .bind(a.id, a.bookingId, a.key, a.mime, a.size, a.width, a.height, a.sha256, a.now);
   }
 
-  insertSlipPaymentStatement(p: { id: string; bookingId: string; amount: number; assetId: string; sha256: string; now: string }): D1PreparedStatementLike {
+  /** `channel` = what the guest chose (PROMPTPAY / BANK_TRANSFER / QR_CODE); the method follows from it. */
+  insertSlipPaymentStatement(p: { id: string; bookingId: string; amount: number; assetId: string; sha256: string; channel: string; now: string }): D1PreparedStatementLike {
     return this.db
       .prepare(
-        `INSERT INTO payments (id, booking_id, amount_satang, method, status, slip_asset_id, slip_sha256, submitted_at, updated_at)
-         SELECT ?1, ?2, ?3, 'BANK_TRANSFER', 'PENDING_VERIFICATION', ?4, ?5, ?6, ?6
+        `INSERT INTO payments (id, booking_id, amount_satang, method, channel, status, slip_asset_id, slip_sha256, submitted_at, updated_at)
+         SELECT ?1, ?2, ?3, CASE ?7 WHEN 'PROMPTPAY' THEN 'PROMPTPAY' ELSE 'BANK_TRANSFER' END, ?7, 'PENDING_VERIFICATION', ?4, ?5, ?6, ?6
           WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ?2 AND payment_status = 'PENDING_VERIFICATION' AND updated_at = ?6)`,
       )
-      .bind(p.id, p.bookingId, p.amount, p.assetId, p.sha256, p.now);
+      .bind(p.id, p.bookingId, p.amount, p.assetId, p.sha256, p.now, p.channel);
   }
 
   findSlipPayment(paymentId: string): Promise<SlipPaymentRow | null> {
@@ -320,7 +387,7 @@ export class PaymentRepository {
     const { results } = await this.db
       .prepare(
         `${SLIP_PAYMENT_SELECT}
-          WHERE p.slip_asset_id IS NOT NULL AND p.status = ?1 AND (?3 IS NULL OR p.submitted_at < ?3)
+          WHERE (p.slip_asset_id IS NOT NULL OR p.channel = 'PAYPAL') AND p.status = ?1 AND (?3 IS NULL OR p.submitted_at < ?3)
           ORDER BY p.submitted_at ${status === "PENDING_VERIFICATION" ? "ASC" : "DESC"} LIMIT ?2`,
       )
       .bind(status, limit, before)
@@ -402,11 +469,141 @@ export class PaymentRepository {
       .bind(bookingId, holdUntil, now);
   }
 
+  // ------------------------------------------------------------------ PayPal Checkout (0023)
+
+  paypalOrder(id: string): Promise<PaypalOrderRow | null> {
+    return this.db.prepare("SELECT * FROM paypal_orders WHERE id = ?1").bind(id).first<PaypalOrderRow>();
+  }
+
+  async paypalOrdersSince(bookingId: string, since: string): Promise<number> {
+    const row = await this.db
+      .prepare("SELECT COUNT(*) AS n FROM paypal_orders WHERE booking_id = ?1 AND created_at > ?2")
+      .bind(bookingId, since)
+      .first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+
+  insertPaypalOrderStatement(o: { id: string; bookingId: string; amount: number; environment: string; now: string }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO paypal_orders (id, booking_id, amount_satang, currency, environment, status, created_at, updated_at)
+         VALUES (?1, ?2, ?3, 'THB', ?4, 'CREATED', ?5, ?5)`,
+      )
+      .bind(o.id, o.bookingId, o.amount, o.environment, o.now);
+  }
+
+  /** A newer order replaces older unused ones of the same booking. */
+  cancelOtherPaypalOrdersStatement(bookingId: string, keepId: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE paypal_orders SET status = 'CANCELLED', failure_code = 'REPLACED', updated_at = ?3 WHERE booking_id = ?1 AND id <> ?2 AND status = 'CREATED'")
+      .bind(bookingId, keepId, now);
+  }
+
+  cancelPaypalOrderStatement(id: string, code: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE paypal_orders SET status = 'CANCELLED', failure_code = ?2, updated_at = ?3 WHERE id = ?1 AND status = 'CREATED' RETURNING id")
+      .bind(id, code, now);
+  }
+
+  /**
+   * Claim, step 1: the order moves to CAPTURING only while its booking can still be paid (PENDING, unpaid or
+   * rejected, hold not over); the booking's hold and payment status are kept to give back if the capture fails.
+   */
+  markPaypalCapturingStatement(o: { id: string; bookingId: string; now: string }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `UPDATE paypal_orders SET status = 'CAPTURING',
+           hold_expires_at = (SELECT expires_at FROM bookings WHERE id = ?2),
+           prior_payment_status = (SELECT payment_status FROM bookings WHERE id = ?2), updated_at = ?3
+          WHERE id = ?1 AND booking_id = ?2 AND status = 'CREATED'
+            AND EXISTS (SELECT 1 FROM bookings WHERE id = ?2 AND booking_status = 'PENDING' AND payment_status IN ('UNPAID', 'REJECTED')
+                          AND (expires_at IS NULL OR expires_at > ?3))
+          RETURNING id`,
+      )
+      .bind(o.id, o.bookingId, o.now);
+  }
+
+  /** Claim, step 2: the booking waits for this capture (no expiry, no slip) — only if step 1 happened. */
+  claimForPaypalStatement(o: { id: string; bookingId: string; now: string }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `UPDATE bookings SET payment_status = 'PENDING_VERIFICATION', expires_at = NULL, updated_at = ?3
+          WHERE id = ?2 AND booking_status = 'PENDING' AND payment_status IN ('UNPAID', 'REJECTED')
+            AND EXISTS (SELECT 1 FROM paypal_orders WHERE id = ?1 AND status = 'CAPTURING' AND updated_at = ?3)
+          RETURNING id`,
+      )
+      .bind(o.id, o.bookingId, o.now);
+  }
+
+  /** Capture answer unknown: the cron asks again after a pause. */
+  touchPaypalOrderStatement(id: string, now: string): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE paypal_orders SET updated_at = ?2 WHERE id = ?1 AND status = 'CAPTURING'").bind(id, now);
+  }
+
+  /** A PayPal capture as a payment row: PAID (completed) or PENDING_VERIFICATION (PayPal holds it). */
+  insertPaypalPaymentStatement(p: { id: string; bookingId: string; amount: number; status: "PAID" | "PENDING_VERIFICATION"; captureId: string; now: string }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO payments (id, booking_id, amount_satang, method, channel, status, reference, paid_at, submitted_at, verified_at, updated_at)
+         SELECT ?1, ?2, ?3, 'OTHER', 'PAYPAL', ?4, ?5, CASE ?4 WHEN 'PAID' THEN ?6 END, ?6, CASE ?4 WHEN 'PAID' THEN ?6 END, ?6
+          WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ?2 AND booking_status = 'PENDING' AND payment_status = 'PENDING_VERIFICATION')`,
+      )
+      .bind(p.id, p.bookingId, p.amount, p.status, p.captureId, p.now);
+  }
+
+  /** Claimed booking + completed PayPal payment (same batch) → CONFIRMED / PAID. */
+  confirmPaypalStatement(bookingId: string, paymentId: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `UPDATE bookings SET booking_status = 'CONFIRMED', payment_status = 'PAID', confirmed_at = ?3, expires_at = NULL, updated_at = ?3
+          WHERE id = ?1 AND booking_status = 'PENDING' AND payment_status = 'PENDING_VERIFICATION'
+            AND EXISTS (SELECT 1 FROM payments WHERE id = ?2 AND booking_id = ?1 AND status = 'PAID')
+          RETURNING id`,
+      )
+      .bind(bookingId, paymentId, now);
+  }
+
+  settlePaypalOrderStatement(o: { id: string; status: "CAPTURED" | "PENDING" | "FAILED"; captureId: string | null; paymentId: string | null; failure: string | null; now: string }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `UPDATE paypal_orders SET status = ?2, capture_id = COALESCE(?3, capture_id), payment_id = COALESCE(?4, payment_id),
+           failure_code = ?5, updated_at = ?6
+          WHERE id = ?1 AND status = 'CAPTURING' RETURNING id`,
+      )
+      .bind(o.id, o.status, o.captureId, o.paymentId, o.failure, o.now);
+  }
+
+  /** Nothing was taken: the booking goes back to waiting for payment, with its hold (at least `holdUntil`). */
+  releasePaypalClaimStatement(bookingId: string, prior: string, holdUntil: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `UPDATE bookings SET payment_status = ?2, expires_at = ?3, updated_at = ?4
+          WHERE id = ?1 AND booking_status = 'PENDING' AND payment_status = 'PENDING_VERIFICATION'
+            AND NOT EXISTS (SELECT 1 FROM payments WHERE booking_id = ?1 AND status = 'PENDING_VERIFICATION')`,
+      )
+      .bind(bookingId, prior, holdUntil, now);
+  }
+
+  async paypalOrdersToSettle(before: string, limit: number): Promise<PaypalOrderRow[]> {
+    const { results } = await this.db
+      .prepare("SELECT * FROM paypal_orders WHERE status = 'CAPTURING' AND updated_at < ?1 ORDER BY updated_at LIMIT ?2")
+      .bind(before, limit)
+      .all<PaypalOrderRow>();
+    return results;
+  }
+
+  /** PayPal drops an unapproved order after 3 hours; so do we. */
+  expireStalePaypalOrdersStatement(createdBefore: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE paypal_orders SET status = 'CANCELLED', failure_code = 'EXPIRED', updated_at = ?2 WHERE status = 'CREATED' AND created_at < ?1")
+      .bind(createdBefore, now);
+  }
+
   /** All payments, newest first (admin payments list). */
   async listAll(f: { status: string | null; method: string | null; code: string | null; from: string | null; to: string | null; before: string | null; limit: number }) {
     const { results } = await this.db
       .prepare(
-        `SELECT p.id, b.booking_code, p.amount_satang, p.method, p.status, p.slip_asset_id, p.reference, p.submitted_at,
+        `SELECT p.id, b.booking_code, p.amount_satang, p.method, p.channel, p.status, p.slip_asset_id, p.reference, p.submitted_at,
                 p.paid_at, p.verified_at, p.refund_amount_satang, p.refunded_at
            FROM payments p JOIN bookings b ON b.id = p.booking_id
           WHERE (?1 IS NULL OR p.status = ?1) AND (?2 IS NULL OR p.method = ?2) AND (?3 IS NULL OR b.booking_code = ?3)
@@ -415,7 +612,7 @@ export class PaymentRepository {
       )
       .bind(f.status, f.method, f.code, f.from, f.to, f.before, f.limit)
       .all<{
-        id: string; booking_code: string; amount_satang: number; method: string; status: string; slip_asset_id: string | null;
+        id: string; booking_code: string; amount_satang: number; method: string; channel: string | null; status: string; slip_asset_id: string | null;
         reference: string | null; submitted_at: string; paid_at: string | null; verified_at: string | null;
         refund_amount_satang: number | null; refunded_at: string | null;
       }>();

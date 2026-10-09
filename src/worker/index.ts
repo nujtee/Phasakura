@@ -27,6 +27,7 @@ import { createPageHandler } from "./seo/pages.ts";
 import { seoController } from "./controllers/seo.controller.ts";
 import { searchController } from "./controllers/search.controller.ts";
 import { systemController } from "./controllers/system.controller.ts";
+import { emailController, paypalController } from "./controllers/notify.controller.ts";
 
 export interface AppOptions {
   /** Override service wiring (tests). */
@@ -68,6 +69,8 @@ export function createApp(options: AppOptions = {}) {
   const seo = seoController(services);
   const search = searchController(services);
   const system = systemController(services);
+  const email = emailController(services);
+  const paypal = paypalController(services);
   const servePage = createPageHandler((request, env, url) => services({ request, env, url }));
 
   const router = new Router()
@@ -151,6 +154,8 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/admin/pricing-rules", book.createRule)
     .patch("/api/admin/pricing-rules/:id", book.updateRule)
     // Payments (spec §25–26)
+    .get("/api/admin/payment-settings", pay.settings)
+    .put("/api/admin/payment-settings", pay.saveSettings)
     .get("/api/admin/receiving-accounts", pay.accounts)
     .post("/api/admin/receiving-accounts", pay.createAccount)
     .patch("/api/admin/receiving-accounts/:id", pay.updateAccount)
@@ -164,6 +169,10 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/admin/payments/:id/slip", slip.image)
     .post("/api/admin/payments/:id/verify", slip.verify)
     .post("/api/admin/payments/:id/reject", slip.reject)
+    // PayPal Checkout (guest): start, finish after PayPal, cancel
+    .post("/api/public/bookings/paypal/order", paypal.order)
+    .post("/api/public/bookings/paypal/capture", paypal.capture)
+    .post("/api/public/bookings/paypal/cancel", paypal.cancel)
     // Dashboard & calendar (spec §48–49)
     .get("/api/admin/dashboard", dash.dashboard)
     .get("/api/admin/calendar", dash.calendar)
@@ -238,6 +247,16 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/admin/notifications/run", line.runNow)
     .post("/api/admin/notifications/:id/retry", line.retry)
     .post("/api/admin/notifications/:id/cancel", line.cancel)
+    // E-mail notifications (Resend)
+    .get("/api/admin/email/settings", email.settings)
+    .put("/api/admin/email/settings", email.saveSettings)
+    .get("/api/admin/email/recipients", email.recipients)
+    .post("/api/admin/email/recipients", email.addRecipient)
+    .patch("/api/admin/email/recipients/:id", email.updateRecipient)
+    .delete("/api/admin/email/recipients/:id", email.deleteRecipient)
+    .post("/api/admin/email/recipients/:id/test", email.testRecipient)
+    .get("/api/admin/email/logs", email.logs)
+    .post("/api/admin/email/logs/:id/retry", email.retry)
     .post("/api/public/bookings/line-link", line.guestLink)
     .post("/api/public/bookings/line-unlink", line.guestUnlink)
     .post(LINE_WEBHOOK_PATH, line.webhook);
@@ -358,6 +377,11 @@ export function createApp(options: AppOptions = {}) {
       if (capi && (capi.sent || capi.failed || capi.retried)) console.log(JSON.stringify({ level: "info", message: "capi_events", ...capi }));
       const line = await task("line_notifications", () => s.notifications.tick());
       if (line && (line.planned || line.sent || line.failed || line.retried)) console.log(JSON.stringify({ level: "info", message: "line_notifications", ...line }));
+      // E-mail (Resend) and PayPal captures left in flight (migration 0023).
+      const mail = await task("email_notifications", () => s.email.tick());
+      if (mail && (mail.sent || mail.failed || mail.retried)) console.log(JSON.stringify({ level: "info", message: "email_notifications", ...mail }));
+      const pp = await task("paypal_reconcile", () => s.paypal.reconcile());
+      if (pp?.settled) console.log(JSON.stringify({ level: "info", message: "paypal_reconciled", ...pp }));
       // Error log retention, once an hour.
       if (minute === null || minute === 11) await task("error_log_retention", () => s.monitoring.retention());
 

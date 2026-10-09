@@ -45,7 +45,7 @@ function toRecipient(r: LineRecipientRow): LineRecipientDto {
     id: r.id, name: r.name, kind: lineTargetKind(r.target_id), targetMasked: maskLineId(r.target_id),
     language: (parseLocale(r.language_code)?.code ?? "th") as LocaleCode,
     notifyCheckin: r.notify_checkin === 1, notifyFood: r.notify_food === 1, notifyPayment: r.notify_payment === 1,
-    active: r.active === 1, linkedVia: r.linked_via, createdAt: r.created_at, updatedAt: r.updated_at,
+    notifyBooking: r.notify_booking !== 0, active: r.active === 1, linkedVia: r.linked_via, createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
 
@@ -168,7 +168,8 @@ export class LineService {
     return (await this.repo.recipients()).map(toRecipient);
   }
 
-  private recipientFields(v: Validator) {
+  /** `current`: an update keeps "new booking" as it was when an older client leaves it out. */
+  private recipientFields(v: Validator, current: LineRecipientRow | null = null) {
     const name = v.string("name", { required: true, max: 80 });
     const language = v.oneOf("language", LOCALE_CODES, { required: true }) as LocaleCode;
     return {
@@ -176,13 +177,14 @@ export class LineService {
       checkin: v.boolean("notifyCheckin", true),
       food: v.boolean("notifyFood", false),
       payment: v.boolean("notifyPayment", false),
+      booking: v.boolean("notifyBooking", current ? current.notify_booking !== 0 : true),
     };
   }
 
   /** Manual fallback: paste a user / group id (from LINE Developers). Pairing with a code is easier. */
   async addRecipient(actor: AuthContext, body: Record<string, unknown>, meta: RequestMeta): Promise<LineRecipientDto> {
     await this.authz.requirePermission(actor, "settings.line", meta);
-    const v = new Validator(body).allowOnly(["targetId", "name", "language", "notifyCheckin", "notifyFood", "notifyPayment"]);
+    const v = new Validator(body).allowOnly(["targetId", "name", "language", "notifyCheckin", "notifyFood", "notifyPayment", "notifyBooking"]);
     const targetId = v.string("targetId", { required: true, pattern: LINE_TARGET_PATTERN });
     const f = this.recipientFields(v);
     v.assertValid();
@@ -193,7 +195,7 @@ export class LineService {
     await this.db.batch([
       existing
         ? this.repo.reviveRecipientStatement(id, { name: f.name, language: f.language, via: "MANUAL", actorId: actor.userId, now })
-        : this.repo.insertRecipientStatement({ id, targetId, name: f.name, language: f.language, checkin: f.checkin, food: f.food, payment: f.payment, via: "MANUAL", actorId: actor.userId, now }),
+        : this.repo.insertRecipientStatement({ id, targetId, name: f.name, language: f.language, checkin: f.checkin, food: f.food, payment: f.payment, booking: f.booking, via: "MANUAL", actorId: actor.userId, now }),
       ...(existing ? [this.repo.updateRecipientStatement(id, { ...f, active: true }, actor.userId, now)] : []),
       this.log.auditStatement(actor.userId, "CREATE_LINE_RECIPIENT", "line", id, null, { name: f.name, kind: lineTargetKind(targetId), via: "MANUAL" }, meta),
     ]);
@@ -204,8 +206,8 @@ export class LineService {
     await this.authz.requirePermission(actor, "settings.line", meta);
     const before = await this.repo.recipient(id);
     if (!before || before.deleted_at) throw new NotFoundError("Recipient not found", "LINE_RECIPIENT_NOT_FOUND");
-    const v = new Validator(body).allowOnly(["name", "language", "notifyCheckin", "notifyFood", "notifyPayment", "active"]);
-    const f = this.recipientFields(v);
+    const v = new Validator(body).allowOnly(["name", "language", "notifyCheckin", "notifyFood", "notifyPayment", "notifyBooking", "active"]);
+    const f = this.recipientFields(v, before);
     const active = v.boolean("active", before.active === 1);
     v.assertValid();
     const now = iso(this.clock());

@@ -4,8 +4,8 @@ import { bookingLookupPath } from "../../shared/routes.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { createLineApi, packMessages, retryKeyFor, type FetchLike, type LineApi, type LineTextMessage } from "../line/line-api.ts";
 import {
-  checkinDigestBlocks, foodOrderText, guestCheckinText, guestConfirmedText, kitchenDigestBlocks, LineFormatter, paymentConfirmedText,
-  paymentReviewText, testText, type KitchenDish,
+  checkinDigestBlocks, foodOrderText, guestCancelledText, guestCheckinText, guestConfirmedText, guestPaymentRejectedText, kitchenDigestBlocks,
+  LineFormatter, newBookingText, paymentConfirmedText, paymentReviewText, testText, type KitchenDish,
 } from "../line/line-templates.ts";
 import type { LineRepository, LineSettingsRow, NotificationRow, RecipientFlag } from "../repositories/line.repository.ts";
 import type { ReportRepository } from "../repositories/report.repository.ts";
@@ -27,6 +27,7 @@ const FLAG_OF: Record<string, RecipientFlag | null> = {
   FOOD_CANCELLED: "notify_food",
   PAYMENT_REVIEW: "notify_payment",
   PAYMENT_CONFIRMED: "notify_payment",
+  NEW_BOOKING: "notify_booking",
   TEST: null,
 };
 
@@ -57,8 +58,20 @@ export class Outbox {
     return (await this.on()) ? [this.repo.slipSubmittedStatement(paymentId, bookingId, now, iso(addMs(new Date(now), REVIEW_DELAY_MS)))] : [];
   }
 
+  /** Kitchen hears about food of a confirmed booking; the guest (if linked) hears why it was cancelled. */
   async bookingCancelled(bookingId: string, wasConfirmed: boolean, now: string): Promise<D1PreparedStatementLike[]> {
-    return wasConfirmed && (await this.on()) ? [this.repo.bookingCancelledStatement(bookingId, now)] : [];
+    if (!(await this.on())) return [];
+    return [...(wasConfirmed ? [this.repo.bookingCancelledStatement(bookingId, now)] : []), this.repo.guestCancelledStatement(bookingId, now)];
+  }
+
+  /** Every new booking → staff chats that want it. */
+  async bookingCreated(bookingId: string, now: string): Promise<D1PreparedStatementLike[]> {
+    return (await this.on()) ? [this.repo.newBookingStatement(bookingId, now)] : [];
+  }
+
+  /** A slip was turned down → the guest (if linked) hears the reason. */
+  async paymentRejected(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]> {
+    return (await this.on()) ? [this.repo.guestPaymentRejectedStatement(paymentId, bookingId, now)] : [];
   }
 }
 
@@ -290,13 +303,32 @@ class RenderContext {
         if (!pay || pay.status !== "PENDING_VERIFICATION") return { skip: "NOT_RELEVANT" };
         const b = await one();
         if (!b) return { skip: "NOT_RELEVANT" };
-        return text(paymentReviewText(f, b, pay.amount_satang, this.link(lang, (l) => `/${l.path}/admin/slips`)));
+        const check = await this.repo.latestAutoCheck(p.paymentId as string);
+        return text(paymentReviewText(f, b, pay.amount_satang, this.link(lang, (l) => `/${l.path}/admin/slips`), { channel: pay.channel, check }));
       }
       case "PAYMENT_CONFIRMED": {
         const b = await one();
         if (!b) return { skip: "NOT_RELEVANT" };
-        const method = row.booking_id ? (await this.repo.latestPaidMethod(row.booking_id))?.method ?? null : null;
-        return text(paymentConfirmedText(f, b, method));
+        const paid = row.booking_id ? await this.repo.latestPaidMethod(row.booking_id) : null;
+        return text(paymentConfirmedText(f, b, paid?.method ?? null, paid?.channel ?? null));
+      }
+      case "NEW_BOOKING": {
+        const b = await one();
+        if (!b) return { skip: "NOT_RELEVANT" };
+        return text(newBookingText(f, b, this.link(lang, (l) => `/${l.path}/admin/bookings/${b.code}`)));
+      }
+      case "GUEST_PAYMENT_REJECTED": {
+        const pay = typeof p.paymentId === "string" ? await this.repo.payment(p.paymentId) : null;
+        const b = await one();
+        // Only while the guest can still act on it.
+        if (!pay || pay.status !== "REJECTED" || !b || b.bookingStatus !== "PENDING") return { skip: "NOT_RELEVANT" };
+        return text(guestPaymentRejectedText(f, b, { reason: pay.rejected_reason, link: this.link(lang, bookingLookupPath), siteName: (await this.site(lang)).name }));
+      }
+      case "GUEST_CANCELLED": {
+        const b = await one();
+        if (!b || b.bookingStatus !== "CANCELLED") return { skip: "NOT_RELEVANT" };
+        const site = await this.site(lang);
+        return text(guestCancelledText(f, b, { siteName: site.name, phone: site.phone }));
       }
       case "GUEST_CONFIRMED": {
         const b = await one();
@@ -315,7 +347,10 @@ class RenderContext {
       case "TEST": {
         const r = await this.repo.recipient(row.recipient.slice(6));
         if (!r) return { skip: "RECIPIENT_INACTIVE" };
-        return text(testText(f, { name: r.name, checkin: r.notify_checkin === 1, food: r.notify_food === 1, payment: r.notify_payment === 1, siteName: (await this.site(lang)).name }));
+        return text(testText(f, {
+          name: r.name, checkin: r.notify_checkin === 1, food: r.notify_food === 1, payment: r.notify_payment === 1, booking: r.notify_booking !== 0,
+          siteName: (await this.site(lang)).name,
+        }));
       }
       default:
         return { skip: "UNKNOWN_TYPE" };

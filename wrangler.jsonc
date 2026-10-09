@@ -52,14 +52,17 @@
     // Canonical https origin: canonical / hreflang / sitemap URLs, password reset / invite links, LINE messages.
     "APP_BASE_URL": "https://phasakura.com",
     "PUBLIC_MEDIA_BASE_URL": "",
-    // Slip verification service ("easyslip" or empty = staff verify every slip).
-    // The API key is a secret: `wrangler secret put SLIP_VERIFICATION_API_KEY` — never here.
+    // Slip verification service ("easyslip"; empty = EasySlip once its key exists). The API key is a secret:
+    // `wrangler secret put SLIP_VERIFICATION_API_KEY` — never here. No key = staff verify every slip.
     "SLIP_VERIFY_PROVIDER": "",
     // Graph API version for the Meta Conversions API (update when Meta retires it).
     "META_GRAPH_API_VERSION": "v23.0"
     // LINE: `wrangler secret put LINE_CHANNEL_ACCESS_TOKEN` and `wrangler secret put LINE_CHANNEL_SECRET` — never here.
     // Meta: `wrangler secret put META_CAPI_ACCESS_TOKEN` (+ optional META_PIXEL_ID, META_TEST_EVENT_CODE) — never here.
     // GA4 dashboard numbers: `wrangler secret put GA4_SERVICE_ACCOUNT_KEY` — never here.
+    // E-mail (Resend): `wrangler secret put RESEND_API_KEY` — never here.
+    // PayPal Checkout: `wrangler secret put PAYPAL_CLIENT_ID` and `wrangler secret put PAYPAL_CLIENT_SECRET` — never here.
+    // Live PayPal by default; while testing with sandbox credentials also `wrangler secret put PAYPAL_ENV` = sandbox.
   },
 
   // D1 — source of truth for bookings, payments, revenue, inventory, food capacity.

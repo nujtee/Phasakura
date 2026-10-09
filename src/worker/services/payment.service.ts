@@ -1,11 +1,13 @@
-import type { PaymentDto, PaymentMethod, ReceivingAccountDto, ReceivingAccountInput } from "../../shared/payment-types.ts";
+import type {
+  ApprovalMode, PaymentChannel, PaymentDto, PaymentMethod, PaymentSettingsDto, PaymentSettingsInput, ReceivingAccountDto, ReceivingAccountInput,
+} from "../../shared/payment-types.ts";
 import { BOOKING_CODE_PATTERN, type PaymentStatus } from "../../shared/booking-types.ts";
 import type { AdminPaymentListItemDto } from "../../shared/dashboard-types.ts";
 import type { D1DatabaseLike } from "../env.ts";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors.ts";
 import type { BookingRepository, BookingRow } from "../repositories/booking.repository.ts";
 import type { MediaRepository } from "../repositories/media.repository.ts";
-import type { PaymentRepository, PaymentRow, ReceivingAccountRow } from "../repositories/payment.repository.ts";
+import type { PaymentRepository, PaymentRow, PaymentSettingsRow, ReceivingAccountRow } from "../repositories/payment.repository.ts";
 import { newId } from "../security/tokens.ts";
 import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
@@ -18,6 +20,7 @@ export function toPaymentDto(p: PaymentRow): PaymentDto {
     id: p.id,
     amountSatang: p.amount_satang,
     method: p.method,
+    channel: p.channel ?? null,
     status: p.status,
     reference: p.reference,
     note: p.note,
@@ -30,6 +33,32 @@ export function toPaymentDto(p: PaymentRow): PaymentDto {
     refundReason: p.refund_reason,
     slipUrl: p.slip_asset_id ? `/api/admin/payments/${p.id}/slip` : null,
   };
+}
+
+/**
+ * Channels a guest can use for one booking: offered by the owner AND possible with the booking's account
+ * snapshot (PromptPay number, account number, QR image) / a configured PayPal app. If the owner's choice
+ * leaves nothing possible, every possible slip channel is shown — a booking must always be payable.
+ */
+export function availableChannels(
+  settings: PaymentSettingsRow,
+  account: { promptpay: string | null; accountNumber: string | null; qr: string | null },
+  paypalReady: boolean,
+): PaymentChannel[] {
+  const possible: [PaymentChannel, boolean, number][] = [
+    ["PROMPTPAY", !!account.promptpay, settings.promptpay_enabled],
+    ["BANK_TRANSFER", !!account.accountNumber, settings.bank_transfer_enabled],
+    ["QR_CODE", !!account.qr, settings.qr_enabled],
+    ["PAYPAL", paypalReady, settings.paypal_enabled],
+  ];
+  const chosen = possible.filter(([, ok, on]) => ok && on === 1).map(([c]) => c);
+  return chosen.length ? chosen : possible.filter(([c, ok]) => ok && c !== "PAYPAL").map(([c]) => c);
+}
+
+export interface PaymentFeatures {
+  /** Slip verification service configured (Cloudflare Secret present). */
+  verifier: { configured: boolean; provider: string | null };
+  paypal: { configured: boolean; environment: "sandbox" | "live" };
 }
 
 /**
@@ -48,7 +77,42 @@ export class PaymentService {
     private readonly mediaBaseUrl: string | undefined,
     private readonly clock: Clock,
     private readonly outbox: OutboxLike | null = null,
+    private readonly features: PaymentFeatures = { verifier: { configured: false, provider: null }, paypal: { configured: false, environment: "sandbox" } },
   ) {}
+
+  // ================================================================ settings (channels, approval mode)
+
+  async getSettings(actor: AuthContext, meta: RequestMeta): Promise<PaymentSettingsDto> {
+    await this.authz.requirePermission(actor, "receiving_accounts.view", meta);
+    return this.settingsDto();
+  }
+
+  async saveSettings(actor: AuthContext, input: PaymentSettingsInput, meta: RequestMeta): Promise<PaymentSettingsDto> {
+    await this.authz.requirePermission(actor, "receiving_accounts.edit", meta);
+    const c = input.channels;
+    if (!c.PROMPTPAY && !c.BANK_TRANSFER && !c.QR_CODE && !c.PAYPAL) throw new ValidationError({ channels: "AT_LEAST_ONE" });
+    // PayPal can only be offered once its Cloudflare Secrets are set; turning it off is always allowed.
+    if (c.PAYPAL && !this.features.paypal.configured) throw new ValidationError({ "channels.PAYPAL": "PAYPAL_NOT_CONFIGURED" });
+    const before = await this.repo.settings();
+    const now = iso(this.clock());
+    await this.db.batch([
+      this.repo.saveSettingsStatement({ approvalMode: input.approvalMode, promptpay: c.PROMPTPAY, bankTransfer: c.BANK_TRANSFER, qr: c.QR_CODE, paypal: c.PAYPAL }, actor.userId, now),
+      this.log.auditStatement(actor.userId, "UPDATE_PAYMENT_SETTINGS", "settings", "payment_settings", settingsAudit(before), input, meta),
+    ]);
+    return this.settingsDto();
+  }
+
+  private async settingsDto(): Promise<PaymentSettingsDto> {
+    const [s, primary] = await Promise.all([this.repo.settings(), this.repo.primaryAccount()]);
+    return {
+      approvalMode: s.approval_mode as ApprovalMode,
+      channels: { PROMPTPAY: s.promptpay_enabled === 1, BANK_TRANSFER: s.bank_transfer_enabled === 1, QR_CODE: s.qr_enabled === 1, PAYPAL: s.paypal_enabled === 1 },
+      slipVerifier: this.features.verifier,
+      paypal: this.features.paypal,
+      account: primary ? { promptpay: !!primary.promptpay_number, bankAccount: !!primary.account_number, qr: !!primary.qr_key } : null,
+      updatedAt: s.updated_at,
+    };
+  }
 
   // ================================================================ payments list
 
@@ -66,6 +130,7 @@ export class PaymentService {
         bookingCode: r.booking_code,
         amountSatang: r.amount_satang,
         method: r.method,
+        channel: (r.channel as PaymentChannel | null) ?? null,
         status: r.status as PaymentStatus,
         hasSlip: r.slip_asset_id !== null,
         reference: r.reference,
@@ -255,6 +320,13 @@ export class PaymentService {
     if (!row) throw new NotFoundError("Booking not found", "BOOKING_NOT_FOUND");
     return row;
   }
+}
+
+function settingsAudit(s: PaymentSettingsRow) {
+  return {
+    approvalMode: s.approval_mode,
+    channels: { PROMPTPAY: s.promptpay_enabled === 1, BANK_TRANSFER: s.bank_transfer_enabled === 1, QR_CODE: s.qr_enabled === 1, PAYPAL: s.paypal_enabled === 1 },
+  };
 }
 
 function accountAudit(a: ReceivingAccountRow) {
