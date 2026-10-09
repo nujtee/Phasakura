@@ -285,10 +285,14 @@ export function CmsForm({
       control = (
         <input {...common} type={type} inputMode={f.kind === "money" ? "decimal" : undefined} value={values[f.key] || (f.kind === "color" ? "#000000" : "")}
           min={f.kind === "int" ? f.min : undefined} max={f.kind === "int" ? f.max : undefined}
-          onChange={(e) => set(f.key, e.currentTarget.value)} />
+          maxLength={f.kind === "code" ? f.max : undefined} autoCapitalize={f.kind === "code" ? "characters" : undefined}
+          spellCheck={f.kind === "code" ? false : undefined}
+          // Codes are upper case with _ between words; typed as "dinner set" they read "DINNER_SET".
+          onChange={(e) => set(f.key, f.kind === "code" ? e.currentTarget.value.toUpperCase().replace(/[\s-]+/g, "_") : e.currentTarget.value)} />
       );
     }
-    const hint = f.kind === "link" ? c.hints.link : f.kind === "datetime" ? c.hints.datetime : undefined;
+    const hint = f.kind === "link" ? c.hints.link : f.kind === "datetime" ? c.hints.datetime
+      : f.kind === "code" && !record ? (f.lettersOnly ? c.hints.codeLetters : c.hints.code) : undefined;
     return (
       <div key={f.key} className="adm-field">
         <label htmlFor={id}>{label(f.key)}{f.required && <span aria-hidden="true"> *</span>}</label>

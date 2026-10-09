@@ -1,5 +1,5 @@
 import type { CmsEntityName, CmsRecord, EntityDef, FieldDef } from "../../shared/cms-schema.ts";
-import { CMS_TEXT, ENTITIES, isSafeLink, isSafePath } from "../../shared/cms-schema.ts";
+import { CMS_TEXT, ENTITIES, isSafeLink, isSafePath, normalizeCode } from "../../shared/cms-schema.ts";
 import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
 import { DEFAULT_LOCALE_CODE, LOCALE_CODES, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
@@ -77,6 +77,10 @@ export class CmsService {
     const input = parseInput(def, body, "create");
     const values = this.normalize(name, input.values);
     await this.checkReferences(def, values, Object.keys(values));
+    // Codes left empty are made here: unique, from the English name when it has Latin letters.
+    for (const f of def.fields) {
+      if (f.auto && values[f.key] == null) values[f.key] = await this.autoCode(name, f, input.translations?.en?.name ?? null);
+    }
     const translations = this.finalTranslations(def, input.translations ?? {}, {}, true);
 
     // New records go to the end of the list unless a position was given.
@@ -414,6 +418,25 @@ export class CmsService {
   }
 
   /** Runs a batch and turns constraint failures into client errors. */
+  /** A code nobody uses yet: NAME, NAME_2 (or NAME_B where digits are not allowed), … */
+  private async autoCode(name: CmsEntityName, f: FieldDef, englishName: string | null): Promise<string> {
+    const max = f.max ?? 40;
+    let base = (englishName ?? "").toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    if (f.lettersOnly) base = base.replace(/[0-9]+/g, "_");
+    base = base.replace(/_+/g, "_").replace(/^[_0-9]+|_+$/g, "").slice(0, max - 4).replace(/_+$/, "");
+    if (base.length < 2) base = name === "foodCategory" ? "CATEGORY" : "DISH";
+    const sql = AUTO_CODE_SQL[name];
+    if (!sql) return base;
+    const { results } = await this.db.prepare(sql).bind(base, base.length).all<{ code: string }>();
+    const taken = new Set(results.map((r) => r.code));
+    for (let n = 1; n < 1000; n++) {
+      const suffix = n === 1 ? "" : `_${f.lettersOnly ? letters(n) : n}`;
+      const candidate = `${base}${suffix}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+    return `${base}_${f.lettersOnly ? letters(Date.now() % 100_000) : Date.now() % 100_000}`;
+  }
+
   private async run(name: CmsEntityName, statements: D1PreparedStatementLike[]): Promise<void> {
     try {
       await this.db.batch(statements);
@@ -432,6 +455,19 @@ export class CmsService {
 }
 
 // ==================================================================== parsing
+
+/** Existing codes that start with a given base (static SQL per table). */
+const AUTO_CODE_SQL: Partial<Record<CmsEntityName, string>> = {
+  foodCategory: "SELECT code FROM food_categories WHERE substr(code, 1, ?2) = ?1",
+  foodOption: "SELECT code FROM food_options WHERE substr(code, 1, ?2) = ?1",
+};
+
+/** 2 → B, 3 → C, … 27 → AA (suffixes for letters-only codes). */
+function letters(n: number): string {
+  let out = "";
+  for (let x = n - 1; x >= 0; x = Math.floor(x / 26) - 1) out = String.fromCharCode(65 + (x % 26)) + out;
+  return out;
+}
 
 function pickFields(def: EntityDef, rec: CmsRecord): Values {
   return Object.fromEntries(def.fields.map((f) => [f.key, rec[f.key]]));
@@ -539,8 +575,13 @@ function parseValue(f: FieldDef, raw: unknown): Parsed {
       return typeof raw === "string" && CMS_TEXT.time.test(raw) ? raw : { error: "INVALID_FORMAT" };
     case "slug":
       return typeof raw === "string" && CMS_TEXT.slug.test(raw) && (f.max === undefined || raw.length <= f.max) ? raw : { error: "INVALID_FORMAT" };
-    case "code":
-      return typeof raw === "string" && CMS_TEXT.code.test(raw) && (f.max === undefined || raw.length <= f.max) ? raw : { error: "INVALID_FORMAT" };
+    case "code": {
+      if (typeof raw !== "string") return { error: "EXPECTED_STRING" };
+      const v = normalizeCode(raw);
+      if (v === "") return f.required ? { error: "REQUIRED" } : null;
+      if (f.lettersOnly && /[0-9]/.test(v)) return { error: "CODE_LETTERS_ONLY" };
+      return CMS_TEXT.code.test(v) && (f.max === undefined || v.length <= f.max) ? v : { error: f.lettersOnly ? "CODE_LETTERS_ONLY" : "CODE_FORMAT" };
+    }
     case "datetime": {
       if (typeof raw !== "string" || raw.length > 40 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) return { error: "INVALID_FORMAT" };
       const d = new Date(raw);

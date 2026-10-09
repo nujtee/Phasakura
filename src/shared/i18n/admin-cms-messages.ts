@@ -60,7 +60,7 @@ const th = {
     ARCHIVED: "เวอร์ชันเก่า",
   },
   fields: {
-    code: "รหัส",
+    code: "รหัส (ไม่บังคับ)",
     defaultDailyCapacity: "จำนวนสูงสุดต่อวัน (เว้นว่าง = ไม่จำกัด)",
     deadlineType: "กำหนดเวลาสั่ง",
     deadlineDaysBefore: "สั่งล่วงหน้า (วัน)",
@@ -123,6 +123,8 @@ const th = {
     link: "ลิงก์ในเว็บ เช่น /th/booking หรือ https://…",
     datetime: "ตามเวลาในเครื่องของคุณ เว้นว่างได้",
     plainText: "ข้อความธรรมดา ขึ้นบรรทัดใหม่ได้ ไม่รองรับ HTML",
+    code: "เว้นว่างได้ ระบบสร้างให้ · ถ้ากรอกเอง: A–Z, 0–9 และ _ ขึ้นต้นด้วยตัวอักษร เช่น SET_A1",
+    codeLetters: "เว้นว่างได้ ระบบสร้างให้ · ถ้ากรอกเอง: ตัวอักษรภาษาอังกฤษ A–Z และ _ เท่านั้น (ไม่มีตัวเลข) เช่น DINNER",
   },
   enums: {
     NONE: "ไม่มีกำหนด",
@@ -567,6 +569,8 @@ const th = {
     SLIDE_ENDED: "เลยเวลาหยุดแสดงแล้ว กรุณาแก้วันที่ก่อนเผยแพร่",
     DUPLICATE: "ข้อมูลซ้ำกับรายการอื่น",
     TAKEN: "ค่านี้ถูกใช้แล้ว",
+    CODE_FORMAT: "ใช้ได้เฉพาะ A–Z, 0–9 และ _ โดยขึ้นต้นด้วยตัวอักษร เช่น SET_A1 — หรือเว้นว่างให้ระบบสร้างให้",
+    CODE_LETTERS_ONLY: "รหัสหมวดใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ A–Z และ _ (ไม่มีตัวเลข) เช่น DINNER — หรือเว้นว่างให้ระบบสร้างให้",
     RECORD_NOT_FOUND: "ไม่พบรายการ อาจถูกลบไปแล้ว",
     MEDIA_NOT_FOUND: "ไม่พบรูปภาพ",
     WRONG_MEDIA_PURPOSE: "รูปนี้อัปโหลดสำหรับส่วนอื่น กรุณาอัปโหลดใหม่ในหน้านี้",
@@ -631,7 +635,7 @@ const en: AdminCmsMessages = {
     UNPUBLISHED: "Unpublished", ACTIVE: "Active", DELETED: "Deleted", ARCHIVED: "Archived",
   },
   fields: {
-    code: "Code", defaultDailyCapacity: "Daily maximum (empty = unlimited)", deadlineType: "Order deadline",
+    code: "Code (optional)", defaultDailyCapacity: "Daily maximum (empty = unlimited)", deadlineType: "Order deadline",
     deadlineDaysBefore: "Days in advance", deadlineTime: "Order before (previous day)", serviceTime: "Service time",
     serviceDayOffset: "Served on", sortOrder: "Order", status: "Status", name: "Name", description: "Description",
     foodCategoryId: "Meal category", pricingType: "Pricing", priceSatang: "Price (THB)", childPricing: "Child price",
@@ -651,6 +655,8 @@ const en: AdminCmsMessages = {
     link: "A site path such as /en/booking or https://…",
     datetime: "In your device's time zone. Optional.",
     plainText: "Plain text; line breaks allowed; no HTML.",
+    code: "Optional — made for you if left empty · if you type one: A–Z, 0–9 and _, starting with a letter, e.g. SET_A1",
+    codeLetters: "Optional — made for you if left empty · if you type one: letters A–Z and _ only (no digits), e.g. DINNER",
   },
   enums: {
     NONE: "No deadline", DAYS_BEFORE: "Days in advance", PREVIOUS_DAY_TIME: "Before a time on the previous day",
@@ -830,7 +836,8 @@ const en: AdminCmsMessages = {
     STAY_ENDED: "The check-out date has passed", CATEGORY_NOT_EMPTY: "Move or delete the images in this category first",
     OPTION_IN_USE: "This dish is an included meal of an accommodation; change that first",
     SLIDE_ENDED: "The end date has passed; change it before publishing", DUPLICATE: "Duplicates another record",
-    TAKEN: "Already in use", RECORD_NOT_FOUND: "Not found — it may have been deleted", MEDIA_NOT_FOUND: "Image not found",
+    TAKEN: "Already in use", CODE_FORMAT: "Use A–Z, 0–9 and _, starting with a letter (e.g. SET_A1) — or leave it empty to have one made.",
+    CODE_LETTERS_ONLY: "Category codes use letters A–Z and _ only, no digits (e.g. DINNER) — or leave it empty to have one made.", RECORD_NOT_FOUND: "Not found — it may have been deleted", MEDIA_NOT_FOUND: "Image not found",
     WRONG_MEDIA_PURPOSE: "This image was uploaded for another section; upload it here", NOT_FOUND: "The selected item does not exist",
     CATEGORY_MISMATCH: "This dish is not in the selected category", RESERVED_PATH: "This path is reserved by the system",
     SAME_AS_SOURCE: "Target must differ from the source", INVALID_URL: "Invalid link (use a /site-path or https://)",
@@ -868,7 +875,7 @@ const zhCN: AdminCmsMessages = {
     ACTIVE: "启用", DELETED: "已删除", ARCHIVED: "历史版本",
   },
   fields: {
-    code: "代码", defaultDailyCapacity: "每日上限（留空 = 不限）", deadlineType: "点餐截止", deadlineDaysBefore: "提前天数",
+    code: "代码（可选）", defaultDailyCapacity: "每日上限（留空 = 不限）", deadlineType: "点餐截止", deadlineDaysBefore: "提前天数",
     deadlineTime: "前一天截止时间", serviceTime: "供应时间", serviceDayOffset: "供应日", sortOrder: "顺序", status: "状态", name: "名称",
     description: "说明", foodCategoryId: "餐饮类别", pricingType: "计价方式", priceSatang: "价格（泰铢）", childPricing: "儿童价格",
     childPriceSatang: "儿童特价（泰铢）", personsPerSet: "每套人数", minQuantity: "最少数量", maxQuantity: "最多数量", allergens: "过敏原",
@@ -885,6 +892,8 @@ const zhCN: AdminCmsMessages = {
     link: "站内路径如 /zh-cn/booking，或 https://…",
     datetime: "按您设备的时区，可留空",
     plainText: "纯文本，可换行，不支持 HTML",
+    code: "可留空，系统自动生成 · 如自行填写：A–Z、0–9 和 _，以字母开头，如 SET_A1",
+    codeLetters: "可留空，系统自动生成 · 如自行填写：仅限英文字母 A–Z 和 _（不含数字），如 DINNER",
   },
   enums: {
     NONE: "无截止", DAYS_BEFORE: "提前若干天", PREVIOUS_DAY_TIME: "前一天指定时间前", PER_PERSON: "按人", PER_SET: "按套",
@@ -1038,7 +1047,8 @@ const zhCN: AdminCmsMessages = {
   errors: {
     BOOKING_STATUS_INVALID: "预订状态不允许此操作", STAY_NOT_STARTED: "尚未到入住日期", STAY_ENDED: "已过退房日期",
     CATEGORY_NOT_EMPTY: "此类别仍有图片，请先移动或删除", OPTION_IN_USE: "此菜品是住宿含餐，请先修改含餐",
-    SLIDE_ENDED: "已过停止显示时间，请先修改日期", DUPLICATE: "与其他记录重复", TAKEN: "已被使用", RECORD_NOT_FOUND: "未找到，可能已被删除",
+    SLIDE_ENDED: "已过停止显示时间，请先修改日期", DUPLICATE: "与其他记录重复", TAKEN: "已被使用", CODE_FORMAT: "请使用 A–Z、0–9 和 _，并以字母开头（如 SET_A1），或留空由系统生成。",
+    CODE_LETTERS_ONLY: "类别代码仅限英文字母 A–Z 和 _，不含数字（如 DINNER），或留空由系统生成。", RECORD_NOT_FOUND: "未找到，可能已被删除",
     MEDIA_NOT_FOUND: "未找到图片", WRONG_MEDIA_PURPOSE: "此图片是为其他区块上传的，请在此页重新上传", NOT_FOUND: "所选项目不存在",
     CATEGORY_MISMATCH: "此菜品不在所选类别中", RESERVED_PATH: "此路径为系统保留", SAME_AS_SOURCE: "目标不能与原路径相同",
     INVALID_URL: "链接无效（请使用站内 /路径 或 https://）", INVALID_PATH: "路径无效（必须以 / 开头且在本站内）",

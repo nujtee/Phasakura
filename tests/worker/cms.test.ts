@@ -179,6 +179,50 @@ describe("history CMS (spec §11)", () => {
   });
 });
 
+describe("food codes: optional, tidied, made by the server when empty", () => {
+  it("category: letters only (database CHECK), clear errors, auto code from the English name, unique", async () => {
+    const h = new Harness({ seed: true });
+    const chef = await staff(h, ["food.view", "food.edit"]);
+    const cat = (code: unknown, en?: string) => api(h, "POST", "foodCategory", chef, {
+      ...(code === undefined ? {} : { code }), deadlineType: "NONE", status: "ACTIVE",
+      translations: { th: { name: "หมวดทดสอบ" }, ...(en ? { en: { name: en } } : {}) },
+    });
+    const digits = await cat("001");
+    assert.equal(digits.status, 422);
+    assert.equal(digits.error?.details?.code, "CODE_LETTERS_ONLY");
+    assert.equal((await cat("ข้าว")).error?.details?.code, "CODE_LETTERS_ONLY");
+
+    const tidied = await cat("late night");
+    assert.equal(tidied.status, 201, JSON.stringify(tidied.body));
+    assert.equal(tidied.data.code, "LATE_NIGHT", "upper case, spaces become _");
+
+    const fromName = await cat(undefined, "Night snack 2");
+    assert.equal(fromName.status, 201, JSON.stringify(fromName.body));
+    assert.equal(fromName.data.code, "NIGHT_SNACK");
+    const again = await cat(null, "Night snack");
+    assert.equal(again.data.code, "NIGHT_SNACK_B", "next free one, still letters only");
+    const thaiOnly = await cat("");
+    assert.equal(thaiOnly.status, 201);
+    assert.equal(thaiOnly.data.code, "CATEGORY");
+    assert.equal((await cat("")).data.code, "CATEGORY_B");
+    assert.equal((await cat("CATEGORY")).error?.details?.code, "TAKEN", "a typed code that is taken is the admin's to change");
+  });
+
+  it("dish: digits allowed after the first letter; auto code from the English name with _2, _3", async () => {
+    const h = new Harness({ seed: true });
+    const chef = await staff(h, ["food.view", "food.edit"]);
+    const dish = (code: unknown, en?: string) => api(h, "POST", "foodOption", chef, {
+      foodCategoryId: "dev_food_dinner", ...(code === undefined ? {} : { code }), pricingType: "PER_PERSON", priceSatang: 20000,
+      translations: { th: { name: "ข้าวผัด" }, ...(en ? { en: { name: en } } : {}) },
+    });
+    assert.equal((await dish("001")).error?.details?.code, "CODE_FORMAT");
+    assert.equal((await dish("set a1")).data.code, "SET_A1");
+    assert.equal((await dish(undefined, "Fried rice")).data.code, "FRIED_RICE");
+    assert.equal((await dish(undefined, "Fried rice")).data.code, "FRIED_RICE_2");
+    assert.equal((await dish(undefined)).data.code, "DISH");
+  });
+});
+
 describe("food menu CMS (spec §19–23)", () => {
   it("validates pricing rules, audits price changes, and hides inactive options from guests", async () => {
     const h = new Harness({ seed: true });

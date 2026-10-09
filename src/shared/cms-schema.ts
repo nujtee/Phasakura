@@ -40,6 +40,10 @@ export interface FieldDef {
   ref?: CmsEntityName | "unit";
   /** Set on create only; cannot be changed afterwards. */
   immutable?: boolean;
+  /** kind "code": may be left empty — the server makes one (from the English name, else generic). */
+  auto?: boolean;
+  /** kind "code": A–Z and _ only, no digits (the database CHECK of that table). */
+  lettersOnly?: boolean;
   default?: string | number | boolean | null;
 }
 
@@ -85,7 +89,8 @@ export const ENTITIES: Record<CmsEntityName, EntityDef> = {
     titleField: "name",
     requiredTranslation: "name",
     fields: [
-      { key: "code", kind: "code", required: true, max: 32, immutable: true },
+      // Food category codes: A–Z and _ only (database CHECK), e.g. DINNER; empty = made by the server.
+      { key: "code", kind: "code", max: 32, immutable: true, auto: true, lettersOnly: true },
       { key: "defaultDailyCapacity", kind: "int", min: 0, max: 100_000 },
       { key: "deadlineType", kind: "enum", values: DEADLINE_TYPES, required: true, default: "NONE" },
       { key: "deadlineDaysBefore", kind: "int", min: 0, max: 60 },
@@ -108,7 +113,7 @@ export const ENTITIES: Record<CmsEntityName, EntityDef> = {
     requiredTranslation: "name",
     fields: [
       { key: "foodCategoryId", kind: "ref", ref: "foodCategory", required: true },
-      { key: "code", kind: "code", required: true, max: 40, immutable: true },
+      { key: "code", kind: "code", max: 40, immutable: true, auto: true },
       { key: "pricingType", kind: "enum", values: FOOD_PRICING_TYPES, required: true, default: "PER_PERSON" },
       { key: "priceSatang", kind: "money", required: true, min: 0 },
       { key: "childPricing", kind: "enum", values: CHILD_PRICING, required: true, default: "FULL" },
@@ -296,6 +301,11 @@ export const CMS_TEXT = {
   /** Same-site path: starts with one "/", no "//", no backslash, no spaces or control characters. */
   path: /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/]*$/,
 } as const;
+
+/** Typed code tidied the same way in the form and on the server: "set a-1" → "SET_A_1" (other characters stay, and are refused). */
+export function normalizeCode(raw: string): string {
+  return raw.trim().toUpperCase().replace(/[\s-]+/g, "_");
+}
 
 /** Link: same-site path or an https URL. */
 export function isSafeLink(value: string): boolean {

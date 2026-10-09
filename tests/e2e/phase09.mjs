@@ -136,6 +136,26 @@ await check("food menu: add a dish, capacity grid", async () => {
   await pa.screenshot({ path: `${SHOTS}/g-admin-food-capacity.png`, fullPage: true });
 });
 
+await check("food category: code \"001\" is explained at the field; empty code is made by the system", async () => {
+  await pa.goto(`${BASE}/th/admin/food`);
+  await pa.getByRole("tab", { name: "หมวดอาหาร" }).click();
+  await pa.getByRole("button", { name: "+ เพิ่มหมวด" }).click();
+  const code = pa.getByLabel("รหัส (ไม่บังคับ)");
+  await pa.getByText("เว้นว่างได้ ระบบสร้างให้ · ถ้ากรอกเอง: ตัวอักษรภาษาอังกฤษ A–Z และ _ เท่านั้น").waitFor();
+  await code.fill("001");
+  await pa.getByLabel("ชื่อ").first().fill("ของว่างยามดึก");
+  await pa.getByRole("button", { name: "บันทึก" }).first().click();
+  await pa.locator(".adm-field__error", { hasText: "รหัสหมวดใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ A–Z และ _" }).waitFor();
+  await code.fill("late night");
+  if (await code.inputValue() !== "LATE_NIGHT") throw new Error(`typed code tidied: ${await code.inputValue()}`);
+  await code.fill("");
+  await pa.getByRole("button", { name: "บันทึก" }).first().click();
+  await pa.getByText("ของว่างยามดึก").first().waitFor();
+  const cats = await (await req.get(`${BASE}/api/admin/cms/foodCategory`)).json();
+  const made = (cats.data ?? []).find((c) => c.translations?.th?.name === "ของว่างยามดึก");
+  if (!made || !/^CATEGORY(_[A-Z]+)?$/.test(made.code)) throw new Error(`auto code: ${JSON.stringify(made?.code)}`);
+});
+
 await check("home slide: upload, publish, visible in public API", async () => {
   await pa.goto(`${BASE}/en/admin/content-home`);
   await pa.getByRole("button", { name: "+ Add slide" }).click();
