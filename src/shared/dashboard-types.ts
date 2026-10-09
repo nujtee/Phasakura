@@ -1,4 +1,5 @@
 /** Admin dashboard (spec §48) and booking calendar (spec §49) API contract. */
+import type { StayActionsDto } from "./stay.ts";
 import type { BookingStatus, PaymentStatus } from "./booking-types.ts";
 import type { LocaleCode } from "./i18n/locales.ts";
 
@@ -19,6 +20,8 @@ export interface StayRowDto {
   status: BookingStatus;
   paymentStatus: PaymentStatus;
   totalSatang: number;
+  /** Check-in / check-out / no-show today (see shared/stay.ts). */
+  stayActions: StayActionsDto;
 }
 
 export interface RevenueDto {

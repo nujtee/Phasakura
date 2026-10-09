@@ -7,6 +7,7 @@ import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button } from "../ui.tsx";
 import { useCursorList } from "../useCursorList.ts";
 import { BookingStatusBadge, useStayDate } from "./shared.tsx";
+import { StayButtons } from "./StayButtons.tsx";
 
 const PAYMENTS: PaymentStatus[] = ["UNPAID", "PENDING_VERIFICATION", "VERIFIED", "PAID", "REJECTED", "REFUNDED"];
 const STATUSES: BookingStatus[] = ["PENDING", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "CANCELLED", "EXPIRED", "NO_SHOW"];
@@ -32,7 +33,8 @@ export function BookingsPage() {
     if (before) params.set("before", before);
     return `/api/admin/bookings?${params}`;
   }, [filters]);
-  const { items, cursor, loading, error, more } = useCursorList<AdminBookingSummaryDto>(buildUrl);
+  const { items, cursor, loading, error, more, update } = useCursorList<AdminBookingSummaryDto>(buildUrl);
+  const [stayMsg, setStayMsg] = useState<string | null>(null);
 
   const apply = (e: FormEvent) => {
     e.preventDefault();
@@ -76,6 +78,7 @@ export function BookingsPage() {
       </form>
 
       {error && <Alert kind="error">{error}</Alert>}
+      {stayMsg && <Alert kind="success">{stayMsg}</Alert>}
       <div className="adm-tablewrap">
         <table className="adm-table">
           <thead>
@@ -109,6 +112,12 @@ export function BookingsPage() {
                 <td>
                   <BookingStatusBadge status={b.status} />
                   <div className="adm-muted adm-small">{t.bk[`p${b.paymentStatus}`]}</div>
+                  <StayButtons compact code={b.bookingCode} checkIn={b.checkIn} actions={b.stayActions}
+                    onDone={(next, message) => {
+                      update((rows) => rows.map((r) => (r.bookingCode === next.bookingCode
+                        ? { ...r, status: next.status, paymentStatus: next.paymentStatus, stayActions: next.stayActions } : r)));
+                      setStayMsg(message);
+                    }} />
                 </td>
               </tr>
             ))}

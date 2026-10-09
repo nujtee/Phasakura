@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { formatBaht } from "../../../shared/booking-rules.ts";
-import type { DashboardDto, StayRowDto } from "../../../shared/dashboard-types.ts";
+import type { DashboardDto, StayAction, StayRowDto } from "../../../shared/dashboard-types.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { apiGet } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { BookingStatusBadge, PaymentBadge } from "../bookings/shared.tsx";
+import { StayButtons } from "../bookings/StayButtons.tsx";
 import { Alert, errorMessage, useDateFormatter } from "../ui.tsx";
 
 /** Figures that come from the GA4 Data API; the rest is counted in D1. */
@@ -16,6 +17,8 @@ export function DashboardPage() {
   const { t, c, me, locale, can, href } = useAdmin();
   const [data, setData] = useState<DashboardDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+  const [stayMsg, setStayMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -23,7 +26,13 @@ export function DashboardPage() {
       .then(setData)
       .catch((err: unknown) => !controller.signal.aborted && setError(errorMessage(t, err)));
     return () => controller.abort();
-  }, [t]);
+  }, [t, version]);
+
+  // Check in / out / no-show from the arrivals and departures lists: the counts change too, so reload.
+  const stayChanged = (message: string) => {
+    setStayMsg(message);
+    setVersion((v) => v + 1);
+  };
 
   const baht = (n: number) => formatBaht(n, locale.code);
   const dateFmt = new Intl.DateTimeFormat(locale.code, { dateStyle: "full", timeZone: "UTC" });
@@ -79,10 +88,11 @@ export function DashboardPage() {
             </div>
           )}
 
+          {stayMsg && <Alert kind="success">{stayMsg}</Alert>}
           {data.arrivals && data.departures && (
             <div className="adm-grid2 adm-grid2--gap">
-              <StayList title={c.dash.arrivals} empty={c.dash.noArrivals} rows={data.arrivals} />
-              <StayList title={c.dash.departures} empty={c.dash.noDepartures} rows={data.departures} />
+              <StayList title={c.dash.arrivals} empty={c.dash.noArrivals} rows={data.arrivals} only={["check-in", "no-show"]} onStay={stayChanged} />
+              <StayList title={c.dash.departures} empty={c.dash.noDepartures} rows={data.departures} only={["check-out"]} onStay={stayChanged} />
             </div>
           )}
 
@@ -151,7 +161,9 @@ function Trend({ data, label, baht, bookings }: {
   );
 }
 
-function StayList({ title, empty, rows }: { title: string; empty: string; rows: StayRowDto[] }) {
+function StayList({ title, empty, rows, only, onStay }: {
+  title: string; empty: string; rows: StayRowDto[]; only: StayAction[]; onStay: (message: string) => void;
+}) {
   const { t, c, href, locale } = useAdmin();
   return (
     <div className="adm-card">
@@ -164,6 +176,7 @@ function StayList({ title, empty, rows }: { title: string; empty: string; rows: 
               <span>{r.customerName}</span>
               <span className="adm-muted">{r.itemName}{r.itemType === "OWN_TENT" ? ` × ${r.quantity}` : ""}{r.tarps > 0 ? ` + ${t.bk.tarp}` : ""} · {format(c.cal.guests, { adults: r.adults, children: r.children })}</span>
               <span className="adm-row adm-row--wrap"><BookingStatusBadge status={r.status} /> <PaymentBadge status={r.paymentStatus} /> {formatBaht(r.totalSatang, locale.code)}</span>
+              <StayButtons compact only={only} code={r.bookingCode} checkIn={r.checkIn} actions={r.stayActions} onDone={(_, message) => onStay(message)} />
             </li>
           ))}
         </ul>

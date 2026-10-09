@@ -1850,6 +1850,27 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* Check in / Check out / No-show buttons (booking page, bookings list, dashboard). */
+.adm-stay {
+  display: grid;
+  gap: 6px;
+}
+
+.adm-stay .adm-field__hint,
+.adm-stay .adm-field__error {
+  margin: 0;
+}
+
+.adm-stay--compact {
+  margin-top: 6px;
+}
+
+.adm-stay--compact .adm-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 0.875rem;
+}
+
 /* calendar */
 .adm-calwrap {
   max-height: 70vh;

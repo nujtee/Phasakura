@@ -1,3 +1,4 @@
+import { stayActions } from "../../shared/stay.ts";
 import type { BookingStatus, PaymentStatus } from "../../shared/booking-types.ts";
 import type { CalendarDto, DashboardDto, RevenueDto, StayRowDto } from "../../shared/dashboard-types.ts";
 import { CALENDAR_MAX_DAYS } from "../../shared/dashboard-types.ts";
@@ -56,8 +57,8 @@ export class DashboardService {
     let departures: StayRowDto[] | null = null;
     if (seesBookings) {
       const [a, d] = await Promise.all([this.repo.arrivals(today), this.repo.departures(today)]);
-      arrivals = a.map(stayRow);
-      departures = d.map(stayRow);
+      arrivals = a.map((r) => stayRow(r, today));
+      departures = d.map((r) => stayRow(r, today));
     }
 
     let money: DashboardDto["money"] = null;
@@ -184,7 +185,7 @@ export class DashboardService {
   }
 }
 
-function stayRow(r: BookingItemListRow): StayRowDto {
+function stayRow(r: BookingItemListRow, today: string): StayRowDto {
   return {
     bookingCode: r.booking_code,
     customerName: r.customer_name,
@@ -199,6 +200,7 @@ function stayRow(r: BookingItemListRow): StayRowDto {
     status: r.booking_status as BookingStatus,
     paymentStatus: r.payment_status as PaymentStatus,
     totalSatang: r.total_satang,
+    stayActions: stayActions(r.booking_status, r.check_in, r.check_out, today),
   };
 }
 

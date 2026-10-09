@@ -3,6 +3,7 @@
  * Money is always integer satang. Dates are YYYY-MM-DD business dates (Asia/Bangkok).
  */
 
+import type { StayActionsDto } from "./stay.ts";
 import type { GuestLineDto } from "./line-types.ts";
 import type { PaymentAccountSnapshotDto, PaymentDto, PaymentInstructionsDto } from "./payment-types.ts";
 
@@ -158,6 +159,8 @@ export interface AdminBookingSummaryDto {
   totalSatang: number;
   expiresAt: string | null;
   createdAt: string;
+  /** Check-in / check-out / no-show today (see shared/stay.ts). */
+  stayActions: StayActionsDto;
 }
 
 export interface AdminBookingDto extends PublicBookingDto {
@@ -174,6 +177,8 @@ export interface AdminBookingDto extends PublicBookingDto {
   updatedAt: string;
   paymentAccount: PaymentAccountSnapshotDto | null;
   payments: PaymentDto[];
+  /** Check-in / check-out / no-show today (see shared/stay.ts). */
+  stayActions: StayActionsDto;
 }
 
 // ------------------------------------------------------------------ food catalogue for a stay

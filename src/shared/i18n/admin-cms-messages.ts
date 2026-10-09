@@ -273,6 +273,10 @@ const th = {
     confirmCheckOut: "ยืนยันเช็กเอาต์การจองนี้?",
     confirmNoShow: "บันทึกว่าลูกค้าไม่มาเข้าพัก? ห้องยังคงถูกจองไว้และสามารถคืนเงินได้ภายหลัง",
     done: "อัปเดตสถานะการเข้าพักแล้ว",
+    doneFor: "{code}: {action} แล้ว",
+    opensOn: "เช็กอิน / ลูกค้าไม่มา กดได้ตั้งแต่วันเข้าพัก {date}",
+    needConfirmed: "เช็กอินได้เมื่อการจองได้รับการยืนยันแล้ว (ชำระเงินแล้ว)",
+    actions: "การเข้าพัก",
   },
   bset: {
     title: "กฎการจอง",
@@ -704,6 +708,10 @@ const en: AdminCmsMessages = {
     confirmCheckOut: "Check this guest out?",
     confirmNoShow: "Mark as no-show? The nights stay reserved and a refund can be recorded later.",
     done: "Stay status updated",
+    doneFor: "{code}: {action} done",
+    opensOn: "Check in / No-show can be pressed from the arrival day, {date}",
+    needConfirmed: "Check-in becomes possible once the booking is confirmed (paid)",
+    actions: "Stay",
   },
   bset: {
     title: "Booking rules", holdMinutes: "Payment hold (minutes)", maxNights: "Maximum nights per booking",
@@ -931,6 +939,8 @@ const zhCN: AdminCmsMessages = {
   stay: {
     title: "入住", checkIn: "办理入住", checkOut: "办理退房", noShow: "未到店", confirmCheckIn: "确认为此预订办理入住？",
     confirmCheckOut: "确认为此预订办理退房？", confirmNoShow: "标记为未到店？房晚仍保留，之后可记录退款。", done: "入住状态已更新",
+    doneFor: "{code}：已{action}", opensOn: "办理入住 / 未到店 从入住日 {date} 起可用", needConfirmed: "预订确认（已付款）后才能办理入住",
+    actions: "入住",
   },
   bset: {
     title: "预订规则", holdMinutes: "付款保留时间（分钟）", maxNights: "每笔预订最多晚数", maxAdvanceDays: "最多提前预订（天）",

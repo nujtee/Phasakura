@@ -9,13 +9,11 @@ import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, errorMessage, useDateFormatter } from "../ui.tsx";
 import { PaymentPanel } from "../payments/PaymentPanel.tsx";
 import { BookingStatusBadge, useStayDate } from "./shared.tsx";
-
-type StayAction = "check-in" | "check-out" | "no-show";
+import { StayButtons } from "./StayButtons.tsx";
 
 export function BookingDetailPage({ code }: { code: string }) {
   const { t, c, can, href, locale } = useAdmin();
-  const [stayAction, setStayAction] = useState<StayAction | null>(null);
-  const [stayDone, setStayDone] = useState(false);
+  const [stayDone, setStayDone] = useState<string | null>(null);
   const dateTime = useDateFormatter();
   const stayDate = useStayDate();
   const [b, setB] = useState<AdminBookingDto | null>(null);
@@ -40,6 +38,7 @@ export function BookingDetailPage({ code }: { code: string }) {
     setBusy(true);
     setError(null);
     setPaymentNotice(null);
+    setStayDone(null);
     try {
       setB(await apiRequest<AdminBookingDto>("POST", `/api/admin/bookings/${encodeURIComponent(code)}/cancel`, { reason: reason.trim() }));
       setDone(true);
@@ -50,21 +49,12 @@ export function BookingDetailPage({ code }: { code: string }) {
     }
   }
 
-  async function stay(action: StayAction) {
-    setStayAction(null);
-    setBusy(true);
+  const stayChanged = (next: AdminBookingDto, message: string) => {
+    setB(next);
     setError(null);
-    setStayDone(false);
     setPaymentNotice(null);
-    try {
-      setB(await apiRequest<AdminBookingDto>("POST", `/api/admin/bookings/${encodeURIComponent(code)}/stay/${action}`));
-      setStayDone(true);
-    } catch (err) {
-      setError(detailMessage(t, err));
-    } finally {
-      setBusy(false);
-    }
-  }
+    setStayDone(message);
+  };
 
   const baht = (s: number) => formatBaht(s, locale.code);
   const back = <p><Link to={href("bookings")}>← {t.bk.back}</Link></p>;
@@ -82,19 +72,13 @@ export function BookingDetailPage({ code }: { code: string }) {
         <BookingStatusBadge status={b.status} />
       </div>
       {done && <Alert kind="success">{t.bk.cancelled}</Alert>}
-      {stayDone && <Alert kind="success">{c.stay.done}</Alert>}
-      {can("bookings.edit") && (b.status === "CONFIRMED" || b.status === "CHECKED_IN") && (
-        <div className="adm-card">
-          <h2 className="adm-h2">{c.stay.title}</h2>
-          <div className="adm-row adm-row--wrap">
-            {b.status === "CONFIRMED" && <Button busy={busy} onClick={() => setStayAction("check-in")}>{c.stay.checkIn}</Button>}
-            {b.status === "CHECKED_IN" && <Button busy={busy} onClick={() => setStayAction("check-out")}>{c.stay.checkOut}</Button>}
-            {b.status === "CONFIRMED" && <Button variant="secondary" busy={busy} onClick={() => setStayAction("no-show")}>{c.stay.noShow}</Button>}
-          </div>
-          <ConfirmDialog open={!!stayAction} danger={stayAction === "no-show"}
-            message={stayAction === "check-in" ? c.stay.confirmCheckIn : stayAction === "check-out" ? c.stay.confirmCheckOut : c.stay.confirmNoShow}
-            confirmLabel={stayAction === "check-in" ? c.stay.checkIn : stayAction === "check-out" ? c.stay.checkOut : c.stay.noShow}
-            onConfirm={() => stayAction && void stay(stayAction)} onCancel={() => setStayAction(null)} />
+      {stayDone && <Alert kind="success">{stayDone}</Alert>}
+      {can("bookings.edit") && (b.status === "PENDING" || b.status === "CONFIRMED" || b.status === "CHECKED_IN") && (
+        <div className="adm-card" role="group" aria-labelledby="stay-h">
+          <h2 className="adm-h2" id="stay-h">{c.stay.title}</h2>
+          {b.status === "PENDING"
+            ? <p className="adm-muted">{c.stay.needConfirmed}</p>
+            : <StayButtons code={b.bookingCode} checkIn={b.checkIn} actions={b.stayActions} onDone={stayChanged} />}
         </div>
       )}
       {error && <Alert kind="error">{error}</Alert>}

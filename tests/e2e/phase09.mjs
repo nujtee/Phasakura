@@ -99,8 +99,37 @@ await check("check-in from the booking page", async () => {
   await pa.goto(`${BASE}/en/admin/bookings/${A.bookingCode}`);
   await pa.getByRole("button", { name: "Check in" }).click();
   await pa.locator("dialog[open]").getByRole("button", { name: "Check in" }).click();
-  await pa.getByText("Stay status updated").waitFor();
+  await pa.getByText(`${A.bookingCode}: Check in done`).waitFor();
   await pa.getByRole("button", { name: "Check out" }).waitFor();
+});
+
+await check("a future stay: Check in / No-show shown but not pressable before the arrival day", async () => {
+  await pa.goto(`${BASE}/en/admin/bookings/${D.bookingCode}`);
+  const stay = pa.getByRole("group", { name: "Stay" });
+  if (!(await stay.getByRole("button", { name: "Check in" }).isDisabled())) throw new Error("check-in enabled early");
+  if (!(await stay.getByRole("button", { name: "No-show" }).isDisabled())) throw new Error("no-show enabled early");
+  await stay.getByText(/can be pressed from the arrival day/).waitFor();
+});
+
+await check("dashboard arrivals: check in straight from the list; bookings list: check out from the row", async () => {
+  await pa.goto(`${BASE}/en/admin`);
+  await pa.getByRole("button", { name: `Check in ${C.bookingCode}` }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Check in" }).click();
+  await pa.getByText(`${C.bookingCode}: Check in done`).waitFor();
+  await pa.getByRole("button", { name: `Check in ${C.bookingCode}` }).waitFor({ state: "detached" });
+  // Arrivals offer check-in / no-show only: a guest just checked in is not one click from checking out.
+  if (await pa.getByRole("button", { name: `Check out ${C.bookingCode}` }).count()) throw new Error("check-out offered in arrivals");
+  await pa.screenshot({ path: `${SHOTS}/g-admin-dashboard-stay.png`, fullPage: true });
+
+  await pa.goto(`${BASE}/en/admin/bookings`);
+  const row = pa.locator("tbody tr", { hasText: C.bookingCode });
+  await row.getByRole("button", { name: `Check out ${C.bookingCode}` }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Check out" }).click();
+  await pa.getByText(`${C.bookingCode}: Check out done`).waitFor();
+  await row.getByText("Checked out").waitFor();
+  // Not paid yet: no stay buttons on that row.
+  if (await pa.locator("tbody tr", { hasText: "0822222222" }).getByRole("button").count()) throw new Error("buttons on an unpaid booking");
+  await pa.screenshot({ path: `${SHOTS}/g-admin-bookings-stay.png`, fullPage: true });
 });
 
 await check("payments list", async () => {

@@ -30,5 +30,8 @@ export function useCursorList<T>(buildUrl: (before: string | null) => string) {
     void load(null, true);
   }, [load]);
 
-  return { items, cursor, loading, error, more: () => void load(cursor, false) };
+  /** Change loaded rows in place (e.g. after an action on one row) without reloading the list. */
+  const update = useCallback((change: (rows: T[]) => T[]) => setItems(change), []);
+
+  return { items, cursor, loading, error, more: () => void load(cursor, false), update };
 }

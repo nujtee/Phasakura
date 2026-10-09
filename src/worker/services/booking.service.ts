@@ -11,6 +11,7 @@ import type {
 import { BOOKING_CODE_PATTERN, maskPhone, normalizePhone } from "../../shared/booking-types.ts";
 import type { BookingSettingsDto, StayAction } from "../../shared/dashboard-types.ts";
 import { todayIn } from "../../shared/dates.ts";
+import { stayActions } from "../../shared/stay.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError, HttpError, NotFoundError, TooManyRequestsError, ValidationError } from "../http/errors.ts";
 import type { BookingRepository, BookingRow } from "../repositories/booking.repository.ts";
@@ -362,6 +363,7 @@ export class BookingService {
       limit: filter.limit + 1,
     });
     const page = rows.slice(0, filter.limit);
+    const today = todayIn(await this.quotes.timezone(), this.clock());
     return {
       items: page.map((r) => ({
         id: r.id,
@@ -382,6 +384,7 @@ export class BookingService {
         totalSatang: r.total_satang,
         expiresAt: r.expires_at,
         createdAt: r.created_at,
+        stayActions: stayActions(r.booking_status, r.check_in, r.check_out, today),
       })),
       nextCursor: rows.length > filter.limit ? page[page.length - 1]!.created_at : null,
     };
@@ -429,23 +432,20 @@ export class BookingService {
     const row = await this.expireIfDue(await this.findOr404(code));
     const today = todayIn(await this.quotes.timezone(), this.clock());
     const plan = {
-      "check-in": { from: "CONFIRMED", to: "CHECKED_IN", audit: "CHECK_IN" },
-      "check-out": { from: "CHECKED_IN", to: "CHECKED_OUT", audit: "CHECK_OUT" },
-      "no-show": { from: "CONFIRMED", to: "NO_SHOW", audit: "NO_SHOW" },
-    }[action];
-    if (row.booking_status !== plan.from) {
-      throw new ConflictError(`Booking must be ${plan.from} for this action`, "BOOKING_STATUS_INVALID");
-    }
-    if ((action === "check-in" || action === "no-show") && today < row.check_in) {
-      throw new ConflictError("The stay has not started yet", "STAY_NOT_STARTED");
-    }
-    if (action === "check-in" && today >= row.check_out) {
-      throw new ConflictError("The stay has already ended", "STAY_ENDED");
-    }
+      "check-in": { from: "CONFIRMED", to: "CHECKED_IN", audit: "CHECK_IN", gate: "checkIn" },
+      "check-out": { from: "CHECKED_IN", to: "CHECKED_OUT", audit: "CHECK_OUT", gate: "checkOut" },
+      "no-show": { from: "CONFIRMED", to: "NO_SHOW", audit: "NO_SHOW", gate: "noShow" },
+    } as const;
+    const step = plan[action];
+    // The same rules the admin shows its buttons by (shared/stay.ts).
+    const gate = stayActions(row.booking_status, row.check_in, row.check_out, today)[step.gate];
+    if (gate === null) throw new ConflictError(`Booking must be ${step.from} for this action`, "BOOKING_STATUS_INVALID");
+    if (gate === "NOT_YET") throw new ConflictError("The stay has not started yet", "STAY_NOT_STARTED");
+    if (gate === "ENDED") throw new ConflictError("The stay has already ended", "STAY_ENDED");
     const now = iso(this.clock());
     const results = await this.db.batch([
-      this.repo.transitionStatement(row.id, plan.from, plan.to, now),
-      this.log.auditStatement(actor.userId, plan.audit, "bookings", row.id, { status: plan.from }, { status: plan.to }, meta),
+      this.repo.transitionStatement(row.id, step.from, step.to, now),
+      this.log.auditStatement(actor.userId, step.audit, "bookings", row.id, { status: step.from }, { status: step.to }, meta),
     ]);
     if (!(results[0]?.results.length)) throw new ConflictError("The booking changed meanwhile, please reload", "BOOKING_STATUS_INVALID");
     return this.toAdmin((await this.repo.findByCode(row.booking_code))!);
@@ -593,6 +593,7 @@ export class BookingService {
       cancelledAt: row.cancelled_at,
       cancelReason: row.cancel_reason,
       updatedAt: row.updated_at,
+      stayActions: stayActions(row.booking_status, row.check_in, row.check_out, todayIn(await this.quotes.timezone(), this.clock())),
     };
   }
 }

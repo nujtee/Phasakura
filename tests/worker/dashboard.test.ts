@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AdminBookingDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
+import type { AdminBookingDto, AdminBookingSummaryDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
 import type { AdminPaymentListItemDto, BookingSettingsDto, CalendarDto, DashboardDto } from "../../src/shared/dashboard-types.ts";
 import { Harness } from "../helpers/harness.ts";
 
@@ -131,12 +131,23 @@ describe("booking calendar (spec §49)", () => {
 describe("stay lifecycle: check-in / check-out / no-show", () => {
   it("moves only along the allowed path; the database refuses anything else", async () => {
     const h = new Harness({ seed: true });
-    const admin = await staff(h, ["bookings.view", "bookings.edit", "payments.verify"]);
+    const admin = await staff(h, ["bookings.view", "bookings.edit", "payments.verify", "dashboard.view"]);
     const today = await book(h, house("dev_house_01", "2027-01-10", "2027-01-12"));
     const pending = await book(h, house("dev_vip_01", "2027-01-10", "2027-01-11"), "0899999999");
     const future = await book(h, house("dev_house_02", "2027-01-20", "2027-01-21"), "0866666666");
     await pay(h, admin, today);
     await pay(h, admin, future);
+
+    // The admin gets the same rules to show its buttons: list rows, the booking page, dashboard arrivals.
+    const list = await h.api<{ items: AdminBookingSummaryDto[] }>("GET", "/api/admin/bookings?limit=10", { token: admin });
+    const gates = Object.fromEntries(list.data.items.map((r) => [r.bookingCode, r.stayActions]));
+    assert.deepEqual(gates[today.bookingCode], { checkIn: "OK", noShow: "OK", checkOut: null });
+    assert.deepEqual(gates[future.bookingCode], { checkIn: "NOT_YET", noShow: "NOT_YET", checkOut: null });
+    assert.deepEqual(gates[pending.bookingCode], { checkIn: null, noShow: null, checkOut: null });
+    const page = await h.api<AdminBookingDto>("GET", `/api/admin/bookings/${future.bookingCode}`, { token: admin });
+    assert.deepEqual(page.data.stayActions, { checkIn: "NOT_YET", noShow: "NOT_YET", checkOut: null });
+    const dash = await h.api<DashboardDto>("GET", "/api/admin/dashboard", { token: admin });
+    assert.deepEqual(dash.data.arrivals?.find((r) => r.bookingCode === today.bookingCode)?.stayActions, { checkIn: "OK", noShow: "OK", checkOut: null });
 
     const notPaid = await h.api("POST", `/api/admin/bookings/${pending.bookingCode}/stay/check-in`, { token: admin });
     assert.equal(notPaid.error?.code, "BOOKING_STATUS_INVALID");
@@ -151,6 +162,7 @@ describe("stay lifecycle: check-in / check-out / no-show", () => {
     const inRes = await h.api<AdminBookingDto>("POST", `/api/admin/bookings/${today.bookingCode}/stay/check-in`, { token: admin });
     assert.equal(inRes.status, 200, JSON.stringify(inRes.body));
     assert.equal(inRes.data.status, "CHECKED_IN");
+    assert.deepEqual(inRes.data.stayActions, { checkIn: null, noShow: null, checkOut: "OK" });
     const again = await h.api("POST", `/api/admin/bookings/${today.bookingCode}/stay/check-in`, { token: admin });
     assert.equal(again.error?.code, "BOOKING_STATUS_INVALID");
     const outRes = await h.api<AdminBookingDto>("POST", `/api/admin/bookings/${today.bookingCode}/stay/check-out`, { token: admin });
