@@ -177,6 +177,51 @@ await check("approve: another slip is approved → confirmed, staff and guest to
   assert((await emails()).some((m) => m.to[0] === "b@example.test" && /ยืนยันการจอง/.test(m.subject)), "guest confirmed e-mail");
 });
 
+await check("booking page: staff decline (pay again) then approve the slip without leaving the booking", async () => {
+  const E = await book({ checkIn: day(32), checkOut: day(33), stay: { kind: "UNIT", unitId: "dev_house_02" } }, "0864444444", { email: "e@example.test" });
+  const upload = async (file) => {
+    await pg.goto(`${BASE}/th/booking/lookup?code=${E.bookingCode}`);
+    await pg.locator("#lk-phone").fill("0864444444");
+    await pg.locator("form button[type=submit]").click();
+    await pg.getByRole("radio", { name: /โอนเข้าบัญชี/ }).check();
+    await pg.locator(".slip input[type=file]").setInputFiles(file);
+    await pg.getByRole("button", { name: "ส่งสลิป" }).click();
+    await pg.getByText("ได้รับการชำระเงินแล้ว", { exact: false }).waitFor();
+  };
+  await upload(`${FIXTURES}/g-sq.png`);
+  await pa.goto(`${BASE}/en/admin/bookings/${E.bookingCode}`);
+  const review = pa.getByRole("group", { name: "Slip waiting for review" });
+  await review.locator("img").waitFor();
+  await review.getByText("Bank transfer").waitFor();
+  await pa.screenshot({ path: `${SHOTS}/pay-booking-review.png`, fullPage: true });
+  await review.getByRole("button", { name: "Decline / cancel" }).click();
+  const dialog = pa.locator("dialog.slip-decline");
+  await dialog.getByLabel(/Reason \(sent to the guest\)/).fill("ยอดเงินไม่ตรง กรุณาส่งสลิปใหม่");
+  await dialog.getByLabel(/Let the guest pay again/).check();
+  await dialog.getByRole("button", { name: "Decline / cancel" }).click();
+  await pa.getByText("Declined — the guest was told the reason.").waitFor();
+  await review.waitFor({ state: "detached" });
+  let d = (await (await req.get(`${BASE}/api/admin/bookings/${E.bookingCode}`, { headers: H })).json()).data;
+  assert(d.status === "PENDING" && d.paymentStatus === "REJECTED", JSON.stringify([d.status, d.paymentStatus]));
+  await cron();
+  const told = (await emails()).filter((m) => m.to[0] === "e@example.test");
+  assert(told.some((m) => m.text.includes("ยอดเงินไม่ตรง กรุณาส่งสลิปใหม่")), `guest told the decline reason ${JSON.stringify(told.map((m) => m.subject))}`);
+
+  await upload(`${FIXTURES}/food.png`);
+  await pa.reload();
+  await review.getByRole("button", { name: "Approve" }).waitFor();
+  await review.getByLabel("Transaction reference (optional)").fill("E2EREF0001");
+  await review.getByRole("button", { name: "Approve" }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Approve" }).click();
+  await pa.getByText("Approved — the booking is confirmed and the guest was told.").waitFor();
+  await review.waitFor({ state: "detached" });
+  d = (await (await req.get(`${BASE}/api/admin/bookings/${E.bookingCode}`, { headers: H })).json()).data;
+  assert(d.status === "CONFIRMED" && d.paymentStatus === "VERIFIED", JSON.stringify([d.status, d.paymentStatus]));
+  assert(d.payments.filter((p) => p.status === "VERIFIED").length === 1 && d.payments.filter((p) => p.status === "REJECTED").length === 1, JSON.stringify(d.payments.map((p) => p.status)));
+  await cron();
+  assert((await emails()).some((m) => m.to[0] === "e@example.test" && /ยืนยันการจอง/.test(m.subject)), "guest confirmed e-mail");
+});
+
 // ------------------------------------------------------------------ PayPal round trip
 await check("PayPal: guest pays at (fake) PayPal and comes back to a confirmed booking", async () => {
   const C = await book({ checkIn: day(26), checkOut: day(27), stay: { kind: "UNIT", unitId: "dev_vip_01" } }, "0862222222");

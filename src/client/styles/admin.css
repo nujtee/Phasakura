@@ -1531,6 +1531,65 @@
   }
 }
 
+/* Slip review on the booking page (approve / decline without leaving the booking). */
+.adm-slip-review {
+  border: 1px solid color-mix(in srgb, var(--color-warning) 40%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-warning) 6%, var(--color-surface));
+  padding: 14px 16px;
+}
+
+.adm-slip-review__body {
+  display: grid;
+  gap: 14px;
+}
+
+@media (min-width: 760px) {
+  .adm-slip-review__body {
+    grid-template-columns: 160px minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.adm-slip-review__img {
+  display: block;
+  max-height: 260px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+}
+
+.adm-slip-review__img img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.adm-slip-review__text p {
+  margin: 0 0 8px;
+}
+
+.adm-slip-review .adm-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.adm-slip-review .adm-inline .adm-btn {
+  min-height: 44px;
+}
+
+.adm-slip-review .adm-inline input {
+  min-height: 44px;
+  flex: 1 1 220px;
+  padding: 8px 10px;
+  font: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
 .slip-decline {
   width: min(520px, calc(100vw - 32px));
   max-width: none;

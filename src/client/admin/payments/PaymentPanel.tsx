@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from "react";
 import type { AdminBookingDto } from "../../../shared/booking-types.ts";
 import { formatBaht, parseBahtToSatang, SATANG_PER_BAHT } from "../../../shared/booking-rules.ts";
+import { format } from "../../../shared/i18n/admin-messages.ts";
 import { localDateTimeIn, DEFAULT_TIMEZONE } from "../../../shared/dates.ts";
 import { PAYMENT_METHODS, type PaymentMethod } from "../../../shared/payment-types.ts";
 import { apiRequest } from "../../api/client.ts";
+import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, Field, fieldErrors, useDateFormatter } from "../ui.tsx";
+import { DeclineDialog } from "./SlipsPage.tsx";
 
 /** "2027-01-10T14:30" entered in property time → ISO instant (Asia/Bangkok has no DST: +07:00). */
 function bangkokToIso(local: string): string {
@@ -14,7 +17,7 @@ function bangkokToIso(local: string): string {
 
 /** Payment section of the admin booking page: account snapshot, payments, record & refund. */
 export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto; onChanged: () => void }) {
-  const { t, can, locale } = useAdmin();
+  const { t, can, locale, href } = useAdmin();
   const dateTime = useDateFormatter();
   const baht = (s: number) => formatBaht(s, locale.code);
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
@@ -27,11 +30,48 @@ export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto;
     note: "",
   });
   const [refund, setRefund] = useState<{ paymentId: string; amount: string; reason: string } | null>(null);
-  const [confirm, setConfirm] = useState<"record" | "refund" | null>(null);
+  const [confirm, setConfirm] = useState<"record" | "refund" | "approve" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [txRef, setTxRef] = useState("");
+  const [declining, setDeclining] = useState(false);
 
-  // A pending slip is handled on the Slips page (verify / reject), never by recording a second payment.
+  // A pending slip is approved / declined (here or on the Slips page), never answered by recording a second payment.
   const awaiting = booking.status === "PENDING" && ["UNPAID", "REJECTED"].includes(booking.paymentStatus);
+  const pending = booking.status === "PENDING" && can("payments.verify") ? booking.payments.find((p) => p.status === "PENDING_VERIFICATION") ?? null : null;
+
+  async function doApprove() {
+    setConfirm(null);
+    if (!pending) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await apiRequest("POST", `/api/admin/payments/${encodeURIComponent(pending.id)}/verify`, txRef.trim() ? { transactionRef: txRef.trim() } : {});
+      setTxRef("");
+      setMessage({ kind: "success", text: t.slip.verifiedDone });
+      onChanged();
+    } catch (err) {
+      setMessage({ kind: "error", text: detailMessage(t, err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doDecline(reason: string, cancelBooking: boolean) {
+    if (!pending) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await apiRequest("POST", `/api/admin/payments/${encodeURIComponent(pending.id)}/reject`, { reason, cancelBooking });
+      setDeclining(false);
+      setMessage({ kind: "success", text: cancelBooking ? t.slip.cancelledDone : t.slip.rejectedDone });
+      onChanged();
+    } catch (err) {
+      setDeclining(false);
+      setMessage({ kind: "error", text: detailMessage(t, err) });
+    } finally {
+      setBusy(false);
+    }
+  }
   const refundable = booking.status === "CANCELLED" || booking.status === "NO_SHOW";
 
   async function doRecord() {
@@ -138,6 +178,37 @@ export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto;
         </div>
       )}
 
+      {pending && (
+        <div className="adm-subform adm-slip-review" role="group" aria-labelledby="slip-review-h">
+          <h3 id="slip-review-h" className="adm-h3 adm-subform__title">{t.pay.reviewTitle}</h3>
+          <div className="adm-slip-review__body">
+            {pending.slipUrl && can("slips.view") && (
+              <a href={pending.slipUrl} target="_blank" rel="noopener" className="adm-slip-review__img" aria-label={t.slip.openSlip}>
+                <img src={pending.slipUrl} alt={format(t.slip.slipAlt, { code: booking.bookingCode })} loading="lazy" decoding="async" />
+              </a>
+            )}
+            <div className="adm-slip-review__text">
+              <p>
+                {pending.channel ? t.pay[`c${pending.channel}`] : t.pay[`m${pending.method}`]} · <strong>{baht(pending.amountSatang)}</strong>
+                {" · "}<span className="adm-small adm-muted">{t.slip.submitted} {dateTime(pending.submittedAt)}</span>
+              </p>
+              {pending.channel === "PAYPAL" && <Alert kind="info">{t.slip.paypalNote}</Alert>}
+              <p className="adm-field__hint">{t.pay.reviewHint}</p>
+              {can("slips.view") && <p className="adm-small"><Link to={href("slips")}>{t.pay.reviewChecks}</Link></p>}
+              <form className="adm-inline" onSubmit={(e: FormEvent) => { e.preventDefault(); setConfirm("approve"); }}>
+                {pending.slipUrl && (
+                  <input aria-label={t.slip.txRefInput} placeholder={t.slip.txRefInput} maxLength={64} value={txRef} onChange={(e) => setTxRef(e.target.value)} />
+                )}
+                <Button type="submit" busy={busy}>{t.slip.approve}</Button>
+                <Button variant="danger" busy={busy} onClick={() => setDeclining(true)}>{t.slip.reject}</Button>
+              </form>
+            </div>
+          </div>
+          <DeclineDialog open={declining} code={booking.bookingCode} canCancel={can("bookings.cancel")} busy={busy}
+            onClose={() => setDeclining(false)} onSubmit={(r, c) => void doDecline(r, c)} />
+        </div>
+      )}
+
       {refund && (
         <form className="adm-subform" onSubmit={(e: FormEvent) => { e.preventDefault(); setConfirm("refund"); }}>
           <div className="adm-grid2">
@@ -176,9 +247,10 @@ export function PaymentPanel({ booking, onChanged }: { booking: AdminBookingDto;
       )}
 
       <ConfirmDialog open={confirm !== null} danger={confirm === "refund"}
-        message={confirm === "refund" ? t.pay.refundConfirm : t.pay.recordConfirm}
-        confirmLabel={confirm === "refund" ? t.pay.refund : t.pay.record}
-        onCancel={() => setConfirm(null)} onConfirm={() => void (confirm === "refund" ? doRefund() : doRecord())} />
+        message={confirm === "refund" ? t.pay.refundConfirm : confirm === "approve" ? t.slip.verifyConfirm : t.pay.recordConfirm}
+        confirmLabel={confirm === "refund" ? t.pay.refund : confirm === "approve" ? t.slip.approve : t.pay.record}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => void (confirm === "refund" ? doRefund() : confirm === "approve" ? doApprove() : doRecord())} />
     </div>
   );
 }

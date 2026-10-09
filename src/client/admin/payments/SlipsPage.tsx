@@ -46,7 +46,7 @@ function Check({ v }: { v: SlipVerificationDto }) {
  * Decline a payment: the reason goes to the guest (booking page, LINE, e-mail). The guest either pays
  * again (the booking stays held) or the booking is cancelled and its nights / tents / food released.
  */
-function DeclineDialog({ open, code, canCancel, busy, onClose, onSubmit }: {
+export function DeclineDialog({ open, code, canCancel, busy, onClose, onSubmit }: {
   open: boolean; code: string; canCancel: boolean; busy: boolean; onClose: () => void;
   onSubmit: (reason: string, cancelBooking: boolean) => void;
 }) {
