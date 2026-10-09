@@ -34,7 +34,14 @@ PUBLIC_MEDIA_BASE_URL=
 # LINE_CHANNEL_ACCESS_TOKEN=
 # LINE_CHANNEL_SECRET=
 
-# E-mail notifications (migration 0023) — Resend (https://resend.com) API key; the sender domain must be verified there.
+# E-mail notifications (migration 0023) — from the Zoho Mail mailbox: Zoho API Console (api-console.zoho.com) →
+# Self Client → client id / secret; Generate Code with the scopes ZohoMail.messages.CREATE,ZohoMail.accounts.READ,
+# then exchange the code for a refresh token (docs/PRODUCTION.md). ZOHO_REGION only when not US (eu, in, com.au, jp, ca, sa).
+# ZOHO_CLIENT_ID=
+# ZOHO_CLIENT_SECRET=
+# ZOHO_REFRESH_TOKEN=
+# ZOHO_REGION=
+# …or Resend instead (used only while the Zoho secrets are not set); the sender domain must be verified there.
 # RESEND_API_KEY=
 
 # PayPal Checkout (migration 0023) — PayPal Developer → Apps & Credentials → REST app (client id + secret).

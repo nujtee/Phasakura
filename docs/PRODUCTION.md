@@ -122,12 +122,35 @@ npx wrangler secret list            # ดูได้แค่ชื่อ
 | `META_PIXEL_ID` | ไม่บังคับ (ทับ Pixel ID ใน Admin สำหรับ CAPI) |
 | `META_TEST_EVENT_CODE` | ช่วงทดสอบเท่านั้น — **ลบหลังทดสอบ** (สถานะระบบเตือนถ้ายังอยู่ใน production) |
 | `GA4_SERVICE_ACCOUNT_KEY` | ตัวเลข GA4 บน Dashboard (ใส่ property ID ใน Admin → Marketing → GA4) |
-| `RESEND_API_KEY` | อีเมลแจ้งเตือน (Admin → ตั้งค่า → อีเมลแจ้งเตือน) — ต้องยืนยันโดเมนผู้ส่งใน Resend (เพิ่ม DNS ที่ Resend ให้) |
+| `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN` | อีเมลแจ้งเตือนจากกล่อง Zoho Mail ของร้าน (Admin → ตั้งค่า → อีเมลแจ้งเตือน) — วิธีสร้างดูหัวข้อ "อีเมลผ่าน Zoho Mail" ด้านล่าง |
+| `ZOHO_REGION` | ไม่บังคับ: data center ของ Zoho ถ้าไม่ใช่ US (`eu`, `in`, `com.au`, `jp`, `ca`, `sa`) — ดูจากโดเมนตอน login Zoho Mail |
+| `RESEND_API_KEY` | ไม่บังคับ: ส่งผ่าน Resend แทน (ใช้เฉพาะเมื่อยังไม่ได้ตั้ง Zoho) — ต้องยืนยันโดเมนผู้ส่งใน Resend |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | PayPal Checkout (Admin → การเงิน → ตั้งค่าการชำระเงิน) — PayPal Developer → Apps & Credentials → สร้าง REST app (Live) |
 | `PAYPAL_ENV` | ไม่บังคับ: `sandbox` เฉพาะตอนทดสอบด้วย credentials ของ sandbox (ไม่ตั้ง = PayPal จริง) |
 
 `SLIP_VERIFICATION_API_KEY` อย่างเดียว (ไม่ตั้ง `SLIP_VERIFY_PROVIDER`) = ใช้ EasySlip — **อย่าเปิด IP whitelist ใน EasySlip**
 (Cloudflare Workers ไม่มี IP ขาออกคงที่) โหมด Auto / Manual approve เลือกใน Admin → การเงิน → ตั้งค่าการชำระเงิน
+
+### อีเมลผ่าน Zoho Mail
+
+ส่งจากกล่อง Zoho Mail ของโดเมน (เช่น booking@phasakura.com) ผ่าน Zoho Mail API — SPF / DKIM ของ Zoho ที่ตั้งไว้แล้ว
+ครอบคลุมอยู่ ไม่ต้องเพิ่ม DNS
+
+1. login https://api-console.zoho.com ด้วยบัญชีของกล่องที่จะใช้ส่ง → **Self Client** → CREATE → คัด Client ID / Client Secret
+2. แท็บ **Generate Code**: Scope `ZohoMail.messages.CREATE,ZohoMail.accounts.READ`, Time Duration 10 minutes → CREATE → คัด code
+3. แลก code เป็น refresh token ภายในเวลาที่เลือก (data center อื่นเปลี่ยน `accounts.zoho.com` ตามโดเมนของ Zoho):
+   ```bash
+   curl -s -X POST https://accounts.zoho.com/oauth/v2/token \
+     -d grant_type=authorization_code -d client_id=CLIENT_ID -d client_secret=CLIENT_SECRET -d code=CODE
+   ```
+   คำตอบมี `"refresh_token"` (ไม่หมดอายุ) — ถ้าได้ `"error":"invalid_code"` แปลว่า code หมดเวลา/ใช้ไปแล้ว ให้สร้างใหม่
+4. `wrangler secret put ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN` (และ `ZOHO_REGION` ถ้าไม่ใช่ US)
+5. Admin → ตั้งค่า → อีเมลแจ้งเตือน: ต้องขึ้น "✓ Zoho Mail" → อีเมลผู้ส่ง = อีเมลของกล่องนั้น (หรือ alias) → เพิ่มอีเมลเจ้าหน้าที่ → "ส่งทดสอบ"
+
+ข้อจำกัด: Zoho จำกัดการส่งออกนอกโดเมน 50–500 ฉบับ/ชั่วโมง (ปรับตามชื่อเสียงผู้ส่ง) และ API 30 ครั้ง/นาที — เกินแล้ว
+ระบบรอและส่งใหม่เอง; ชื่อผู้ส่งใช้ display name ของกล่อง Zoho; ไม่มี Reply-To (ลูกค้าตอบกลับมาที่อีเมลผู้ส่ง);
+ฉบับที่ส่งจะอยู่ในโฟลเดอร์ Sent ของกล่องนั้น ถ้าต้องการยกเลิกสิทธิ์: api-console.zoho.com → ลบ Self Client
+แล้ว `wrangler secret delete` ทั้งสามค่า
 
 ถ้าสงสัยว่า secret รั่ว: สร้างค่าใหม่ที่ผู้ให้บริการ (LINE: reissue channel secret / token, Meta: generate token ใหม่,
 Google: สร้าง key ใหม่แล้วลบ key เก่า) → `wrangler secret put` → ตรวจด้วย "Check connection" / "Send test event"

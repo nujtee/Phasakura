@@ -13,7 +13,7 @@ function id(ctx: RequestContext): string {
   return value;
 }
 
-/** E-mail notifications (Resend): settings, staff addresses, test, log. Permissions are checked in the service. */
+/** E-mail notifications (Zoho Mail / Resend): settings, staff addresses, test, log. Permissions are checked in the service. */
 export function emailController(services: ServicesFor) {
   return {
     settings: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).email.getSettings(auth, requestMeta(ctx)))),

@@ -7,7 +7,7 @@ import { bookingLookupPath } from "../../shared/routes.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError, NotFoundError, TooManyRequestsError } from "../http/errors.ts";
 import { emailTexts, fillText, renderEmail, type RenderedEmail } from "../email/email-templates.ts";
-import { formatFrom, ResendClient, type FetchLike } from "../email/resend.ts";
+import type { EmailSender } from "../email/sender.ts";
 import {
   guestCancelledText, guestConfirmedText, guestPaymentRejectedText, LineFormatter, newBookingText, paymentConfirmedText, paymentReviewText,
   type MsgBooking,
@@ -87,21 +87,19 @@ type Rendered = RenderedEmail | { skip: string };
 type Outcome = "sent" | "retried" | "failed" | "cancelled";
 
 export interface EmailConfig {
-  apiKey: string | null;
-  fetch?: FetchLike;
+  /** Zoho Mail or Resend (from Cloudflare Secrets); null = no provider, e-mail cannot be switched on. */
+  sender: EmailSender | null;
   /** https origin for links in messages (APP_BASE_URL); no buttons without it. */
   linkBase: string | null;
   siteInfo: (lang: string) => Promise<SiteInfo>;
 }
 
 /**
- * E-mail notifications through Resend: admin settings and staff addresses, a test message, the log,
- * and the cron dispatcher (retries with backoff; Idempotency-Key = the log row, so a retry delivers once).
+ * E-mail notifications through Zoho Mail or Resend: admin settings and staff addresses, a test message, the log,
+ * and the cron dispatcher (retries with backoff; with Resend the Idempotency-Key = the log row, so a retry delivers once).
  * Addresses are read at send time and never written to the log or to console output.
  */
 export class EmailService {
-  private readonly client: ResendClient | null;
-
   constructor(
     private readonly db: D1DatabaseLike,
     private readonly repo: EmailRepository,
@@ -110,8 +108,10 @@ export class EmailService {
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
     private readonly config: EmailConfig,
-  ) {
-    this.client = config.apiKey ? new ResendClient(config.apiKey, config.fetch) : null;
+  ) {}
+
+  private get client(): EmailSender | null {
+    return this.config.sender;
   }
 
   get providerConfigured(): boolean {
@@ -123,7 +123,7 @@ export class EmailService {
   private dto(s: EmailSettingsRow | null): EmailSettingsDto {
     return {
       enabled: s?.enabled === 1, guestEnabled: s ? s.guest_enabled === 1 : true, fromName: s?.from_name ?? null, fromEmail: s?.from_email ?? null,
-      replyTo: s?.reply_to ?? null, providerConfigured: this.providerConfigured, updatedAt: s?.updated_at ?? "",
+      replyTo: s?.reply_to ?? null, providerConfigured: this.providerConfigured, provider: this.client?.provider ?? null, updatedAt: s?.updated_at ?? "",
     };
   }
 
@@ -218,7 +218,7 @@ export class EmailService {
     await this.authz.requirePermission(actor, "settings.line", meta);
     const r = await this.repo.recipient(id);
     if (!r || r.deleted_at) throw new NotFoundError("Recipient not found", "EMAIL_RECIPIENT_NOT_FOUND");
-    if (!this.client) throw new ConflictError("RESEND_API_KEY is not set", "EMAIL_KEY_MISSING");
+    if (!this.client) throw new ConflictError("No e-mail provider is set up (Zoho Mail or Resend secrets)", "EMAIL_KEY_MISSING");
     const s = await this.repo.settings();
     if (!s?.from_email) throw new ConflictError("Set the sender address first", "EMAIL_SENDER_MISSING");
     const now = this.clock();
@@ -311,7 +311,8 @@ export class EmailService {
 
     if (!this.client) return this.retryOrFail(row, row.attempts + 1, "EMAIL_KEY_MISSING", null, at);
     const result = await this.client.send({
-      from: formatFrom(settings.from_name ?? site.name, settings.from_email),
+      fromEmail: settings.from_email,
+      fromName: settings.from_name ?? site.name,
       to: target.to,
       subject: rendered.subject,
       html: rendered.html,

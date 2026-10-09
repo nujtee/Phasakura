@@ -13,6 +13,19 @@ type Msg = { kind: "error" | "success" | "info"; text: string } | null;
 const TONE: Record<string, string> = { SENT: "active", PENDING: "warning", FAILED: "suspended", CANCELLED: "muted" };
 const langLabel = (code: string) => LOCALES.find((l) => l.code === code)?.label ?? code;
 
+/**
+ * A log / test error code in words. Zoho codes carry details (ZOHO_AUTH_INVALID_CLIENT, ZOHO_401_…): the family
+ * is explained and the exact code kept in brackets for support.
+ */
+export function emailReason(reasons: Record<string, string>, code: string | null): string | null {
+  if (!code) return null;
+  if (reasons[code]) return reasons[code]!;
+  const family = /^ZOHO_AUTH_/.test(code) ? "ZOHO_AUTH"
+    : /^ZOHO_(ACCOUNTS_)?401/.test(code) ? "ZOHO_SCOPE"
+    : /^ZOHO_.*(LIMIT|TOO_?MANY|THROTTL)/.test(code) ? "ZOHO_LIMIT" : null;
+  return family && reasons[family] ? `${reasons[family]} (${code})` : code;
+}
+
 function useNotify() {
   const { t, locale } = useAdmin();
   const all = getNotifyMessages(locale.code);
@@ -34,7 +47,7 @@ function useNotify() {
   };
 }
 
-/** Settings → E-mail notifications (Resend): sender, guest e-mails, staff addresses, recent e-mails. */
+/** Settings → E-mail notifications (Zoho Mail / Resend): sender, guest e-mails, staff addresses, recent e-mails. */
 export function EmailPage() {
   const { can } = useAdmin();
   const { m } = useNotify();
@@ -94,9 +107,9 @@ function SettingsCard() {
         <h2 className="adm-h2">{m.providerTitle}</h2>
         <dl className="adm-dl">
           <dt>{m.provider}</dt>
-          <dd>{s.providerConfigured ? <span className="adm-badge adm-badge--active">✓ {m.providerSet}</span> : <span className="adm-badge adm-badge--suspended">{m.providerMissing}</span>}</dd>
+          <dd>{s.provider ? <span className="adm-badge adm-badge--active">✓ {m[`provider${s.provider}`]}</span> : <span className="adm-badge adm-badge--suspended">{m.providerMissing}</span>}</dd>
         </dl>
-        <p className="adm-field__hint">{m.domainHint}</p>
+        <p className="adm-field__hint">{s.provider === "RESEND" ? m.domainHint : m.zohoHint}</p>
       </div>
       <form className="adm-card" onSubmit={(e) => void save(e)} noValidate>
         <h2 className="adm-h2">{m.settingsTitle}</h2>
@@ -105,12 +118,17 @@ function SettingsCard() {
           {fieldErr.enabled && <p className="adm-field__error">{fieldErr.enabled}</p>}
           <label className="adm-check"><input type="checkbox" checked={f.guestEnabled} onChange={(e) => setF({ ...f, guestEnabled: e.currentTarget.checked })} /><span>{m.guestEnabled}</span></label>
           <div className="adm-grid2">
-            <Field label={m.fromName} hint={m.fromNameHint} maxLength={80} value={f.fromName} error={fieldErr.fromName}
-              onChange={(e) => setF({ ...f, fromName: e.currentTarget.value })} />
             <Field label={m.fromEmail} hint={m.fromEmailHint} type="email" autoComplete="off" maxLength={254} value={f.fromEmail} error={fieldErr.fromEmail}
               onChange={(e) => setF({ ...f, fromEmail: e.currentTarget.value })} />
-            <Field label={m.replyTo} type="email" autoComplete="off" maxLength={254} value={f.replyTo} error={fieldErr.replyTo}
-              onChange={(e) => setF({ ...f, replyTo: e.currentTarget.value })} />
+            {/* Zoho Mail sends with the mailbox's own name and has no Reply-To: these two only apply to Resend. */}
+            {s.provider === "RESEND" && (
+              <>
+                <Field label={m.fromName} hint={m.fromNameHint} maxLength={80} value={f.fromName} error={fieldErr.fromName}
+                  onChange={(e) => setF({ ...f, fromName: e.currentTarget.value })} />
+                <Field label={m.replyTo} type="email" autoComplete="off" maxLength={254} value={f.replyTo} error={fieldErr.replyTo}
+                  onChange={(e) => setF({ ...f, replyTo: e.currentTarget.value })} />
+              </>
+            )}
           </div>
           <Button type="submit" busy={busy}>{t.common.save}</Button>
         </fieldset>
@@ -159,7 +177,7 @@ function Recipients() {
     setMsg(null);
     try {
       const log = await apiRequest<EmailLogDto>("POST", `/api/admin/email/recipients/${r.id}/test`, {});
-      setMsg(log.status === "SENT" ? { kind: "success", text: m.testSent } : { kind: "error", text: format(m.testFailed, { error: log.lastError ?? log.status }) });
+      setMsg(log.status === "SENT" ? { kind: "success", text: m.testSent } : { kind: "error", text: format(m.testFailed, { error: emailReason(m.reasons, log.lastError) ?? log.status }) });
     } catch (err) {
       setMsg({ kind: "error", text: text(err) });
     } finally {
@@ -284,7 +302,7 @@ function Log() {
     return `/api/admin/email/logs?${p}`;
   }, [version]);
   const { items, cursor, loading, error, more } = useCursorList<EmailLogDto>(buildUrl);
-  const reason = (code: string | null) => (code ? (m.reasons as Record<string, string>)[code] ?? code : null);
+  const reason = (code: string | null) => emailReason(m.reasons, code);
 
   async function retry(id: string) {
     setBusy(id);

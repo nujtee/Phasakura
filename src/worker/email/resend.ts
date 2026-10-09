@@ -4,26 +4,13 @@
  * The sender address must be on a domain verified in Resend.
  */
 
-export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
-
-export interface OutgoingEmail {
-  from: string;
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-  replyTo: string | null;
-  /** Unique per message (≤ 256 chars). */
-  idempotencyKey: string;
-}
-
-export type SendResult =
-  | { ok: true; id: string | null }
-  | { ok: false; retryable: boolean; error: string; retryAfterSeconds: number | null };
+import { formatFrom, type EmailSender, type FetchLike, type OutgoingEmail, type SendResult } from "./sender.ts";
 
 export const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
-export class ResendClient {
+export class ResendClient implements EmailSender {
+  readonly provider = "RESEND" as const;
+
   constructor(
     private readonly apiKey: string,
     private readonly fetchImpl: FetchLike = (input, init) => fetch(input, init),
@@ -43,7 +30,7 @@ export class ResendClient {
           "Idempotency-Key": mail.idempotencyKey.slice(0, 256),
         },
         body: JSON.stringify({
-          from: mail.from,
+          from: formatFrom(mail.fromName, mail.fromEmail),
           to: [mail.to],
           subject: mail.subject,
           html: mail.html,
@@ -68,10 +55,4 @@ export class ResendClient {
     const retryable = res.status === 429 || res.status >= 500 || res.status === 408 || (res.status === 409 && name === "concurrent_idempotent_requests");
     return { ok: false, retryable, error, retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null };
   }
-}
-
-/** Display form "Name <address>"; quotes and angle brackets removed from the name. */
-export function formatFrom(name: string | null, email: string): string {
-  const clean = (name ?? "").replace(/["<>\r\n]/g, "").trim();
-  return clean ? `${clean} <${email}>` : email;
 }

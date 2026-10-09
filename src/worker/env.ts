@@ -90,7 +90,16 @@ export interface Env {
   LINE_CHANNEL_ACCESS_TOKEN?: string;
   /** LINE channel secret (webhook signature) — Cloudflare Secret only. */
   LINE_CHANNEL_SECRET?: string;
-  /** Resend API key for e-mail notifications — Cloudflare Secret only. */
+  /**
+   * E-mail notifications from the Zoho Mail mailbox: Zoho API Console "Self Client" with the scopes
+   * ZohoMail.messages.CREATE,ZohoMail.accounts.READ — Cloudflare Secrets only. Used when all three are set.
+   */
+  ZOHO_CLIENT_ID?: string;
+  ZOHO_CLIENT_SECRET?: string;
+  ZOHO_REFRESH_TOKEN?: string;
+  /** Zoho data centre: com (US, default), eu, in, com.au, jp, ca, sa — the domain of your Zoho Mail login. */
+  ZOHO_REGION?: string;
+  /** Resend API key for e-mail notifications (used when Zoho Mail is not set up) — Cloudflare Secret only. */
   RESEND_API_KEY?: string;
   /** PayPal REST app (Checkout) — Cloudflare Secrets only. */
   PAYPAL_CLIENT_ID?: string;

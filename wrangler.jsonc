@@ -60,7 +60,8 @@
     // LINE: `wrangler secret put LINE_CHANNEL_ACCESS_TOKEN` and `wrangler secret put LINE_CHANNEL_SECRET` — never here.
     // Meta: `wrangler secret put META_CAPI_ACCESS_TOKEN` (+ optional META_PIXEL_ID, META_TEST_EVENT_CODE) — never here.
     // GA4 dashboard numbers: `wrangler secret put GA4_SERVICE_ACCOUNT_KEY` — never here.
-    // E-mail (Resend): `wrangler secret put RESEND_API_KEY` — never here.
+    // E-mail from the Zoho Mail mailbox: `wrangler secret put ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`
+    // (+ ZOHO_REGION when not US) — never here. Or Resend instead: `wrangler secret put RESEND_API_KEY`.
     // PayPal Checkout: `wrangler secret put PAYPAL_CLIENT_ID` and `wrangler secret put PAYPAL_CLIENT_SECRET` — never here.
     // Live PayPal by default; while testing with sandbox credentials also `wrangler secret put PAYPAL_ENV` = sandbox.
   },

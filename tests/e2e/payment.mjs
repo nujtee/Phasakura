@@ -60,13 +60,13 @@ await check("payment settings page: PayPal on, Manual approve; secrets shown as 
   assert(s.data.approvalMode === "MANUAL" && s.data.channels.PAYPAL === true, JSON.stringify(s.data));
 });
 
-await check("e-mail page: sender + staff address; test e-mail goes out through Resend", async () => {
+await check("e-mail page: Zoho Mail connected; sender + staff address; test e-mail goes out from the Zoho mailbox", async () => {
   await pa.goto(`${BASE}/en/admin/settings-email`);
   await pa.getByRole("heading", { name: "E-mail notifications", exact: true }).waitFor();
-  await pa.getByText("✓ Set").waitFor();
+  await pa.getByText("✓ Zoho Mail").waitFor();
+  assert(!(await pa.getByLabel("Sender name").count()), "Zoho uses the mailbox's own name");
   await pa.getByLabel("Send e-mail notifications").check();
   await pa.getByLabel("Sender address").fill("booking@phasakura.test");
-  await pa.getByLabel("Sender name").fill("Phasakura");
   await pa.getByRole("button", { name: "Save" }).click();
   await pa.getByText("Saved", { exact: false }).first().waitFor();
   await pa.locator(".email-add").getByLabel("E-mail").fill("owner@phasakura.test");
@@ -76,8 +76,8 @@ await check("e-mail page: sender + staff address; test e-mail goes out through R
   await pa.locator("tr", { hasText: "owner@phasakura.test" }).getByRole("button", { name: "Send test" }).click();
   await pa.getByText(/Test e-mail sent/).waitFor();
   const sent = await emails();
-  assert(sent.some((m) => m.to[0] === "owner@phasakura.test" && m.from === "Phasakura <booking@phasakura.test>" && /Test/.test(m.subject)), JSON.stringify(sent));
-  assert(!/e2e-resend-key/.test(await pa.content()), "Resend key leaked");
+  assert(sent.some((m) => m.to[0] === "owner@phasakura.test" && m.from === "booking@phasakura.test" && /Test/.test(m.subject)), JSON.stringify(sent));
+  assert(!/e2e-zoho-(secret|refresh)|E2EZOHOCLIENT/.test(await pa.content()), "Zoho secret leaked");
   await pa.screenshot({ path: `${SHOTS}/pay-email.png`, fullPage: true });
 });
 

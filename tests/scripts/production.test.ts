@@ -98,6 +98,10 @@ describe("preflight (npm run preflight)", () => {
     assert.ok(warns(f).some((w) => /OLD_THING/.test(w)));
     assert.ok(f.some((x) => x.level === "ok" && /LINE_CHANNEL_ACCESS_TOKEN set/.test(x.message)));
     assert.ok(f.some((x) => x.level === "todo" && /LINE_CHANNEL_SECRET not set/.test(x.message)));
+    // Zoho Mail needs all three secrets; one or two of them is a half-finished setup.
+    assert.match(errors(run({ secrets: ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET"] })).join(), /missing ZOHO_REFRESH_TOKEN/);
+    assert.deepEqual(errors(run({ secrets: ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"] })), []);
+    assert.deepEqual(warns(run({ secrets: ["ZOHO_REGION", "RESEND_API_KEY"] })).filter((w) => w.startsWith("secrets")), []);
   });
 
   it("reads `wrangler secret list` output in JSON (with a banner) or as text", () => {

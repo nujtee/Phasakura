@@ -48,7 +48,11 @@ export const SECRETS: { name: string; needs: string }[] = [
   { name: "META_PIXEL_ID", needs: "optional: overrides the Pixel ID from Admin → Marketing for CAPI" },
   { name: "META_TEST_EVENT_CODE", needs: "testing only — remove after Events Manager → Test events" },
   { name: "GA4_SERVICE_ACCOUNT_KEY", needs: "GA4 numbers on the dashboard (Admin → Marketing → GA4 property ID)" },
-  { name: "RESEND_API_KEY", needs: "e-mail notifications (Admin → Settings → E-mail notifications)" },
+  { name: "ZOHO_CLIENT_ID", needs: "e-mail notifications from the Zoho Mail mailbox (Admin → Settings → E-mail notifications)" },
+  { name: "ZOHO_CLIENT_SECRET", needs: "e-mail notifications from the Zoho Mail mailbox" },
+  { name: "ZOHO_REFRESH_TOKEN", needs: "e-mail notifications from the Zoho Mail mailbox (scopes ZohoMail.messages.CREATE,ZohoMail.accounts.READ)" },
+  { name: "ZOHO_REGION", needs: "optional: Zoho data centre when not US — eu, in, com.au, jp, ca, sa" },
+  { name: "RESEND_API_KEY", needs: "optional: e-mail through Resend instead (used only while the Zoho secrets are not set)" },
   { name: "PAYPAL_CLIENT_ID", needs: "PayPal Checkout (Admin → Finance → Payment settings)" },
   { name: "PAYPAL_CLIENT_SECRET", needs: "PayPal Checkout (Admin → Finance → Payment settings)" },
   { name: "PAYPAL_ENV", needs: "optional: \"sandbox\" while testing with sandbox PayPal credentials (unset = live)" },
@@ -206,6 +210,11 @@ export function preflight(input: PreflightInput): Finding[] {
   } else {
     const have = new Set(input.secrets);
     if (provider && !have.has("SLIP_VERIFICATION_API_KEY")) add("error", "secrets", `SLIP_VERIFY_PROVIDER is "${provider}" but SLIP_VERIFICATION_API_KEY is not set`);
+    const zoho = ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"];
+    const zohoSet = zoho.filter((n) => have.has(n));
+    if (zohoSet.length > 0 && zohoSet.length < zoho.length) {
+      add("error", "secrets", `Zoho Mail needs all of ${zoho.join(", ")} — missing ${zoho.filter((n) => !have.has(n)).join(", ")} (e-mail is not sent through Zoho until then)`);
+    }
     if (have.has("META_TEST_EVENT_CODE")) add("warn", "secrets", "META_TEST_EVENT_CODE is set: every CAPI event goes to Test events — `wrangler secret delete META_TEST_EVENT_CODE` after testing");
     for (const s of SECRETS) {
       if (s.name === "META_TEST_EVENT_CODE") continue;

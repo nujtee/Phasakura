@@ -5,7 +5,8 @@ import type { PasswordResetDelivery } from "../../src/worker/services/password-l
 import type { SlipVerifier } from "../../src/worker/slip/slip-verifier.ts";
 import { makeEnv, type MemoryBucket } from "./fake-env.ts";
 import { FakeLine } from "./fake-line.ts";
-import { fakeGoogle, fakeMeta, fakeResend, FakePaypal } from "./fake-http.ts";
+import { fakeGoogle, fakeMeta, fakeResend, FakePaypal, FakeZoho } from "./fake-http.ts";
+import { resetZohoCache } from "../../src/worker/email/zoho.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
 import { SqliteD1 } from "./sqlite-d1.ts";
 import { pngBytes } from "./images.ts";
@@ -47,8 +48,9 @@ export class Harness {
   /** Fake Meta Graph API (Conversions API) and Google APIs (GA4 Data API). */
   readonly meta = fakeMeta();
   readonly google = fakeGoogle();
-  /** Fake Resend (e-mail) and PayPal REST API (migration 0023). */
+  /** Fake Zoho Mail / Resend (e-mail) and PayPal REST API (migration 0023). */
   readonly resend = fakeResend();
+  readonly zoho = new FakeZoho();
   readonly paypal = new FakePaypal();
   /** Fake OpenStreetMap tile server: every tile request the app makes, and the answer it gets. */
   readonly tileRequests: { url: string; headers: Record<string, string> }[] = [];
@@ -64,7 +66,8 @@ export class Harness {
       lineFetch: (input: string, init?: RequestInit) => this.line.fetch(input, init),
       metaFetch: (input: string, init?: RequestInit) => this.meta.fetch(input, init),
       googleFetch: (input: string, init?: RequestInit) => this.google.fetch(input, init),
-      emailFetch: (input: string, init: RequestInit) => this.resend.fetch(input, init),
+      emailFetch: (input: string, init: RequestInit) =>
+        (/(^|\.)zoho\.com$/.test(new URL(input).hostname) ? this.zoho.fetch(input, init) : this.resend.fetch(input, init)),
       paypalFetch: (input: string, init: RequestInit) => this.paypal.fetch(input, init),
       mapFetch: async (input: string, init?: RequestInit) => {
         this.tileRequests.push({ url: input, headers: Object.fromEntries(new Headers(init?.headers).entries()) });
@@ -79,6 +82,7 @@ export class Harness {
     harnessVerifier.current = null;
     this.db = SqliteD1.migrated({ seed: options.seed });
     this.env = makeEnv(this.db);
+    resetZohoCache();
   }
 
   get bucket(): MemoryBucket {
@@ -146,6 +150,15 @@ export class Harness {
   /** Resend / PayPal secrets as Cloudflare Secrets would provide them (null = not set). */
   emailKey(key: string | null = "re_test_key") {
     this.env.RESEND_API_KEY = key ?? undefined;
+  }
+
+  /** Zoho Mail Self Client secrets (null = not set); tokens and mailbox ids cached by the worker are forgotten. */
+  zohoSecrets(on = true, region?: string) {
+    resetZohoCache();
+    this.env.ZOHO_CLIENT_ID = on ? "1000.ZOHOTESTCLIENT" : undefined;
+    this.env.ZOHO_CLIENT_SECRET = on ? "zoho-test-secret" : undefined;
+    this.env.ZOHO_REFRESH_TOKEN = on ? "1000.zoho-test-refresh" : undefined;
+    this.env.ZOHO_REGION = region;
   }
 
   paypalSecrets(id: string | null = "paypal-client-id", secret: string | null = "paypal-client-secret") {

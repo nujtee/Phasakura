@@ -65,7 +65,8 @@ import { EmailRepository } from "./repositories/email.repository.ts";
 import { EmailOutbox, EmailService } from "./services/email.service.ts";
 import { createPaypalApi, paypalEnvironment, type FetchLike as PaypalFetch } from "./paypal/paypal-api.ts";
 import { PaypalService } from "./services/paypal.service.ts";
-import type { FetchLike as EmailFetch } from "./email/resend.ts";
+import { createEmailSender } from "./email/provider.ts";
+import type { FetchLike as EmailFetch } from "./email/sender.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -107,7 +108,7 @@ export interface Services {
   monitoring: MonitoringService;
   /** Footer map thumbnail tiles (OpenStreetMap, through the Worker). */
   mapTiles: MapTileService;
-  /** E-mail notifications through Resend (migration 0023). */
+  /** E-mail notifications through Zoho Mail or Resend (migration 0023). */
   email: EmailService;
   /** PayPal Checkout (migration 0023). */
   paypal: PaypalService;
@@ -128,7 +129,7 @@ export interface ServiceOptions {
   googleFetch?: FetchLike;
   /** Tests / e2e: fetch used for OpenStreetMap map tiles. */
   mapFetch?: FetchLike;
-  /** Tests / e2e: fetch used for the Resend e-mail API. */
+  /** Tests / e2e: fetch used for the e-mail API (Zoho Mail / Resend). */
   emailFetch?: EmailFetch;
   /** Tests / e2e: fetch used for the PayPal REST API. */
   paypalFetch?: PaypalFetch;
@@ -196,7 +197,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   // Outbox rows written inside the payment / slip / cancel batches: LINE (Phase 11) + Meta CAPI Purchase (Phase 14).
   const marketingRepo = new MarketingRepository(db);
   const emailRepo = new EmailRepository(db);
-  // + e-mail (migration 0023): staff and guest messages through Resend.
+  // + e-mail (migration 0023): staff and guest messages through Zoho Mail (or Resend).
   const outbox = new CompositeOutbox([new Outbox(lineRepo), new MarketingOutbox(marketingRepo), new EmailOutbox(emailRepo)]);
   const siteInfo = async (lang: string) => {
     const s = await publicSite(lang);
@@ -254,7 +255,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       siteName: async (lang) => (await publicSite(lang)).siteName,
     }),
     email: new EmailService(db, emailRepo, lineRepo, authorization, log, clock, {
-      apiKey: env.RESEND_API_KEY?.trim() || null, fetch: options.emailFetch, linkBase: configuredBaseUrl(env), siteInfo,
+      sender: createEmailSender(env, options.emailFetch), linkBase: configuredBaseUrl(env), siteInfo,
     }),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
     dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock, (from, to) => ga4.dashboard(from, to)),

@@ -64,6 +64,88 @@ export const fakeResend = () => {
 };
 
 /**
+ * Zoho Mail (US data centre): refresh token → access token, GET /api/accounts, POST …/messages — answering the
+ * way Zoho does (token errors with HTTP 200, {status:{code}} in bodies). Access tokens stay valid until
+ * `expireTokens()`; `tokenMode` makes the accounts server refuse.
+ */
+export class FakeZoho extends FakeHttp {
+  readonly mailbox = { accountId: "2560636000000008002", primary: "booking@phasakura.test", aliases: ["info@phasakura.test"] };
+  tokenMode: "OK" | "INVALID_CLIENT" | "RATE_LIMITED" = "OK";
+  /** Zoho answers every message with this instead of sending it (e.g. an hourly-limit error). */
+  messageError: { status: number; errorCode: string } | null = null;
+  readonly valid = new Set<string>();
+  private seq = 0;
+
+  constructor() {
+    super(["accounts.zoho.com", "mail.zoho.com"], () => ({}));
+    this.respond = (req) => this.answer(req);
+  }
+
+  /** Messages Zoho accepted (request bodies). */
+  get sent(): Record<string, unknown>[] {
+    return this.requests
+      .filter((r) => r.method === "POST" && /\/messages$/.test(new URL(r.url).pathname) && this.accepted.has(r))
+      .map((r) => r.json!);
+  }
+
+  private readonly accepted = new Set<FakeRequest>();
+
+  get tokenRequests(): FakeRequest[] {
+    return this.requests.filter((r) => new URL(r.url).pathname === "/oauth/v2/token");
+  }
+
+  expireTokens(): void {
+    this.valid.clear();
+  }
+
+  private answer(req: FakeRequest): Response {
+    const url = new URL(req.url);
+    if (url.hostname === "accounts.zoho.com" && url.pathname === "/oauth/v2/token" && req.method === "POST") {
+      const form = new URLSearchParams(req.body);
+      if (this.tokenMode === "RATE_LIMITED") {
+        return jsonResponse({ error_description: "You have made too many requests continuously. Please try again after some time.", error: "Access Denied", status: "failure" }, 400);
+      }
+      if (this.tokenMode === "INVALID_CLIENT" || form.get("grant_type") !== "refresh_token" || !form.get("refresh_token") || !form.get("client_secret")) {
+        return jsonResponse({ error: "invalid_client" });
+      }
+      const token = `1000.fakeaccess${++this.seq}`;
+      this.valid.add(token);
+      return jsonResponse({ access_token: token, api_domain: "https://www.zohoapis.com", token_type: "Bearer", expires_in: 3600 });
+    }
+    if (url.hostname !== "mail.zoho.com") return jsonResponse({ status: { code: 404, description: "not found" } }, 404);
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Zoho-oauthtoken /, "");
+    if (!this.valid.has(token)) return jsonResponse({ data: { errorCode: "INVALID_OAUTHTOKEN" }, status: { code: 401, description: "Invalid Input" } }, 401);
+    const addresses = [this.mailbox.primary, ...this.mailbox.aliases];
+    if (req.method === "GET" && url.pathname === "/api/accounts") {
+      return jsonResponse({
+        status: { code: 200, description: "success" },
+        data: [{
+          accountId: this.mailbox.accountId, primaryEmailAddress: this.mailbox.primary, displayName: "Phasakura",
+          sendMailDetails: addresses.map((a, i) => ({ sendMailId: `${i + 1}`, displayName: "Phasakura", fromAddress: a, status: true })),
+          emailAddress: addresses.map((a, i) => ({ isAlias: i > 0, isPrimary: i === 0, mailId: a })),
+        }],
+      });
+    }
+    const m = /^\/api\/accounts\/(\d+)\/messages$/.exec(url.pathname);
+    if (req.method === "POST" && m) {
+      if (m[1] !== this.mailbox.accountId) return jsonResponse({ data: { errorCode: "INVALID_ACCOUNT" }, status: { code: 404, description: "Invalid Input" } }, 404);
+      if (!addresses.includes(String(req.json?.fromAddress ?? ""))) {
+        return jsonResponse({ data: { errorCode: "INVALID_FROM_ADDRESS", moreInfo: `${String(req.json?.fromAddress)} not allowed` }, status: { code: 400, description: "Invalid Input" } }, 400);
+      }
+      if (this.messageError) {
+        return jsonResponse({ data: { errorCode: this.messageError.errorCode }, status: { code: this.messageError.status, description: "Error" } }, this.messageError.status);
+      }
+      this.accepted.add(req);
+      return jsonResponse({
+        status: { code: 200, description: "success" },
+        data: { messageId: String(1700000000000 + ++this.seq), fromAddress: req.json?.fromAddress, toAddress: req.json?.toAddress, subject: req.json?.subject },
+      });
+    }
+    return jsonResponse({ status: { code: 404, description: "not found" } }, 404);
+  }
+}
+
+/**
  * PayPal REST (sandbox host): OAuth token, create order, capture, get order — with a little state so a
  * capture can be repeated, lost or refused like the real API.
  *   captureMode: COMPLETED | PENDING | DECLINED | LOST (taken, but the answer is lost: 500) | WRONG_AMOUNT

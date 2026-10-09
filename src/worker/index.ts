@@ -247,7 +247,7 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/admin/notifications/run", line.runNow)
     .post("/api/admin/notifications/:id/retry", line.retry)
     .post("/api/admin/notifications/:id/cancel", line.cancel)
-    // E-mail notifications (Resend)
+    // E-mail notifications (Zoho Mail / Resend)
     .get("/api/admin/email/settings", email.settings)
     .put("/api/admin/email/settings", email.saveSettings)
     .get("/api/admin/email/recipients", email.recipients)
@@ -377,7 +377,7 @@ export function createApp(options: AppOptions = {}) {
       if (capi && (capi.sent || capi.failed || capi.retried)) console.log(JSON.stringify({ level: "info", message: "capi_events", ...capi }));
       const line = await task("line_notifications", () => s.notifications.tick());
       if (line && (line.planned || line.sent || line.failed || line.retried)) console.log(JSON.stringify({ level: "info", message: "line_notifications", ...line }));
-      // E-mail (Resend) and PayPal captures left in flight (migration 0023).
+      // E-mail (Zoho Mail / Resend) and PayPal captures left in flight (migration 0023).
       const mail = await task("email_notifications", () => s.email.tick());
       if (mail && (mail.sent || mail.failed || mail.retried)) console.log(JSON.stringify({ level: "info", message: "email_notifications", ...mail }));
       const pp = await task("paypal_reconcile", () => s.paypal.reconcile());

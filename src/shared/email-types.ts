@@ -1,6 +1,10 @@
 import type { LocaleCode } from "./i18n/locales.ts";
 
-/** E-mail notifications (sent through Resend; the API key is a Cloudflare Secret: RESEND_API_KEY). */
+/**
+ * E-mail notifications, sent from the shop's Zoho Mail mailbox (Cloudflare Secrets ZOHO_CLIENT_ID,
+ * ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN) or through Resend (RESEND_API_KEY).
+ */
+export type EmailProviderName = "ZOHO" | "RESEND";
 
 export const EMAIL_TYPES = [
   "NEW_BOOKING", // staff: a guest booked
@@ -22,11 +26,13 @@ export interface EmailSettingsDto {
   /** Guests with an e-mail address get their booking e-mails. */
   guestEnabled: boolean;
   fromName: string | null;
-  /** Must be on a domain verified in Resend (e.g. booking@your-domain). */
+  /** Zoho: an address of the Zoho mailbox; Resend: on a domain verified in Resend (e.g. booking@your-domain). */
   fromEmail: string | null;
   replyTo: string | null;
-  /** RESEND_API_KEY present? The value is never returned. */
+  /** Provider secrets present? Their values are never returned. */
   providerConfigured: boolean;
+  /** Which provider sends (Zoho Mail when its secrets are set, else Resend); null = none. */
+  provider: EmailProviderName | null;
   updatedAt: string;
 }
 
