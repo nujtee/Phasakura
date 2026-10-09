@@ -8,6 +8,8 @@ export class HttpError extends Error {
     readonly code: string,
     message: string,
     readonly details?: Record<string, string>,
+    /** For the owner's error log only (System status), never sent to the client — e.g. a provider's error code. */
+    readonly logDetail?: string,
   ) {
     super(message);
     this.name = "HttpError";

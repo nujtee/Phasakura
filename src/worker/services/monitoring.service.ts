@@ -1,5 +1,6 @@
 import type { ErrorEventDto, HeartbeatDto, SystemCheckDto, SystemStatusDto } from "../../shared/system-types.ts";
 import type { Env } from "../env.ts";
+import { HttpError } from "../http/errors.ts";
 import { parseServiceAccountKey } from "../marketing/ga4-data.ts";
 import type { ErrorEventRow, MonitoringRepository } from "../repositories/monitoring.repository.ts";
 import { newId } from "../security/tokens.ts";
@@ -70,7 +71,8 @@ export class MonitoringService {
         method: input.method?.slice(0, 10) ?? null,
         path: input.path ? input.path.split("?")[0]!.slice(0, 200) : null,
         error_name: e instanceof Error ? e.name.slice(0, 60) : null,
-        message: scrubMessage(`${input.context ? `${input.context}: ` : ""}${e instanceof Error ? e.message : String(e)}`) || "(no message)",
+        message: scrubMessage(`${input.context ? `${input.context}: ` : ""}${e instanceof Error ? e.message : String(e)}${
+          e instanceof HttpError && e.logDetail ? ` [${e.logDetail}]` : ""}`) || "(no message)",
       };
       await this.repo.insertError(row);
     } catch {

@@ -156,6 +156,7 @@ export function createApp(options: AppOptions = {}) {
     // Payments (spec §25–26)
     .get("/api/admin/payment-settings", pay.settings)
     .put("/api/admin/payment-settings", pay.saveSettings)
+    .post("/api/admin/payment-settings/paypal-check", pay.paypalCheck)
     .get("/api/admin/receiving-accounts", pay.accounts)
     .post("/api/admin/receiving-accounts", pay.createAccount)
     .patch("/api/admin/receiving-accounts/:id", pay.updateAccount)

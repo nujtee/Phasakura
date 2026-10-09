@@ -174,6 +174,16 @@ export interface PaypalOrderDto {
   approveUrl: string;
 }
 
+/** Admin: "Check PayPal connection" — a token plus a test order PayPal never charges (nobody approves it). */
+export interface PaypalCheckDto {
+  ok: boolean;
+  /** Which PayPal the credentials were tried against; null = no PayPal secrets. */
+  environment: "sandbox" | "live" | null;
+  /** PAYPAL_NOT_CONFIGURED, PAYPAL_AUTH_401_INVALID_CLIENT, PAYPAL_ORDER_422_…, PAYPAL_TIMEOUT… */
+  error: string | null;
+  checkedAt: string;
+}
+
 export interface PaypalCaptureDto {
   /**
    * PAID: money taken, booking confirmed. PENDING_REVIEW: PayPal holds the payment, staff will confirm.

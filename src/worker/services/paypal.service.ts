@@ -1,12 +1,12 @@
 import { getLocale, parseLocale } from "../../shared/i18n/locales.ts";
-import type { PaypalCaptureDto, PaypalOrderDto } from "../../shared/payment-types.ts";
+import type { PaypalCaptureDto, PaypalCheckDto, PaypalOrderDto } from "../../shared/payment-types.ts";
 import { bookingLookupPath } from "../../shared/routes.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError, HttpError, NotFoundError, TooManyRequestsError } from "../http/errors.ts";
 import { PAYPAL_ID_PATTERN, type CaptureResult, type PaypalApi } from "../paypal/paypal-api.ts";
 import type { PaymentRepository, PaypalOrderRow } from "../repositories/payment.repository.ts";
 import { newId } from "../security/tokens.ts";
-import { addMs, iso, type Clock, type RequestMeta } from "./auth-context.ts";
+import { addMs, iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { BookingService } from "./booking.service.ts";
 import type { OutboxLike } from "./marketing.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
@@ -14,6 +14,7 @@ import type { SecurityLogService } from "./security-log.service.ts";
 export const PAYPAL_LIMITS = {
   ordersPerBookingPerHour: 10,
   capturesPerIpPerHour: 30,
+  checksPerUserPerHour: 20,
   /** After a failed capture the guest keeps at least this long to try again. */
   graceMs: 15 * 60_000,
   /** A capture still in flight after this long is settled by the cron. */
@@ -77,7 +78,9 @@ export class PaypalService {
     });
     if (!result.ok) {
       console.error(JSON.stringify({ level: "error", message: "paypal_create_order_failed", bookingCode: booking.booking_code, error: result.error }));
-      throw new HttpError(502, "PAYPAL_UNAVAILABLE", "PayPal is not available right now. Please try again or choose another way to pay.");
+      // PayPal's reason goes to the owner's error log (System status), not to the guest.
+      throw new HttpError(502, "PAYPAL_UNAVAILABLE", "PayPal is not available right now. Please try again or choose another way to pay.",
+        undefined, `${this.api.environment}: ${result.error}`);
     }
     await this.db.batch([
       this.repo.insertPaypalOrderStatement({ id: result.orderId, bookingId: booking.id, amount: booking.total_satang, environment: this.api.environment, now: at }),
@@ -85,6 +88,35 @@ export class PaypalService {
       this.log.eventStatement("PAYPAL_ORDER_CREATED", "INFO", meta, { identifier: booking.booking_code }),
     ]);
     return { orderId: result.orderId, approveUrl: result.approveUrl };
+  }
+
+  /**
+   * Admin → Payment settings → "Check PayPal connection": the same calls a guest's payment makes (token, then an
+   * order for ฿100) so wrong / sandbox-vs-live credentials or an account PayPal refuses show up before a guest
+   * meets them. Nobody approves that order, so nothing is ever charged; PayPal drops it after 3 hours.
+   * The route requires receiving_accounts.edit.
+   */
+  async check(actor: AuthContext, meta: RequestMeta): Promise<PaypalCheckDto> {
+    const checkedAt = iso(this.clock());
+    if (!this.api) return { ok: false, environment: null, error: "PAYPAL_NOT_CONFIGURED", checkedAt };
+    if ((await this.log.countRecent(["PAYPAL_CHECK"], 60 * 60_000, { userId: actor.userId })) >= PAYPAL_LIMITS.checksPerUserPerHour) {
+      throw new TooManyRequestsError(15 * 60);
+    }
+    const result = await this.api.createOrder({
+      requestId: `check-${newId()}`,
+      bookingId: "connection-check",
+      bookingCode: "CONNECTION-CHECK",
+      amountSatang: 10_000,
+      description: "Connection check - not a payment",
+      brandName: null,
+      locale: "th-TH",
+      returnUrl: `${this.config.baseUrl}/`,
+      cancelUrl: `${this.config.baseUrl}/`,
+    });
+    const error = result.ok ? null : result.error;
+    await this.log.event("PAYPAL_CHECK", result.ok ? "INFO" : "WARNING", meta,
+      { userId: actor.userId, identifier: this.api.environment, ...(error ? { details: { reason: error } } : {}) });
+    return { ok: result.ok, environment: this.api.environment, error, checkedAt };
   }
 
   /**

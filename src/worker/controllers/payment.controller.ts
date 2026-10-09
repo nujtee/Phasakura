@@ -85,6 +85,10 @@ export function paymentController(services: ServicesFor) {
     saveSettings: withPermission("receiving_accounts.edit", services, async (ctx, auth) =>
       jsonOk(await services(ctx).payments.saveSettings(auth, parsePaymentSettings(await readJsonObject(ctx.request)), requestMeta(ctx)))),
 
+    /** POST /api/admin/payment-settings/paypal-check — try the PayPal credentials (no money moves). */
+    paypalCheck: withPermission("receiving_accounts.edit", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).paypal.check(auth, requestMeta(ctx)), { headers: { "Cache-Control": "no-store" } })),
+
     // ------------------------------------------------------------------ receiving accounts
     accounts: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).payments.listAccounts(auth, requestMeta(ctx)))),
 

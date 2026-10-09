@@ -1,11 +1,25 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { getNotifyMessages } from "../../../shared/i18n/admin-notify-messages.ts";
-import { PAYMENT_CHANNELS, type ApprovalMode, type PaymentChannel, type PaymentSettingsDto } from "../../../shared/payment-types.ts";
+import { PAYMENT_CHANNELS, type ApprovalMode, type PaymentChannel, type PaymentSettingsDto, type PaypalCheckDto } from "../../../shared/payment-types.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, errorMessage } from "../ui.tsx";
+
+type PaymentTexts = ReturnType<typeof getNotifyMessages>["payment"];
+
+/** The result of "Check PayPal connection" in words — what to fix — with PayPal's code kept for support. */
+export function paypalCheckText(n: PaymentTexts, errors: Record<string, string>, r: PaypalCheckDto): string {
+  const env = r.environment === "sandbox" ? n.paypalSandbox : n.paypalLive;
+  if (r.ok) return format(n.paypalCheckOk, { env });
+  const code = r.error ?? "";
+  const words = code === "PAYPAL_NOT_CONFIGURED" ? errors.PAYPAL_NOT_CONFIGURED ?? n.missing.PAYPAL
+    : code.startsWith("PAYPAL_AUTH_") ? (r.environment === "sandbox" ? n.paypalCheckAuthSandbox : n.paypalCheckAuthLive)
+      : code.startsWith("PAYPAL_ORDER_") || code === "UNEXPECTED_RESPONSE" ? n.paypalCheckOrder
+        : n.paypalCheckUnreachable;
+  return code && code !== "PAYPAL_NOT_CONFIGURED" ? `${words} (${code})` : words;
+}
 
 /** Finance → Payment settings: ways to pay offered to guests, and Auto / Manual slip approval. */
 export function PaymentSettingsPage() {
@@ -18,6 +32,21 @@ export function PaymentSettingsPage() {
   const [channels, setChannels] = useState<Record<PaymentChannel, boolean> | null>(null);
   const [msg, setMsg] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState<{ kind: "error" | "success"; text: string } | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function checkPaypal() {
+    setChecking(true);
+    setCheck(null);
+    try {
+      const r = await apiRequest<PaypalCheckDto>("POST", "/api/admin/payment-settings/paypal-check", {});
+      setCheck({ kind: r.ok ? "success" : "error", text: paypalCheckText(n, errs, r) });
+    } catch (err) {
+      setCheck({ kind: "error", text: errorMessage(t, err) });
+    } finally {
+      setChecking(false);
+    }
+  }
 
   const apply = (d: PaymentSettingsDto) => {
     setS(d);
@@ -83,6 +112,13 @@ export function PaymentSettingsPage() {
                   </span>
                 </label>
               ))}
+            </div>
+            <div className="pay-settings__paypal" role="group" aria-label="PayPal">
+              <p className="adm-field__hint">{n.paypalWhere}</p>
+              {canEdit && s.paypal.configured && (
+                <Button variant="secondary" busy={checking} onClick={() => void checkPaypal()}>{n.paypalCheck}</Button>
+              )}
+              {check && <Alert kind={check.kind}>{check.text}</Alert>}
             </div>
             <p className="adm-small"><Link to={href("receiving-accounts")}>{n.accountsLink}</Link></p>
           </div>

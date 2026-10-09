@@ -1592,6 +1592,19 @@
   border-radius: var(--radius-md);
 }
 
+/* Payment settings → PayPal: where the money goes, and the connection check. */
+.pay-settings__paypal {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 12px;
+}
+
+.pay-settings__paypal .adm-alert {
+  justify-self: stretch;
+  margin: 0;
+}
+
 .slip-decline {
   width: min(520px, calc(100vw - 32px));
   max-width: none;

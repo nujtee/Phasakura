@@ -7,6 +7,7 @@ import { makeEnv, type MemoryBucket } from "./fake-env.ts";
 import { FakeLine } from "./fake-line.ts";
 import { fakeGoogle, fakeMeta, fakeResend, FakePaypal, FakeZoho } from "./fake-http.ts";
 import { resetZohoCache } from "../../src/worker/email/zoho.ts";
+import { resetPaypalTokens } from "../../src/worker/paypal/paypal-api.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
 import { SqliteD1 } from "./sqlite-d1.ts";
 import { pngBytes } from "./images.ts";
@@ -83,6 +84,7 @@ export class Harness {
     this.db = SqliteD1.migrated({ seed: options.seed });
     this.env = makeEnv(this.db);
     resetZohoCache();
+    resetPaypalTokens();
   }
 
   get bucket(): MemoryBucket {

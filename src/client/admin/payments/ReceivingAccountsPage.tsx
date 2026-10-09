@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { ReceivingAccountDto, ReceivingAccountInput } from "../../../shared/payment-types.ts";
+import { getNotifyMessages } from "../../../shared/i18n/admin-notify-messages.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
+import { Link } from "../../router/Router.tsx";
 import { uploadImage } from "../../media/prepareImage.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, Field, fieldErrors, detailMessage } from "../ui.tsx";
@@ -10,7 +12,8 @@ const EMPTY: Draft = { bankName: "", accountName: "", accountNumber: "", promptp
 
 /** Receiving accounts (spec §25). The Worker enforces receiving_accounts.view / .edit. */
 export function ReceivingAccountsPage() {
-  const { t, can } = useAdmin();
+  const { t, can, href, locale } = useAdmin();
+  const n = getNotifyMessages(locale.code).payment;
   const [accounts, setAccounts] = useState<ReceivingAccountDto[] | null>(null);
   const [editing, setEditing] = useState<{ id: string | null; draft: Draft } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -85,6 +88,7 @@ export function ReceivingAccountsPage() {
         {canEdit && !editing && <Button onClick={() => { setEditing({ id: null, draft: EMPTY }); setErrors({}); }}>+ {t.pay.newAccount}</Button>}
       </div>
       <p className="adm-muted">{t.pay.accountsIntro}</p>
+      <p className="adm-field__hint">{n.accountsPaypal} <Link to={href("payment-settings")}>{n.paymentSettingsLink}</Link></p>
       {message && <Alert kind={message.kind}>{message.text}</Alert>}
 
       {editing && (

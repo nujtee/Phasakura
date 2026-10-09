@@ -49,6 +49,9 @@ await check("payment settings page: PayPal on, Manual approve; secrets shown as 
   await pa.goto(`${BASE}/en/admin/payment-settings`);
   await pa.getByRole("heading", { name: "Payment settings" }).waitFor();
   await pa.getByText(/PayPal: sandbox/).waitFor();
+  await pa.getByText(/PayPal is not added as a receiving account/).waitFor();
+  await pa.getByRole("button", { name: "Check PayPal connection" }).click();
+  await pa.getByText(/PayPal \(sandbox \(test\) — no real money\) works — a THB 100 test order was created/).waitFor();
   await pa.getByLabel(/PayPal — card or PayPal account/).check();
   await pa.getByLabel(/Manual approve/).check();
   await pa.getByText(/There is no verification service yet/).waitFor({ state: "detached" }).catch(() => undefined);
@@ -58,6 +61,13 @@ await check("payment settings page: PayPal on, Manual approve; secrets shown as 
   await pa.screenshot({ path: `${SHOTS}/pay-settings.png`, fullPage: true });
   const s = await (await req.get(`${BASE}/api/admin/payment-settings`, { headers: H })).json();
   assert(s.data.approvalMode === "MANUAL" && s.data.channels.PAYPAL === true, JSON.stringify(s.data));
+});
+
+await check("receiving accounts page says PayPal is set up in Payment settings, with a link there", async () => {
+  await pa.goto(`${BASE}/en/admin/receiving-accounts`);
+  await pa.getByText(/PayPal is not added here/).waitFor();
+  await pa.getByRole("link", { name: "Payment settings" }).first().click();
+  await pa.waitForURL(`${BASE}/en/admin/payment-settings`);
 });
 
 await check("e-mail page: Zoho Mail connected; sender + staff address; test e-mail goes out from the Zoho mailbox", async () => {

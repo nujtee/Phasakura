@@ -86,6 +86,11 @@ function issueOf(body: unknown): string | null {
 
 const tokens = new Map<string, { token: string; expiresAt: number }>();
 
+/** Tests: forget cached access tokens. */
+export function resetPaypalTokens(): void {
+  tokens.clear();
+}
+
 export class PaypalApi {
   private readonly base: string;
   private readonly fetchImpl: FetchLike;
@@ -121,11 +126,14 @@ export class PaypalApi {
     }
   }
 
-  /** OAuth client-credentials token, cached per isolate until shortly before it expires. */
-  private async token(): Promise<string | null> {
+  /**
+   * OAuth client-credentials token, cached per isolate until shortly before it expires. A refusal names why
+   * (PAYPAL_AUTH_401_INVALID_CLIENT = wrong id / secret, or sandbox credentials against live PayPal or the reverse).
+   */
+  private async token(): Promise<{ token: string } | { error: string }> {
     const key = `${this.environment}:${this.clientId}`;
     const cached = tokens.get(key);
-    if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
+    if (cached && cached.expiresAt > Date.now() + 60_000) return { token: cached.token };
     const res = await this.call("/v1/oauth2/token", {
       method: "POST",
       headers: {
@@ -135,18 +143,22 @@ export class PaypalApi {
       },
       body: "grant_type=client_credentials",
     });
-    if (!res.ok || res.status !== 200) return null;
+    if (!res.ok) return { error: res.error };
     const body = res.body as Json | null;
     const token = str(body?.access_token, 4096);
+    if (res.status !== 200 || !token) {
+      const reason = (str(body?.error, 60) ?? "").replace(/[^A-Za-z0-9_]+/g, "_").toUpperCase();
+      return { error: `PAYPAL_AUTH_${res.status}${reason ? `_${reason}` : ""}` };
+    }
     const expires = typeof body?.expires_in === "number" ? body.expires_in : 300;
-    if (!token) return null;
     tokens.set(key, { token, expiresAt: Date.now() + expires * 1000 });
-    return token;
+    return { token };
   }
 
   private async authed(path: string, method: "GET" | "POST", requestId: string | null, payload?: unknown) {
-    const token = await this.token();
-    if (!token) return { ok: false as const, error: "PAYPAL_AUTH_FAILED" };
+    const auth = await this.token();
+    if ("error" in auth) return { ok: false as const, error: auth.error };
+    const token = auth.token;
     const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: "application/json", Prefer: "return=representation" };
     if (method === "POST") headers["Content-Type"] = "application/json";
     if (requestId) headers["PayPal-Request-Id"] = requestId;
@@ -189,7 +201,10 @@ export class PaypalApi {
     });
     if (!res.ok) return { ok: false, error: res.error };
     const body = res.body as Json | null;
-    if (res.status !== 200 && res.status !== 201) return { ok: false, error: issueOf(body) ?? `PAYPAL_HTTP_${res.status}` };
+    if (res.status !== 200 && res.status !== 201) {
+      const issue = issueOf(body)?.replace(/[^A-Za-z0-9_]+/g, "_").toUpperCase();
+      return { ok: false, error: `PAYPAL_ORDER_${res.status}${issue ? `_${issue}` : ""}` };
+    }
     const orderId = str(body?.id, 64);
     const links = Array.isArray(body?.links) ? (body!.links as Json[]) : [];
     const link = links.find((l) => l.rel === "payer-action") ?? links.find((l) => l.rel === "approve");
