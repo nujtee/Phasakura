@@ -1,3 +1,4 @@
+import { maskEmailHalf, maskPhoneHalf } from "../../shared/booking-types.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import type { MsgBooking, MsgFood } from "../line/line-templates.ts";
 
@@ -515,8 +516,8 @@ export class LineRepository {
     const [b, items, food] = await this.db.batch([
       this.db
         .prepare(
-          `SELECT id, booking_code, customer_name, check_in, check_out, nights, adults, children, booking_status, payment_status, total_satang,
-                  cancel_reason, expires_at, created_at
+          `SELECT id, booking_code, customer_name, customer_phone, customer_email, check_in, check_out, nights, adults, children, booking_status,
+                  payment_status, total_satang, cancel_reason, expires_at, created_at
              FROM bookings WHERE id IN (SELECT value FROM json_each(?1)) ORDER BY check_in, booking_code`,
         )
         .bind(list),
@@ -540,7 +541,7 @@ export class LineRepository {
         .bind(list, lang),
     ]);
     type B = {
-      id: string; booking_code: string; customer_name: string; check_in: string; check_out: string; nights: number; adults: number; children: number;
+      id: string; booking_code: string; customer_name: string; customer_phone: string; customer_email: string | null; check_in: string; check_out: string; nights: number; adults: number; children: number;
       booking_status: string; payment_status: string; total_satang: number; cancel_reason: string | null; expires_at: string | null; created_at: string;
     };
     type I = { booking_id: string; item_type: MsgBooking["itemType"]; quantity: number; unit_name_snapshot: string; tarps: number };
@@ -554,7 +555,10 @@ export class LineRepository {
     return ((b?.results ?? []) as B[]).map((r) => {
       const item = firstItem.get(r.id);
       return {
-        code: r.booking_code, customerName: r.customer_name, checkIn: r.check_in, checkOut: r.check_out, nights: r.nights,
+        code: r.booking_code, customerName: r.customer_name,
+        // Masked here, so a message can never carry the full number / address.
+        customerPhoneMasked: maskPhoneHalf(r.customer_phone), customerEmailMasked: r.customer_email?.trim() ? maskEmailHalf(r.customer_email) : null,
+        checkIn: r.check_in, checkOut: r.check_out, nights: r.nights,
         itemType: item?.item_type ?? "HOUSE", itemName: item?.unit_name_snapshot ?? "—", tents: item?.item_type === "OWN_TENT" ? item.quantity : 0,
         tarps: item?.item_type === "OWN_TENT" ? item.tarps : 0,
         adults: r.adults, children: r.children, bookingStatus: r.booking_status, paymentStatus: r.payment_status,

@@ -1261,7 +1261,9 @@
 
 .adm-dl {
   display: grid;
-  grid-template-columns: minmax(7em, auto) 1fr;
+  /* Labels fit their text up to 40% and wrap beyond it, so a long label never squeezes the values
+     (phone / e-mail on a phone opened from a LINE link). */
+  grid-template-columns: fit-content(40%) 1fr;
   gap: 6px 16px;
   margin: 0;
 }

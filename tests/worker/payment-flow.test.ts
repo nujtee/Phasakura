@@ -10,7 +10,7 @@ import { encodeQr } from "../../src/shared/qr.ts";
 import { renderEmail } from "../../src/worker/email/email-templates.ts";
 import { formatAmount, parseAmount } from "../../src/worker/paypal/paypal-api.ts";
 import type { ProviderResult, SlipVerifier, VerifiedSlip } from "../../src/worker/slip/slip-verifier.ts";
-import { Harness } from "../helpers/harness.ts";
+import { Harness, ORIGIN } from "../helpers/harness.ts";
 import { pngBytes } from "../helpers/images.ts";
 
 // Harness clock: 2027-01-10T03:00Z. Seed primary account: 000-0-00000-0 / PromptPay 0000000000. House 01: ฿3,500/night.
@@ -313,6 +313,7 @@ describe("every new booking notifies staff (LINE + e-mail)", () => {
     assert.equal(r.data.email, "owner@phasakura.test", "stored lower-case");
     assert.equal((await h.api("POST", "/api/admin/email/recipients", { token: owner, body: { email: "owner@phasakura.test", name: "Again", language: "th" } })).error?.code, "EMAIL_RECIPIENT_EXISTS");
 
+    h.env.APP_BASE_URL = ORIGIN;
     const b = await book(h, { name: "<b>Somchai</b>" });
     await h.app.scheduled(h.env, Date.parse("2027-01-10T03:01:00Z"));
 
@@ -320,6 +321,10 @@ describe("every new booking notifies staff (LINE + e-mail)", () => {
     assert.match(line.texts[0]!, /การจองใหม่ — รอชำระเงิน/);
     assert.match(line.texts[0]!, new RegExp(b.bookingCode));
     assert.match(line.texts[0]!, /ชำระภายใน/);
+    // Who booked, with half of the phone / e-mail hidden, and the booking in the admin (the chat's language).
+    assert.match(line.texts[0]!, /ผู้จอง: <b>Somchai<\/b>\nโทร: 081\*{5}78\nอีเมล: gu\*{3}@example\.test\n/);
+    assert.doesNotMatch(line.texts[0]!, /0812345678|guest@example\.test/, "the full contact never goes to LINE");
+    assert.ok(line.texts[0]!.endsWith(`เปิดในระบบหลังบ้าน:\n${ORIGIN}/th/admin/bookings/${b.bookingCode}`), line.texts[0]!);
 
     const staffMail = h.resend.requests.find((x) => (x.json!.to as string[])[0] === "owner@phasakura.test")!;
     assert.match(String(staffMail.json!.subject), new RegExp(`New booking ${b.bookingCode}`));

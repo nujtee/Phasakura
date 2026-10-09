@@ -89,6 +89,10 @@ queued / failed deliveries and recent server errors; uptime monitors use `GET /a
    "Use webhook"), press **Check connection**, turn notifications on, then add staff chats with a link code.
    For group chats, allow the bot to join groups in LINE Official Account Manager first.
 5. The cron trigger (every minute) sends due notifications and the daily check-in / kitchen digests.
+6. Chats with **New bookings** ticked get every new booking at once: booking ID, the guest's name with half of the
+   phone number and e-mail hidden (`081*****78`, `som****@gmail.com` — the full contact stays in the admin),
+   dates, stay, guests, food, total, pay-by time, and a link to the booking in the admin. Opened without a session
+   (e.g. in LINE's browser) the link goes through the login page and back to that booking.
 
 ### Images and fonts (Phase 12)
 

@@ -3,7 +3,7 @@ import type { CurrentUserDto, PermissionCode } from "../../shared/auth-types.ts"
 import { getAdminMessages, type AdminMessages } from "../../shared/i18n/admin-messages.ts";
 import { getCmsMessages } from "../../shared/i18n/admin-cms-messages.ts";
 import type { Locale } from "../../shared/i18n/locales.ts";
-import { adminPath } from "../../shared/routes.ts";
+import { adminNextSegments, adminPath } from "../../shared/routes.ts";
 import { clearHeadMeta } from "../seo/headMeta.ts";
 import { ApiError, apiGet, apiRequest, setUnauthorizedHandler } from "../api/client.ts";
 import { useRouter } from "../router/Router.tsx";
@@ -130,13 +130,21 @@ export function AdminApp({ locale, segments }: { locale: Locale; segments: strin
 
   const page = segments[0] ?? "";
   const isPublicPage = PUBLIC_PAGES.has(page);
+  const here = segments.join("/");
 
-  // Redirects: signed-out users → login; signed-in users away from login.
+  // Redirects: signed-out users → login (remembering the page they opened, e.g. a booking linked from LINE);
+  // signed-in users away from login, back to that page.
   useEffect(() => {
     if (me === undefined) return;
-    if (me === null && !isPublicPage) navigate(adminPath(locale, "login"), { replace: true });
-    if (me && page === "login") navigate(adminPath(locale), { replace: true });
-  }, [me, isPublicPage, page, locale, navigate]);
+    if (me === null && !isPublicPage) {
+      const next = adminNextSegments(here) ? `?next=${encodeURIComponent(here)}` : "";
+      navigate(`${adminPath(locale, "login")}${next}`, { replace: true });
+    }
+    if (me && page === "login") {
+      const next = adminNextSegments(new URLSearchParams(window.location.search).get("next"));
+      navigate(adminPath(locale, ...(next ?? [])), { replace: true });
+    }
+  }, [me, isPublicPage, page, here, locale, navigate]);
 
   let content;
   if (me === undefined) {

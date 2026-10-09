@@ -59,6 +59,20 @@ export function adminPath(locale: Locale, ...segments: string[]): string {
   return `/${locale.path}/admin${segments.length ? `/${segments.map(encodeURIComponent).join("/")}` : ""}`;
 }
 
+const ADMIN_NEXT_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
+const ADMIN_PUBLIC_PAGES = new Set(["login", "forgot-password", "reset-password"]);
+
+/**
+ * Where to go after signing in (?next= on the login page, e.g. a LINE link to a booking): admin page segments
+ * only — never a URL, so it cannot lead off the admin. Anything else → null (the dashboard).
+ */
+export function adminNextSegments(next: string | null): string[] | null {
+  if (!next || next.length > 200) return null;
+  const segments = next.split("/");
+  if (segments.length > 4 || !segments.every((x) => ADMIN_NEXT_SEGMENT.test(x)) || ADMIN_PUBLIC_PAGES.has(segments[0]!)) return null;
+  return segments;
+}
+
 /**
  * Pure route resolution: pathname -> what to render.
  * - "/"              → redirect to default locale home

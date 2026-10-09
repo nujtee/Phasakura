@@ -255,6 +255,31 @@ export function maskPhone(phone: string): string {
 }
 
 /**
+ * Half of the digits hidden, in the middle: "081-234-5678" → "081*****78", "+66812345678" → "+668******78".
+ * For staff notices (LINE / e-mail): enough to recognise a guest, not to call or copy the number.
+ */
+export function maskPhoneHalf(phone: string): string {
+  const plus = phone.trim().startsWith("+") ? "+" : "";
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return "";
+  const hidden = Math.ceil(digits.length / 2);
+  const shown = digits.length - hidden;
+  const head = Math.ceil(shown / 2);
+  return `${plus}${digits.slice(0, head)}${"*".repeat(hidden)}${digits.slice(head + hidden)}`;
+}
+
+/** The second half of the name before "@" hidden, the domain kept: "somchai@gmail.com" → "som****@gmail.com". */
+export function maskEmailHalf(email: string): string {
+  const value = email.trim();
+  const at = value.lastIndexOf("@");
+  const local = at > 0 ? value.slice(0, at) : value;
+  const domain = at > 0 ? value.slice(at) : "";
+  const chars = Array.from(local);
+  const hidden = Math.ceil(chars.length / 2);
+  return `${chars.slice(0, chars.length - hidden).join("")}${"*".repeat(hidden)}${domain}`;
+}
+
+/**
  * Canonical phone for matching (lookup): digits only, a leading "+" kept;
  * Thai +66 numbers become the domestic 0-prefixed form so either spelling matches.
  */

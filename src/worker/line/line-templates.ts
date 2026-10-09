@@ -17,6 +17,9 @@ export interface MsgFood {
 export interface MsgBooking {
   code: string;
   customerName: string;
+  /** Half hidden (maskPhoneHalf / maskEmailHalf) — the full contact never reaches a message. */
+  customerPhoneMasked?: string;
+  customerEmailMasked?: string | null;
   checkIn: string;
   checkOut: string;
   nights: number;
@@ -54,6 +57,9 @@ const th = {
   more: "…และอีก {n} การจอง ดูทั้งหมดในระบบหลังบ้าน",
   bookingId: "Booking ID",
   customer: "ผู้จอง",
+  phone: "โทร",
+  email: "อีเมล",
+  openAdmin: "เปิดในระบบหลังบ้าน",
   checkIn: "เช็กอิน",
   checkOut: "เช็กเอาต์",
   nights: "{n} คืน",
@@ -132,6 +138,9 @@ const en: Texts = {
   more: "…and {n} more — see the admin.",
   bookingId: "Booking ID",
   customer: "Customer",
+  phone: "Phone",
+  email: "E-mail",
+  openAdmin: "Open in admin",
   checkIn: "Check-in",
   checkOut: "Check-out",
   nights: "{n} night(s)",
@@ -208,6 +217,9 @@ const zh: Texts = {
   more: "……还有 {n} 个预订，请在后台查看。",
   bookingId: "预订编号",
   customer: "预订人",
+  phone: "电话",
+  email: "邮箱",
+  openAdmin: "在后台打开",
   checkIn: "入住",
   checkOut: "退房",
   nights: "{n} 晚",
@@ -347,12 +359,14 @@ export class LineFormatter {
       : `${this.t.houseVip}: ${b.itemName}`;
   }
 
-  /** The booking fields of spec §47, one per line. */
-  bookingBlock(b: MsgBooking, opts: { customer?: boolean } = {}): string {
+  /** The booking fields of spec §47, one per line; `contact` adds the guest's half-hidden phone / e-mail (staff). */
+  bookingBlock(b: MsgBooking, opts: { customer?: boolean; contact?: boolean } = {}): string {
     const t = this.t;
     const lines = [
       `${t.bookingId}: ${b.code}`,
       ...(opts.customer === false ? [] : [`${t.customer}: ${b.customerName}`]),
+      ...(opts.customer !== false && opts.contact && b.customerPhoneMasked ? [`${t.phone}: ${b.customerPhoneMasked}`] : []),
+      ...(opts.customer !== false && opts.contact && b.customerEmailMasked ? [`${t.email}: ${b.customerEmailMasked}`] : []),
       `${t.checkIn}: ${this.date(b.checkIn)}`,
       `${t.checkOut}: ${this.date(b.checkOut)} (${fill(t.nights, { n: b.nights })})`,
       this.stayLine(b),
@@ -431,14 +445,15 @@ export function paymentConfirmedText(f: LineFormatter, b: MsgBooking, method: st
 }
 
 /** Staff: a guest booked (awaiting payment until the deadline). */
+/** Staff: a guest booked — who (phone / e-mail half hidden), what, how much, pay-by, and the admin page. */
 export function newBookingText(f: LineFormatter, b: MsgBooking, link: string | null): string {
   const t = f.t;
   return [
     t.newBookingTitle,
-    f.bookingBlock(b),
+    f.bookingBlock(b, { contact: true }),
     `${t.total}: ${f.money(b.totalSatang)}`,
     ...(b.expiresAt ? [`${t.payBy}: ${f.dateTime(b.expiresAt)}`] : []),
-    ...(link ? [`${t.open}: ${link}`] : []),
+    ...(link ? ["", `${t.openAdmin}:`, link] : []),
   ].join("\n");
 }
 

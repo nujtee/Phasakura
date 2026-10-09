@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { CurrentUserDto } from "../../../shared/auth-types.ts";
 import { LOCALES } from "../../../shared/i18n/locales.ts";
-import { adminPath } from "../../../shared/routes.ts";
+import { adminNextSegments, adminPath } from "../../../shared/routes.ts";
 import { apiRequest } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
@@ -10,6 +10,9 @@ import { Alert, Button, errorMessage, Field, PasswordField } from "../ui.tsx";
 /** Centered card used by the sign-in / password pages. */
 export function AuthCard({ title, children }: { title: string; children: React.ReactNode }) {
   const { locale, t } = useAdmin();
+  // Switching language keeps the page to return to (only a valid ?next=, never other query parameters).
+  const next = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+  const keep = adminNextSegments(next) ? `?next=${encodeURIComponent(next!)}` : "";
   return (
     <main className="adm-auth" id="adm-main">
       <div className="adm-auth__card">
@@ -18,7 +21,7 @@ export function AuthCard({ title, children }: { title: string; children: React.R
       </div>
       <nav className="adm-auth__langs" aria-label={t.common.language}>
         {LOCALES.map((l) => (
-          <Link key={l.code} to={adminPath(l, "login")} lang={l.code} aria-current={l.code === locale.code ? "true" : undefined}>
+          <Link key={l.code} to={`${adminPath(l, "login")}${keep}`} lang={l.code} aria-current={l.code === locale.code ? "true" : undefined}>
             {l.label}
           </Link>
         ))}

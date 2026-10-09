@@ -137,6 +137,27 @@ await check("staff hear about the new booking on LINE and e-mail; the guest gets
   assert(mail.some((m) => m.to[0] === "somchai@example.test" && m.subject.includes(A) && /กรุณาชำระเงิน/.test(m.subject)), "guest booking received");
 });
 
+await check("LINE new-booking notice: guest contact half hidden + admin link; the link opens the booking after signing in", async () => {
+  const text = (await linePushes()).filter((p) => p.to === GROUP).map((p) => p.texts.join("\n")).find((t) => /การจองใหม่/.test(t) && t.includes(A));
+  assert(text, "no new-booking notice");
+  assert(text.includes("ผู้จอง: สมชาย จ่ายเงิน\nโทร: 086*****67\nอีเมล: som****@example.test"), text);
+  assert(!text.includes("0861234567") && !text.includes("somchai@example.test"), "full contact in LINE");
+  const link = text.split("\n").at(-1);
+  assert(link === `${BASE}/th/admin/bookings/${A}`, link);
+  // Opened from the LINE app: no admin session there yet → sign in → straight to that booking.
+  const phone = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, locale: "th-TH", isMobile: true, hasTouch: true });
+  const pl = await phone.newPage(); watch(pl);
+  await pl.goto(link);
+  await pl.waitForURL(`${BASE}/th/admin/login?next=${encodeURIComponent(`bookings/${A}`)}`);
+  await pl.locator("input[autocomplete=username]").fill("admin@example.test");
+  await pl.locator("input[autocomplete=current-password]").fill("correct horse battery staple");
+  await pl.locator("form button[type=submit]").click();
+  await pl.waitForURL(`${BASE}/th/admin/bookings/${A}`);
+  await pl.getByRole("heading", { name: A }).waitFor();
+  await pl.screenshot({ path: `${SHOTS}/pay-line-link-booking.png` });
+  await phone.close();
+});
+
 await check("slip review (Manual): banner, decline with a reason + cancel the booking; the guest is told", async () => {
   await pa.goto(`${BASE}/en/admin/slips`);
   await pa.getByText(/Manual approve: staff approve every payment/).waitFor();
