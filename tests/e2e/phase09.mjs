@@ -289,7 +289,7 @@ await check("gallery (TH): a published image in a draft category is flagged; pub
   if (!house || house.status !== "DRAFT") throw new Error("house-01 draft category missing");
   const onSite = async () => (await (await req.get(`${BASE}/api/public/gallery?lang=th`)).json()).data.images.filter((i) => i.categorySlug === "house-01").length;
   await pa.goto(`${BASE}/th/admin/content-gallery`);
-  await pa.getByText("รูปจะแสดงบนหน้า Gallery เมื่อเผยแพร่ทั้งรูปและหมวดของรูปแล้ว", { exact: false }).waitFor();
+  await pa.getByText("รูปจะแสดงบนหน้าคลังภาพเมื่อเผยแพร่ทั้งรูปและหมวดของรูปแล้ว", { exact: false }).waitFor();
   await pa.locator("label.adm-field--inline", { hasText: "หมวด" }).locator("select").selectOption(house.id);
   await pa.getByText("หมวด “บ้านพัก” ยังไม่เผยแพร่ — รูปในหมวดนี้ยังไม่แสดงบนหน้าเว็บ แม้รูปจะเผยแพร่แล้ว").waitFor();
   await pa.locator("input[type=file][multiple]").setInputFiles([`${DIR}/g1.png`]);

@@ -111,7 +111,7 @@ await check("in-app navigation and language switch update title, canonical, href
     ld: [...document.querySelectorAll("script[type='application/ld+json']")].map((s) => JSON.parse(s.textContent)["@type"] ?? "graph"),
     count: document.querySelectorAll("link[rel=canonical]").length,
   }));
-  await pv.locator(".nav--desktop").getByRole("link", { name: "Gallery" }).click();
+  await pv.locator(".nav--desktop").getByRole("link", { name: "คลังภาพ" }).click();
   const meta = (await (await anon.get(`${BASE}/api/public/meta?path=/th/gallery`)).json()).data;
   await until(async () => (await head()).canonical === `${BASE}/th/gallery`);
   let h = await head();
