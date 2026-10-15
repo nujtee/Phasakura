@@ -143,7 +143,7 @@ const th = {
     UNIT_TYPE: "ที่พักทุกหลังในประเภท",
     CAMPING: "ลานกางเต็นท์",
     HOUSE: "บ้านพัก",
-    VIP_TENT: "VIP Tent",
+    VIP_TENT: "เต็นท์ของที่พัก",
     OWN_TENT: "นำเต็นท์มาเอง",
     ACTIVE: "เปิดใช้งาน",
     INACTIVE: "ปิด",

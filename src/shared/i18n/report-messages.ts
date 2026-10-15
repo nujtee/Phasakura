@@ -160,7 +160,7 @@ const th = {
     CASH: "เงินสด",
     OTHER: "อื่น ๆ",
     HOUSE: "บ้านพัก",
-    VIP_TENT: "VIP Tent",
+    VIP_TENT: "เต็นท์ของที่พัก",
     OWN_TENT: "นำเต็นท์มาเอง",
     FOOD: "อาหาร",
     WEB: "เว็บไซต์",
