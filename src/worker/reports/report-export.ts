@@ -62,6 +62,7 @@ export function reportToXlsx(report: ReportDto, lang: LocaleCode, siteName: stri
   return buildXlsx(sheets, { title, createdAt: report.generatedAt });
 }
 
-export function reportFileName(report: ReportDto, ext: string): string {
-  return `phasakura-${report.type}-${report.from}_${report.to}.${ext}`;
+/** "<site>-<type>-<from>_<to>.<ext>"; `site` = siteSlug() of the site's own domain. */
+export function reportFileName(report: ReportDto, ext: string, site: string): string {
+  return `${site}-${report.type}-${report.from}_${report.to}.${ext}`;
 }

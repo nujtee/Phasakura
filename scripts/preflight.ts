@@ -2,7 +2,8 @@
  * Production preflight (Phase 16): checks the deploy configuration in this repository before
  * `wrangler deploy`. It reads files only — no network, no Cloudflare credentials, no secret values.
  *
- *   npm run preflight
+ *   npm run preflight                                   # Phasakura (wrangler.jsonc)
+ *   npm run preflight -- --config sites/chomkhao/wrangler.jsonc    # another site (or: npm run site -- chomkhao preflight)
  *   npx wrangler secret list > secrets.json && npm run preflight -- --secrets secrets.json && rm secrets.json
  *
  * `--secrets` takes the output of `wrangler secret list` (JSON: [{ "name": … }]) or one name per line;
@@ -11,7 +12,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, normalize, relative } from "node:path";
 import { parseArgs } from "node:util";
 import { LATEST_MIGRATION } from "../src/worker/services/health.service.ts";
 
@@ -73,6 +74,16 @@ export interface PreflightInput {
   secrets: string[] | null;
   exists: (path: string) => boolean;
   today: Date;
+  /**
+   * Folder of the config file, relative to the repository root ("" for wrangler.jsonc, "sites/chomkhao" for a
+   * generated site config). Paths inside the config (main, migrations_dir) are relative to it, as in wrangler.
+   */
+  configDir?: string;
+}
+
+/** A path from the config, as a repository-relative path ("sites/x" + "../../migrations" → "migrations"). */
+function fromRoot(configDir: string, p: string): string {
+  return normalize(join(configDir || ".", p)).replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
 type Obj = Record<string, unknown>;
@@ -94,7 +105,8 @@ export function preflight(input: PreflightInput): Finding[] {
     return out;
   }
   if (!str(cfg.name)) add("error", "config", "name is missing");
-  if (!str(cfg.main) || !input.exists(str(cfg.main))) add("error", "config", `main "${str(cfg.main)}" does not exist`);
+  const dir = input.configDir ?? "";
+  if (!str(cfg.main) || !input.exists(fromRoot(dir, str(cfg.main)))) add("error", "config", `main "${str(cfg.main)}" does not exist`);
   const compat = Date.parse(str(cfg.compatibility_date));
   if (Number.isNaN(compat)) add("error", "config", "compatibility_date is missing or not a date");
   else if (compat > input.today.getTime()) add("error", "config", `compatibility_date ${str(cfg.compatibility_date)} is in the future`);
@@ -147,7 +159,7 @@ export function preflight(input: PreflightInput): Finding[] {
     const id = str(d1.database_id);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) add("error", "d1", `database_id "${id}" is a placeholder — run \`wrangler d1 create ${str(d1.database_name) || "phasakura-db"}\` and paste the id`);
     else add("ok", "d1", `${str(d1.database_name)} (${id.slice(0, 8)}…)`);
-    if (d1.migrations_dir !== "migrations") add("error", "d1", 'migrations_dir must be "migrations"');
+    if (typeof d1.migrations_dir !== "string" || fromRoot(dir, d1.migrations_dir) !== "migrations") add("error", "d1", 'migrations_dir must be the repository\'s "migrations" folder');
   }
 
   // R2
@@ -241,7 +253,10 @@ export function secretNames(text: string): string[] {
 
 function main(): void {
   const ROOT = join(import.meta.dirname, "..");
-  const { values } = parseArgs({ options: { secrets: { type: "string" } } });
+  const { values } = parseArgs({ options: { secrets: { type: "string" }, config: { type: "string", default: "wrangler.jsonc" } } });
+  const configPath = join(ROOT, values.config!);
+  const configDir = relative(ROOT, dirname(configPath)).replace(/\\/g, "/");
+  console.log(`Config: ${relative(ROOT, configPath)}\n`);
   const dir = join(ROOT, "migrations");
   const migrations = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith(".sql")).map((f) => [f, readFileSync(join(dir, f), "utf8")]));
   let tracked: string[] | null = null;
@@ -249,7 +264,8 @@ function main(): void {
     tracked = execFileSync("git", ["ls-files"], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n").filter(Boolean);
   } catch { /* not a Git checkout */ }
   const findings = preflight({
-    wrangler: readFileSync(join(ROOT, "wrangler.jsonc"), "utf8"),
+    wrangler: readFileSync(configPath, "utf8"),
+    configDir,
     migrations,
     latestMigration: LATEST_MIGRATION,
     headers: readFileSync(join(ROOT, "public", "_headers"), "utf8"),

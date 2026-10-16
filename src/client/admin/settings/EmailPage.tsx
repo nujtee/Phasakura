@@ -3,6 +3,7 @@ import type { EmailLogDto, EmailRecipientDto, EmailSettingsDto } from "../../../
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { getNotifyMessages } from "../../../shared/i18n/admin-notify-messages.ts";
 import { LOCALES, type LocaleCode } from "../../../shared/i18n/locales.ts";
+import { siteMailDomain } from "../../../shared/site-name.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
@@ -118,7 +119,7 @@ function SettingsCard() {
           {fieldErr.enabled && <p className="adm-field__error">{fieldErr.enabled}</p>}
           <label className="adm-check"><input type="checkbox" checked={f.guestEnabled} onChange={(e) => setF({ ...f, guestEnabled: e.currentTarget.checked })} /><span>{m.guestEnabled}</span></label>
           <div className="adm-grid2">
-            <Field label={m.fromEmail} hint={m.fromEmailHint} type="email" autoComplete="off" maxLength={254} value={f.fromEmail} error={fieldErr.fromEmail}
+            <Field label={m.fromEmail} hint={format(m.fromEmailHint, { domain: siteMailDomain(window.location.hostname) })} type="email" autoComplete="off" maxLength={254} value={f.fromEmail} error={fieldErr.fromEmail}
               onChange={(e) => setF({ ...f, fromEmail: e.currentTarget.value })} />
             {/* Zoho Mail sends with the mailbox's own name and has no Reply-To: these two only apply to Resend. */}
             {s.provider === "RESEND" && (
