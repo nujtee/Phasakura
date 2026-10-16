@@ -1,4 +1,5 @@
 import { CMS_TEXT, isSafeLink } from "../../shared/cms-schema.ts";
+import { MAX_SITE_PHONES, splitPhones } from "../../shared/phones.ts";
 import { LOCALE_CODES, DEFAULT_LOCALE_CODE, type LocaleCode } from "../../shared/i18n/locales.ts";
 import {
   BRANDING_SLOTS, CTA_ICONS, CTA_PAGES, ROBOTS_VALUES, SEO_PAGE_KEYS,
@@ -20,6 +21,18 @@ import type { FontRepository } from "../repositories/font.repository.ts";
 import type { PublicFontFaceDto } from "../../shared/media-types.ts";
 
 const PHONE = /^[0-9+()\- ]{6,30}$/;
+
+/** One or more contact numbers ("081-234-5678, 02-123-4567"): each must look like a phone number; stored as "a, b". */
+function phoneList(v: Validator, key: string): string | null {
+  const raw = v.string(key, { max: 200 });
+  if (!raw || v.errors[key]) return null;
+  const phones = splitPhones(raw);
+  if (!phones.length || phones.length > MAX_SITE_PHONES || !phones.every((p) => PHONE.test(p))) {
+    v.errors[key] = phones.length > MAX_SITE_PHONES ? "TOO_MANY_PHONES" : "INVALID_FORMAT";
+    return null;
+  }
+  return phones.join(", ");
+}
 const GA4_ID = /^G-[A-Z0-9]{4,20}$/;
 const PIXEL_ID = /^\d{5,20}$/;
 const GSC_TOKEN = /^[A-Za-z0-9_-]{10,100}$/;
@@ -82,7 +95,7 @@ export class SettingsService {
   async saveWebsite(actor: AuthContext, body: Body, meta: RequestMeta): Promise<WebsiteSettingsDto> {
     await this.authz.requirePermission(actor, "settings.website", meta);
     const v = new Validator(body).allowOnly(["contactPhone", "contactEmail", "lineOaUrl", "mapUrl", "latitude", "longitude", "translations"]);
-    const contactPhone = v.string("contactPhone", { pattern: PHONE }) ?? null;
+    const contactPhone = phoneList(v, "contactPhone");
     const contactEmail = v.email("contactEmail") ?? null;
     const lineOaUrl = httpsUrl(v, "lineOaUrl");
     const mapUrl = httpsUrl(v, "mapUrl");

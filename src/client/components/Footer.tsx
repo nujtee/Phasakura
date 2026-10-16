@@ -6,6 +6,7 @@ import { useSite } from "../site/SiteProvider.tsx";
 import { FooterMap } from "./FooterMap.tsx";
 import { LanguageSwitcher } from "./LanguageSwitcher.tsx";
 import { MAIN_MENU } from "./navigation.ts";
+import { PhoneLinks } from "./PhoneLinks.tsx";
 
 /**
  * Footer. Name, tagline, contact details and footer text come from D1 (Settings → Website).
@@ -32,7 +33,7 @@ export function Footer({ currentPage }: { currentPage: PublicPage | null }) {
             {site.contact.address && <p>{site.contact.address}</p>}
             {(site.contact.phone || site.contact.email) && (
               <p className="site-footer__reach">
-                {site.contact.phone && <span>{t.footer.phone}: <a href={`tel:${site.contact.phone.replace(/[^\d+]/g, "")}`}>{site.contact.phone}</a></span>}
+                {site.contact.phone && <span>{t.footer.phone}: <PhoneLinks value={site.contact.phone} /></span>}
                 {site.contact.email && <span>{t.footer.email}: <a href={`mailto:${site.contact.email}`}>{site.contact.email}</a></span>}
               </p>
             )}

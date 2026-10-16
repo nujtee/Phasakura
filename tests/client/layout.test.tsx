@@ -198,6 +198,13 @@ describe("Floating booking button and footer contact (Phase 9)", () => {
     assert.ok(!html.includes("footer-map"), "no map without a map link or coordinates");
   });
 
+  it("footer: several contact numbers, each its own tap-to-call link", () => {
+    const html = render("footer", { site: site({
+      contact: { phone: "063-795-1218, 095-579-0679", email: null, lineOaUrl: null, mapUrl: null, address: null, coordinates: null },
+    }) });
+    assert.match(html, /โทร: <a href="tel:0637951218">063-795-1218<\/a>, <a href="tel:0955790679">095-579-0679<\/a>/);
+  });
+
   it("footer map: the link with a small map of the place (site's own tile URLs, attribution), or just the link", () => {
     const contact = { phone: null, email: null, lineOaUrl: null, address: null };
     const withMap = render("footer", { site: site({ contact: { ...contact, mapUrl: "https://maps.app.goo.gl/abc", coordinates: { latitude: 18.6139152, longitude: 98.5062681 } } }) });

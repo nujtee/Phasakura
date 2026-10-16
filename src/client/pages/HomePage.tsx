@@ -15,6 +15,7 @@ import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
 import { useSite } from "../site/SiteProvider.tsx";
 import { useYearLabel } from "./HistoryPage.tsx";
+import { PhoneLinks } from "../components/PhoneLinks.tsx";
 
 /** Heading row: section title on the left, "see all" on the right (when there is a page to go to). */
 function SectionHead({ id, title, more }: { id: string; title: string; more?: { to: string; label: string } }) {
@@ -190,7 +191,7 @@ function Contact({ s }: { s: PublicSectionDto }) {
       <SectionHead id={id} title={s.title ?? ct.home.contact} />
       <Text s={s} />
       <dl className="contact-list">
-        {c?.phone && <><dt>{ct.home.phone}</dt><dd><a href={`tel:${c.phone.replace(/[^\d+]/g, "")}`}>{c.phone}</a></dd></>}
+        {c?.phone && <><dt>{ct.home.phone}</dt><dd><PhoneLinks value={c.phone} /></dd></>}
         {c?.email && <><dt>{ct.home.email}</dt><dd><a href={`mailto:${c.email}`}>{c.email}</a></dd></>}
         {c?.lineOaUrl && <><dt>{ct.home.line}</dt><dd><a href={c.lineOaUrl} target="_blank" rel="noopener noreferrer">{c.lineOaUrl.replace(/^https:\/\//, "")}</a></dd></>}
         {c?.address && <><dt>{ct.home.address}</dt><dd>{c.address}</dd></>}

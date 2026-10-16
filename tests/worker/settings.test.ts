@@ -63,6 +63,19 @@ describe("website settings & branding (spec §36–37)", () => {
     assert.equal(after.loginLogo, null);
     assert.equal(h.audits("UPDATE_BRANDING").length, 1);
   });
+
+  it("several contact numbers: each one checked, stored as \"a, b\"; up to 5", async () => {
+    const h = new Harness({ seed: true });
+    const web = await staff(h, ["settings.website"]);
+    const put = (contactPhone: string) => h.api<WebsiteSettingsDto>("PUT", "/api/admin/settings/website", { token: web, body: { contactPhone } });
+    const saved = await put("0637951218,095-579-0679 / +66 53 123 456");
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.data.contactPhone, "0637951218, 095-579-0679, +66 53 123 456");
+    assert.equal((await site(h)).contact.phone, "0637951218, 095-579-0679, +66 53 123 456");
+    assert.equal((await put("0637951218, call me")).error?.details?.contactPhone, "INVALID_FORMAT");
+    assert.equal((await put("0811111111, 0822222222, 0833333333, 0844444444, 0855555555, 0866666666")).error?.details?.contactPhone, "TOO_MANY_PHONES");
+    assert.equal((await put("081-234-5678")).data.contactPhone, "081-234-5678", "one number works as before");
+  });
 });
 
 describe("theme (spec §37–38): draft → preview → publish → rollback", () => {

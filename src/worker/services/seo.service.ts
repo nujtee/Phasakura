@@ -1,3 +1,4 @@
+import { splitPhones } from "../../shared/phones.ts";
 import type { PublicSiteDto } from "../../shared/api-types.ts";
 import type { PublicUnitDto } from "../../shared/accommodation-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
@@ -272,7 +273,7 @@ export class SeoService {
           url: homeUrl,
           logo: this.abs(site.logo.main?.url),
           image: this.abs(site.logo.main?.url),
-          telephone: site.contact.phone,
+          telephone: telephones(site.contact.phone),
           email: site.contact.email,
           address: site.contact.address ? { "@type": "PostalAddress", streetAddress: site.contact.address } : null,
           geo: extras.latitude !== null && extras.longitude !== null
@@ -370,4 +371,10 @@ export class SeoService {
     await this.repo.countRedirectHit(r.id).catch(() => undefined);
     return { to: r.to_path, status: r.status_code };
   }
+}
+
+/** schema.org telephone: one number as text, several as a list. */
+function telephones(value: string | null): string | string[] | null {
+  const phones = splitPhones(value);
+  return phones.length > 1 ? phones : phones[0] ?? null;
 }

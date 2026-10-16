@@ -77,6 +77,14 @@ describe("app shell with page metadata (Phase 13)", () => {
     assert.match(html, /<div id="root"><\/div>/, "the app shell itself is unchanged");
   });
 
+  it("several contact numbers: JSON-LD telephone lists each one", async () => {
+    const saved = await h.api("PUT", "/api/admin/settings/website", { token: root, body: { contactPhone: "063-795-1218, 095-579-0679" } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    const { html } = await page("/th/");
+    const lodging = (head(html).jsonLd[0]!["@graph"] as Record<string, unknown>[]).find((g) => g["@type"] === "LodgingBusiness")!;
+    assert.deepEqual(lodging.telephone, ["063-795-1218", "095-579-0679"]);
+  });
+
   it("production: indexable, cached with revalidation, other languages and pages get their own defaults", async () => {
     production();
     const { res, html } = await page("/en/gallery");
