@@ -21,7 +21,7 @@ jobs:
           cache-dependency-path: package*.json
       - name: Install
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
-      # The production build first: it is what Cloudflare Workers Builds runs on every push to main.
+      # The production build first: it is what the Release workflow deploys (release.yml).
       - run: npm run build
       - run: npm run typecheck
       - run: npm run lint

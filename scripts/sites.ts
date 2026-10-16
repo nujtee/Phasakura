@@ -14,9 +14,12 @@
  *   npm run site -- <slug> deploy           # preflight + build + wrangler deploy for that site
  *   npm run site -- <slug> smoke            # smoke test https://<domain>
  *   npm run site -- all <command>           # every site, in release-wave order; stops at the first failure
+ *   npm run site -- <slug> release          # CI (.github/workflows/release.yml): preflight → Time Travel bookmark
+ *                                           #   → migrate → deploy → smoke (no D1 export: guest data stays off CI)
+ *   tsx scripts/sites.ts plan "<all|slugs>" # CI: which sites go in which release wave (JSON per wave)
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseJsonc } from "./preflight.ts";
 
@@ -42,6 +45,23 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.isArray(v);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Release waves in .github/workflows/release.yml (wave1…wave3 jobs). */
+export const MAX_WAVES = 3;
+
+/**
+ * Release plan: the chosen sites ("all", or slugs separated by spaces / commas) grouped by wave.
+ * Unknown slugs are an error, so a typo never silently releases nothing.
+ */
+export function releasePlan(registry: Registry, selection: string): { waves: string[][]; unknown: string[] } {
+  const wanted = selection.trim() === "" || selection.trim() === "all"
+    ? registry.sites.map((s) => s.slug)
+    : [...new Set(selection.split(/[\s,]+/).filter(Boolean))];
+  const unknown = wanted.filter((slug) => !registry.sites.some((s) => s.slug === slug));
+  const waves = Array.from({ length: MAX_WAVES }, (_, i) =>
+    registry.sites.filter((s) => s.wave === i + 1 && wanted.includes(s.slug)).map((s) => s.slug).sort());
+  return { waves, unknown };
+}
+
 /** Where a site's Worker config lives: the template site uses the root wrangler.jsonc. */
 export function configPath(registry: Registry, slug: string): string {
   return slug === registry.template ? TEMPLATE_PATH : `sites/${slug}/wrangler.jsonc`;
@@ -62,7 +82,7 @@ export function validateRegistry(registry: Registry): string[] {
     if (s.d1?.name !== `${s.slug}-db`) out.push(`${s.slug}: D1 name must be "${s.slug}-db"`);
     if (!UUID.test(s.d1?.id ?? "")) out.push(`${s.slug}: D1 id is not a UUID — create it with \`wrangler d1 create ${s.slug}-db --location=apac\``);
     if (!Number.isInteger(s.rateLimitBase) || s.rateLimitBase < 1000 || s.rateLimitBase % 1000 !== 0) out.push(`${s.slug}: rateLimitBase must be a multiple of 1000 (ids are base + 1…4)`);
-    if (!Number.isInteger(s.wave) || s.wave < 1) out.push(`${s.slug}: wave must be 1 or more`);
+    if (!Number.isInteger(s.wave) || s.wave < 1 || s.wave > MAX_WAVES) out.push(`${s.slug}: wave must be 1…${MAX_WAVES} (the release workflow has ${MAX_WAVES} wave jobs)`);
   }
   seen((s) => s.slug, "slug");
   seen((s) => s.domain, "domain");
@@ -180,7 +200,7 @@ function sh(cmd: string, args: string[]): void {
   execFileSync(cmd, args, { cwd: ROOT, stdio: "inherit" });
 }
 
-const COMMANDS = ["preflight", "migrations", "backup", "migrate", "deploy", "smoke"] as const;
+const COMMANDS = ["preflight", "migrations", "backup", "migrate", "deploy", "smoke", "release"] as const;
 type Command = (typeof COMMANDS)[number];
 
 function runFor(registry: Registry, site: Site, command: Command, extra: string[]): void {
@@ -199,11 +219,71 @@ function runFor(registry: Registry, site: Site, command: Command, extra: string[
       sh("npm", ["run", "build"]);
       return wrangler("deploy");
     case "smoke": return sh("npx", ["tsx", "scripts/smoke-test.ts", `https://${site.domain}`, ...extra]);
+    case "release": return release(site, config);
+  }
+}
+
+/** The bookmark in `wrangler d1 time-travel info` output ("…current bookmark is '00000085-0000024c-…'"). */
+export function parseBookmark(output: string): string | null {
+  return output.match(/\b([0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{32})\b/i)?.[1] ?? null;
+}
+
+/** One line in the GitHub job summary (no-op outside Actions). */
+function summary(line: string): void {
+  console.log(line);
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${line}\n`);
+}
+
+function capture(args: string[]): string {
+  return execFileSync("npx", ["wrangler", ...args], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+}
+
+/**
+ * Release one site from CI. Order matters: migrations are additive, so the database goes first and the code
+ * that needs it second; the bookmark taken before anything changes is the way back (D1 Time Travel).
+ * The build (npm run build) is done once per job before this runs.
+ */
+function release(site: Site, config: string): void {
+  summary(`### ${site.name} — ${site.domain}`);
+  sh("npx", ["tsx", "scripts/preflight.ts", "--config", config]);
+  const info = capture(["d1", "time-travel", "info", site.d1.name, "--config", config]);
+  const bookmark = parseBookmark(info) ?? "(see job log)";
+  summary(`- Restore point (D1 Time Travel bookmark, before this release): \`${bookmark}\``);
+  sh("npx", ["wrangler", "d1", "migrations", "apply", site.d1.name, "--remote", "--config", config]);
+  summary("- Migrations: applied (or none pending)");
+  sh("npx", ["wrangler", "deploy", "--config", config]);
+  summary("- Deploy: done");
+  // A fresh deploy can take a few seconds to reach every edge location: try the smoke test up to 3 times.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      sh("npx", ["tsx", "scripts/smoke-test.ts", `https://${site.domain}`]);
+      summary("- Smoke test: passed");
+      return;
+    } catch (e) {
+      if (attempt >= 3) {
+        summary(`- **Smoke test failed** — roll back with \`npx wrangler rollback --config ${config}\`; data restore point above`);
+        throw e;
+      }
+      console.log(`smoke test failed (attempt ${attempt}) — retrying in 20 s`);
+      execFileSync("sleep", ["20"]);
+    }
   }
 }
 
 function main(): void {
   const [action, ...rest] = process.argv.slice(2);
+  if (action === "plan") {
+    const registry = loadRegistry();
+    const problems = checkAll();
+    if (problems.length) fail(problems);
+    const { waves, unknown } = releasePlan(registry, rest.join(" "));
+    if (unknown.length) fail([`unknown site(s): ${unknown.join(", ")} (known: ${registry.sites.map((s) => s.slug).join(", ")})`]);
+    if (!waves.some((w) => w.length)) fail(["no site selected"]);
+    const lines = waves.map((w, i) => `wave${i + 1}=${JSON.stringify(w)}`);
+    for (const l of lines) console.log(l);
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${lines.join("\n")}\n`);
+    return;
+  }
   if (action === "generate") return generate();
   if (action === "check") {
     const problems = checkAll();
@@ -226,7 +306,7 @@ function main(): void {
     for (const site of targets) runFor(registry, site, command as Command, extra);
     return;
   }
-  fail(["usage: tsx scripts/sites.ts generate | check | run <slug|all> <command>"]);
+  fail(["usage: tsx scripts/sites.ts generate | check | plan <all|slugs> | run <slug|all> <command>"]);
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop()!)) main();
