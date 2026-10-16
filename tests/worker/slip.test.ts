@@ -75,6 +75,10 @@ describe("slip checks (pure)", () => {
     assert.equal(evaluateSlip(goodSlip({ receiverAccountMasked: "xxx-x-x1234-x" }), expect), "RECEIVER_MISMATCH");
     assert.equal(evaluateSlip(goodSlip({ receiverAccountMasked: null, receiverProxyMasked: "xxx-xxx-5678" }), expect), null, "PromptPay proxy");
     assert.equal(evaluateSlip(goodSlip({ receiverAccountMasked: null, receiverProxyMasked: null }), expect), "RECEIVER_UNCONFIRMED");
+    // The bank may print a Thai mobile PromptPay number with the country code.
+    assert.equal(evaluateSlip(goodSlip({ receiverAccountMasked: null, receiverProxyMasked: "+66-81-xxx-5678" }), expect), null, "+66 PromptPay");
+    assert.equal(evaluateSlip(goodSlip({ receiverAccountMasked: null, receiverProxyMasked: "66812xx5678" }), expect), null, "66 PromptPay");
+    assert.equal(evaluateSlip(goodSlip({ receiverAccountMasked: null, receiverProxyMasked: "+66-89-xxx-5678" }), expect), "RECEIVER_MISMATCH", "another number");
     assert.equal(evaluateSlip(goodSlip(), { ...expect, transactionAlreadyUsed: true }), "DUPLICATE_TRANSACTION");
   });
 
@@ -339,5 +343,23 @@ describe("slip verifier configuration", () => {
     assert.equal(createSlipVerifier({ SLIP_VERIFICATION_API_KEY: "k" })?.provider, "easyslip");
     assert.equal(createSlipVerifier({ SLIP_VERIFY_PROVIDER: "", SLIP_VERIFICATION_API_KEY: " " }), null);
     assert.equal(createSlipVerifier({}), null);
+  });
+});
+
+describe("PromptPay QR → receiver ID (migration 0028)", () => {
+  it("reads phone / national ID / e-Wallet ID / biller ID back out of a Thai QR; rejects a broken one", async () => {
+    const { promptpayPayload, promptpayTargetOf, crc16 } = await import("../../src/shared/promptpay.ts");
+    assert.equal(promptpayTargetOf(promptpayPayload("0861944842", null)!), "0861944842");
+    assert.equal(promptpayTargetOf(promptpayPayload("1234567890123", 50_000)!), "1234567890123");
+    assert.equal(promptpayTargetOf(promptpayPayload("004999999995858", null)!), "004999999995858");
+    const bill = (() => {
+      const f = (id: string, v: string) => `${id}${String(v.length).padStart(2, "0")}${v}`;
+      const body = `${f("00", "01")}${f("01", "11")}${f("30", f("00", "A000000677010112") + f("01", "010753600010286") + f("02", "REF1"))}${f("58", "TH")}${f("53", "764")}6304`;
+      return body + crc16(body);
+    })();
+    assert.equal(promptpayTargetOf(bill), "010753600010286");
+    const good = promptpayPayload("0861944842", null)!;
+    assert.equal(promptpayTargetOf(`${good.slice(0, -1)}${good.endsWith("0") ? "1" : "0"}`), null, "wrong CRC");
+    assert.equal(promptpayTargetOf("https://example.com"), null);
   });
 });

@@ -67,8 +67,12 @@ export class UserManagementService {
     meta: RequestMeta,
   ): Promise<AdminUserListDto> {
     await this.authz.requirePermission(actor, "users.view", meta);
+    // Only a SUPER_ADMIN sees SUPER_ADMIN accounts; for everyone else they are not in the list.
     const { rows, total } = await this.users.list(
-      { status: filter.status, query: filter.query, limit: filter.pageSize, offset: (filter.page - 1) * filter.pageSize },
+      {
+        status: filter.status, query: filter.query, hideSuperAdmins: !this.authz.isSuperAdmin(actor),
+        limit: filter.pageSize, offset: (filter.page - 1) * filter.pageSize,
+      },
       this.now(),
     );
     return { items: rows.map(toDto), total, page: filter.page, pageSize: filter.pageSize };
@@ -76,12 +80,19 @@ export class UserManagementService {
 
   async get(actor: AuthContext, id: string, meta: RequestMeta): Promise<AdminUserDto> {
     await this.authz.requirePermission(actor, "users.view", meta);
-    return toDto(await this.detailed(id));
+    const row = await this.detailed(id);
+    // Hidden like in the list: not found for anyone but a SUPER_ADMIN.
+    if (!this.authz.isSuperAdmin(actor) && splitRoles(row.roles).includes(AuthorizationService.SUPER_ADMIN_ROLE)) {
+      throw new NotFoundError("User not found", "USER_NOT_FOUND");
+    }
+    return toDto(row);
   }
 
   async listRoles(actor: AuthContext, language: string, meta: RequestMeta): Promise<RoleDto[]> {
     await this.authz.requirePermission(actor, "roles.view", meta);
-    const rows = await this.rbac.listRoles(parseLocale(language)?.code ?? "th");
+    const all = await this.rbac.listRoles(parseLocale(language)?.code ?? "th");
+    // The SUPER_ADMIN role can only be given by a SUPER_ADMIN, so nobody else is offered it.
+    const rows = this.authz.isSuperAdmin(actor) ? all : all.filter((r) => r.code !== AuthorizationService.SUPER_ADMIN_ROLE);
     return rows.map((r) => ({
       id: r.id,
       code: r.code,
@@ -215,6 +226,10 @@ export class UserManagementService {
     const ids = await this.rbac.permissionIdsByCode(codes);
     const unknown = codes.filter((c) => !ids.has(c));
     if (unknown.length) throw new ValidationError({ permissions: "UNKNOWN_PERMISSION" });
+    // Credit management is never granted to one user (migration 0027; the database refuses it too).
+    if (overrides.some((o) => o.code === "credits.manage" && o.effect === "GRANT")) {
+      throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage belongs to SUPER_ADMIN only");
+    }
 
     const now = this.now();
     await this.commit([
@@ -297,6 +312,8 @@ export class UserManagementService {
     }
     const ids = await this.rbac.permissionIdsByCode(codes);
     if (codes.some((c) => !ids.has(c))) throw new ValidationError({ permissions: "UNKNOWN_PERMISSION" });
+    // Credit management stays with the SUPER_ADMIN role (migration 0027; the database refuses it too).
+    if (codes.includes("credits.manage")) throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage belongs to SUPER_ADMIN only");
 
     await this.commit([
       ...this.rbac.replaceRolePermissionsStatements(roleId, [...ids.values()]),
