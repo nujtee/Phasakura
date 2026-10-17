@@ -42,7 +42,7 @@
     "PUBLIC_MEDIA_BASE_URL": "",
     "SLIP_VERIFY_PROVIDER": "",
     "META_GRAPH_API_VERSION": "v23.0",
-    "CENTER_PUBLIC_KEYS": ""
+    "CENTER_PUBLIC_KEYS": "{\"c20261017\":\"WQxMZRGjPEW1mfVdPjXpiSm154IEWycZYqI3hKynoOs\"}"
   },
   "d1_databases": [
     {
