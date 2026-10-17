@@ -462,10 +462,18 @@ async function readForm(request: Request): Promise<URLSearchParams> {
   return new URLSearchParams(text);
 }
 
-function assertSameOrigin(request: Request, url: URL): void {
+/**
+ * A POST must come from a Center page: Origin = this origin, or — where the browser withholds the origin
+ * ("Origin: null", e.g. under a strict referrer policy) — the browser's own Sec-Fetch-Site says same-origin.
+ * A page on another site can set neither.
+ */
+export function assertSameOrigin(request: Request, url: URL): void {
   const origin = request.headers.get("Origin");
   const site = request.headers.get("Sec-Fetch-Site");
-  if (origin !== url.origin || (site !== null && site !== "same-origin")) throw new HttpError(403, "คำขอนี้ไม่ได้มาจากหน้า Center");
+  if (site !== null && site !== "same-origin") throw new HttpError(403, "คำขอนี้ไม่ได้มาจากหน้า Center");
+  if (origin === url.origin) return;
+  if ((origin === null || origin === "null") && site === "same-origin") return;
+  throw new HttpError(403, "คำขอนี้ไม่ได้มาจากหน้า Center");
 }
 
 function html(body: string, status = 200): Response {
@@ -496,7 +504,9 @@ async function secure(response: Response, sites: CenterSite[]): Promise<Response
   ].join("; "));
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
-  headers.set("Referrer-Policy", "no-referrer");
+  // "same-origin": Center's own form posts keep their Origin header (with "no-referrer" browsers send Origin: null);
+  // other sites — including the booking sites the SSO hand-off posts to — still get no referrer.
+  headers.set("Referrer-Policy", "same-origin");
   headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   headers.set("Cache-Control", "no-store");
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
