@@ -40,6 +40,10 @@ Time Travel bookmark (จุดย้อนกลับใน summary) → migra
 ประวัติ: 2026-10-07 – C1 deploy ผ่าน Workers Builds (`npx wrangler deploy` ทุก push `main`) ซึ่ง token ไม่มีสิทธิ์ D1
 จึงต้อง `npm run db:backup && npm run db:migrate:remote` ก่อน push ทุกครั้ง
 
+### Center access (migration 0030)
+
+ตาราง `center_nonces` (ใหม่, ไม่แตะข้อมูลเดิม) ปล่อยผ่าน Release ตามปกติ; `CENTER_PUBLIC_KEYS` ว่าง = `/api/center/*` ตอบ 404 (`docs/SITES.md` หัวข้อสิทธิ์ CENTER)
+
 ### ระบบเครดิตการใช้ App (migration 0027)
 
 - **0027 เป็น DESTRUCTIVE rebuild ของตาราง `bookings`** (เพิ่มคอลัมน์ค่าธรรมเนียม) — `npm run db:backup` ก่อนเสมอ

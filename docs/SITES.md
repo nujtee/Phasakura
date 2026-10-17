@@ -78,6 +78,21 @@ Push / merge เข้า `main` = แค่ CI (ทดสอบ) **ไม่ข
 8. `npm run site -- <slug> deploy && npm run site -- <slug> smoke`
 9. Commit `sites/sites.json` และ `sites/<slug>/wrangler.jsonc`
 
+## สิทธิ์ CENTER (เฟส C2)
+
+Center Management สั่งเว็บได้ผ่าน `/api/center/*` เท่านั้น ด้วยคำขอที่ **เซ็นด้วย Ed25519** (`src/shared/center-protocol.ts`)
+ไม่ใช่ผู้ใช้ในตาราง `users` ของเว็บ — admin ของเว็บลบหรือแก้สิทธิ์นี้ไม่ได้
+
+- เว็บถือแค่ **public key** ใน var `CENTER_PUBLIC_KEYS` (`{"<keyId>":"<base64url 32 ไบต์>"}` — ไม่ใช่ความลับ, อยู่ใน `wrangler.jsonc`
+  แล้ว `npm run sites:generate`); private key อยู่ที่ Center เท่านั้น (C4). **ว่าง = ไม่มี Center API (404)** ซึ่งเป็นค่าตอนนี้
+- ลายเซ็นครอบ: method, host ของเว็บปลายทาง (คำขอที่เซ็นให้ chomkhao.com ใช้กับ phasakura.com ไม่ได้), path+query, เวลา, nonce,
+  ผู้ส่งใน Center (`X-Center-Actor`: id, email, role `PLATFORM_OWNER`/`OPERATOR`/`SUPPORT_READONLY`, reason) และ sha256 ของ body
+- เวลาต้องห่างนาฬิกาเว็บไม่เกิน 60 วินาที; nonce ใช้ได้ครั้งเดียว (ตาราง `center_nonces`, migration 0030, cron ล้างทุก 5 นาที)
+- ทุกครั้งที่ปฏิเสธ → Security events `CENTER_REQUEST_REFUSED` (เหตุผล เช่น `BAD_SIGNATURE`, `CLOCK_SKEW`, `REPLAYED_NONCE`) ตอบ 401
+- Endpoint ตอนนี้ (อ่านอย่างเดียว): `GET /api/center/hello` (เว็บไหน, API version, schema) และ `GET /api/center/status`
+  (= หน้า System status ของหลังบ้าน). คำสั่งที่แก้ข้อมูลมาในเฟส C3 พร้อม audit ว่ามาจาก Center คนไหน เพราะอะไร
+- เปลี่ยน key: ใส่ key ใหม่คู่ key เก่า (keyId ต่างกัน) → Release → ให้ Center ใช้ key ใหม่ → เอา key เก่าออก → Release
+
 ## สิ่งที่ห้ามมีในโค้ด
 
 ชื่อหรือโดเมนของเว็บใดเว็บหนึ่งในโค้ดที่ผู้ใช้เห็น — ใช้ `src/shared/site-name.ts` (ชื่อจากโดเมนของเว็บเอง เช่น

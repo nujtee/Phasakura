@@ -61,7 +61,7 @@ describe("route inventory", () => {
 
   it("only these routes are reachable without a session", () => {
     const open = routes.filter((r) => !isAdmin(r)).map((r) => `${r.method} ${r.path}`).sort();
-    assert.deepEqual(open.filter((r) => !/ \/api\/(public|search|health|auth|line\/webhook)\b/.test(r)), [], "unexpected public route");
+    assert.deepEqual(open.filter((r) => !/ \/api\/(public|search|health|auth|line\/webhook|center)\b/.test(r)), [], "unexpected public route");
     // Auth endpoints that need a session are checked below.
   });
 });
