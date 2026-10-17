@@ -65,6 +65,11 @@ export interface Env {
   APP_ENV: AppEnvironment;
   /** Canonical public origin (https://your-domain) used in reset/invite links. */
   APP_BASE_URL?: string;
+  /**
+   * Center Management (phase C2): Ed25519 public key(s) Center signs with, `{"<keyId>":"<base64url 32 bytes>"}`.
+   * Public, not a secret (only Center holds the private key). Empty = the Center API is off (404).
+   */
+  CENTER_PUBLIC_KEYS?: string;
   /** Optional public base URL of the R2 public bucket (custom domain). */
   PUBLIC_MEDIA_BASE_URL?: string;
   /** Slip verification service name ("easyslip"); empty = manual verification only. Not a secret. */

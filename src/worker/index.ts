@@ -29,6 +29,7 @@ import { searchController } from "./controllers/search.controller.ts";
 import { systemController } from "./controllers/system.controller.ts";
 import { emailController, paypalController } from "./controllers/notify.controller.ts";
 import { creditController } from "./controllers/credit.controller.ts";
+import { centerController } from "./controllers/center.controller.ts";
 
 export interface AppOptions {
   /** Override service wiring (tests). */
@@ -73,10 +74,14 @@ export function createApp(options: AppOptions = {}) {
   const email = emailController(services);
   const paypal = paypalController(services);
   const credit = creditController(services);
+  const center = centerController(services);
   const servePage = createPageHandler((request, env, url) => services({ request, env, url }));
 
   const router = new Router()
     .get("/api/health", health.check)
+    // Center Management (phase C2): Ed25519-signed requests only; 404 while CENTER_PUBLIC_KEYS is empty
+    .get("/api/center/hello", center.hello)
+    .get("/api/center/status", center.status)
     .get("/api/public/site", site.getPublicSite)
     // Page metadata for in-app navigation (Phase 13): the same data the Worker puts in <head>.
     .get("/api/public/meta", seo.meta)
@@ -416,6 +421,8 @@ export function createApp(options: AppOptions = {}) {
       if (pp?.settled) console.log(JSON.stringify({ level: "info", message: "paypal_reconciled", ...pp }));
       // Error log retention, once an hour.
       if (minute === null || minute === 11) await task("error_log_retention", () => s.monitoring.retention());
+      // Center request nonces older than their replay window (migration 0030), every 5 minutes.
+      if (s.center.enabled && (minute === null || minute % 5 === 0)) await task("center_nonce_purge", () => s.center.purgeNonces());
 
       // Heartbeat last: /api/health turns "stale" if this stops happening.
       await s.monitoring.heartbeat("cron", failures.length === 0, Date.now() - started, failures.length ? `failed: ${failures.join(", ")}` : null);

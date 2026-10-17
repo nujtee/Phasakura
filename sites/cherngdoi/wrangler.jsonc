@@ -41,7 +41,8 @@
     "APP_BASE_URL": "https://cherngdoi.com",
     "PUBLIC_MEDIA_BASE_URL": "",
     "SLIP_VERIFY_PROVIDER": "",
-    "META_GRAPH_API_VERSION": "v23.0"
+    "META_GRAPH_API_VERSION": "v23.0",
+    "CENTER_PUBLIC_KEYS": ""
   },
   "d1_databases": [
     {

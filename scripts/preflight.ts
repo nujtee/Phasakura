@@ -14,6 +14,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize, relative } from "node:path";
 import { parseArgs } from "node:util";
+import { parseCenterPublicKeys } from "../src/shared/center-protocol.ts";
 import { LATEST_MIGRATION } from "../src/worker/services/health.service.ts";
 
 export type Level = "ok" | "warn" | "error" | "todo";
@@ -143,6 +144,14 @@ export function preflight(input: PreflightInput): Finding[] {
   else {
     baseHost = new URL(base).hostname.toLowerCase();
     add("ok", "vars", `APP_BASE_URL ${base}`);
+  }
+  // Center Management (phase C2): public keys only; empty = /api/center/* answers 404 (allowed until Center goes live).
+  const centerKeys = str(vars.CENTER_PUBLIC_KEYS).trim();
+  if (!centerKeys) add("ok", "center", "CENTER_PUBLIC_KEYS empty — Center API off (404)");
+  else {
+    const count = parseCenterPublicKeys(centerKeys).size;
+    if (!count) add("error", "center", 'CENTER_PUBLIC_KEYS must be JSON {"<keyId>":"<base64url 32-byte Ed25519 public key>"} (or empty)');
+    else add("ok", "center", `CENTER_PUBLIC_KEYS ${count} key(s) — Center API on`);
   }
   const media = str(vars.PUBLIC_MEDIA_BASE_URL).trim();
   if (media && !/^https:\/\/[a-z0-9.-]+(\/[^\s]*)?$/i.test(media)) add("error", "vars", "PUBLIC_MEDIA_BASE_URL must be an https URL (or empty to serve /media/* through the Worker)");

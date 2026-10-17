@@ -99,6 +99,11 @@ export class MonitoringService {
   /** Admin "System status" (`system.view`). Booleans only for secrets — never their values. */
   async status(actor: AuthContext, meta: RequestMeta): Promise<SystemStatusDto> {
     await this.authz.requirePermission(actor, "system.view", meta);
+    return this.snapshot();
+  }
+
+  /** The same facts without a site session: Center's signed GET /api/center/status (phase C2). */
+  async snapshot(): Promise<SystemStatusDto> {
     const now = this.clock();
     const since = iso(new Date(now.getTime() - 86_400_000));
     const [health, facts, beats, errors] = await Promise.all([
