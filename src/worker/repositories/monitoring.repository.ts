@@ -1,3 +1,4 @@
+import { CenterAdminRepository, siteUser } from "./center.repository.ts";
 import type { D1DatabaseLike } from "../env.ts";
 
 export interface HeartbeatRow {
@@ -89,15 +90,20 @@ export class MonitoringRepository {
     }
   }
 
+  /** Center suspended the site (migration 0031; before it: never). */
+  async suspended(): Promise<boolean> {
+    return (await new CenterAdminRepository(this.db).suspension()) !== null;
+  }
+
   async facts(now: string, since24h: string): Promise<StatusFacts> {
     const n = async (sql: string, ...b: unknown[]) => (await this.one<{ n: number }>(sql, ...b))?.n ?? 0;
     const [admins, mustChange, site, account, line, marketing, policy] = await Promise.all([
       this.one<{ n: number }>(
         `SELECT count(*) AS n FROM users u JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id
-          WHERE r.code = 'SUPER_ADMIN' AND u.status = 'ACTIVE'`),
+          WHERE r.code = 'SUPER_ADMIN' AND u.status = 'ACTIVE' AND ${siteUser()}`),
       this.one<{ n: number }>(
         `SELECT count(*) AS n FROM users u JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id
-          WHERE r.code = 'SUPER_ADMIN' AND u.status = 'ACTIVE' AND u.must_change_password = 1`),
+          WHERE r.code = 'SUPER_ADMIN' AND u.status = 'ACTIVE' AND u.must_change_password = 1 AND ${siteUser()}`),
       this.one<{ site_name: string | null }>(
         `SELECT t.site_name FROM site_settings s LEFT JOIN site_setting_translations t ON t.language_code = s.default_language WHERE s.id = 1`),
       this.one<{ n: number }>("SELECT count(*) AS n FROM receiving_accounts WHERE is_primary = 1 AND status = 'ACTIVE'"),

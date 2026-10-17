@@ -27,6 +27,7 @@ const thChecks: CheckTexts = {
   rateLimits: { label: "จำกัดจำนวนคำขอ (rate limit)", fix: "ตรวจ ratelimits ใน wrangler.jsonc ต้องมีครบ 4 ชุด และ namespace_id ไม่ซ้ำกับ Worker อื่นในบัญชี" },
   recentErrors: { label: "ข้อผิดพลาดของเซิร์ฟเวอร์ (24 ชม.)", fix: "ดูรายการด้านล่าง และ Workers Logs ใน Cloudflare dashboard (ค้นด้วย request id)" },
   deliveries: { label: "ส่ง LINE / CAPI ไม่สำเร็จ (24 ชม.)", fix: "ดู ตั้งค่า → LINE → ประวัติการส่ง และ การตลาด → CAPI" },
+  centerSuspension: { label: "การรับจองออนไลน์", fix: "ผู้ดูแลแพลตฟอร์มพักการรับจองใหม่ไว้เพราะค้างค่าบริการ — การจองเดิม หลังบ้าน และการส่งออกข้อมูลยังใช้ได้ ติดต่อผู้ดูแลแพลตฟอร์มเพื่อเปิดอีกครั้ง" },
 };
 
 const th = {
@@ -96,6 +97,7 @@ const en: AdminSystemMessages = {
     rateLimits: { label: "Request rate limits", fix: "Check ratelimits in wrangler.jsonc: all four, with namespace_id values unique in your account." },
     recentErrors: { label: "Server errors (24 h)", fix: "See the list below and Workers Logs in the Cloudflare dashboard (search by request id)." },
     deliveries: { label: "Failed LINE / CAPI deliveries (24 h)", fix: "See Settings → LINE → Delivery log and Marketing → CAPI." },
+    centerSuspension: { label: "Online booking", fix: "The platform has paused new bookings because of unpaid service fees. Existing bookings, the back office and data export still work. Contact the platform to reopen." },
   },
 };
 
@@ -140,6 +142,7 @@ const zhCN: AdminSystemMessages = {
     rateLimits: { label: "请求频率限制", fix: "检查 wrangler.jsonc 中的 ratelimits：四项齐全，namespace_id 在账户内唯一。" },
     recentErrors: { label: "服务器错误（24 小时）", fix: "查看下方列表及 Cloudflare 控制台中的 Workers Logs（按请求 ID 搜索）。" },
     deliveries: { label: "LINE / CAPI 发送失败（24 小时）", fix: "查看 设置 → LINE → 发送记录 以及 营销 → CAPI。" },
+    centerSuspension: { label: "在线预订", fix: "平台因服务费未付已暂停新预订。现有预订、后台和数据导出仍可使用。请联系平台重新开放。" },
   },
 };
 

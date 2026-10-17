@@ -1,4 +1,5 @@
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
+import { siteUser } from "./center.repository.ts";
 import { containsPattern } from "./sql-like.ts";
 
 export interface UserRow {
@@ -46,16 +47,17 @@ export interface UserListFilter {
 export class UserRepository {
   constructor(private readonly db: D1DatabaseLike) {}
 
-  /** Login by email or username (both COLLATE NOCASE). */
+  /** Login by email or username (both COLLATE NOCASE). Center users never log in with a password. */
   findByIdentifier(identifier: string): Promise<UserRow | null> {
     return this.db
-      .prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.email = ?1 OR u.username = ?1 LIMIT 1`)
+      .prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE (u.email = ?1 OR u.username = ?1) AND ${siteUser()} LIMIT 1`)
       .bind(identifier)
       .first<UserRow>();
   }
 
+  /** One of the site's own accounts (password reset / change); Center users are not found. */
   findById(id: string): Promise<UserRow | null> {
-    return this.db.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.id = ?1`).bind(id).first<UserRow>();
+    return this.db.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.id = ?1 AND ${siteUser()}`).bind(id).first<UserRow>();
   }
 
   findByEmail(email: string): Promise<UserRow | null> {
@@ -68,7 +70,7 @@ export class UserRepository {
 
   getDetailed(id: string, nowIso: string): Promise<UserListRow | null> {
     return this.db
-      .prepare(`SELECT ${USER_COLUMNS}, ${LIST_EXTRAS} FROM users u WHERE u.id = ?2`)
+      .prepare(`SELECT ${USER_COLUMNS}, ${LIST_EXTRAS} FROM users u WHERE u.id = ?2 AND ${siteUser()}`)
       .bind(nowIso, id)
       .first<UserListRow>();
   }
@@ -76,7 +78,8 @@ export class UserRepository {
   async list(filter: UserListFilter, nowIso: string): Promise<{ rows: UserListRow[]; total: number }> {
     // Builds the WHERE clause with placeholders starting at ?{first}; values are always bound.
     const build = (first: number) => {
-      const where: string[] = [];
+      // Center users (phase C3) are never listed: the site's admins cannot see, edit or remove them.
+      const where: string[] = [siteUser()];
       const values: unknown[] = [];
       const next = (value: unknown) => {
         values.push(value);

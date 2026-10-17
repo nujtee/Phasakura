@@ -44,6 +44,11 @@ Time Travel bookmark (จุดย้อนกลับใน summary) → migra
 
 ตาราง `center_nonces` (ใหม่, ไม่แตะข้อมูลเดิม) ปล่อยผ่าน Release ตามปกติ; `CENTER_PUBLIC_KEYS` ว่าง = `/api/center/*` ตอบ 404 (`docs/SITES.md` หัวข้อสิทธิ์ CENTER)
 
+### Center SSO และการพักเว็บ (migration 0031)
+
+แก้ trigger "ต้องเหลือ SUPER_ADMIN อย่างน้อย 1" ให้นับเฉพาะบัญชีของเว็บ (ไม่นับ Center user), เพิ่มตาราง `center_sso_tickets` และ
+`site_suspension` — ไม่แตะข้อมูลเดิม ปล่อยผ่าน Release ตามปกติ (`docs/SITES.md` หัวข้อคำสั่งแก้ข้อมูลและ SSO)
+
 ### ระบบเครดิตการใช้ App (migration 0027)
 
 - **0027 เป็น DESTRUCTIVE rebuild ของตาราง `bookings`** (เพิ่มคอลัมน์ค่าธรรมเนียม) — `npm run db:backup` ก่อนเสมอ

@@ -261,7 +261,7 @@ describe("Admin → System status (system.view)", () => {
     assert.equal(level.superAdmins, "warning", "a single super admin");
     assert.equal(level.rateLimits, "warning");
     assert.equal(level.cron, "warning", "never ran");
-    assert.equal(res.data.checks.length, 19);
+    assert.equal(res.data.checks.length, 20);
     const json = JSON.stringify(res.data);
     for (const secret of ["SECRET", "EAA-", "PRIVATE KEY"]) assert.ok(!json.includes(secret), `no ${secret} in the response`);
   });

@@ -13,7 +13,7 @@ export interface HealthDto {
 export const SYSTEM_CHECK_KEYS = [
   "environment", "baseUrl", "schema", "cron", "superAdmins", "bootstrapPassword", "siteName", "primaryAccount",
   "slipVerification", "line", "ga4", "ga4Data", "metaCapi", "metaTestCode", "privacyPolicy", "searchConsole",
-  "rateLimits", "recentErrors", "deliveries",
+  "rateLimits", "recentErrors", "deliveries", "centerSuspension",
 ] as const;
 export type SystemCheckKey = (typeof SYSTEM_CHECK_KEYS)[number];
 

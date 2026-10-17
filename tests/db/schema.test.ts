@@ -100,10 +100,22 @@ describe("migrations", () => {
     }
   });
 
+  /** Migrations that only replace triggers (DROP TRIGGER x; CREATE TRIGGER x …) — no data is touched. */
+  const TRIGGER_REPLACEMENTS = ["0031_center_sso_suspension.sql"];
+
+  it("trigger replacements re-create every trigger they drop, right after dropping it", () => {
+    for (const file of TRIGGER_REPLACEMENTS) {
+      const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8").replace(/--.*$/gm, "");
+      const dropped = [...sql.matchAll(/\bDROP\s+TRIGGER\s+(\w+);/gi)].map((m) => m[1]!);
+      assert.ok(dropped.length > 0, file);
+      for (const trigger of dropped) assert.match(sql, new RegExp(`DROP TRIGGER ${trigger};\\s*CREATE TRIGGER ${trigger}\\b`), `${trigger}: re-created`);
+    }
+  });
+
   it("contain no destructive statements (other than announced rebuilds)", () => {
     for (const file of migrationFiles().filter((f) => !ANNOUNCED_REBUILDS.includes(f))) {
       const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8").replace(/--.*$/gm, "");
-      assert.doesNotMatch(sql, /\bDROP\s+(TABLE|INDEX|VIEW|TRIGGER)\b/i, file);
+      assert.doesNotMatch(sql, TRIGGER_REPLACEMENTS.includes(file) ? /\bDROP\s+(TABLE|INDEX|VIEW)\b/i : /\bDROP\s+(TABLE|INDEX|VIEW|TRIGGER)\b/i, file);
       assert.doesNotMatch(sql, /\bALTER\s+TABLE\s+\w+\s+DROP\b/i, file);
       assert.doesNotMatch(sql, /\bDELETE\s+FROM\b/i, file);
     }

@@ -35,6 +35,9 @@
     "feeValues",
     "where"
   ],
+  "src/worker/repositories/center.repository.ts": [
+    "siteUser()"
+  ],
   "src/worker/repositories/credit.repository.ts": [
     "changedHere",
     "decided",
@@ -67,7 +70,8 @@
     "sql"
   ],
   "src/worker/repositories/rbac.repository.ts": [
-    "planLock"
+    "planLock",
+    "siteUser()"
   ],
   "src/worker/repositories/search.repository.ts": [
     "Math.max(1, Math.min(1000, Math.floor(limit)))",
@@ -77,7 +81,8 @@
     "countWhere.sql",
     "listWhere.sql",
     "n + 2",
-    "n + 3"
+    "n + 3",
+    "siteUser()"
   ],
   "src/worker/services/translation-coverage.service.ts": [
     "has(k.tt, k.fk, k.text, \"en\")",
