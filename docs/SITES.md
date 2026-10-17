@@ -109,6 +109,12 @@ admin ของเว็บ **มองไม่เห็นและแก้�
 ไม่นับ Center), เข้าด้วยรหัสผ่านไม่ได้, ไม่ได้รับอีเมล / LINE แจ้งเตือน
 - เปลี่ยน key: ใส่ key ใหม่คู่ key เก่า (keyId ต่างกัน) → Release → ให้ Center ใช้ key ใหม่ → เอา key เก่าออก → Release
 
+## Center console
+
+`center.phasakura.com` — Worker `center`, config `center/wrangler.jsonc` generate จาก registry นี้ (entry `"center"` + ทุกเว็บ
+เป็น service binding); Release `sites` = `all` ปล่อย Center ด้วย, `center` = Center อย่างเดียว — รายละเอียด `docs/CENTER.md`
+เพิ่มเว็บใหม่แล้วต้อง Release Center ด้วย (binding ใหม่)
+
 ## สิ่งที่ห้ามมีในโค้ด
 
 ชื่อหรือโดเมนของเว็บใดเว็บหนึ่งในโค้ดที่ผู้ใช้เห็น — ใช้ `src/shared/site-name.ts` (ชื่อจากโดเมนของเว็บเอง เช่น

@@ -12,6 +12,8 @@ name: Release
 #   CLOUDFLARE_ACCOUNT_ID  the account that holds every site
 # Optional: GitHub environment "production-wave-2" / "production-wave-3" with a wait timer or required reviewer
 # gives you time to watch wave 1 before the next wave starts.
+# Center (phase C4): "all" also releases the Center console (center.phasakura.com); "center" releases only Center.
+# It runs beside wave 1 (Center keeps no guest data; a site never depends on it).
 
 on:
   workflow_dispatch:
@@ -21,7 +23,7 @@ on:
         default: main
         required: true
       sites:
-        description: '"all", or site slugs separated by spaces (e.g. "chomkhao cherngdoi")'
+        description: '"all", or site slugs separated by spaces (e.g. "chomkhao cherngdoi"); "center" = the Center console'
         default: all
         required: true
 
@@ -44,6 +46,7 @@ jobs:
       wave1: ${{ steps.plan.outputs.wave1 }}
       wave2: ${{ steps.plan.outputs.wave2 }}
       wave3: ${{ steps.plan.outputs.wave3 }}
+      center: ${{ steps.plan.outputs.center }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,6 +79,7 @@ jobs:
             echo "- Wave 1: ${{ steps.plan.outputs.wave1 }}"
             echo "- Wave 2: ${{ steps.plan.outputs.wave2 }}"
             echo "- Wave 3: ${{ steps.plan.outputs.wave3 }}"
+            echo "- Center: ${{ steps.plan.outputs.center }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   verify:
@@ -95,6 +99,25 @@ jobs:
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - run: npm run build
       - run: npm run check
+
+  center:
+    needs: [plan, verify]
+    if: needs.plan.outputs.center == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    name: center
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package*.json
+      - name: Install
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - run: npx tsx scripts/sites.ts run center release
 
   wave1:
     needs: [plan, verify]
