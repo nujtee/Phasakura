@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { parseJsonc, preflight, type Finding } from "../../scripts/preflight.ts";
 import {
-  checkAll, checkTemplate, configPath, generatedText, loadRegistry, MAX_WAVES, parseBookmark, releasePlan, siteConfig, validateRegistry, type Registry,
+  centerConfig, checkAll, checkTemplate, configPath, generatedText, loadRegistry, MAX_WAVES, parseBookmark, releasePlan, siteBinding, siteConfig, validateRegistry, type Registry,
 } from "../../scripts/sites.ts";
 import { splitPhones } from "../../src/shared/phones.ts";
 import { siteLabel, siteMailDomain, siteSlug } from "../../src/shared/site-name.ts";
@@ -112,6 +112,37 @@ describe("release plan (Center phase C1: .github/workflows/release.yml)", () => 
     assert.equal(wf.match(/sites\.ts run \$\{\{ matrix\.site \}\} release/g)?.length, MAX_WAVES);
     const runLines = wf.split("\n").filter((l) => /^\s+(- )?run:|^\s{12}\S/.test(l));
     assert.ok(runLines.every((l) => !l.includes("${{ inputs.")), "workflow inputs reach shell steps through env only");
+  });
+});
+
+describe("Center config (phase C4: center/wrangler.jsonc)", () => {
+  it("one service binding per site, the site list, its own D1 and domain — generated, never by hand", () => {
+    const cfg = centerConfig(registry, parseJsonc(TEMPLATE) as Record<string, unknown>) as {
+      name: string; main: string; routes: { pattern: string }[]; vars: Record<string, string>; services: { binding: string; service: string }[];
+      d1_databases: { database_id: string; migrations_dir: string }[]; triggers?: unknown; workers_dev: boolean;
+    };
+    assert.equal(cfg.name, "center");
+    assert.equal(cfg.main, "../src/center/index.ts");
+    assert.deepEqual(cfg.routes.map((r) => r.pattern), [registry.center!.domain]);
+    assert.equal(cfg.workers_dev, false);
+    assert.deepEqual(cfg.services, registry.sites.map((s) => ({ binding: siteBinding(s.slug), service: s.slug })));
+    assert.deepEqual(JSON.parse(cfg.vars.CENTER_SITES!).map((s: { slug: string }) => s.slug), registry.sites.map((s) => s.slug));
+    assert.equal(cfg.d1_databases[0]!.database_id, registry.center!.d1.id);
+    assert.equal(cfg.d1_databases[0]!.migrations_dir, "migrations");
+    assert.ok(!registry.sites.some((s) => s.d1.id === registry.center!.d1.id), "never a site's database");
+    assert.equal(siteBinding("chom-khao"), "SITE_CHOM_KHAO");
+  });
+
+  it("release: \"all\" includes Center, \"center\" alone releases only Center; the slug is reserved", () => {
+    assert.equal(releasePlan(registry, "all").center, true);
+    assert.equal(releasePlan(registry, "chomkhao").center, false);
+    const only = releasePlan(registry, "center");
+    assert.deepEqual([only.center, only.waves.flat(), only.unknown], [true, [], []]);
+    const site = { ...registry.sites[0]!, slug: "center" };
+    assert.match(validateRegistry({ ...registry, sites: [site, ...registry.sites.slice(1)] }).join("\n"), /reserved for the Center console/);
+    assert.match(validateRegistry({ ...registry, center: { ...registry.center!, d1: registry.sites[0]!.d1 } }).join("\n"), /center: D1/);
+    const wf = readFileSync(join(ROOT, ".github", "workflows", "release.yml"), "utf8");
+    assert.match(wf, /\n {2}center:\n[\s\S]*?sites\.ts run center release/);
   });
 });
 

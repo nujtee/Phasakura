@@ -1,0 +1,59 @@
+name: Center setup
+
+# Center Management (phase C4) one-time setup. Run from GitHub → Actions → Center setup → Run workflow.
+#   task = keys         New Ed25519 signing key. The private key goes straight into the Center Worker's secret
+#                       CENTER_SIGNING_KEY and is never shown; the run summary shows the PUBLIC key for the sites.
+#                       Running it again replaces the key: every site needs the new public key (Release) before
+#                       Center can reach it again.
+#   task = first-owner  The first PLATFORM_OWNER (only while Center has no users). The run summary shows a one-time
+#                       link (48 h) to set the password. Everyone else is added inside Center.
+# Needs the Center Worker deployed first (Actions → Release, sites = center or all).
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: keys or first-owner
+        type: choice
+        options: [keys, first-owner]
+        required: true
+      email:
+        description: first-owner only — e-mail of the first PLATFORM_OWNER
+        required: false
+      name:
+        description: first-owner only — their name
+        required: false
+
+concurrency:
+  group: center-setup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package*.json
+      - name: Install
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Signing key
+        if: inputs.task == 'keys'
+        run: npx tsx scripts/center-setup.ts keys
+      - name: First owner
+        if: inputs.task == 'first-owner'
+        env:
+          OWNER_EMAIL: ${{ inputs.email }}
+          OWNER_NAME: ${{ inputs.name }}
+        run: npx tsx scripts/center-setup.ts first-owner --email "$OWNER_EMAIL" --name "$OWNER_NAME"

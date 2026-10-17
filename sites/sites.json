@@ -1,6 +1,11 @@
 {
   "$comment": "Every booking site that runs this code (Center phase C0). One entry per site: its own Worker, domain, D1, R2 and secrets. Phasakura is the template: its config is the root wrangler.jsonc; every other site's sites/<slug>/wrangler.jsonc is GENERATED from it by `npm run sites:generate` — never edit those by hand. Rate-limit namespace ids are rateLimitBase + 1…4 and must be unique in the Cloudflare account. wave = release order (1 first). docs/SITES.md explains how to add a site.",
   "template": "phasakura",
+  "center": {
+    "$comment": "Center Management console (phase C4): its own Worker and D1; reaches every site through a service binding. center/wrangler.jsonc is GENERATED from this registry.",
+    "domain": "center.phasakura.com",
+    "d1": { "name": "center-db", "id": "0a640198-a742-43ac-b1d9-96facf21731e" }
+  },
   "reservedRateLimitBases": [
     { "base": 3000, "note": "suanpho Worker exists in the account (created 2026-10-15); not on the platform" }
   ],
