@@ -146,12 +146,24 @@ describe("Center: health and sign-in", () => {
     assert.equal((await req2("GET", "/", { cookie: c2 })).status, 303);
   });
 
+  it("a browser that withholds the origin (Origin: null) but says same-origin may post — Center's own forms", async () => {
+    const { req, firstOwner } = await setup();
+    const token = await firstOwner();
+    const res = await req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD }, headers: { Origin: "null", "Sec-Fetch-Site": "same-origin" } });
+    assert.equal(res.status, 303, res.text.slice(0, 200));
+    const login = await req("POST", "/login", { form: { email: "owner@phasakura.com", password: PASSWORD }, headers: { Origin: "", "Sec-Fetch-Site": "same-origin" } });
+    assert.equal(login.status, 303);
+    assert.equal(login.headers.get("Referrer-Policy"), "same-origin");
+  });
+
   it("a POST from anywhere but Center is refused (CSRF)", async () => {
     const { req, ownerSession } = await setup();
     const cookie = await ownerSession();
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "https://evil.example" } })).status, 403);
-    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "" } })).status, 403);
+    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "", "Sec-Fetch-Site": "" } })).status, 403, "no Origin, no fetch metadata");
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
+    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "null", "Sec-Fetch-Site": "cross-site" } })).status, 403);
+    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "null", "Sec-Fetch-Site": "" } })).status, 403, "no proof of same origin");
   });
 });
 
