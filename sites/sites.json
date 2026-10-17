@@ -1,0 +1,33 @@
+{
+  "$comment": "Every booking site that runs this code (Center phase C0). One entry per site: its own Worker, domain, D1, R2 and secrets. Phasakura is the template: its config is the root wrangler.jsonc; every other site's sites/<slug>/wrangler.jsonc is GENERATED from it by `npm run sites:generate` — never edit those by hand. Rate-limit namespace ids are rateLimitBase + 1…4 and must be unique in the Cloudflare account. wave = release order (1 first). docs/SITES.md explains how to add a site.",
+  "template": "phasakura",
+  "reservedRateLimitBases": [
+    { "base": 3000, "note": "suanpho Worker exists in the account (created 2026-10-15); not on the platform" }
+  ],
+  "sites": [
+    {
+      "slug": "phasakura",
+      "name": "Phasakura",
+      "domain": "phasakura.com",
+      "d1": { "name": "phasakura-db", "id": "8f013af9-6464-4ed2-8aa1-f426fbb707b8" },
+      "rateLimitBase": 1000,
+      "wave": 2
+    },
+    {
+      "slug": "chomkhao",
+      "name": "Chomkhao",
+      "domain": "chomkhao.com",
+      "d1": { "name": "chomkhao-db", "id": "227e945a-ca93-4749-a92a-08c959bb3485" },
+      "rateLimitBase": 2000,
+      "wave": 1
+    },
+    {
+      "slug": "cherngdoi",
+      "name": "Cherngdoi",
+      "domain": "cherngdoi.com",
+      "d1": { "name": "cherngdoi-db", "id": "40c3d290-6f1a-40fc-93f5-6dd852d8d81c" },
+      "rateLimitBase": 4000,
+      "wave": 1
+    }
+  ]
+}

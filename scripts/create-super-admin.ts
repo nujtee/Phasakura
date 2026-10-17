@@ -2,7 +2,7 @@
  * One-time bootstrap of the first SUPER_ADMIN (no default admin/password ships in migrations).
  *
  *   npm run admin:bootstrap -- --email owner@example.com --name "Owner" [--username owner] [--out bootstrap.sql]
- *   npx wrangler d1 execute phasakura-db --remote --file bootstrap.sql   # or --local
+ *   npx wrangler d1 execute <site>-db --remote --file bootstrap.sql   # or --local (Phasakura: phasakura-db)
  *   rm bootstrap.sql
  *
  * - A strong random password is generated and printed ONCE to this terminal (never written to the file).
@@ -51,12 +51,13 @@ async function main() {
       name: { type: "string" },
       username: { type: "string" },
       out: { type: "string", default: "bootstrap-super-admin.sql" },
+      database: { type: "string", default: "phasakura-db" },
     },
   });
   const email = values.email?.trim().toLowerCase();
   const displayName = values.name?.trim();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !displayName) {
-    console.error('Usage: npm run admin:bootstrap -- --email you@example.com --name "Your Name" [--username you] [--out file.sql]');
+    console.error('Usage: npm run admin:bootstrap -- --email you@example.com --name "Your Name" [--username you] [--out file.sql] [--database <site>-db]');
     process.exit(1);
   }
   const username = values.username?.trim() || null;
@@ -77,7 +78,7 @@ async function main() {
   writeFileSync(values.out!, sql, { mode: 0o600 });
 
   console.log(`\nWrote ${values.out} (password hash only).`);
-  console.log(`Apply:  npx wrangler d1 execute phasakura-db --remote --file ${values.out}   (or --local)`);
+  console.log(`Apply:  npx wrangler d1 execute ${values.database} --remote --file ${values.out}   (or --local)`);
   console.log(`Then delete ${values.out}.\n`);
   if (!chosen) {
     console.log("Temporary password (shown once — you must change it at first login):");

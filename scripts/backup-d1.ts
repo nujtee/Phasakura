@@ -27,17 +27,18 @@ function wrangler(args: string[]): string {
 
 function main(): void {
   const ROOT = join(import.meta.dirname, "..");
-  const { values } = parseArgs({ options: { database: { type: "string", default: "phasakura-db" } } });
+  const { values } = parseArgs({ options: { database: { type: "string", default: "phasakura-db" }, config: { type: "string" } } });
   const database = values.database!;
+  const cfg = values.config ? ["--config", values.config] : [];
   const dir = join(ROOT, "backups");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, backupFileName(database, new Date()));
 
   console.log(`Time Travel bookmark before the export (restore point if anything goes wrong):`);
-  process.stdout.write(wrangler(["d1", "time-travel", "info", database]));
+  process.stdout.write(wrangler(["d1", "time-travel", "info", database, ...cfg]));
 
   console.log(`\nExporting ${database} (remote) → ${file}`);
-  wrangler(["d1", "export", database, "--remote", `--output=${file}`]);
+  wrangler(["d1", "export", database, "--remote", `--output=${file}`, ...cfg]);
   chmodSync(file, 0o600);
   const sha = createHash("sha256").update(readFileSync(file)).digest("hex");
   writeFileSync(`${file}.sha256`, `${sha}  ${file.split("/").pop()}\n`, { mode: 0o600 });

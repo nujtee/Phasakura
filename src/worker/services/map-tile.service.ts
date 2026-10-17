@@ -1,3 +1,4 @@
+import { siteLabel } from "../../shared/site-name.ts";
 import { isPreviewTile } from "../../shared/map-tiles.ts";
 import type { FetchLike } from "../line/line-api.ts";
 
@@ -57,7 +58,7 @@ export class MapTileService {
     try {
       const upstream = await fetchImpl(`${UPSTREAM}/${z}/${x}/${y}.png`, {
         headers: {
-          "User-Agent": `Phasakura/1.0 (+${this.options.siteUrl})`,
+          "User-Agent": `${siteLabel(this.options.siteUrl)}/1.0 (+${this.options.siteUrl})`,
           Referer: `${this.options.siteUrl}/`,
           Accept: "image/png",
         },

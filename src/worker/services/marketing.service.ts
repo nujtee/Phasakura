@@ -1,3 +1,4 @@
+import { siteLabel } from "../../shared/site-name.ts";
 import type { MarketingEventDto } from "../../shared/settings-types.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError } from "../http/errors.ts";
@@ -108,7 +109,7 @@ export class MetaCapiService {
       // Test event: no guest behind it, only enough for Events Manager to accept it.
       return {
         event_name: row.event_name, event_time: time, event_id: row.event_id, action_source: "website", event_source_url: `${this.config.siteUrl}/`,
-        user_data: { client_user_agent: "Phasakura Conversions API test", external_id: [await sha256Hex(row.event_id)] },
+        user_data: { client_user_agent: `${siteLabel(this.config.siteUrl)} Conversions API test`, external_id: [await sha256Hex(row.event_id)] },
       };
     }
     const c = await this.repo.context(row.booking_id);

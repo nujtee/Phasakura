@@ -3,6 +3,7 @@ import { REPORT_GROUPS, REPORT_TYPES, type ReportGroup, type ReportType } from "
 import { requestMeta, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { NotFoundError, ValidationError } from "../http/errors.ts";
 import { jsonOk } from "../http/response.ts";
+import { siteSlug } from "../../shared/site-name.ts";
 import { reportFileName, reportToXlsx } from "../reports/report-export.ts";
 import type { RequestContext } from "../router.ts";
 import type { ReportRequest } from "../services/report.service.ts";
@@ -49,7 +50,7 @@ export function reportController(services: ServicesFor) {
         status: 200,
         headers: {
           "Content-Type": XLSX_TYPE,
-          "Content-Disposition": `attachment; filename="${reportFileName(report, "xlsx")}"`,
+          "Content-Disposition": `attachment; filename="${reportFileName(report, "xlsx", siteSlug(ctx.url.hostname))}"`,
           "Cache-Control": "no-store",
           "Content-Length": String(bytes.length),
         },
