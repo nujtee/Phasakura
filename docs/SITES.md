@@ -89,8 +89,24 @@ Center Management สั่งเว็บได้ผ่าน `/api/center/*` 
   ผู้ส่งใน Center (`X-Center-Actor`: id, email, role `PLATFORM_OWNER`/`OPERATOR`/`SUPPORT_READONLY`, reason) และ sha256 ของ body
 - เวลาต้องห่างนาฬิกาเว็บไม่เกิน 60 วินาที; nonce ใช้ได้ครั้งเดียว (ตาราง `center_nonces`, migration 0030, cron ล้างทุก 5 นาที)
 - ทุกครั้งที่ปฏิเสธ → Security events `CENTER_REQUEST_REFUSED` (เหตุผล เช่น `BAD_SIGNATURE`, `CLOCK_SKEW`, `REPLAYED_NONCE`) ตอบ 401
-- Endpoint ตอนนี้ (อ่านอย่างเดียว): `GET /api/center/hello` (เว็บไหน, API version, schema) และ `GET /api/center/status`
-  (= หน้า System status ของหลังบ้าน). คำสั่งที่แก้ข้อมูลมาในเฟส C3 พร้อม audit ว่ามาจาก Center คนไหน เพราะอะไร
+- อ่าน: `GET /api/center/hello` (เว็บไหน, API version, schema, พักอยู่ไหม), `GET /api/center/status` (= หน้า System status),
+  `GET /api/center/users` (บัญชีของเว็บเอง ไม่มี hash รหัสผ่าน), `GET /api/center/suspension`
+
+### คำสั่งแก้ข้อมูลและ SSO (เฟส C3, migration 0031)
+
+ทุกคำสั่งที่แก้ข้อมูล **ต้องมีเหตุผล** (`reason` ใน `X-Center-Actor`) และถูกบันทึกใน **Audit logs ของเว็บ** ในชื่อ "Center · อีเมล"
+พร้อม role, key และเหตุผล (batch เดียวกับการเปลี่ยนแปลง)
+
+| คำสั่ง | Role ใน Center | ผล |
+|---|---|---|
+| `POST /api/center/sso` | ทุก role | ตั๋วใช้ครั้งเดียว อายุ 60 วินาที → browser ของคนใน Center โพสต์ฟอร์ม `ticket=…` ไปที่ `POST /api/center/sso/consume` → session หลังบ้าน **2 ชั่วโมง** แล้วไป `/admin` |
+| `POST /api/center/sessions/revoke` `{actorId?}` | PLATFORM_OWNER, OPERATOR | ตัด session ของ Center user คนนั้น (หรือทั้งหมด) และตั๋วที่ยังไม่ใช้ |
+| `PUT /api/center/suspension` `{suspended, note?}` | PLATFORM_OWNER | **พักเว็บได้เฉพาะกรณีค้างค่าบริการ** (`UNPAID_FEES` — ฐานข้อมูลรับค่าอื่นไม่ได้): แขกจองใหม่ไม่ได้ (423 `SITE_SUSPENDED`), หน้าเว็บ / การจองเดิม / สลิป / หลังบ้าน / export ใช้ได้ตามปกติ, หน้า System status ของเจ้าของขึ้นสีแดงพร้อมเหตุผล |
+
+**Center user ในเว็บ** = แถวใน `users` ที่ id ขึ้นต้นด้วย `center_` (สร้างโดย Center API เท่านั้น):
+PLATFORM_OWNER / OPERATOR = SUPER_ADMIN, SUPPORT_READONLY = สิทธิ์ `*.view` ทั้งหมดเท่านั้น (ปรับตาม role ทุกครั้งที่เข้า)
+admin ของเว็บ **มองไม่เห็นและแก้ไม่ได้** (ไม่อยู่ในรายชื่อ, 404, ไม่นับเป็น SUPER_ADMIN ของเว็บ — trigger กันลบ SUPER_ADMIN คนสุดท้ายของเว็บ
+ไม่นับ Center), เข้าด้วยรหัสผ่านไม่ได้, ไม่ได้รับอีเมล / LINE แจ้งเตือน
 - เปลี่ยน key: ใส่ key ใหม่คู่ key เก่า (keyId ต่างกัน) → Release → ให้ Center ใช้ key ใหม่ → เอา key เก่าออก → Release
 
 ## สิ่งที่ห้ามมีในโค้ด

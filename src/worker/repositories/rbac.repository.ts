@@ -1,4 +1,5 @@
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
+import { siteUser } from "./center.repository.ts";
 import { withFallback } from "./schema-fallback.ts";
 import { PREMIUM_ONLY_PERMISSIONS } from "../../shared/credit-types.ts";
 
@@ -72,7 +73,7 @@ export class RbacRepository {
                 (SELECT group_concat(p.code, ',') FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
                   WHERE rp.role_id = r.id) AS permissions,
                 (SELECT COUNT(*) FROM user_roles ur JOIN users u ON u.id = ur.user_id
-                  WHERE ur.role_id = r.id AND u.status <> 'DELETED') AS user_count
+                  WHERE ur.role_id = r.id AND u.status <> 'DELETED' AND ${siteUser()}) AS user_count
            FROM roles r
            LEFT JOIN role_translations t ON t.role_id = r.id AND t.language_code = ?1
           ORDER BY r.sort_order`,

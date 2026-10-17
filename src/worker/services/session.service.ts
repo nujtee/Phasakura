@@ -9,6 +9,7 @@ const HOUR = 60 * 60 * 1000;
 export const SESSION_TTL_MS = 12 * HOUR;           // browser session, absolute
 export const REMEMBER_ME_TTL_MS = 30 * 24 * HOUR;  // "Remember me", absolute
 export const IDLE_TIMEOUT_MS = 2 * HOUR;           // browser session inactivity limit
+export const CENTER_SESSION_TTL_MS = 2 * HOUR;     // Center SSO session (phase C3), absolute
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
 export interface NewSession {
@@ -27,11 +28,11 @@ export class SessionService {
   ) {}
 
   /** Returns the insert statement so callers can commit it atomically with other writes. */
-  async prepare(userId: string, rememberMe: boolean, meta: RequestMeta, rotatedFrom: string | null = null): Promise<NewSession> {
+  async prepare(userId: string, rememberMe: boolean, meta: RequestMeta, rotatedFrom: string | null = null, ttlMs?: number): Promise<NewSession> {
     const now = this.clock();
     const token = randomToken();
     const sessionId = newId();
-    const expiresAt = iso(addMs(now, rememberMe ? REMEMBER_ME_TTL_MS : SESSION_TTL_MS));
+    const expiresAt = iso(addMs(now, ttlMs ?? (rememberMe ? REMEMBER_ME_TTL_MS : SESSION_TTL_MS)));
     const statement = this.sessions.insertStatement({
       id: sessionId,
       userId,

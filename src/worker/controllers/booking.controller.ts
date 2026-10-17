@@ -185,6 +185,7 @@ export function bookingController(services: ServicesFor) {
 
     /** POST /api/public/bookings/quote — server-side price for the current selection. */
     quote: (async (ctx) => {
+      await services(ctx).centerAdmin.assertOpenForBooking();
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(QUOTE_FIELDS);
       const input = parseQuote(body, v);
@@ -194,6 +195,7 @@ export function bookingController(services: ServicesFor) {
 
     /** POST /api/public/bookings — creates a PENDING booking (unpaid hold). */
     create: (async (ctx) => {
+      await services(ctx).centerAdmin.assertOpenForBooking();
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly([...QUOTE_FIELDS, "customer", "privacyAccepted", "expectedTotalSatang", "idempotencyKey"]);
       const input = parseQuote(body, v);

@@ -106,8 +106,8 @@ export class MonitoringService {
   async snapshot(): Promise<SystemStatusDto> {
     const now = this.clock();
     const since = iso(new Date(now.getTime() - 86_400_000));
-    const [health, facts, beats, errors] = await Promise.all([
-      this.health.check(), this.repo.facts(iso(now), since), this.repo.heartbeats(), this.repo.recentErrors(50),
+    const [health, facts, beats, errors, suspended] = await Promise.all([
+      this.health.check(), this.repo.facts(iso(now), since), this.repo.heartbeats(), this.repo.recentErrors(50), this.repo.suspended(),
     ]);
     const env = this.env;
     const has = (v: string | undefined) => !!v?.trim();
@@ -141,6 +141,8 @@ export class MonitoringService {
       c("rateLimits", rateLimits === 4 ? "ok" : production ? "warning" : "ok", `${rateLimits}/4`),
       c("recentErrors", facts.errorCount24h > 0 ? "warning" : "ok", String(facts.errorCount24h)),
       c("deliveries", facts.lineFailed24h + facts.capiFailed24h > 0 ? "warning" : "ok", String(facts.lineFailed24h + facts.capiFailed24h)),
+      // Center suspended the site for unpaid service fees (phase C3): new public bookings are refused.
+      c("centerSuspension", suspended ? "error" : "ok", suspended ? "suspended" : "open"),
     ];
 
     const toBeat = (b: Awaited<ReturnType<MonitoringRepository["heartbeats"]>>[number]): HeartbeatDto => ({

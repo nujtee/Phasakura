@@ -122,13 +122,23 @@ describe("CSRF on every state-changing route", () => {
             : variant === "missing X-Requested-With" ? { "X-Requested-With": "" }
               : { Origin: "", "Sec-Fetch-Site": "cross-site" };
       const wrong: string[] = [];
-      for (const r of routes.filter(mutates).filter((x) => x.path !== "/api/line/webhook")) {
+      for (const r of routes.filter(mutates).filter((x) => x.path !== "/api/line/webhook" && !x.path.startsWith("/api/center/"))) {
         const res = await h.api(r.method, fill(r.path), { body: {}, token: root, headers });
         if (res.status !== 403 || !/^CSRF_/.test(res.error?.code ?? "")) wrong.push(`${r.method} ${r.path} → ${res.status} ${res.error?.code}`);
       }
       assert.deepEqual(wrong, []);
     });
   }
+
+  it("Center routes need an Ed25519 signature instead (off = 404); the SSO form never signs anyone in without a ticket", async () => {
+    for (const r of routes.filter(mutates).filter((x) => x.path.startsWith("/api/center/") && x.path !== "/api/center/sso/consume")) {
+      const res = await h.api(r.method, r.path, { body: {}, token: root });
+      assert.equal(res.status, 404, `${r.method} ${r.path}`);
+    }
+    const consume = await h.get("/api/center/sso/consume", { "Content-Type": "application/x-www-form-urlencoded" }, "POST");
+    assert.equal(consume.status, 400);
+    assert.equal(consume.headers.get("Set-Cookie"), null);
+  });
 
   it("the LINE webhook needs its HMAC signature instead (no session, no CSRF header)", async () => {
     h.lineSecrets();

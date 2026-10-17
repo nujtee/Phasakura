@@ -1,3 +1,4 @@
+import { siteUser } from "./center.repository.ts";
 import type { CreditPlan, CreditSettingsInput } from "../../shared/credit-types.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 
@@ -76,8 +77,8 @@ export interface CreditUserRow {
 }
 
 /** Back-office users who get the low / empty notices: every ACTIVE user but SUPER_ADMIN. */
-const STAFF_USERS = `u.status = 'ACTIVE' AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = 'role_super_admin')`;
-const SUPER_ADMINS = `u.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = 'role_super_admin')`;
+const STAFF_USERS = `u.status = 'ACTIVE' AND ${siteUser()} AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = 'role_super_admin')`;
+const SUPER_ADMINS = `u.status = 'ACTIVE' AND ${siteUser()} AND EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = 'role_super_admin')`;
 const EMAIL_ON = "EXISTS (SELECT 1 FROM email_settings s WHERE s.id = 1 AND s.enabled = 1)";
 const LINE_ON = "EXISTS (SELECT 1 FROM line_settings s WHERE s.id = 1 AND s.enabled = 1)";
 

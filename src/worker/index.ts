@@ -82,6 +82,13 @@ export function createApp(options: AppOptions = {}) {
     // Center Management (phase C2): Ed25519-signed requests only; 404 while CENTER_PUBLIC_KEYS is empty
     .get("/api/center/hello", center.hello)
     .get("/api/center/status", center.status)
+    .get("/api/center/users", center.users)
+    .get("/api/center/suspension", center.getSuspension)
+    .put("/api/center/suspension", center.setSuspension)
+    .post("/api/center/sessions/revoke", center.revokeSessions)
+    .post("/api/center/sso", center.issueSso)
+    // Unsigned: the browser of the Center user posts the one-time ticket here (a form on center.phasakura.com).
+    .post("/api/center/sso/consume", center.consumeSso)
     .get("/api/public/site", site.getPublicSite)
     // Page metadata for in-app navigation (Phase 13): the same data the Worker puts in <head>.
     .get("/api/public/meta", seo.meta)
@@ -302,7 +309,8 @@ export function createApp(options: AppOptions = {}) {
     try {
       await enforceRateLimit(request, env, url);
       // The LINE webhook is server-to-server and authenticated by its HMAC signature instead.
-      if (url.pathname !== LINE_WEBHOOK_PATH) assertSameOriginRequest(request, url);
+      // Exempt: LINE's signed webhook, and Center (Ed25519-signed requests; the SSO consume form is a one-time ticket).
+      if (url.pathname !== LINE_WEBHOOK_PATH && !url.pathname.startsWith("/api/center/")) assertSameOriginRequest(request, url);
       const { handler, params } = router.match(request.method, url.pathname);
       response = await handler({ request, env, url, params, requestId });
       if (request.method === "HEAD") {
@@ -422,7 +430,10 @@ export function createApp(options: AppOptions = {}) {
       // Error log retention, once an hour.
       if (minute === null || minute === 11) await task("error_log_retention", () => s.monitoring.retention());
       // Center request nonces older than their replay window (migration 0030), every 5 minutes.
-      if (s.center.enabled && (minute === null || minute % 5 === 0)) await task("center_nonce_purge", () => s.center.purgeNonces());
+      if (s.center.enabled && (minute === null || minute % 5 === 0)) {
+        await task("center_nonce_purge", () => s.center.purgeNonces());
+        await task("center_ticket_purge", () => s.centerAdmin.purgeTickets());
+      }
 
       // Heartbeat last: /api/health turns "stale" if this stops happening.
       await s.monitoring.heartbeat("cron", failures.length === 0, Date.now() - started, failures.length ? `failed: ${failures.join(", ")}` : null);

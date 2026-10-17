@@ -61,8 +61,9 @@ import { CompositeOutbox, MarketingOutbox, MetaCapiService } from "./services/ma
 import { PrivacyService } from "./services/privacy.service.ts";
 import { Ga4ReportService } from "./services/ga4-report.service.ts";
 import { MonitoringRepository } from "./repositories/monitoring.repository.ts";
-import { CenterNonceRepository } from "./repositories/center.repository.ts";
+import { CenterAdminRepository, CenterNonceRepository } from "./repositories/center.repository.ts";
 import { CenterAccessService } from "./services/center-access.service.ts";
+import { CenterAdminService } from "./services/center-admin.service.ts";
 import { MonitoringService } from "./services/monitoring.service.ts";
 import { edgeCache, MapTileService } from "./services/map-tile.service.ts";
 import { EmailRepository } from "./repositories/email.repository.ts";
@@ -114,6 +115,8 @@ export interface Services {
   monitoring: MonitoringService;
   /** Signed requests from Center Management (phase C2). */
   center: CenterAccessService;
+  /** What Center may change on this site: SSO, sign-out, suspension (phase C3). */
+  centerAdmin: CenterAdminService;
   /** Footer map thumbnail tiles (OpenStreetMap, through the Worker). */
   mapTiles: MapTileService;
   /** E-mail notifications through Zoho Mail or Resend (migration 0023). */
@@ -265,6 +268,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     health,
     monitoring: new MonitoringService(new MonitoringRepository(db), health, authorization, clock, env),
     center: new CenterAccessService(env.CENTER_PUBLIC_KEYS, new CenterNonceRepository(db), log, clock),
+    centerAdmin: new CenterAdminService(db, new CenterAdminRepository(db), sessions, log, clock),
     adminMenu: new AdminMenuService(db, new AdminMenuRepository(db), authorization, log, clock),
     sessions,
     authorization,

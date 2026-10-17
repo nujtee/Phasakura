@@ -230,6 +230,7 @@ const th = {
     NO_SHOW: "ไม่ได้เข้าพัก",
   },
   errors: {
+    SITE_SUSPENDED: "ขณะนี้ปิดรับจองออนไลน์ชั่วคราว กรุณาติดต่อที่พักโดยตรง",
     DUPLICATE_SLIP: "สลิปนี้ถูกส่งมาแล้ว",
     BOOKING_NOT_PAYABLE: "การจองนี้ไม่ได้รอชำระเงินแล้ว (หมดเวลา ยกเลิก หรือชำระแล้ว)",
     PAYPAL_NOT_CONFIGURED: "ขณะนี้ยังชำระด้วย PayPal ไม่ได้ กรุณาเลือกช่องทางอื่น",
@@ -503,6 +504,7 @@ const en: BookingMessages = {
     NO_SHOW: "No-show",
   },
   errors: {
+    SITE_SUSPENDED: "Online booking is temporarily unavailable. Please contact the property directly.",
     DUPLICATE_SLIP: "This slip was already submitted.",
     BOOKING_NOT_PAYABLE: "This booking is no longer waiting for payment (expired, cancelled or already paid).",
     PAYPAL_NOT_CONFIGURED: "PayPal is not available right now. Please choose another way to pay.",
@@ -774,6 +776,7 @@ const zhCN: BookingMessages = {
     NO_SHOW: "未入住",
   },
   errors: {
+    SITE_SUSPENDED: "在线预订暂时不可用，请直接联系住宿。",
     DUPLICATE_SLIP: "此凭证已提交过。",
     BOOKING_NOT_PAYABLE: "此预订已不再等待付款（已过期、已取消或已付款）。",
     PAYPAL_NOT_CONFIGURED: "暂时无法使用 PayPal，请选择其他付款方式。",
