@@ -27,27 +27,18 @@
 | `wrangler.jsonc` | `APP_BASE_URL=https://phasakura.com`, routes `phasakura.com` + `www.phasakura.com` (www → 301 ไป apex), `workers_dev: false` — `npm run preflight` 0 error |
 | SUPER_ADMIN คนแรก | `suriya.rth@gmail.com` (รหัสผ่านชั่วคราว — ต้องเปลี่ยนตอนเข้าครั้งแรก) |
 | โค้ด | GitHub `nujtee/Phasakura` (branch `main`) — CI บน GitHub ผ่านครบ: build, typecheck, ESLint, static checks, 554 tests, browser suites ทุกชุด |
-| Deploy | **Workers Builds** เชื่อมแล้ว — deploy ครั้งแรก 2026-10-07 23:49 น.; ทุก push เข้า `main` จะ build + deploy อัตโนมัติ |
+| Deploy | **GitHub Actions → Release** (Center เฟส C1) — push `main` เป็นแค่ CI; ปล่อยจริงด้วย Release workflow ที่ migrate ก่อน deploy ทุกเว็บ (`docs/SITES.md`). Workers Builds ใช้จนถึง C1 แล้วต้อง **Disconnect** |
 | ตรวจหลัง deploy | `/th/` 200 (canonical `https://phasakura.com/th/`, index), robots.txt โหมด production, sitemap 12 URL บนโดเมนนี้, cron ทำงานทุกนาที (heartbeat OK), ไม่มี server error |
 | Workers Paid | ต้องตรวจ / อัปเกรดใน Dashboard → Workers & Pages → Plans |
 
-### เชื่อม GitHub → Cloudflare (ครั้งเดียว)
+### Deploy และ migration (ตั้งแต่ Center เฟส C1)
 
-Dashboard → **Workers & Pages** → **Create application** → **Import a repository** → GitHub → เลือก `nujtee/Phasakura`
+GitHub → **Actions → Release → Run workflow** (`ref` = `main`, `sites` = `all` หรือ `phasakura`) — ต่อเว็บ: preflight →
+Time Travel bookmark (จุดย้อนกลับใน summary) → migrate → deploy → smoke test; ไม่ต้อง migrate เองก่อน push อีกแล้ว
+ตั้งค่าครั้งเดียว (Cloudflare API token, GitHub secrets, ปิด Workers Builds) อยู่ใน `docs/SITES.md` หัวข้อ Release
 
-| ช่อง | ค่า |
-|---|---|
-| Project name | `phasakura` (ต้องตรงกับ `name` ใน wrangler.jsonc) |
-| Build command | `npm run build` |
-| Deploy command | `npx wrangler deploy` |
-| Root directory | `/` |
-
-กด **Save and Deploy** — build ครั้งแรก ~2–4 นาที แล้ว `https://phasakura.com` ใช้งานได้
-
-### Migration ครั้งต่อไป
-
-API token อัตโนมัติของ Workers Builds **ไม่มีสิทธิ์ D1** จึงไม่ migrate เอง: ก่อน push โค้ดที่มี migration ใหม่ ให้รัน
-`npm run db:backup && npm run db:migrate:remote` (หรือให้ Claude apply ผ่าน D1) แล้วค่อย push
+ประวัติ: 2026-10-07 – C1 deploy ผ่าน Workers Builds (`npx wrangler deploy` ทุก push `main`) ซึ่ง token ไม่มีสิทธิ์ D1
+จึงต้อง `npm run db:backup && npm run db:migrate:remote` ก่อน push ทุกครั้ง
 
 ### ระบบเครดิตการใช้ App (migration 0027)
 

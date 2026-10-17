@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { parseJsonc, preflight, type Finding } from "../../scripts/preflight.ts";
 import {
-  checkAll, checkTemplate, configPath, generatedText, loadRegistry, siteConfig, validateRegistry, type Registry,
+  checkAll, checkTemplate, configPath, generatedText, loadRegistry, MAX_WAVES, parseBookmark, releasePlan, siteConfig, validateRegistry, type Registry,
 } from "../../scripts/sites.ts";
 import { splitPhones } from "../../src/shared/phones.ts";
 import { siteLabel, siteMailDomain, siteSlug } from "../../src/shared/site-name.ts";
@@ -76,6 +76,42 @@ describe("sites registry (Center phase C0: one codebase, every site)", () => {
     const template = parseJsonc(TEMPLATE) as Record<string, unknown>;
     const site = registry.sites.find((s) => s.slug === registry.template)!;
     assert.deepEqual(siteConfig(template, site, ""), template);
+  });
+});
+
+describe("release plan (Center phase C1: .github/workflows/release.yml)", () => {
+  it("groups the chosen sites by wave; quiet sites first", () => {
+    const { waves, unknown } = releasePlan(registry, "all");
+    assert.equal(waves.length, MAX_WAVES);
+    assert.deepEqual(unknown, []);
+    assert.deepEqual(waves.flat().sort(), registry.sites.map((s) => s.slug).sort());
+    for (const [i, wave] of waves.entries()) for (const slug of wave) assert.equal(registry.sites.find((s) => s.slug === slug)!.wave, i + 1);
+  });
+
+  it("accepts slugs separated by spaces or commas, and names unknown ones instead of releasing nothing", () => {
+    assert.deepEqual(releasePlan(registry, "chomkhao, phasakura").waves.flat().sort(), ["chomkhao", "phasakura"]);
+    assert.deepEqual(releasePlan(registry, "chomkao").unknown, ["chomkao"]);
+    assert.deepEqual(releasePlan(registry, "  ").waves.flat().length, registry.sites.length);
+  });
+
+  it("a wave outside 1…MAX_WAVES is refused (the workflow has a fixed number of wave jobs)", () => {
+    const site = { ...registry.sites[0]!, wave: MAX_WAVES + 1 };
+    assert.match(validateRegistry({ ...registry, sites: [site, ...registry.sites.slice(1)] }).join("\n"), /wave must be 1…/);
+  });
+
+  it("reads the restore point from `wrangler d1 time-travel info`", () => {
+    const out = "🚧 Time Traveling...\n⚠️ Timestamp '2026-10-17T02:30:00Z' corresponds with bookmark '00000085-0000024c-00004c6d-8e61117bf38d7adb71b934ebbf891683'\n";
+    assert.equal(parseBookmark(out), "00000085-0000024c-00004c6d-8e61117bf38d7adb71b934ebbf891683");
+    assert.equal(parseBookmark("no bookmark here"), null);
+  });
+
+  it("the workflow's wave jobs match MAX_WAVES and only run `sites.ts run <site> release`", () => {
+    const wf = readFileSync(join(ROOT, ".github", "workflows", "release.yml"), "utf8");
+    for (let w = 1; w <= MAX_WAVES; w++) assert.match(wf, new RegExp(`\\n  wave${w}:\\n`));
+    assert.doesNotMatch(wf, new RegExp(`\\n  wave${MAX_WAVES + 1}:`));
+    assert.equal(wf.match(/sites\.ts run \$\{\{ matrix\.site \}\} release/g)?.length, MAX_WAVES);
+    const runLines = wf.split("\n").filter((l) => /^\s+(- )?run:|^\s{12}\S/.test(l));
+    assert.ok(runLines.every((l) => !l.includes("${{ inputs.")), "workflow inputs reach shell steps through env only");
   });
 });
 

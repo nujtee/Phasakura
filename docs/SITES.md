@@ -26,17 +26,35 @@ npm run site -- all migrations          # ทุกเว็บ เรียง�
 
 คำสั่งเดิมของ Phasakura (`npm run deploy`, `npm run db:migrate:remote`, `npm run preflight`…) ยังใช้ได้เหมือนเดิม
 
-## Deploy ตอนนี้ (ระหว่างเฟส C0 → C1)
+## Release (deploy) — GitHub Actions เท่านั้น (เฟส C1)
 
-| เว็บ | Deploy จาก | หมายเหตุ |
-|---|---|---|
-| Phasakura | Workers Builds ← repo นี้ (`main`, `npx wrangler deploy`) | เหมือนเดิม |
-| Chomkhao | Workers Builds ← `nujtee/Chomkhao` | ยังไม่ย้าย — **ห้ามแก้โค้ดใน repo นั้นแล้ว** |
-| Cherngdoi | Workers Builds ← `nujtee/Cherngdoi` | ยังไม่ย้าย — **ห้ามแก้โค้ดใน repo นั้นแล้ว** |
+Push / merge เข้า `main` = แค่ CI (ทดสอบ) **ไม่ขึ้นเว็บใด** — ปล่อยจริงด้วย GitHub → **Actions → Release → Run workflow**
 
-เฟส C1 ย้ายการ deploy ทุกเว็บมาที่ GitHub Actions จาก repo นี้ (backup → migrate → deploy → smoke เป็นรอบตาม `wave`)
-แล้วตัด Workers Builds ของ Chomkhao / Cherngdoi ออก จนกว่าจะถึงตอนนั้น ถ้าต้องการให้สองเว็บนั้นได้โค้ดใหม่
-ให้ deploy เองจาก repo นี้: `npm run site -- chomkhao migrate && npm run site -- chomkhao deploy`
+| ช่อง | ค่า |
+|---|---|
+| Branch, tag or commit | `main` (หรือ commit ที่ต้องการ) |
+| Sites | `all` หรือ slug คั่นด้วยเว้นวรรค เช่น `chomkhao cherngdoi` |
+
+ลำดับต่อเว็บ: preflight → จด **D1 Time Travel bookmark** (จุดย้อนกลับ อยู่ในหน้า summary ของ run) → migrate → deploy → smoke test (ลอง 3 ครั้ง)
+เว็บเรียงเป็นรอบตาม `wave` ใน `sites/sites.json` — รอบ 1 (เว็บที่คนใช้น้อย) ก่อน, รอบถัดไปเริ่มเมื่อรอบก่อนผ่านครบทุกเว็บ;
+เว็บใดล้ม run หยุด เว็บที่ปล่อยไปแล้วอยู่บน version ใหม่ (migration เป็นแบบเพิ่ม โค้ดเก่า / ใหม่ใช้ฐานเดียวกันได้)
+
+**ย้อนกลับ**: โค้ด `npx wrangler rollback --config <config ของเว็บนั้น>`; ข้อมูล `npx wrangler d1 time-travel restore <slug>-db --bookmark=<จาก summary>`
+
+**ตั้งค่าครั้งเดียว**
+
+1. Cloudflare → My Profile → API Tokens → Create Token → template **Edit Cloudflare Workers** → เพิ่ม Permission
+   **Account › D1 › Edit** → Account Resources: บัญชีของแพลตฟอร์ม, Zone Resources: All zones → Create → คัด token
+2. GitHub → repo → Settings → Secrets and variables → Actions → New repository secret:
+   `CLOUDFLARE_API_TOKEN` (token ข้อ 1) และ `CLOUDFLARE_ACCOUNT_ID` (เลขบัญชีใน URL ของ Cloudflare dashboard)
+3. (แนะนำ) GitHub → Settings → Environments → `production-wave-2` → Wait timer 30 นาที หรือ Required reviewers —
+   ได้เวลาดูรอบ 1 ก่อนรอบ 2 เริ่ม (environment ถูกสร้างเองตอน run ครั้งแรก)
+4. Run Release กับ `chomkhao cherngdoi` (ยังไม่มีการจอง) ให้ผ่านก่อน แล้วค่อย `all`
+5. **ปิด Workers Builds ทุกเว็บ** (Cloudflare → Workers & Pages → <worker> → Settings → Builds → Disconnect) —
+   ไม่งั้น push `main` จะ deploy Phasakura เองโดยไม่ migrate; Chomkhao / Cherngdoi ตัดการเชื่อมกับ repo เดิม
+   แล้ว archive `nujtee/Chomkhao`, `nujtee/Cherngdoi` (GitHub → Settings → Archive)
+
+ระหว่างยังไม่ได้ตั้งค่าข้างบน ใช้คำสั่งจากเครื่องตัวเองได้: `npm run site -- <slug> migrate && npm run site -- <slug> deploy`
 
 ## เพิ่มเว็บใหม่ (จนกว่า `site:create` ในเฟส C7 จะทำให้อัตโนมัติ)
 
