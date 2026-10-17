@@ -10,6 +10,11 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  },
   "routes": [
     {
       "pattern": "center.phasakura.com",

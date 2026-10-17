@@ -24,6 +24,7 @@ config `center/wrangler.jsonc` **generate จาก `sites/sites.json`** (`npm r
 |---|---|---|
 | เว็บทั้งหมด | ทุกบทบาท | สถานะแต่ละเว็บ (ออนไลน์ / ฐานข้อมูล / พักอยู่) + **เข้าหลังบ้าน** (ต้องใส่เหตุผล → ตั๋ว SSO 60 วินาที → session หลังบ้าน 2 ชม.) |
 | ผู้ใช้ Center | PLATFORM_OWNER | เพิ่มคน (ลิงก์ตั้งรหัสผ่าน 48 ชม. แสดงครั้งเดียว), เปลี่ยนบทบาท, ปิด / เปิดบัญชี, ลิงก์ตั้งรหัสผ่านใหม่ (24 ชม.) — เปลี่ยนบทบาทหรือปิดบัญชี = ออกจากหลังบ้านทุกเว็บทันที |
+| ตั้งค่า | PLATFORM_OWNER | กลุ่ม LINE สำหรับแจ้งเตือน, เปิด / ปิดแต่ละประเภท, ส่งข้อความทดสอบ |
 | บันทึกการใช้งาน | ทุกบทบาท | 300 รายการล่าสุด: ใคร ทำอะไร เว็บไหน เพราะอะไร (append-only, ลบ / แก้ไม่ได้) |
 | บัญชีของฉัน | ทุกบทบาท | เปลี่ยนรหัสผ่าน (session อื่นออกทั้งหมด) |
 
@@ -32,7 +33,34 @@ config `center/wrangler.jsonc` **generate จาก `sites/sites.json`** (`npm r
 
 ความปลอดภัย: ผิดรหัส 5 ครั้ง = ล็อก 15 นาที, session 8 ชม. / ไม่ใช้งาน 1 ชม. ออกเอง, cookie `__Host-csid` (HttpOnly, Secure,
 SameSite=Strict), ทุก POST ต้องมาจาก origin ของ Center, CSP `default-src 'none'`, ไม่มี Workers.dev / preview URL
-ยังไม่มี: 2FA และการแจ้งเตือน LINE (เฟส C5 / C9)
+ยังไม่มี: 2FA (เฟส C9)
+
+## สุขภาพเว็บและการแจ้งเตือน LINE (เฟส C5)
+
+Center ตรวจทุกเว็บ **ทุก 5 นาที** (cron ของ Worker `center`) ผ่าน `/api/center/status` ของแต่ละเว็บ แล้วเก็บผล 14 วัน
+(หน้าเว็บทั้งหมด = ผลล่าสุด, กดชื่อเว็บ = ประวัติ 8 ชั่วโมง + ประวัติการแจ้งเตือน, ปุ่ม "ตรวจตอนนี้")
+
+| ประเภท | เมื่อไร |
+|---|---|
+| เว็บล่ม / ติดต่อไม่ได้ | เรียกไม่ถึง, ตอบไม่ใช่ 200, หรือฐานข้อมูลใช้ไม่ได้ |
+| ฐานข้อมูลไม่ตรงกับโค้ด | `/api/health` ของเว็บ schema = outdated |
+| cron หยุด | cron ของเว็บไม่ทำงานเกิน 5 นาที |
+| error ของเซิร์ฟเวอร์สูง | ≥ 5 ครั้งใน 24 ชม. |
+| การตั้งค่าผิดพลาด | ข้อในหน้า System status ของเว็บที่เป็นสีแดง (เช่น ไม่มีบัญชีรับเงินหลัก) |
+| กลับมาปกติ | ปัญหาที่แจ้งไปแล้วหายไป (พร้อมระยะเวลา) |
+
+กติกา: ต้องเห็นปัญหา **2 รอบติดกัน** (~10 นาที) จึงแจ้ง · แจ้งครั้งเดียวต่อปัญหา · ทุกเหตุการณ์ในรอบเดียวรวมเป็น LINE ข้อความเดียว ·
+ทุกเหตุการณ์ถูกบันทึก (ส่งแล้ว / ไม่ส่งเพราะปิดประเภทนั้น / ยังไม่เลือกกลุ่ม / ไม่มี token / LINE ไม่รับ)
+
+### ตั้งค่า LINE ของ Center (ครั้งเดียว)
+
+1. LINE Developers → Provider เดิมหรือใหม่ → **Create a Messaging API channel** (= LINE Official Account ใหม่ ชื่อเช่น "Phasakura Center")
+2. LINE Official Account Manager → ตั้งค่า → **อนุญาตให้บอทเข้าร่วมแชทกลุ่ม** (Allow bot to join group chats) และปิดข้อความตอบกลับอัตโนมัติ
+3. Messaging API → **Channel access token (long-lived)** → Issue · Basic settings → **Channel secret**
+4. Cloudflare → Workers & Pages → **center** → Settings → Variables and Secrets → เพิ่ม **Secret** 2 ตัว:
+   `CENTER_LINE_TOKEN` (access token) และ `CENTER_LINE_SECRET` (channel secret)
+5. Messaging API → **Webhook URL** = `https://center.phasakura.com/line/webhook` → Verify → เปิด **Use webhook**
+6. เชิญบอทเข้ากลุ่ม LINE ที่จะรับแจ้งเตือน → Center → **ตั้งค่า** → เลือกกลุ่ม → บันทึก → **ส่งข้อความทดสอบ**
 
 ## เปลี่ยน key (สงสัยว่ารั่ว)
 

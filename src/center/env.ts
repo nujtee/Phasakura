@@ -14,6 +14,9 @@ export interface CenterEnv {
   CENTER_SITES?: string;
   /** Secret "<keyId>:<PKCS#8 Ed25519 private key, base64url>" — set only by Actions → Center keys. */
   CENTER_SIGNING_KEY?: string;
+  /** Secrets of Center's own LINE Official Account (Messaging API channel) for system alerts (phase C5). */
+  CENTER_LINE_TOKEN?: string;
+  CENTER_LINE_SECRET?: string;
   /** SITE_<SLUG> service bindings. */
   [binding: string]: unknown;
 }

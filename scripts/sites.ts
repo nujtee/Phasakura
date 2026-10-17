@@ -90,6 +90,8 @@ export function centerConfig(registry: Registry, template: Obj): Obj {
     main: "../src/center/index.ts",
     compatibility_date: template.compatibility_date,
     observability: template.observability,
+    // Phase C5: health check of every site + LINE alerts.
+    triggers: { crons: ["*/5 * * * *"] },
     routes: [{ pattern: center.domain, custom_domain: true }],
     workers_dev: false,
     preview_urls: false,

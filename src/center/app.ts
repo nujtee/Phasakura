@@ -5,6 +5,8 @@ import { parseSites, type CenterEnv, type CenterSite } from "./env.ts";
 import { ACTION_LABELS, bkk, esc, page, ROLE_LABELS, SSO_SCRIPT, ssoHandoffPage, type LayoutUser } from "./html.ts";
 import { CenterRepository, type CenterUserRow } from "./repository.ts";
 import { SiteClient, signingKey } from "./site-client.ts";
+import { verifyLineSignature, createLineApi, type FetchLike } from "../worker/line/line-api.ts";
+import { ALERT_LABELS, lineWebhook, loadSettings, runChecks, sendTest, SETTING_TYPES, type SettingType } from "./monitor.ts";
 
 const COOKIE = "__Host-csid";
 const HOUR = 3_600_000;
@@ -21,6 +23,8 @@ export interface CenterAppOptions {
   clock?: () => Date;
   /** Password hashing cost (tests use fewer iterations). */
   hashIterations?: number;
+  /** LINE Messaging API calls (tests pass a fake). */
+  lineFetch?: FetchLike;
 }
 
 interface Ctx {
@@ -62,7 +66,8 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     };
     let response: Response;
     try {
-      if (request.method === "POST") assertSameOrigin(request, url);
+      // The LINE webhook is server-to-server, authenticated by its HMAC signature instead.
+      if (request.method === "POST" && url.pathname !== "/line/webhook") assertSameOrigin(request, url);
       response = await route(ctx);
     } catch (error) {
       if (error instanceof HttpError) response = html(page({ title: "ผิดพลาด", body: `<div class="card"><p>${esc(error.message)}</p><p><a href="/">กลับหน้าแรก</a></p></div>` }), error.status);
@@ -82,6 +87,7 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (key === "POST /login") return login(ctx);
     if (key === "GET /setup") return setupPage(ctx);
     if (key === "POST /setup") return setup(ctx);
+    if (key === "POST /line/webhook") return webhook(ctx);
 
     const me = await currentUser(ctx);
     if (!me) {
@@ -95,6 +101,23 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (key === "POST /account/password") return changePassword(ctx, me);
     const sso = /^\/sites\/([a-z][a-z0-9-]{1,30})\/sso$/.exec(url.pathname);
     if (sso && request.method === "POST") return startSso(ctx, me, sso[1]!);
+    const detail = /^\/sites\/([a-z][a-z0-9-]{1,30})$/.exec(url.pathname);
+    if (detail && request.method === "GET") return sitePage(ctx, me, detail[1]!);
+    if (key === "POST /checks/run") {
+      if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณสั่งตรวจไม่ได้");
+      const result = await runChecks(ctx.env, { clock, lineFetch: options.lineFetch });
+      await audit(ctx, me.id, "CHECKS_RUN", null, null, { events: result.events.length, delivery: result.delivery }).run();
+      return dashboard(ctx, me, { kind: "ok", text: `ตรวจ ${result.checked} เว็บแล้ว — ${result.events.length ? `${result.events.length} เหตุการณ์ใหม่ (LINE: ${result.delivery})` : "ไม่มีเหตุการณ์ใหม่"}` });
+    }
+
+    if (me.role !== "PLATFORM_OWNER" && url.pathname.startsWith("/settings")) throw new HttpError(403, "หน้านี้สำหรับเจ้าของแพลตฟอร์มเท่านั้น");
+    if (key === "GET /settings") return settingsPage(ctx, me);
+    if (key === "POST /settings") return saveSettings(ctx, me);
+    if (key === "POST /settings/test") {
+      const res = await sendTest(ctx.env, me.displayName, ctx.now, options.lineFetch);
+      await audit(ctx, me.id, "ALERT_TEST", null, null, { ok: res.ok }).run();
+      return settingsPage(ctx, me, { kind: res.ok ? "ok" : "error", text: `ข้อความทดสอบ: ${res.reason}` });
+    }
 
     if (me.role !== "PLATFORM_OWNER" && url.pathname.startsWith("/users")) throw new HttpError(403, "หน้านี้สำหรับเจ้าของแพลตฟอร์มเท่านั้น");
     if (key === "GET /users") return usersPage(ctx, me);
@@ -222,27 +245,134 @@ export function createCenterApp(options: CenterAppOptions = {}) {
   }
 
   async function dashboard(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
-    const client = new SiteClient(ctx.env, 5000, clock);
-    const actor = actorOf(me);
-    const states = await Promise.all(ctx.sites.map((s) => client.call<{ schema: { status: string }; suspended: boolean }>(s, "GET", "/api/center/hello", actor)));
-    const keyOk = !!(await signingKey(ctx.env.CENTER_SIGNING_KEY));
-    const rows = ctx.sites.map((site, i) => {
-      const st = states[i]!;
-      const status = st.status === 200 && st.data
-        ? `${st.data.suspended ? '<span class="bad">พักการรับจอง</span>' : '<span class="ok">ออนไลน์</span>'} · <span class="${st.data.schema.status === "ok" ? "muted" : "warn"}">ฐานข้อมูล ${esc(st.data.schema.status)}</span>`
-        : `<span class="warn">${esc(siteError(st.status, st.error?.code))}</span>`;
-      return `<tr><td><strong>${esc(site.name)}</strong><br><a class="small" href="https://${esc(site.domain)}" rel="noopener noreferrer" target="_blank">${esc(site.domain)}</a></td>
-<td>${status}</td>
+    const [latest, open, keyOk] = await Promise.all([
+      ctx.repo.db.prepare(
+        `SELECT c.site, c.checked_at, c.http_status, c.schema_state, c.cron_state, c.errors_24h, c.slips_waiting, c.suspended, c.detail
+           FROM center_site_checks c JOIN (SELECT site, max(checked_at) AS at FROM center_site_checks GROUP BY site) m ON m.site = c.site AND m.at = c.checked_at`,
+      ).all<CheckRow>(),
+      ctx.repo.db.prepare("SELECT site, type, open_since, detail FROM center_alert_states WHERE open_since IS NOT NULL").all<{ site: string; type: string; open_since: string; detail: string | null }>(),
+      signingKey(ctx.env.CENTER_SIGNING_KEY).then(Boolean),
+    ]);
+    const bySite = new Map(latest.results.map((r) => [r.site, r]));
+    const rows = ctx.sites.map((site) => {
+      const c = bySite.get(site.slug);
+      const alerts = open.results.filter((a) => a.site === site.slug);
+      const status = !c ? '<span class="muted">ยังไม่เคยตรวจ</span>'
+        : c.http_status !== 200 ? `<span class="bad">ติดต่อไม่ได้</span> <span class="small muted">${esc(c.detail ?? "")}</span>`
+          : `${c.suspended ? '<span class="bad">พักการรับจอง</span>' : '<span class="ok">ออนไลน์</span>'}
+<span class="small ${c.schema_state === "ok" ? "muted" : "warn"}">· ฐานข้อมูล ${esc(c.schema_state)}</span>
+<span class="small ${c.cron_state === "ok" ? "muted" : "warn"}">· cron ${esc(c.cron_state)}</span>
+<span class="small ${(c.errors_24h ?? 0) > 0 ? "warn" : "muted"}">· error 24 ชม. ${esc(c.errors_24h)}</span>
+<span class="small muted">· สลิปรอตรวจ ${esc(c.slips_waiting)}</span>`;
+      const alertHtml = alerts.length
+        ? alerts.map((a) => `<div class="small bad">🔴 ${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ตั้งแต่ ${esc(bkk(a.open_since))}</div>`).join("") : "";
+      return `<tr><td><a href="/sites/${esc(site.slug)}"><strong>${esc(site.name)}</strong></a><br><a class="small" href="https://${esc(site.domain)}" rel="noopener noreferrer" target="_blank">${esc(site.domain)}</a></td>
+<td>${status}${alertHtml}<div class="small muted">ตรวจล่าสุด ${esc(bkk(c?.checked_at ?? null))}</div></td>
 <td><form method="post" action="/sites/${esc(site.slug)}/sso" target="_blank" class="inline">
 <input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล เช่น ช่วยตั้งค่าห้องพัก" aria-label="เหตุผลที่เข้าหลังบ้าน ${esc(site.name)}">
 <button type="submit">เข้าหลังบ้าน</button></form></td></tr>`;
     }).join("");
-    const keyNote = keyOk ? "" : '<div class="flash error">ยังไม่มี key สำหรับเซ็นคำสั่ง — GitHub → Actions → Center keys → Run workflow</div>';
+    const keyNote = keyOk ? "" : '<div class="flash error">ยังไม่มี key สำหรับเซ็นคำสั่ง — GitHub → Actions → Center setup → keys</div>';
+    const runButton = me.role === "SUPPORT_READONLY" ? "" : '<form method="post" action="/checks/run" class="inline"><button class="plain" type="submit">ตรวจตอนนี้</button></form>';
     return html(page({
       title: "เว็บทั้งหมด", user: me, current: "sites", flash,
-      body: `<h1>เว็บทั้งหมด (${ctx.sites.length})</h1>${keyNote}<div class="card scroll"><table><thead><tr><th>เว็บ</th><th>สถานะ</th><th>หลังบ้าน</th></tr></thead><tbody>${rows}</tbody></table>
+      body: `<div class="inline" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h1 style="margin:0">เว็บทั้งหมด (${ctx.sites.length})</h1>${runButton}</div>
+<p class="muted small">ตรวจอัตโนมัติทุก 5 นาที · ปัญหาที่เห็น 2 รอบติดกันจะแจ้งเตือนเข้ากลุ่ม LINE</p>${keyNote}
+<div class="card scroll"><table><thead><tr><th>เว็บ</th><th>สถานะ</th><th>หลังบ้าน</th></tr></thead><tbody>${rows}</tbody></table>
 <p class="muted small">การเข้าหลังบ้านทุกครั้งถูกบันทึกทั้งใน Center และใน Audit logs ของเว็บนั้น พร้อมเหตุผล${me.role === "SUPPORT_READONLY" ? " — บทบาทของคุณเข้าได้แบบดูอย่างเดียว" : ""}</p></div>`,
     }));
+  }
+
+  async function sitePage(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+    const site = ctx.sites.find((s) => s.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    const [checks, alerts, log] = await Promise.all([
+      ctx.repo.db.prepare("SELECT site, checked_at, http_status, schema_state, cron_state, errors_24h, slips_waiting, suspended, detail FROM center_site_checks WHERE site = ?1 ORDER BY checked_at DESC LIMIT 96").bind(slug).all<CheckRow>(),
+      ctx.repo.db.prepare("SELECT type, open_since, detail FROM center_alert_states WHERE site = ?1 AND open_since IS NOT NULL").bind(slug).all<{ type: string; open_since: string; detail: string | null }>(),
+      ctx.repo.db.prepare("SELECT type, event, message, delivery, created_at FROM center_alert_log WHERE site = ?1 ORDER BY created_at DESC LIMIT 30").bind(slug).all<{ type: string; event: string; message: string; delivery: string; created_at: string }>(),
+    ]);
+    const openHtml = alerts.results.length
+      ? alerts.results.map((a) => `<li class="bad">${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ${esc(a.detail ?? "")} <span class="muted small">(ตั้งแต่ ${esc(bkk(a.open_since))})</span></li>`).join("")
+      : '<li class="ok">ไม่มีปัญหาที่เปิดอยู่</li>';
+    const checkRows = checks.results.map((c) => `<tr><td class="small">${esc(bkk(c.checked_at))}</td>
+<td>${c.http_status === 200 ? (c.suspended ? '<span class="bad">พัก</span>' : '<span class="ok">ออนไลน์</span>') : `<span class="bad">${c.http_status === 0 ? "ติดต่อไม่ได้" : `HTTP ${c.http_status}`}</span>`}</td>
+<td>${esc(c.schema_state ?? "—")}</td><td>${esc(c.cron_state ?? "—")}</td><td>${esc(c.errors_24h ?? "—")}</td><td>${esc(c.slips_waiting ?? "—")}</td><td class="small">${esc(c.detail ?? "")}</td></tr>`).join("");
+    const logRows = log.results.map((l) => `<tr><td class="small">${esc(bkk(l.created_at))}</td><td>${l.event === "OPENED" ? "🔴 เกิดปัญหา" : "✅ กลับมาปกติ"}</td><td>${esc(l.message)}</td><td class="small">${esc(l.delivery)}</td></tr>`).join("");
+    return html(page({
+      title: site.name, user: me, current: "sites",
+      body: `<p class="small"><a href="/">← เว็บทั้งหมด</a></p><h1>${esc(site.name)} <span class="muted small">${esc(site.domain)}</span></h1>
+<div class="card"><h2 style="margin-top:0">ปัญหาที่เปิดอยู่</h2><ul>${openHtml}</ul></div>
+<div class="card scroll"><h2 style="margin-top:0">ผลตรวจล่าสุด (8 ชั่วโมง)</h2><table><thead><tr><th>เวลา</th><th>สถานะ</th><th>ฐานข้อมูล</th><th>cron</th><th>error 24 ชม.</th><th>สลิปรอตรวจ</th><th>รายละเอียด</th></tr></thead>
+<tbody>${checkRows || '<tr><td colspan="7" class="muted">ยังไม่เคยตรวจ</td></tr>'}</tbody></table></div>
+<div class="card scroll"><h2 style="margin-top:0">ประวัติการแจ้งเตือน</h2><table><thead><tr><th>เวลา</th><th>เหตุการณ์</th><th>รายละเอียด</th><th>LINE</th></tr></thead>
+<tbody>${logRows || '<tr><td colspan="4" class="muted">ยังไม่มี</td></tr>'}</tbody></table></div>`,
+    }));
+  }
+
+  async function settingsPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
+    const settings = await loadSettings(ctx.repo.db);
+    const token = ctx.env.CENTER_LINE_TOKEN?.trim();
+    const bot = token ? await createLineApi(token, options.lineFetch).botInfo() : null;
+    const groups = (await ctx.repo.db.prepare("SELECT group_id, name, joined_at FROM center_line_groups WHERE left_at IS NULL ORDER BY joined_at DESC").all<{ group_id: string; name: string | null; joined_at: string }>()).results;
+    const log = (await ctx.repo.db.prepare("SELECT site, event, message, delivery, error, created_at FROM center_alert_log ORDER BY created_at DESC LIMIT 20").all<{ site: string | null; event: string; message: string; delivery: string; error: string | null; created_at: string }>()).results;
+    const base = (ctx.env.APP_BASE_URL?.trim() || ctx.url.origin).replace(/\/+$/, "");
+    const botLine = !token ? '<span class="bad">ยังไม่ได้ตั้ง secret CENTER_LINE_TOKEN และ CENTER_LINE_SECRET</span>'
+      : bot && bot.ok ? `<span class="ok">เชื่อมต่อแล้ว</span> · ${esc(bot.info.displayName ?? "")} ${bot.info.basicId ? `(${esc(bot.info.basicId)})` : ""}` : `<span class="bad">token ใช้ไม่ได้ (${esc(bot && !bot.ok ? bot.error : "")})</span>`;
+    const groupOptions = groups.length
+      ? groups.map((g) => `<label style="font-weight:400"><input type="radio" name="line_group_id" value="${esc(g.group_id)}"${g.group_id === settings.lineGroupId ? " checked" : ""}> ${esc(g.name ?? "(ไม่ทราบชื่อกลุ่ม)")} <span class="muted small mono">${esc(g.group_id)}</span></label>`).join("")
+        + `<label style="font-weight:400"><input type="radio" name="line_group_id" value=""${settings.lineGroupId ? "" : " checked"}> ไม่ส่ง</label>`
+      : '<p class="muted">ยังไม่มีกลุ่ม — เชิญบอทของ Center เข้ากลุ่ม LINE แล้วพิมพ์ข้อความอะไรก็ได้ในกลุ่ม 1 ครั้ง จากนั้นรีเฟรชหน้านี้</p><input type="hidden" name="line_group_id" value="">';
+    const typeBoxes = SETTING_TYPES.map((t) => `<label style="font-weight:400"><input type="checkbox" name="type" value="${t}"${settings.alertTypes.has(t) ? " checked" : ""}> ${esc(ALERT_LABELS[t])}</label>`).join("");
+    const logRows = log.map((l) => `<tr><td class="small">${esc(bkk(l.created_at))}</td><td>${esc(l.site ?? "—")}</td><td>${esc(l.event)}</td><td class="small">${esc(l.message)}</td><td class="small ${l.delivery === "SENT" ? "ok" : l.delivery === "FAILED" ? "bad" : "muted"}">${esc(l.delivery)}${l.error ? ` — ${esc(l.error)}` : ""}</td></tr>`).join("");
+    return html(page({
+      title: "ตั้งค่า", user: me, current: "settings", flash,
+      body: `<h1>ตั้งค่า Center</h1>
+<div class="card"><h2 style="margin-top:0">LINE สำหรับแจ้งเตือนระบบ</h2><p>${botLine}</p>
+<p class="small">Webhook URL (ใส่ใน LINE Developers → Messaging API): <span class="mono">${esc(base)}/line/webhook</span></p>
+<form method="post" action="/settings" class="stack"><h2>ส่งแจ้งเตือนเข้ากลุ่ม</h2>${groupOptions}
+<h2>ประเภทที่แจ้งเตือน</h2>${typeBoxes}
+<p class="muted small">ปัญหาต้องพบ 2 รอบติดกัน (ประมาณ 10 นาที) จึงแจ้ง · แจ้งครั้งเดียวต่อปัญหา · error สูง = ตั้งแต่ 5 ครั้งใน 24 ชม.</p>
+<p><button type="submit">บันทึก</button></p></form>
+<form method="post" action="/settings/test" class="inline"><button class="plain" type="submit">ส่งข้อความทดสอบ</button></form></div>
+<div class="card scroll"><h2 style="margin-top:0">การแจ้งเตือนล่าสุด</h2><table><thead><tr><th>เวลา</th><th>เว็บ</th><th>เหตุการณ์</th><th>ข้อความ</th><th>LINE</th></tr></thead><tbody>${logRows || '<tr><td colspan="5" class="muted">ยังไม่มี</td></tr>'}</tbody></table></div>`,
+    }), flash?.kind === "error" ? 422 : 200);
+  }
+
+  async function saveSettings(ctx: Ctx, me: Me): Promise<Response> {
+    const form = await readForm(ctx.request);
+    const group = (form.get("line_group_id") ?? "").trim();
+    if (group && !/^C[0-9a-f]{32}$/.test(group)) return settingsPage(ctx, me, { kind: "error", text: "กลุ่ม LINE ไม่ถูกต้อง" });
+    if (group && !(await ctx.repo.db.prepare("SELECT 1 AS ok FROM center_line_groups WHERE group_id = ?1 AND left_at IS NULL").bind(group).first())) {
+      return settingsPage(ctx, me, { kind: "error", text: "บอทไม่ได้อยู่ในกลุ่มนี้แล้ว" });
+    }
+    const types = form.getAll("type").filter((t): t is SettingType => (SETTING_TYPES as readonly string[]).includes(t));
+    const before = await loadSettings(ctx.repo.db);
+    await ctx.repo.db.batch([
+      ctx.repo.db.prepare("UPDATE center_settings SET line_group_id = ?1, alert_types = ?2, updated_by = ?3, updated_at = ?4 WHERE id = 1")
+        .bind(group || null, JSON.stringify([...new Set(types)]), me.id, iso(ctx.now)),
+      audit(ctx, me.id, "SETTINGS_CHANGED", null, null, {
+        lineGroup: { from: before.lineGroupId, to: group || null }, alertTypes: { from: [...before.alertTypes], to: [...new Set(types)] },
+      }),
+    ]);
+    return settingsPage(ctx, me, { kind: "ok", text: "บันทึกแล้ว" });
+  }
+
+  async function webhook(ctx: Ctx): Promise<Response> {
+    const secret = ctx.env.CENTER_LINE_SECRET?.trim() ?? "";
+    const raw = new Uint8Array(await ctx.request.arrayBuffer());
+    if (raw.length > 256 * 1024) throw new HttpError(413, "too large");
+    if (!(await verifyLineSignature(secret, raw, ctx.request.headers.get("x-line-signature")))) {
+      return new Response(JSON.stringify({ error: "bad signature" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    let events: unknown[] = [];
+    try {
+      const body = JSON.parse(new TextDecoder().decode(raw)) as { events?: unknown };
+      if (Array.isArray(body.events)) events = body.events.slice(0, 100);
+    } catch {
+      return new Response(JSON.stringify({ error: "bad json" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const handled = await lineWebhook(ctx.env, events, ctx.now, options.lineFetch);
+    return new Response(JSON.stringify({ handled }), { headers: { "Content-Type": "application/json" } });
   }
 
   async function startSso(ctx: Ctx, me: Me, slug: string): Promise<Response> {
@@ -414,6 +544,10 @@ ${self ? "" : `<form method="post" action="/users/${u.id}/disable" class="inline
 }
 
 type D1Statement = ReturnType<CenterRepository["auditStatement"]>;
+interface CheckRow {
+  site: string; checked_at: string; http_status: number; schema_state: string | null; cron_state: string | null;
+  errors_24h: number | null; slips_waiting: number | null; suspended: number | null; detail: string | null;
+}
 type D1Statements = D1Statement[];
 
 function actorOf(me: Me): CenterActor {
