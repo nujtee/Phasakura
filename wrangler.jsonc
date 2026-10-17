@@ -58,8 +58,8 @@
     // Graph API version for the Meta Conversions API (update when Meta retires it).
     "META_GRAPH_API_VERSION": "v23.0",
     // Center Management: Center's Ed25519 public key(s), {"<keyId>":"<base64url>"} — public, not a secret.
-    // Empty = the /api/center/* API is off (404). Set when Center goes live (phase C4).
-    "CENTER_PUBLIC_KEYS": ""
+    // Empty = the /api/center/* API is off (404). Key c20261017: Actions → Center setup (keys), 2026-10-17.
+    "CENTER_PUBLIC_KEYS": "{\"c20261017\":\"WQxMZRGjPEW1mfVdPjXpiSm154IEWycZYqI3hKynoOs\"}"
     // LINE: `wrangler secret put LINE_CHANNEL_ACCESS_TOKEN` and `wrangler secret put LINE_CHANNEL_SECRET` — never here.
     // Meta: `wrangler secret put META_CAPI_ACCESS_TOKEN` (+ optional META_PIXEL_ID, META_TEST_EVENT_CODE) — never here.
     // GA4 dashboard numbers: `wrangler secret put GA4_SERVICE_ACCOUNT_KEY` — never here.
