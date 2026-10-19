@@ -20,6 +20,7 @@
     "select"
   ],
   "src/worker/repositories/booking-move.repository.ts": [
+    "closed",
     "holdsCapacity",
     "moved",
     "ownOrder"
@@ -46,6 +47,7 @@
     "sql"
   ],
   "src/worker/repositories/dashboard.repository.ts": [
+    "closed",
     "select",
     "tail"
   ],
@@ -55,6 +57,9 @@
   ],
   "src/worker/repositories/food-admin.repository.ts": [
     "chunk.map((_, j) => `?${j + 1}`).join(\", \")"
+  ],
+  "src/worker/repositories/inventory.repository.ts": [
+    "closed"
   ],
   "src/worker/repositories/line.repository.ts": [
     "deposit",

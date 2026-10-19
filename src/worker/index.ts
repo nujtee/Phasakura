@@ -151,6 +151,7 @@ export function createApp(options: AppOptions = {}) {
     .put("/api/admin/accommodations/:id/cover", acc.setCover)
     .post("/api/admin/accommodations/:id/blocks", acc.addBlock)
     .delete("/api/admin/accommodations/:id/blocks", acc.removeBlock)
+    .post("/api/admin/calendar/locks", acc.calendarLocks)
     .get("/api/admin/availability", acc.grid)
     .get("/api/admin/amenities", acc.amenities)
     .post("/api/admin/amenities", acc.createAmenity)

@@ -1,3 +1,4 @@
+import { withFallback } from "./schema-fallback.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 
 export interface CampingSettingsRow {
@@ -39,6 +40,8 @@ export interface CampingNightRow {
   max_tents: number;
   tents_used: number;
   is_override: number;
+  /** 0 open; 1 locked from the admin calendar (no new tents); 2 the same lock, held during the integrity repair. */
+  closed: number;
 }
 
 export interface CampingDriftRow {
@@ -261,15 +264,27 @@ export class InventoryRepository {
     ];
   }
 
-  async campingNights(from: string, toExclusive: string): Promise<CampingNightRow[]> {
-    const { results } = await this.db
+  /** Locks (closed) or re-opens one camping night from the admin calendar. Booked tents stay; capacity is untouched. */
+  setNightClosedStatement(date: string, closed: boolean, defaultMax: number, now: string): D1PreparedStatementLike {
+    return this.db
       .prepare(
-        `SELECT stay_date, max_tents, tents_used, is_override FROM camping_night_inventory
+        `INSERT INTO camping_night_inventory (stay_date, max_tents, tents_used, is_override, closed, updated_at)
+         VALUES (?1, ?2, 0, 0, ?3, ?4)
+         ON CONFLICT (stay_date) DO UPDATE SET closed = excluded.closed, updated_at = excluded.updated_at`,
+      )
+      .bind(date, defaultMax, closed ? 1 : 0, now);
+  }
+
+  async campingNights(from: string, toExclusive: string): Promise<CampingNightRow[]> {
+    const read = (closed: string) => this.db
+      .prepare(
+        `SELECT stay_date, max_tents, tents_used, is_override, ${closed} AS closed FROM camping_night_inventory
           WHERE stay_date >= ?1 AND stay_date < ?2 ORDER BY stay_date`,
       )
       .bind(from, toExclusive)
       .all<CampingNightRow>();
-    return results;
+    // Before migration 0032 no night can be locked: every night reads as open.
+    return (await withFallback(() => read("closed"), () => read("0"))).results;
   }
 
   /** Night-locks (bookings + admin blocks) in [from, toExclusive), optionally for one unit. */
@@ -338,6 +353,8 @@ export class InventoryRepository {
            SELECT e.stay_date, s.max_tents_per_night, 0, 0, ?2 FROM expected e, camping_settings s WHERE s.id = 1`,
         )
         .bind(fromDate, now),
+      // A locked night (closed = 1) refuses a rising counter; hold the lock as 2 while the truth is written back.
+      this.db.prepare("UPDATE camping_night_inventory SET closed = 2 WHERE closed = 1 AND stay_date >= ?1").bind(fromDate),
       this.db
         .prepare(
           `UPDATE camping_night_inventory
@@ -350,6 +367,7 @@ export class InventoryRepository {
             WHERE stay_date >= ?1`,
         )
         .bind(fromDate, now),
+      this.db.prepare("UPDATE camping_night_inventory SET closed = 1 WHERE closed = 2 AND stay_date >= ?1").bind(fromDate),
     ];
   }
 
@@ -362,3 +380,4 @@ export class InventoryRepository {
     }
   }
 }
+

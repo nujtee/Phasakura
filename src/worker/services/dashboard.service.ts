@@ -182,9 +182,11 @@ export class DashboardService {
       })),
       camping: {
         enabled: campingEnabled,
+        defaultMax: camping.settings?.max_tents_per_night ?? 0,
         nights: dates.map((date) => {
           const n = campingByDate.get(date);
-          return { date, max: n?.max_tents ?? (camping.settings?.max_tents_per_night ?? 0), used: n?.tents_used ?? 0 };
+          return { date, max: n?.max_tents ?? (camping.settings?.max_tents_per_night ?? 0), used: n?.tents_used ?? 0, closed: (n?.closed ?? 0) !== 0,
+            override: n?.is_override === 1 };
         }),
       },
     };

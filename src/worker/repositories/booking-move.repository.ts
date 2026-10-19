@@ -1,5 +1,6 @@
 import { stayNights } from "../../shared/dates.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
+import { withFallback } from "./schema-fallback.ts";
 
 /** Kitchen orders past this point are being cooked: the stay can no longer move. */
 export const KITCHEN_STARTED = ["PREPARING", "READY", "SERVED"] as const;
@@ -41,11 +42,12 @@ export class BookingMoveRepository {
       .first();
   }
 
-  async campingNights(from: string, to: string): Promise<{ stay_date: string; max_tents: number; tents_used: number }[]> {
-    const { results } = await this.db
-      .prepare("SELECT stay_date, max_tents, tents_used FROM camping_night_inventory WHERE stay_date >= ?1 AND stay_date < ?2")
+  async campingNights(from: string, to: string): Promise<{ stay_date: string; max_tents: number; tents_used: number; closed: number }[]> {
+    const read = (closed: string) => this.db
+      .prepare(`SELECT stay_date, max_tents, tents_used, ${closed} AS closed FROM camping_night_inventory WHERE stay_date >= ?1 AND stay_date < ?2`)
       .bind(from, to)
-      .all<{ stay_date: string; max_tents: number; tents_used: number }>();
+      .all<{ stay_date: string; max_tents: number; tents_used: number; closed: number }>();
+    const { results } = await withFallback(() => read("closed"), () => read("0"));
     return results;
   }
 
