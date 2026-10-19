@@ -679,7 +679,8 @@ export class BookingService {
       const need = plan.tents;
       tents = {
         need,
-        free: (d) => (settings?.is_enabled !== 1 ? 0
+        // A night locked from the calendar takes no tents at all (the DB refuses a rising counter there).
+        free: (d) => (settings?.is_enabled !== 1 || (byDate.get(d)?.closed ?? 0) !== 0 ? 0
           : (byDate.get(d)?.max_tents ?? settings.max_tents_per_night) - (byDate.get(d)?.tents_used ?? 0) + (own.has(d) ? need : 0)),
       };
       if (plan.tarps > 0) {

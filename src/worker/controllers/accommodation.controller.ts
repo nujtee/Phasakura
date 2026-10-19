@@ -1,5 +1,6 @@
 import type { ImageStatus, UnitStatus, UnitTranslationDto, UnitType } from "../../shared/accommodation-types.ts";
 import { MAX_PRICE_SATANG, PAYMENT_MODES, type PaymentMode } from "../../shared/booking-rules.ts";
+import { CALENDAR_LOCK_MAX } from "../../shared/dashboard-types.ts";
 import { DEFAULT_LOCALE, LOCALE_CODES, parseLocale, type LocaleCode } from "../../shared/i18n/locales.ts";
 import { requestMeta, withAuth, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { BadRequestError, HttpError, PayloadTooLargeError, ValidationError } from "../http/errors.ts";
@@ -238,6 +239,26 @@ export function accommodationController(services: ServicesFor) {
       const q = ctx.url.searchParams;
       await services(ctx).availability.removeBlock(auth, id(ctx), q.get("startDate") ?? "", q.get("endDate") ?? "", requestMeta(ctx));
       return jsonOk({ unblocked: true });
+    }),
+
+    /** POST /api/admin/calendar/locks — lock / unlock many calendar cells (permission per kind, checked in the service). */
+    calendarLocks: withPermission(["accommodation.block", "camping.edit"], services, async (ctx, auth) => {
+      const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["action", "reason", "cells", "campingDates"]);
+      const action = v.oneOf("action", ["LOCK", "UNLOCK"] as const, { required: true })!;
+      const reason = v.string("reason", { max: 200 });
+      const cells = v.stringArray("cells", { max: CALENDAR_LOCK_MAX, pattern: /^[A-Za-z0-9_-]{1,64}:\d{4}-\d{2}-\d{2}$/ }) ?? [];
+      const campingDates = v.stringArray("campingDates", { max: CALENDAR_LOCK_MAX, pattern: /^\d{4}-\d{2}-\d{2}$/ }) ?? [];
+      v.assertValid();
+      const result = await services(ctx).availability.calendarLocks(auth, {
+        action,
+        reason: reason?.trim() || null,
+        cells: cells.map((c) => {
+          const at = c.lastIndexOf(":");
+          return { unitId: c.slice(0, at), date: c.slice(at + 1) };
+        }),
+        campingDates,
+      }, requestMeta(ctx));
+      return jsonOk(result);
     }),
 
     /** GET /api/admin/availability?from=YYYY-MM-DD&days=14 */

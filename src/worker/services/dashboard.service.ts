@@ -184,7 +184,7 @@ export class DashboardService {
         enabled: campingEnabled,
         nights: dates.map((date) => {
           const n = campingByDate.get(date);
-          return { date, max: n?.max_tents ?? (camping.settings?.max_tents_per_night ?? 0), used: n?.tents_used ?? 0 };
+          return { date, max: n?.max_tents ?? (camping.settings?.max_tents_per_night ?? 0), used: n?.tents_used ?? 0, closed: (n?.closed ?? 0) !== 0 };
         }),
       },
     };

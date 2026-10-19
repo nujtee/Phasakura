@@ -133,6 +133,8 @@ export interface CampingNightDto {
   used: number;
   remaining: number;
   isOverride: boolean;
+  /** Locked from the admin calendar: no new tents (remaining 0). */
+  closed: boolean;
 }
 
 /** GET /api/public/availability */

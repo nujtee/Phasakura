@@ -413,7 +413,7 @@ describe("Backups (phase C8)", () => {
     assert.equal(digest, made.data.sha256);
     assert.equal(h.audits("CENTER_BACKUP_DOWNLOAD").length, 1);
     const sql = await gunzip(bytes);
-    assert.match(sql, /^-- [a-z0-9-]+ D1 backup .* schema 0031_center_sso_suspension\.sql/);
+    assert.match(sql, new RegExp(`^-- [a-z0-9-]+ D1 backup .* schema ${LATEST_MIGRATION.replace(".", "\\.")}`));
     assert.match(sql, /CREATE TABLE users/);
     assert.match(sql, /INSERT INTO "users" \(/);
     assert.ok(!/INSERT INTO "sessions"/.test(sql), "no sessions");

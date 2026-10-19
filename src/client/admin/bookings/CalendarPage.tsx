@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { formatBaht } from "../../../shared/booking-rules.ts";
-import type { CalendarBookingDto, CalendarDto } from "../../../shared/dashboard-types.ts";
+import type { CalendarBookingDto, CalendarDto, CalendarLockRequestDto, CalendarLockResultDto } from "../../../shared/dashboard-types.ts";
 import { addDays, diffDays, monthRange } from "../../../shared/dates.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
-import { apiGet } from "../../api/client.ts";
+import { apiGet, apiRequest } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { PageTabs } from "../cms/CmsKit.tsx";
@@ -11,6 +11,10 @@ import { Alert, Button, errorMessage } from "../ui.tsx";
 import { BookingStatusBadge, PaymentBadge, staysText, useStayDate } from "./shared.tsx";
 
 type View = "day" | "week" | "month" | "custom";
+
+/** A selectable calendar cell: "u|<unitId>|<date>" (house / VIP tent night) or "c|<date>" (camping night). */
+const unitKey = (unitId: string, date: string) => `u|${unitId}|${date}`;
+const campKey = (date: string) => `c|${date}`;
 
 /** Monday of the week containing `date` (business dates, UTC arithmetic). */
 function weekStart(date: string): string {
@@ -27,13 +31,22 @@ function rangeFor(view: View, anchor: string): { from: string; to: string } {
 
 /** Booking calendar (spec §49): every stay night of every unit, camping per night, bookings in range. */
 export function CalendarPage() {
-  const { t, c, locale, href } = useAdmin();
+  const { t, c, locale, href, can } = useAdmin();
   const stayDate = useStayDate();
   const [view, setView] = useState<View>("week");
   const [anchor, setAnchor] = useState<string | null>(null);
   const [custom, setCustom] = useState<{ from: string; to: string }>({ from: "", to: "" });
   const [data, setData] = useState<CalendarDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Lock / unlock mode: pick cells, then lock the free ones or unlock the locked ones.
+  const canBlock = can("accommodation.block");
+  const canCamp = can("camping.edit");
+  const [picking, setPicking] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [lastPick, setLastPick] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async (from: string | null, to: string | null) => {
     setError(null);
@@ -41,6 +54,8 @@ export function CalendarPage() {
       const q = from && to ? `?from=${from}&to=${to}` : "";
       const res = await apiGet<CalendarDto>(`/api/admin/calendar${q}`);
       setData(res);
+      setSelected(new Set());
+      setLastPick(null);
       return res;
     } catch (err) {
       setError(errorMessage(t, err));
@@ -76,6 +91,86 @@ export function CalendarPage() {
   }, [data]);
   const bookingByCode = useMemo(() => new Map((data?.bookings ?? []).map((b) => [b.bookingCode, b])), [data]);
 
+  const campByDate = useMemo(() => new Map((data?.camping.nights ?? []).map((n) => [n.date, n])), [data]);
+
+  /** Can this cell be picked? Booked nights never; a free night only from today (a lock can still be lifted in the past). */
+  const selectable = (key: string): boolean => {
+    if (!data) return false;
+    const parts = key.split("|");
+    if (parts[0] === "c") {
+      const n = campByDate.get(parts[1]!);
+      return canCamp && data.camping.enabled && !!n && (n.closed || n.date >= data.today);
+    }
+    const n = byUnitDate.get(`${parts[1]}|${parts[2]}`);
+    return canBlock && (n ? !n.bookingCode : parts[2]! >= data.today);
+  };
+  /** Locked now (a block, or a closed camping night)? */
+  const isLocked = (key: string): boolean => {
+    const parts = key.split("|");
+    if (parts[0] === "c") return campByDate.get(parts[1]!)?.closed ?? false;
+    return !!byUnitDate.get(`${parts[1]}|${parts[2]}`);
+  };
+  /** Adds all `keys` (selectable ones), or removes them if they are all selected already. */
+  const toggleMany = (keys: string[]) => {
+    const pickable = keys.filter(selectable);
+    if (!pickable.length) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (pickable.every((k) => next.has(k))) pickable.forEach((k) => next.delete(k));
+      else pickable.forEach((k) => next.add(k));
+      return next;
+    });
+  };
+  const rowKeys = (rowId: string | null) => (data?.dates ?? []).map((d) => (rowId === null ? campKey(d) : unitKey(rowId, d)));
+  const pick = (key: string, event: MouseEvent) => {
+    setNotice(null);
+    const row = key.startsWith("c|") ? null : key.split("|")[1]!;
+    if (event.shiftKey && lastPick && (lastPick.startsWith("c|") ? null : lastPick.split("|")[1]) === row) {
+      const keys = rowKeys(row);
+      const [a, b] = [keys.indexOf(lastPick), keys.indexOf(key)].sort((x, y) => x - y);
+      const run = keys.slice(a, (b ?? a!) + 1).filter(selectable);
+      setSelected((prev) => new Set([...prev, ...run]));
+    } else if (selectable(key)) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    }
+    setLastPick(key);
+  };
+  const pickColumn = (date: string) => {
+    setNotice(null);
+    toggleMany([...(data?.units ?? []).map((u) => unitKey(u.id, date)), ...(data?.camping.enabled ? [campKey(date)] : [])]);
+  };
+  const toLock = [...selected].filter((k) => !isLocked(k));
+  const toUnlock = [...selected].filter(isLocked);
+  const needsReason = toLock.some((k) => k.startsWith("u|"));
+
+  const apply = async (action: "LOCK" | "UNLOCK") => {
+    if (!data) return;
+    const keys = action === "LOCK" ? toLock : toUnlock;
+    if (action === "LOCK" && needsReason && !reason.trim()) { setError(c.cal.reasonRequired); return; }
+    const body: CalendarLockRequestDto = {
+      action,
+      ...(action === "LOCK" && needsReason ? { reason: reason.trim() } : {}),
+      cells: keys.filter((k) => k.startsWith("u|")).map((k) => { const [, unit, date] = k.split("|"); return `${unit}:${date}`; }),
+      campingDates: keys.filter((k) => k.startsWith("c|")).map((k) => k.slice(2)),
+    };
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiRequest<CalendarLockResultDto>("POST", "/api/admin/calendar/locks", body);
+      await load(data.from, data.to);
+      setNotice(format(action === "LOCK" ? c.cal.lockedDone : c.cal.unlockedDone, { n: res.units + res.camping }));
+    } catch (err) {
+      setError(errorMessage(t, err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const dayHead = new Intl.DateTimeFormat(locale.code, { weekday: "short", day: "numeric", timeZone: "UTC" });
   const title = data ? `${stayDate(data.from)} – ${stayDate(addDays(data.to, -1))}` : "";
 
@@ -102,18 +197,44 @@ export function CalendarPage() {
           </form>
         )}
       </div>
+      {(canBlock || canCamp) && data && (
+        <div className="adm-row adm-row--wrap adm-cal__lockbar">
+          <Button variant={picking ? "primary" : "secondary"} aria-pressed={picking}
+            onClick={() => { setPicking(!picking); setSelected(new Set()); setLastPick(null); setNotice(null); }}>
+            {picking ? c.cal.selectDone : `🔒 ${c.cal.selectMode}`}
+          </Button>
+          {picking && <span className="adm-field__hint">{c.cal.selectHint}</span>}
+        </div>
+      )}
+      {picking && selected.size > 0 && (
+        <div className="adm-cal__actions" role="region" aria-label={c.cal.selectMode}>
+          <strong>{format(c.cal.selected, { n: selected.size })}</strong>
+          {needsReason && (
+            <label className="adm-field adm-field--inline"><span>{c.cal.reason}</span>
+              <input value={reason} maxLength={200} placeholder={c.cal.reasonPlaceholder} onChange={(e) => setReason(e.currentTarget.value)} /></label>
+          )}
+          <Button disabled={busy || toLock.length === 0} busy={busy} onClick={() => void apply("LOCK")}>{format(c.cal.lock, { n: toLock.length })}</Button>
+          <Button variant="secondary" disabled={busy || toUnlock.length === 0} onClick={() => void apply("UNLOCK")}>{format(c.cal.unlock, { n: toUnlock.length })}</Button>
+          <Button variant="ghost" disabled={busy} onClick={() => { setSelected(new Set()); setLastPick(null); }}>{c.cal.clear}</Button>
+        </div>
+      )}
+      {notice && <Alert kind="success">{notice}</Alert>}
       {error && <Alert kind="error">{error}</Alert>}
       {!data && !error && <p role="status">{t.common.loading}</p>}
       {data && (
         <>
           <h2 className="adm-h2">{title}</h2>
           <div className="adm-tablewrap adm-calwrap">
-            <table className="adm-cal">
+            <table className={`adm-cal${picking ? " adm-cal--picking" : ""}`}>
               <thead>
                 <tr>
                   <th scope="col" className="adm-cal__unit">{c.cal.unit}</th>
                   {data.dates.map((d) => (
-                    <th key={d} scope="col" className={d === data.today ? "adm-cal__today" : undefined}>{dayHead.format(new Date(`${d}T00:00:00Z`))}</th>
+                    <th key={d} scope="col" className={d === data.today ? "adm-cal__today" : undefined}>
+                      {picking
+                        ? <button type="button" className="adm-cal__headpick" onClick={() => pickColumn(d)}>{dayHead.format(new Date(`${d}T00:00:00Z`))}</button>
+                        : dayHead.format(new Date(`${d}T00:00:00Z`))}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -121,11 +242,29 @@ export function CalendarPage() {
                 {data.units.map((u) => (
                   <tr key={u.id}>
                     <th scope="row" className="adm-cal__unit">
-                      {u.names[locale.code] ?? u.names.th ?? u.code}
+                      {picking ? (
+                        <button type="button" className="adm-cal__headpick" onClick={() => { setNotice(null); toggleMany(rowKeys(u.id)); }}>
+                          {u.names[locale.code] ?? u.names.th ?? u.code}
+                        </button>
+                      ) : u.names[locale.code] ?? u.names.th ?? u.code}
                       {(u.names[locale.code] ?? u.names.th) && (u.names[locale.code] ?? u.names.th) !== u.code && <span className="adm-small adm-muted"> {u.code}</span>}
                     </th>
                     {data.dates.map((d, i) => {
                       const n = byUnitDate.get(`${u.id}|${d}`);
+                      const key = unitKey(u.id, d);
+                      const name = u.names[locale.code] ?? u.names.th ?? u.code;
+                      if (picking && !n?.bookingCode) {
+                        const on = selected.has(key);
+                        const cls = [n ? "adm-cal__blocked" : d === data.today ? "adm-cal__today" : "", "adm-cal__pickcell", on ? "is-selected" : ""].filter(Boolean).join(" ");
+                        return (
+                          <td key={d} className={cls}>
+                            <button type="button" className="adm-cal__pick" aria-pressed={on} disabled={!selectable(key)}
+                              aria-label={format(c.cal.pick, { unit: name, date: stayDate(d) })}
+                              title={n ? format(c.cal.blocked, { reason: n.blockReason ?? "" }) : undefined}
+                              onClick={(e) => pick(key, e)}>{n ? "✕" : on ? "✓" : ""}</button>
+                          </td>
+                        );
+                      }
                       if (!n) return <td key={d} className={d === data.today ? "adm-cal__today" : undefined} />;
                       if (!n.bookingCode) return <td key={d} className="adm-cal__blocked" title={format(c.cal.blocked, { reason: n.blockReason ?? "" })}>✕</td>;
                       const b = bookingByCode.get(n.bookingCode);
@@ -142,12 +281,27 @@ export function CalendarPage() {
                 ))}
                 {data.camping.enabled && (
                   <tr>
-                    <th scope="row" className="adm-cal__unit">{c.cal.camping}</th>
-                    {data.camping.nights.map((n) => (
-                      <td key={n.date} className={`adm-cal__camp${n.used >= n.max ? " adm-cal__camp--full" : ""}`}>
-                        {format(c.cal.tents, { used: n.used, max: n.max })}
-                      </td>
-                    ))}
+                    <th scope="row" className="adm-cal__unit">
+                      {picking && canCamp
+                        ? <button type="button" className="adm-cal__headpick" onClick={() => { setNotice(null); toggleMany(rowKeys(null)); }}>{c.cal.camping}</button>
+                        : c.cal.camping}
+                    </th>
+                    {data.camping.nights.map((n) => {
+                      const key = campKey(n.date);
+                      const on = selected.has(key);
+                      const label = <>{n.closed && <span className="adm-cal__closed">🔒 {c.cal.campClosed}<br /></span>}{format(c.cal.tents, { used: n.used, max: n.max })}</>;
+                      const cls = `adm-cal__camp${n.closed ? " adm-cal__camp--closed" : n.used >= n.max ? " adm-cal__camp--full" : ""}`;
+                      if (picking && canCamp) {
+                        return (
+                          <td key={n.date} className={`${cls} adm-cal__pickcell${on ? " is-selected" : ""}`}>
+                            <button type="button" className="adm-cal__pick" aria-pressed={on} disabled={!selectable(key)}
+                              aria-label={format(c.cal.pick, { unit: c.cal.camping, date: stayDate(n.date) })}
+                              title={n.closed ? c.cal.campClosedTitle : undefined} onClick={(e) => pick(key, e)}>{label}</button>
+                          </td>
+                        );
+                      }
+                      return <td key={n.date} className={cls} title={n.closed ? c.cal.campClosedTitle : undefined}>{label}</td>;
+                    })}
                   </tr>
                 )}
               </tbody>

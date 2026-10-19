@@ -8,6 +8,7 @@ import type {
   TarpNightDto,
 } from "../../shared/accommodation-types.ts";
 import { STAY_RULES } from "../../shared/booking-rules.ts";
+import { CALENDAR_LOCK_MAX, type CalendarLockResultDto } from "../../shared/dashboard-types.ts";
 import { DEFAULT_TIMEZONE, addDays, diffDays, isIsoDate, stayNights, todayIn } from "../../shared/dates.ts";
 import { DEFAULT_LOCALE_CODE, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
@@ -146,7 +147,8 @@ export class AvailabilityService {
       const row = byDate.get(date);
       const capacity = row?.max_tents ?? defaultMax;
       const used = row?.tents_used ?? 0;
-      return { date, capacity, used, remaining: Math.max(0, capacity - used), isOverride: row?.is_override === 1 };
+      const closed = (row?.closed ?? 0) !== 0;
+      return { date, capacity, used, remaining: closed ? 0 : Math.max(0, capacity - used), isOverride: row?.is_override === 1, closed };
     });
   }
 
@@ -218,6 +220,88 @@ export class AvailabilityService {
       this.inventory.deleteBlocksStatement(unitId, startDate, endDate),
       this.log.auditStatement(actor.userId, "UNBLOCK_DATES", "accommodation", unitId, { startDate, endDate }, null, meta),
     ]);
+  }
+
+  /**
+   * Admin calendar: lock or unlock many cells in one go (all or nothing, one audit row).
+   * House / VIP tent cells are admin blocks (same as addBlock); a booked night is never touched — locking it is
+   * refused (DATES_UNAVAILABLE), unlocking skips it. Camping nights get `closed`: no new tents, booked ones stay.
+   * Cells already in the asked state are skipped, so a selection can be sent again safely.
+   */
+  async calendarLocks(
+    actor: AuthContext,
+    input: { action: "LOCK" | "UNLOCK"; reason: string | null; cells: { unitId: string; date: string }[]; campingDates: string[] },
+    meta: RequestMeta,
+  ): Promise<CalendarLockResultDto> {
+    const lock = input.action === "LOCK";
+    const total = input.cells.length + input.campingDates.length;
+    if (total === 0) throw new ValidationError({ cells: "REQUIRED" });
+    if (total > CALENDAR_LOCK_MAX) throw new ValidationError({ cells: "TOO_MANY" });
+    if (input.cells.length) await this.authz.requirePermission(actor, "accommodation.block", meta);
+    if (input.campingDates.length) await this.authz.requirePermission(actor, "camping.edit", meta);
+    const dates = [...input.cells.map((c) => c.date), ...input.campingDates];
+    if (!dates.every(isIsoDate)) throw new ValidationError({ dates: "INVALID_DATE" });
+    const today = await this.today();
+    if (lock && dates.some((d) => d < today)) throw new ValidationError({ dates: "IN_THE_PAST" });
+    if (lock && input.cells.length && !input.reason) throw new ValidationError({ reason: "REQUIRED" });
+    const from = dates.reduce((a, b) => (a < b ? a : b));
+    const until = addDays(dates.reduce((a, b) => (a > b ? a : b)), 1);
+    if (diffDays(from, until) > STAY_RULES.maxAdvanceDays + 1) throw new ValidationError({ dates: "RANGE_TOO_LONG" });
+
+    const now = iso(this.clock());
+    const statements: D1PreparedStatementLike[] = [];
+    const changedUnits: Record<string, string[]> = {};
+    const changedCamping: string[] = [];
+    let skipped = 0;
+
+    if (input.cells.length) {
+      for (const unitId of new Set(input.cells.map((c) => c.unitId))) {
+        const unit = await this.units.findUnit(unitId);
+        if (!unit || unit.status === "DELETED") throw new NotFoundError("Accommodation not found", "ACCOMMODATION_NOT_FOUND");
+      }
+      const locks = new Map((await this.inventory.nightLocks(from, until)).map((l) => [`${l.unit_id}|${l.stay_date}`, l]));
+      const booked: string[] = [];
+      for (const cell of input.cells) {
+        const held = locks.get(`${cell.unitId}|${cell.date}`);
+        if (lock) {
+          if (held?.booking_id) booked.push(`${cell.unitId}:${cell.date}`);
+          else if (held) skipped++;
+          else {
+            statements.push(this.inventory.insertBlockStatement(cell.unitId, cell.date, input.reason!, actor.userId, now));
+            (changedUnits[cell.unitId] ??= []).push(cell.date);
+          }
+        } else if (held && !held.booking_id) {
+          statements.push(this.inventory.deleteBlocksStatement(cell.unitId, cell.date, cell.date));
+          (changedUnits[cell.unitId] ??= []).push(cell.date);
+        } else skipped++;
+      }
+      if (booked.length) throw new ConflictError(`Already booked: ${booked.slice(0, 5).join(", ")}`, "DATES_UNAVAILABLE");
+    }
+
+    if (input.campingDates.length) {
+      const [settings, rows] = await Promise.all([this.inventory.campingSettings(), this.inventory.campingNights(from, until)]);
+      const closed = new Set(rows.filter((r) => r.closed !== 0).map((r) => r.stay_date));
+      for (const date of input.campingDates) {
+        if (closed.has(date) === lock) { skipped++; continue; }
+        statements.push(this.inventory.setNightClosedStatement(date, lock, settings?.max_tents_per_night ?? 0, now));
+        changedCamping.push(date);
+      }
+    }
+
+    const units = Object.values(changedUnits).reduce((n, d) => n + d.length, 0);
+    if (statements.length) {
+      statements.push(this.log.auditStatement(actor.userId, lock ? "CALENDAR_LOCK" : "CALENDAR_UNLOCK", "calendar", "calendar", null,
+        { reason: lock ? input.reason : null, units: changedUnits, camping: changedCamping }, meta));
+      try {
+        await this.db.batch(statements);
+      } catch (error) {
+        if (/UNIQUE constraint failed: booking_unit_nights/.test(String(error))) {
+          throw new ConflictError("Some of these dates were just booked or blocked", "DATES_UNAVAILABLE");
+        }
+        throw error;
+      }
+    }
+    return { action: input.action, units, camping: changedCamping.length, skipped };
   }
 
   private async adminRange(start: string, end: string, allowPast = false): Promise<string[]> {

@@ -95,6 +95,30 @@ await check("calendar week shows multi-night booking", async () => {
   if ((await pa.locator(".adm-cal thead th").count()) < 29) throw new Error("month view columns");
 });
 
+await check("calendar: select a whole row of next month, lock it with a reason, then unlock it", async () => {
+  await pa.goto(`${BASE}/en/admin/calendar`);
+  await pa.getByRole("tab", { name: "Month" }).click();
+  await pa.getByRole("button", { name: "Next" }).click();
+  await pa.waitForTimeout(500);
+  await pa.getByRole("button", { name: /Lock \/ unlock dates/ }).click();
+  await pa.getByText(/Shift\+click selects a run/).waitFor();
+  const row = pa.locator(".adm-cal tbody tr").first();
+  const free = await row.locator("button.adm-cal__pick:not([disabled])").count();
+  if (free < 20) throw new Error(`only ${free} selectable cells`);
+  await row.locator("th button.adm-cal__headpick").click();
+  await pa.getByText(`${free} selected`).waitFor();
+  await pa.screenshot({ path: `${SHOTS}/g-admin-calendar-selected.png`, fullPage: true });
+  await pa.getByLabel("Reason for the lock").fill("E2E maintenance");
+  await pa.getByRole("button", { name: `Lock ${free}`, exact: true }).click();
+  await pa.getByText(`Locked ${free} cells`).waitFor();
+  await pa.screenshot({ path: `${SHOTS}/g-admin-calendar-locked.png`, fullPage: true });
+  if ((await row.locator("td.adm-cal__blocked").count()) !== free) throw new Error("not every cell shows the lock");
+  await row.locator("th button.adm-cal__headpick").click();
+  await pa.getByRole("button", { name: `Unlock ${free}`, exact: true }).click();
+  await pa.getByText(`Unlocked ${free} cells`).waitFor();
+  if ((await row.locator("td.adm-cal__blocked").count()) !== 0) throw new Error("locks left behind");
+});
+
 await check("check-in from the booking page", async () => {
   await pa.goto(`${BASE}/en/admin/bookings/${A.bookingCode}`);
   await pa.getByRole("button", { name: "Check in" }).click();

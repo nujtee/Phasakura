@@ -210,10 +210,11 @@ export class DashboardRepository {
     const settings = await this.db
       .prepare("SELECT is_enabled, max_tents_per_night FROM camping_settings WHERE id = 1")
       .first<{ is_enabled: number; max_tents_per_night: number }>();
-    const { results } = await this.db
-      .prepare("SELECT stay_date, max_tents, tents_used FROM camping_night_inventory WHERE stay_date >= ?1 AND stay_date < ?2")
+    const read = (closed: string) => this.db
+      .prepare(`SELECT stay_date, max_tents, tents_used, ${closed} AS closed FROM camping_night_inventory WHERE stay_date >= ?1 AND stay_date < ?2`)
       .bind(from, to)
-      .all<{ stay_date: string; max_tents: number; tents_used: number }>();
+      .all<{ stay_date: string; max_tents: number; tents_used: number; closed: number }>();
+    const { results } = await withFallback(() => read("closed"), () => read("0"));
     return { settings, nights: results };
   }
 }

@@ -142,10 +142,34 @@ export interface CalendarDto {
   units: CalendarUnitDto[];
   nights: CalendarNightDto[];
   bookings: CalendarBookingDto[];
-  camping: { enabled: boolean; nights: { date: string; max: number; used: number }[] };
+  /** closed: locked from the calendar (no new tents). */
+  camping: { enabled: boolean; nights: { date: string; max: number; used: number; closed: boolean }[] };
 }
 
 export const CALENDAR_MAX_DAYS = 62;
+
+/** POST /api/admin/calendar/locks — lock or unlock many calendar cells at once (all or nothing). */
+export interface CalendarLockRequestDto {
+  action: "LOCK" | "UNLOCK";
+  /** Required to lock house / tent cells (shown on the cell). */
+  reason?: string;
+  /** "<unitId>:<YYYY-MM-DD>" — one night of one house or VIP tent. */
+  cells?: string[];
+  /** Camping nights (YYYY-MM-DD): locked = no new tents; tents already booked stay. */
+  campingDates?: string[];
+}
+
+export interface CalendarLockResultDto {
+  action: "LOCK" | "UNLOCK";
+  /** Cells changed. */
+  units: number;
+  camping: number;
+  /** Already in the asked state (or, unlocking, not a lock at all) — left alone. */
+  skipped: number;
+}
+
+/** Cells per request (D1 batch size stays small). */
+export const CALENDAR_LOCK_MAX = 400;
 
 export interface AdminPaymentListItemDto {
   id: string;

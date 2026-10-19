@@ -2405,6 +2405,90 @@
   color: var(--color-error);
 }
 
+.adm-cal__camp--closed {
+  background: repeating-linear-gradient(45deg, var(--color-border) 0 4px, transparent 4px 8px);
+  color: var(--color-muted);
+}
+
+.adm-cal__closed {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+/* calendar: lock / unlock selection */
+.adm-cal__lockbar {
+  margin: 8px 0;
+}
+
+.adm-cal__actions {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-md);
+}
+
+.adm-cal .adm-cal__pickcell {
+  padding: 0;
+}
+
+.adm-cal__pick {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.adm-cal__pick:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.adm-cal__pick:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.adm-cal__pick:focus-visible,
+.adm-cal__headpick:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.adm-cal .adm-cal__pickcell.is-selected {
+  background: color-mix(in srgb, var(--color-primary) 30%, var(--color-surface));
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+  color: var(--color-heading);
+  font-weight: 700;
+}
+
+.adm-cal__headpick {
+  border: 0;
+  padding: 2px 4px;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+.adm-cal--picking {
+  user-select: none;
+}
+
 /* generic CMS list + form */
 .adm-cmslist {
   list-style: none;
