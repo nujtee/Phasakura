@@ -230,9 +230,13 @@ export class AvailabilityService {
    */
   async calendarLocks(
     actor: AuthContext,
-    input: { action: "LOCK" | "UNLOCK"; reason: string | null; cells: { unitId: string; date: string }[]; campingDates: string[] },
+    input: {
+      action: "LOCK" | "UNLOCK" | "TENTS"; reason: string | null; cells: { unitId: string; date: string }[]; campingDates: string[];
+      maxTents?: number | null;
+    },
     meta: RequestMeta,
   ): Promise<CalendarLockResultDto> {
+    if (input.action === "TENTS") return this.calendarTents(actor, input.campingDates, input.cells.length, input.maxTents ?? null, meta);
     const lock = input.action === "LOCK";
     const total = input.cells.length + input.campingDates.length;
     if (total === 0) throw new ValidationError({ cells: "REQUIRED" });
@@ -302,6 +306,55 @@ export class AvailabilityService {
       }
     }
     return { action: input.action, units, camping: changedCamping.length, skipped };
+  }
+
+  /**
+   * Admin calendar: set the number of tents for many camping nights at once (e.g. 30 → 23), or back to the default
+   * (null). Never below the tents already booked on a night (BELOW_TENTS_SOLD, nothing changes). All or nothing.
+   */
+  private async calendarTents(actor: AuthContext, dates: string[], cells: number, maxTents: number | null, meta: RequestMeta): Promise<CalendarLockResultDto> {
+    await this.authz.requirePermission(actor, "camping.edit", meta);
+    if (cells > 0) throw new ValidationError({ cells: "NOT_ALLOWED" });
+    if (dates.length === 0) throw new ValidationError({ campingDates: "REQUIRED" });
+    if (dates.length > CALENDAR_LOCK_MAX) throw new ValidationError({ campingDates: "TOO_MANY" });
+    if (!dates.every(isIsoDate)) throw new ValidationError({ dates: "INVALID_DATE" });
+    const today = await this.today();
+    if (dates.some((d) => d < today)) throw new ValidationError({ dates: "IN_THE_PAST" });
+    const from = dates.reduce((a, b) => (a < b ? a : b));
+    const until = addDays(dates.reduce((a, b) => (a > b ? a : b)), 1);
+    const [settings, rows] = await Promise.all([this.inventory.campingSettings(), this.inventory.campingNights(from, until)]);
+    const defaultMax = settings?.max_tents_per_night ?? 0;
+    const byDate = new Map(rows.map((r) => [r.stay_date, r]));
+    const target = maxTents ?? defaultMax;
+    const tooFew = dates.filter((d) => (byDate.get(d)?.tents_used ?? 0) > target).sort();
+    if (tooFew.length) {
+      throw new HttpError(409, "BELOW_TENTS_SOLD", `More tents are already booked on ${tooFew.slice(0, 5).join(", ")}`, { maxTents: "BELOW_TENTS_SOLD" });
+    }
+    const now = iso(this.clock());
+    const statements: D1PreparedStatementLike[] = [];
+    const changed: { date: string; from: number; to: number }[] = [];
+    let skipped = 0;
+    for (const date of dates) {
+      const row = byDate.get(date);
+      const before = row?.max_tents ?? defaultMax;
+      const wasOverride = row?.is_override === 1;
+      if (before === target && wasOverride === (maxTents !== null)) { skipped++; continue; }
+      statements.push(...this.inventory.setNightCapacityStatements(date, maxTents, defaultMax, now));
+      changed.push({ date, from: before, to: target });
+    }
+    if (statements.length) {
+      statements.push(this.log.auditStatement(actor.userId, "CALENDAR_TENTS", "camping", "calendar", null,
+        { maxTents, default: maxTents === null, nights: changed }, meta));
+      try {
+        await this.db.batch(statements);
+      } catch (error) {
+        if (/CHECK constraint failed/.test(String(error))) {
+          throw new HttpError(409, "BELOW_TENTS_SOLD", "More tents were just booked for one of these nights", { maxTents: "BELOW_TENTS_SOLD" });
+        }
+        throw error;
+      }
+    }
+    return { action: "TENTS", units: 0, camping: changed.length, skipped };
   }
 
   private async adminRange(start: string, end: string, allowPast = false): Promise<string[]> {

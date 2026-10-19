@@ -119,6 +119,29 @@ await check("calendar: select a whole row of next month, lock it with a reason, 
   if ((await row.locator("td.adm-cal__blocked").count()) !== 0) throw new Error("locks left behind");
 });
 
+await check("calendar: set camping to 23 tents for a week of next month, then back to the default", async () => {
+  await pa.goto(`${BASE}/en/admin/calendar`);
+  await pa.getByRole("tab", { name: "Month" }).click();
+  await pa.getByRole("button", { name: "Next" }).click();
+  await pa.waitForTimeout(500);
+  await pa.getByRole("button", { name: /Lock \/ unlock dates/ }).click();
+  const camp = pa.locator(".adm-cal tbody tr").last();
+  const cells = camp.locator("button.adm-cal__pick");
+  await cells.nth(2).click();
+  await cells.nth(8).click({ modifiers: ["Shift"] });
+  await pa.getByText("7 selected").waitFor();
+  await pa.getByLabel("Tents per night").fill("23");
+  await pa.getByRole("button", { name: "Set tents for 7 nights" }).click();
+  await pa.getByText("Tents set for 7 nights").waitFor();
+  await pa.screenshot({ path: `${SHOTS}/g-admin-calendar-tents.png`, fullPage: true });
+  if ((await camp.getByText(/\/23 tents/).count()) !== 7) throw new Error("7 nights should show 23 tents");
+  await cells.nth(2).click();
+  await cells.nth(8).click({ modifiers: ["Shift"] });
+  await pa.getByRole("button", { name: /Back to default/ }).click();
+  await pa.getByText("Tents set for 7 nights").waitFor();
+  if ((await camp.getByText(/\/23 tents/).count()) !== 0) throw new Error("not back to default");
+});
+
 await check("check-in from the booking page", async () => {
   await pa.goto(`${BASE}/en/admin/bookings/${A.bookingCode}`);
   await pa.getByRole("button", { name: "Check in" }).click();

@@ -2410,6 +2410,25 @@
   color: var(--color-muted);
 }
 
+.adm-cal__override {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.adm-cal__tents {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  flex-basis: 100%;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.adm-cal__tents input {
+  width: 6em;
+}
+
 .adm-cal__closed {
   font-weight: 600;
   color: var(--color-heading);

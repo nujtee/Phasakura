@@ -45,6 +45,7 @@ export function CalendarPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastPick, setLastPick] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [tents, setTents] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -147,12 +148,14 @@ export function CalendarPage() {
   const toLock = [...selected].filter((k) => !isLocked(k));
   const toUnlock = [...selected].filter(isLocked);
   const needsReason = toLock.some((k) => k.startsWith("u|"));
+  // Camping nights picked from today on: their number of tents can be set (e.g. 30 → 23) or put back to the default.
+  const campDates = [...selected].filter((k) => k.startsWith("c|")).map((k) => k.slice(2)).filter((d) => !!data && d >= data.today);
 
-  const apply = async (action: "LOCK" | "UNLOCK") => {
+  const apply = async (action: "LOCK" | "UNLOCK" | "TENTS", maxTents?: number | null) => {
     if (!data) return;
     const keys = action === "LOCK" ? toLock : toUnlock;
     if (action === "LOCK" && needsReason && !reason.trim()) { setError(c.cal.reasonRequired); return; }
-    const body: CalendarLockRequestDto = {
+    const body: CalendarLockRequestDto = action === "TENTS" ? { action, maxTents, campingDates: campDates } : {
       action,
       ...(action === "LOCK" && needsReason ? { reason: reason.trim() } : {}),
       cells: keys.filter((k) => k.startsWith("u|")).map((k) => { const [, unit, date] = k.split("|"); return `${unit}:${date}`; }),
@@ -163,12 +166,18 @@ export function CalendarPage() {
     try {
       const res = await apiRequest<CalendarLockResultDto>("POST", "/api/admin/calendar/locks", body);
       await load(data.from, data.to);
-      setNotice(format(action === "LOCK" ? c.cal.lockedDone : c.cal.unlockedDone, { n: res.units + res.camping }));
+      setNotice(format(action === "LOCK" ? c.cal.lockedDone : action === "UNLOCK" ? c.cal.unlockedDone : c.cal.tentsDone, { n: res.units + res.camping }));
     } catch (err) {
       setError(errorMessage(t, err));
     } finally {
       setBusy(false);
     }
+  };
+
+  const setTentCount = () => {
+    const n = Number(tents);
+    if (tents.trim() === "" || !Number.isInteger(n) || n < 0 || n > 1000) { setError(c.cal.tentsRequired); return; }
+    void apply("TENTS", n);
   };
 
   const dayHead = new Intl.DateTimeFormat(locale.code, { weekday: "short", day: "numeric", timeZone: "UTC" });
@@ -216,6 +225,15 @@ export function CalendarPage() {
           <Button disabled={busy || toLock.length === 0} busy={busy} onClick={() => void apply("LOCK")}>{format(c.cal.lock, { n: toLock.length })}</Button>
           <Button variant="secondary" disabled={busy || toUnlock.length === 0} onClick={() => void apply("UNLOCK")}>{format(c.cal.unlock, { n: toUnlock.length })}</Button>
           <Button variant="ghost" disabled={busy} onClick={() => { setSelected(new Set()); setLastPick(null); }}>{c.cal.clear}</Button>
+          {canCamp && campDates.length > 0 && data && (
+            <div className="adm-cal__tents">
+              <label className="adm-field adm-field--inline"><span>{c.cal.tentsLabel}</span>
+                <input type="number" inputMode="numeric" min={0} max={1000} step={1} value={tents} placeholder={String(data.camping.defaultMax)}
+                  onChange={(e) => setTents(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === "Enter") setTentCount(); }} /></label>
+              <Button variant="secondary" disabled={busy} onClick={setTentCount}>{format(c.cal.setTents, { n: campDates.length })}</Button>
+              <Button variant="ghost" disabled={busy} onClick={() => void apply("TENTS", null)}>{format(c.cal.resetTents, { max: data.camping.defaultMax })}</Button>
+            </div>
+          )}
         </div>
       )}
       {notice && <Alert kind="success">{notice}</Alert>}
@@ -289,18 +307,23 @@ export function CalendarPage() {
                     {data.camping.nights.map((n) => {
                       const key = campKey(n.date);
                       const on = selected.has(key);
-                      const label = <>{n.closed && <span className="adm-cal__closed">🔒 {c.cal.campClosed}<br /></span>}{format(c.cal.tents, { used: n.used, max: n.max })}</>;
-                      const cls = `adm-cal__camp${n.closed ? " adm-cal__camp--closed" : n.used >= n.max ? " adm-cal__camp--full" : ""}`;
+                      const label = <>
+                        {n.closed && <span className="adm-cal__closed">🔒 {c.cal.campClosed}<br /></span>}
+                        {format(c.cal.tents, { used: n.used, max: n.max })}
+                        {n.override && <span className="adm-cal__override" aria-label={format(c.cal.tentsOverride, { max: data.camping.defaultMax })}> ✎</span>}
+                      </>;
+                      const cls = `adm-cal__camp${n.closed ? " adm-cal__camp--closed" : n.used >= n.max ? " adm-cal__camp--full" : ""}${n.override ? " adm-cal__camp--override" : ""}`;
+                      const tip = [n.closed ? c.cal.campClosedTitle : null, n.override ? format(c.cal.tentsOverride, { max: data.camping.defaultMax }) : null].filter(Boolean).join(" · ") || undefined;
                       if (picking && canCamp) {
                         return (
                           <td key={n.date} className={`${cls} adm-cal__pickcell${on ? " is-selected" : ""}`}>
                             <button type="button" className="adm-cal__pick" aria-pressed={on} disabled={!selectable(key)}
                               aria-label={format(c.cal.pick, { unit: c.cal.camping, date: stayDate(n.date) })}
-                              title={n.closed ? c.cal.campClosedTitle : undefined} onClick={(e) => pick(key, e)}>{label}</button>
+                              title={tip} onClick={(e) => pick(key, e)}>{label}</button>
                           </td>
                         );
                       }
-                      return <td key={n.date} className={cls} title={n.closed ? c.cal.campClosedTitle : undefined}>{label}</td>;
+                      return <td key={n.date} className={cls} title={tip}>{label}</td>;
                     })}
                   </tr>
                 )}

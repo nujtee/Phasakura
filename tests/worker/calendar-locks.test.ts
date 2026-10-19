@@ -169,3 +169,54 @@ describe("calendar locks — camping nights", () => {
     assert.deepEqual((await locks(h, campOnly, { action: "UNLOCK", campingDates: ["2027-02-14"] })).data.camping, 1, "camping alone needs no reason");
   });
 });
+
+describe("calendar — tents per camping night", () => {
+  const night = (h: Harness, date: string) =>
+    ({ ...h.db.get<{ max_tents: number; tents_used: number; is_override: number }>(
+      "SELECT max_tents, tents_used, is_override FROM camping_night_inventory WHERE stay_date = ?", date) });
+
+  it("lowers many nights at once (30 → 23), shows them on the calendar and in public availability, then back to default", async () => {
+    const h = new Harness({ seed: true });
+    const editor = await staff(h, ["camping.edit"]);
+    const res = await locks(h, editor, { action: "TENTS", maxTents: 23, campingDates: ["2027-02-01", "2027-02-02"] });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.data, { action: "TENTS", units: 0, camping: 2, skipped: 0 });
+    assert.deepEqual(night(h, "2027-02-01"), { max_tents: 23, tents_used: 0, is_override: 1 });
+    assert.equal(h.audits("CALENDAR_TENTS").length, 1);
+
+    const pub = await h.api<AvailabilityDto>("GET", "/api/public/availability?checkIn=2027-02-01&checkOut=2027-02-04&tents=1");
+    assert.deepEqual(pub.data.camping.nights.map((n) => n.remaining), [23, 23, 30]);
+    const cal = await h.api<CalendarDto>("GET", "/api/admin/calendar?from=2027-02-01&to=2027-02-04", { token: await staff(h, ["calendar.view"]) });
+    assert.equal(cal.data.camping.defaultMax, 30);
+    assert.deepEqual(cal.data.camping.nights.map((n) => [n.max, n.override]), [[23, true], [23, true], [30, false]]);
+
+    // The same value again changes nothing.
+    assert.deepEqual((await locks(h, editor, { action: "TENTS", maxTents: 23, campingDates: ["2027-02-01"] })).data.skipped, 1);
+    const back = await locks(h, editor, { action: "TENTS", maxTents: null, campingDates: ["2027-02-01", "2027-02-02", "2027-02-03"] });
+    assert.deepEqual(back.data, { action: "TENTS", units: 0, camping: 2, skipped: 1 });
+    assert.deepEqual(night(h, "2027-02-02"), { max_tents: 30, tents_used: 0, is_override: 0 });
+  });
+
+  it("never below the tents already booked (all or nothing); permission, past dates and input shape", async () => {
+    const h = new Harness({ seed: true });
+    const editor = await staff(h, ["camping.edit"]);
+    assert.equal((await bookCamp(h, camp(5, "2027-02-02", "2027-02-03"))).status, 201);
+    const low = await locks(h, editor, { action: "TENTS", maxTents: 4, campingDates: ["2027-02-01", "2027-02-02"] });
+    assert.equal(low.status, 409);
+    assert.equal(low.error?.code, "BELOW_TENTS_SOLD");
+    assert.match(low.error?.message ?? "", /2027-02-02/);
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM camping_night_inventory WHERE is_override = 1")!.n, 0, "nothing changed");
+    assert.equal((await locks(h, editor, { action: "TENTS", maxTents: 5, campingDates: ["2027-02-02"] })).status, 200, "equal to booked is fine");
+    assert.equal((await bookCamp(h, camp(1, "2027-02-02", "2027-02-03"))).error?.code, "CAMPING_FULL");
+
+    const blocker = await staff(h, ["accommodation.block"]);
+    assert.equal((await locks(h, blocker, { action: "TENTS", maxTents: 3, campingDates: ["2027-02-05"] })).status, 403);
+    assert.equal((await locks(h, editor, { action: "TENTS", maxTents: 3, campingDates: ["2027-01-09"] })).error?.details?.dates, "IN_THE_PAST");
+    assert.equal((await locks(h, editor, { action: "TENTS", campingDates: ["2027-02-05"] })).error?.details?.maxTents, "REQUIRED");
+    assert.equal((await locks(h, editor, { action: "TENTS", maxTents: -1, campingDates: ["2027-02-05"] })).error?.details?.maxTents, "OUT_OF_RANGE");
+    assert.equal((await locks(h, editor, { action: "TENTS", maxTents: 2.5, campingDates: ["2027-02-05"] })).error?.details?.maxTents, "OUT_OF_RANGE");
+    assert.equal((await locks(h, editor, { action: "LOCK", maxTents: 3, campingDates: ["2027-02-05"] })).error?.details?.maxTents, "NOT_ALLOWED");
+    assert.equal((await locks(h, await staff(h, ["camping.edit", "accommodation.block"]), {
+      action: "TENTS", maxTents: 3, cells: ["dev_house_01:2027-02-05"], campingDates: ["2027-02-05"] })).error?.details?.cells, "NOT_ALLOWED");
+  });
+});

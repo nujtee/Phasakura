@@ -263,6 +263,12 @@ const th = {
     campClosed: "ปิดรับ",
     campClosedTitle: "ล็อกไว้: ไม่รับเต็นท์เพิ่ม (เต็นท์ที่จองแล้วยังอยู่)",
     pick: "เลือก {unit} {date}",
+    tentsLabel: "เต็นท์ต่อคืน",
+    setTents: "ตั้งจำนวนเต็นท์ {n} คืน",
+    resetTents: "กลับเป็นค่าปกติ ({max})",
+    tentsDone: "ตั้งจำนวนเต็นท์แล้ว {n} คืน",
+    tentsRequired: "ใส่จำนวนเต็นท์ (0 ขึ้นไป)",
+    tentsOverride: "ปรับเอง (ค่าปกติ {max} เต็นท์)",
   },
   payList: {
     title: "รายการชำระเงิน",
@@ -731,6 +737,8 @@ const en: AdminCmsMessages = {
     reasonRequired: "Enter a reason before locking units", lock: "Lock {n}", unlock: "Unlock {n}", clear: "Clear selection",
     lockedDone: "Locked {n} cells", unlockedDone: "Unlocked {n} cells", campClosed: "Closed",
     campClosedTitle: "Locked: no new tents (tents already booked stay)", pick: "Select {unit} {date}",
+    tentsLabel: "Tents per night", setTents: "Set tents for {n} nights", resetTents: "Back to default ({max})",
+    tentsDone: "Tents set for {n} nights", tentsRequired: "Enter a number of tents (0 or more)", tentsOverride: "Set by hand (default {max} tents)",
   },
   payList: {
     title: "Payments", booking: "Booking", amount: "Amount", method: "Method", submitted: "Recorded", paidAt: "Paid at",
@@ -978,6 +986,8 @@ const zhCN: AdminCmsMessages = {
     selected: "已选 {n} 格", reason: "锁定原因", reasonPlaceholder: "例如：维修、内部预订", reasonRequired: "锁定住宿前请填写原因",
     lock: "锁定 {n} 格", unlock: "解锁 {n} 格", clear: "清除选择", lockedDone: "已锁定 {n} 格", unlockedDone: "已解锁 {n} 格",
     campClosed: "已关闭", campClosedTitle: "已锁定：不再接受新帐篷（已预订的帐篷保留）", pick: "选择 {unit} {date}",
+    tentsLabel: "每晚帐篷数", setTents: "设置 {n} 晚的帐篷数", resetTents: "恢复默认（{max}）", tentsDone: "已设置 {n} 晚的帐篷数",
+    tentsRequired: "请输入帐篷数（0 或以上）", tentsOverride: "手动设置（默认 {max} 顶）",
   },
   payList: {
     title: "付款记录", booking: "预订", amount: "金额", method: "方式", submitted: "记录时间", paidAt: "转账时间", verifiedAt: "确认时间",

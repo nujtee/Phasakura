@@ -243,8 +243,13 @@ export function accommodationController(services: ServicesFor) {
 
     /** POST /api/admin/calendar/locks — lock / unlock many calendar cells (permission per kind, checked in the service). */
     calendarLocks: withPermission(["accommodation.block", "camping.edit"], services, async (ctx, auth) => {
-      const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["action", "reason", "cells", "campingDates"]);
-      const action = v.oneOf("action", ["LOCK", "UNLOCK"] as const, { required: true })!;
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["action", "reason", "cells", "campingDates", "maxTents"]);
+      const action = v.oneOf("action", ["LOCK", "UNLOCK", "TENTS"] as const, { required: true })!;
+      // TENTS: a number of tents, or null = back to the default. Not taken with LOCK / UNLOCK.
+      if (action === "TENTS" && body.maxTents === undefined) v.errors.maxTents = "REQUIRED";
+      if (action !== "TENTS" && body.maxTents !== undefined) v.errors.maxTents = "NOT_ALLOWED";
+      const maxTents = action === "TENTS" && body.maxTents !== null ? int(v, body, "maxTents", 0, 1000, false) ?? null : null;
       const reason = v.string("reason", { max: 200 });
       const cells = v.stringArray("cells", { max: CALENDAR_LOCK_MAX, pattern: /^[A-Za-z0-9_-]{1,64}:\d{4}-\d{2}-\d{2}$/ }) ?? [];
       const campingDates = v.stringArray("campingDates", { max: CALENDAR_LOCK_MAX, pattern: /^\d{4}-\d{2}-\d{2}$/ }) ?? [];
@@ -257,6 +262,7 @@ export function accommodationController(services: ServicesFor) {
           return { unitId: c.slice(0, at), date: c.slice(at + 1) };
         }),
         campingDates,
+        maxTents,
       }, requestMeta(ctx));
       return jsonOk(result);
     }),
