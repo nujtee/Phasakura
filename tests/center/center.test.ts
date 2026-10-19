@@ -935,11 +935,23 @@ describe("Center: two-step sign-in and hardening (phase C9)", () => {
     assert.deepEqual(cleared.events.filter((e) => e.type === "backup_stale").map((e) => e.event), ["RESOLVED"]);
   });
 
+  it("a site watched for days before backups existed is not flagged at once: the 36 h count from the first readable list", async () => {
+    const ctx = await setup();
+    // Days of health checks from before the backup code (no backup_state recorded).
+    ctx.db.exec(`INSERT INTO center_site_checks (site, checked_at, http_status, problems) VALUES ('phasakura', '2026-01-01T00:00:00Z', 200, '[]')`);
+    await ctx.check();
+    const r = await ctx.check();
+    assert.ok(!r.events.some((e) => e.type === "backup_stale"));
+    assert.deepEqual(ctx.db.all<{ backup_state: string | null }>("SELECT backup_state FROM center_site_checks ORDER BY checked_at DESC LIMIT 1").map((x) => x.backup_state), ["empty"]);
+  });
+
   it("backupState: unknown when the list cannot be read; stale after 36 h", () => {
     const now = new Date("2026-10-20T12:00:00Z");
     assert.deepEqual(backupState({ status: 0 }, now, null), { known: false });
     assert.deepEqual(backupState({ status: 404 }, now, "2026-01-01T00:00:00Z"), { known: false });
-    assert.deepEqual(backupState({ status: 200, data: { items: [{ createdAt: "2026-10-19T20:17:00Z" }] } }, now, null), { known: true });
+    assert.deepEqual(backupState({ status: 200, data: { items: [{ createdAt: "2026-10-19T20:17:00Z" }] } }, now, null), { known: true, state: "ok" });
+    assert.deepEqual(backupState({ status: 200, data: { items: [] } }, now, "2026-10-19T12:00:00Z"), { known: true, state: "empty" }, "readable for 24 h only");
+    assert.equal(backupState({ status: 200, data: { items: [] } }, now, "2026-10-18T12:00:00Z").state, "stale");
     assert.match(backupState({ status: 200, data: { items: [{ createdAt: "2026-10-18T20:17:00Z" }] } }, now, null).detail!, /40 ชม\./);
   });
 });

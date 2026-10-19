@@ -28,17 +28,19 @@ export const BACKUP_STALE_MS = 36 * 3_600_000;
 
 /**
  * What a site's backup list says (phase C9). `known: false` = the list could not be read (site down, or older code):
- * leave the alert's state alone. An empty list is only a problem once Center has watched the site for BACKUP_STALE_MS.
+ * leave the alert's state alone. An empty list is only a problem once Center has been able to READ that site's list
+ * for BACKUP_STALE_MS (`listedSince`: the first check with a readable list) — a site gets its first daily backup
+ * within a day of the code that makes them.
  */
-export function backupState(res: SiteResponse<{ items: { createdAt: string }[] }>, now: Date, watchedSince: string | null): { known: boolean; detail?: string } {
+export function backupState(res: SiteResponse<{ items: { createdAt: string }[] }>, now: Date, listedSince: string | null): { known: boolean; state?: "ok" | "empty" | "stale"; detail?: string } {
   if (res.status !== 200 || !res.data) return { known: false };
   const latest = res.data.items[0];
   if (!latest) {
-    const watched = watchedSince ? now.getTime() - Date.parse(watchedSince) : 0;
-    return watched > BACKUP_STALE_MS ? { known: true, detail: "ยังไม่มีไฟล์สำรองเลย" } : { known: true };
+    const listed = listedSince ? now.getTime() - Date.parse(listedSince) : 0;
+    return listed > BACKUP_STALE_MS ? { known: true, state: "stale", detail: "ยังไม่มีไฟล์สำรองเลย" } : { known: true, state: "empty" };
   }
   const age = now.getTime() - Date.parse(latest.createdAt);
-  return age > BACKUP_STALE_MS ? { known: true, detail: `ไฟล์ล่าสุดเมื่อ ${Math.round(age / 3_600_000)} ชม. ก่อน` } : { known: true };
+  return age > BACKUP_STALE_MS ? { known: true, state: "stale", detail: `ไฟล์ล่าสุดเมื่อ ${Math.round(age / 3_600_000)} ชม. ก่อน` } : { known: true, state: "ok" };
 }
 
 /** A problem must be seen in this many checks in a row (5 minutes apart) before it is announced. */
@@ -149,7 +151,7 @@ export async function runChecks(env: CenterEnv, options: MonitorOptions = {}): P
   const [readings, backupLists, watched] = await Promise.all([
     Promise.all(sites.map((s) => client.call<SystemStatusDto>(s, "GET", "/api/center/status", MONITOR_ACTOR))),
     Promise.all(sites.map((s) => client.call<{ items: { createdAt: string }[] }>(s, "GET", "/api/center/backups", MONITOR_ACTOR))),
-    db.prepare("SELECT site, MIN(checked_at) AS since FROM center_site_checks GROUP BY site").all<{ site: string; since: string }>(),
+    db.prepare("SELECT site, MIN(checked_at) AS since FROM center_site_checks WHERE backup_state IS NOT NULL GROUP BY site").all<{ site: string; since: string }>(),
   ]);
   const watchedSince = new Map(watched.results.map((r) => [r.site, r.since]));
   const { results: stateRows } = await db.prepare("SELECT site, type, bad_checks, open_since, detail FROM center_alert_states").all<StateRow>();
@@ -162,10 +164,10 @@ export async function runChecks(env: CenterEnv, options: MonitorOptions = {}): P
     const backup = backupState(backupLists[i]!, now, watchedSince.get(site.slug) ?? null);
     if (backup.detail) problems.set("backup_stale", backup.detail);
     statements.push(db.prepare(
-      `INSERT INTO center_site_checks (site, checked_at, http_status, health, database_state, schema_state, cron_state, errors_24h, slips_waiting, suspended, problems, detail)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+      `INSERT INTO center_site_checks (site, checked_at, http_status, health, database_state, schema_state, cron_state, errors_24h, slips_waiting, suspended, problems, detail, backup_state)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
     ).bind(site.slug, nowIso, row.http_status, row.health, row.database_state, row.schema_state, row.cron_state, row.errors_24h, row.slips_waiting, row.suspended,
-      JSON.stringify([...problems.keys()]), row.detail));
+      JSON.stringify([...problems.keys()]), row.detail, backup.state ?? null));
     // A reading without data (site unreachable / database down) says nothing about the other problems:
     // leave their state alone instead of "resolving" them for one round.
     const blind = problems.has("site_down");
