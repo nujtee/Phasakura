@@ -7,18 +7,20 @@ name: Center setup
 #                       Center can reach it again.
 #   task = first-owner  The first PLATFORM_OWNER (only while Center has no users). The run summary shows a one-time
 #                       link (48 h) to set the password. Everyone else is added inside Center.
+#   task = mfa-reset    Break-glass (phase C9): clear a PLATFORM_OWNER's two-step sign-in when nobody in Center can
+#                       (lost phone AND recovery codes). Uses the "email" input. Audited in Center.
 # Needs the Center Worker deployed first (Actions → Release, sites = center or all).
 
 on:
   workflow_dispatch:
     inputs:
       task:
-        description: keys or first-owner
+        description: keys, first-owner or mfa-reset
         type: choice
-        options: [keys, first-owner]
+        options: [keys, first-owner, mfa-reset]
         required: true
       email:
-        description: first-owner only — e-mail of the first PLATFORM_OWNER
+        description: first-owner / mfa-reset — e-mail of the PLATFORM_OWNER
         required: false
       name:
         description: first-owner only — their name
@@ -57,3 +59,8 @@ jobs:
           OWNER_EMAIL: ${{ inputs.email }}
           OWNER_NAME: ${{ inputs.name }}
         run: npx tsx scripts/center-setup.ts first-owner --email "$OWNER_EMAIL" --name "$OWNER_NAME"
+      - name: Two-step reset (break-glass)
+        if: inputs.task == 'mfa-reset'
+        env:
+          OWNER_EMAIL: ${{ inputs.email }}
+        run: npx tsx scripts/center-setup.ts mfa-reset --email "$OWNER_EMAIL"

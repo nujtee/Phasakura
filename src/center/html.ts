@@ -34,6 +34,13 @@ export const ACTION_LABELS: Record<string, string> = {
   SITE_BACKUP: "สำรองข้อมูลของเว็บ",
   BACKUP_DOWNLOAD: "ดาวน์โหลดไฟล์สำรอง",
   RELEASE_STARTED: "สั่ง Release",
+  MFA_OK: "ยืนยันรหัส 2 ขั้น",
+  MFA_FAILED: "รหัส 2 ขั้นไม่ถูกต้อง",
+  MFA_ENABLED: "เปิดใช้ยืนยันตัวตน 2 ขั้น",
+  MFA_RESET: "รีเซ็ตยืนยันตัวตน 2 ขั้น",
+  MFA_RECOVERY_USED: "ใช้รหัสสำรอง",
+  MFA_RECOVERY_RENEWED: "สร้างรหัสสำรองชุดใหม่",
+  LOGIN_THROTTLED: "หยุดรับการเข้าสู่ระบบจาก IP",
 };
 
 /** Bangkok time for people reading the console. */

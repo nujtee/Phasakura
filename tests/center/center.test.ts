@@ -1,3 +1,6 @@
+import { stepAt, totpCode } from "../../src/center/totp.ts";
+import { IP_MAX_FAILURES, IP_WINDOW_MS } from "../../src/center/app.ts";
+import { backupState } from "../../src/center/monitor.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -95,16 +98,35 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
     db.exec(firstOwnerSql({ id: "u_00000000000000aa", email, name, tokenHash: await sha256(token), now, ttlMs: 48 * 3_600_000 }));
     return token;
   };
+  /** Two-step set-up as a person does it (phase C9): read the key under the QR, type the app's code. */
+  const enroll = async (cookie: string) => {
+    const pageRes = await req("GET", "/mfa", { cookie });
+    const secret = pageRes.text.match(/<p class="mono">([A-Z2-7 ]{32,})<\/p>/)?.[1]?.replace(/ /g, "");
+    assert.ok(secret, `set-up page shows the key: ${pageRes.text.slice(0, 200)}`);
+    const code = await totpCode(secret, stepAt(new Date(now)));
+    const done = await req("POST", "/mfa/setup", { cookie, form: { code } });
+    assert.equal(done.status, 200, done.text.slice(0, 300));
+    const block = done.text.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)?.[1] ?? "";
+    const codes = block.split("\n").map((c) => c.trim()).filter(Boolean);
+    secrets.set(cookie, { secret, codes });
+    return cookie;
+  };
+  const secrets = new Map<string, { secret: string; codes: string[] }>();
+  /** The next valid code for that session's person (a step is accepted once, so move the clock on). */
+  const codeFor = async (cookie: string) => {
+    now = new Date(now.getTime() + 30_000);
+    return totpCode(secrets.get(cookie)!.secret, stepAt(new Date(now)));
+  };
   const ownerSession = async () => {
     const token = await firstOwner();
     const res = await req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
     assert.equal(res.status, 303, res.text.slice(0, 300));
-    return res.cookie!;
+    return enroll(res.cookie!);
   };
   const audits = (action: string) => db.all<{ user_id: string; site: string | null; reason: string | null; detail_json: string | null }>("SELECT user_id, site, reason, detail_json FROM center_audit WHERE action = ? ORDER BY created_at, rowid", action);
   const check = () => runChecks(env, { clock: () => new Date(now), lineFetch });
   return {
-    site, db, env, req, firstOwner, ownerSession, audits, advance: (ms: number) => { now = new Date(now.getTime() + ms); }, keys, pushes, check,
+    site, db, env, req, firstOwner, ownerSession, audits, enroll, secrets, codeFor, advance: (ms: number) => { now = new Date(now.getTime() + ms); }, keys, pushes, check,
     setSiteDown: (v: boolean) => { siteDown = v; }, setLineStatus: (v: number) => { lineStatus = v; },
     dispatches, setGithubStatus: (v: number) => { githubStatus = v; },
   };
@@ -135,7 +157,7 @@ describe("Center: health and sign-in", () => {
   });
 
   it("first owner: one-time setup link → password policy → signed in; the link cannot be used again", async () => {
-    const { req, firstOwner, audits } = await setup();
+    const { req, firstOwner, audits, enroll } = await setup();
     const token = await firstOwner();
     assert.equal((await req("GET", `/setup?token=${token}`)).status, 200);
     const weak = await req("POST", `/setup?token=${token}`, { form: { password: "short", confirm: "short" } });
@@ -146,6 +168,9 @@ describe("Center: health and sign-in", () => {
     assert.equal(ok.status, 303);
     assert.ok(ok.cookie);
     assert.match(ok.headers.get("Set-Cookie") ?? "", /HttpOnly; Secure; SameSite=Strict/);
+    assert.equal(ok.location, "/mfa", "two-step set-up comes next");
+    assert.equal((await req("GET", "/", { cookie: ok.cookie })).status, 303, "not before the two-step set-up");
+    await enroll(ok.cookie!);
     assert.equal((await req("GET", "/", { cookie: ok.cookie })).status, 200);
     assert.equal((await req("GET", `/setup?token=${token}`)).status, 400, "used");
     assert.equal(audits("PASSWORD_SET").length, 1);
@@ -277,7 +302,7 @@ describe("Center: people", () => {
     assert.ok(token, "the setup link is shown once");
     const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
     assert.equal(set.status, 303);
-    return { cookie: set.cookie!, page: res.text };
+    return { cookie: await ctx.enroll(set.cookie!), page: res.text };
   }
 
   it("the owner adds an OPERATOR with a one-time link; an OPERATOR cannot manage people", async () => {
@@ -480,7 +505,7 @@ describe("Center: site page (phase C6)", () => {
   async function addPerson(ctx: Awaited<ReturnType<typeof setup>>, ownerCookie: string, role: string, email: string) {
     const res = await ctx.req("POST", "/users", { cookie: ownerCookie, form: { name: role, email, role } });
     const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
-    return (await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!;
+    return ctx.enroll((await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!);
   }
   const quote = (ctx: Awaited<ReturnType<typeof setup>>) => ctx.site.api("POST", "/api/public/bookings/quote", { body: {} });
 
@@ -612,7 +637,7 @@ describe("Center: a new site's first owner (phase C7)", () => {
     assert.match(res.text, /สร้างลิงก์ใหม่แล้ว/);
     const added = await ctx.req("POST", "/users", { cookie: owner, form: { name: "Ops", email: "ops@phasakura.com", role: "OPERATOR" } });
     const token = added.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
-    const ops = (await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!;
+    const ops = await ctx.enroll((await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!);
     assert.ok(!(await ctx.req("GET", "/sites/phasakura", { cookie: ops })).text.includes("/sites/phasakura/owner"));
     assert.equal((await ctx.req("POST", "/sites/phasakura/owner", { cookie: ops, form: { email: "owner@site.test", name: "Owner", reason: "abc" } })).status, 403);
   });
@@ -622,7 +647,7 @@ describe("Center: backups and Release (phase C8)", () => {
   async function person(ctx: Awaited<ReturnType<typeof setup>>, owner: string, role: string, email: string) {
     const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: role, email, role } });
     const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
-    return (await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!;
+    return ctx.enroll((await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!);
   }
 
   it("site page: backup now (owner / operator, reason); the list; the file downloads for the owner only; audited both sides", async () => {
@@ -707,8 +732,174 @@ describe("Center: backups and Release (phase C8)", () => {
   });
 });
 
+describe("Center: two-step sign-in and hardening (phase C9)", () => {
+  const GROUP = `C${"a".repeat(32)}`;
+  const withGroup = (ctx: Awaited<ReturnType<typeof setup>>) => ctx.db.exec(`UPDATE center_settings SET line_group_id = '${GROUP}' WHERE id = 1`);
+
+  it("a password alone opens nothing: the code is needed; a code works once; 5 wrong codes lock the account and end the session", async () => {
+    const ctx = await setup();
+    withGroup(ctx);
+    await ctx.ownerSession();
+    const enrolled = [...ctx.secrets.values()][0]!;
+    const login = await ctx.req("POST", "/login", { form: { email: "owner@phasakura.com", password: PASSWORD } });
+    assert.equal(login.location, "/mfa");
+    const cookie = login.cookie!;
+    assert.equal((await ctx.req("GET", "/", { cookie })).location, "/mfa");
+    assert.equal((await ctx.req("POST", "/sites/phasakura/sso", { cookie, form: { reason: "ดูระบบ" } })).status, 401);
+    const mfa = await ctx.req("GET", "/mfa", { cookie });
+    assert.match(mfa.text, /รหัส 6 หลักจากแอปยืนยันตัวตน/);
+    assert.ok(!mfa.text.includes(enrolled.secret), "the key is never shown again");
+    ctx.secrets.set(cookie, enrolled);
+    const good = await ctx.codeFor(cookie);
+    const ok = await ctx.req("POST", "/mfa", { cookie, form: { code: good } });
+    assert.equal(ok.location, "/");
+    assert.equal((await ctx.req("GET", "/", { cookie })).status, 200);
+    // The same code again (another session) is refused: no replay.
+    const second = (await ctx.req("POST", "/login", { form: { email: "owner@phasakura.com", password: PASSWORD } })).cookie!;
+    assert.equal((await ctx.req("POST", "/mfa", { cookie: second, form: { code: good } })).status, 422);
+    for (let i = 0; i < 3; i++) assert.equal((await ctx.req("POST", "/mfa", { cookie: second, form: { code: "000000" } })).status, 422);
+    const locked = await ctx.req("POST", "/mfa", { cookie: second, form: { code: "111111" } });
+    assert.equal(locked.location, "/login", "fifth wrong code: locked and signed out");
+    assert.equal((await ctx.req("GET", "/", { cookie })).status, 303, "every session of that person ended");
+    assert.equal(ctx.audits("LOGIN_LOCKED").length, 1);
+    assert.ok(ctx.pushes.some((p) => p.to === GROUP && /ถูกล็อก 15 นาที — ใส่รหัส 2 ขั้นผิด/.test(p.text)), "security alert in LINE");
+  });
+
+  it("recovery codes: each works once; using one is announced; running low sends you to your account page", async () => {
+    const ctx = await setup();
+    await ctx.ownerSession();
+    const { codes } = [...ctx.secrets.values()][0]!;
+    assert.equal(codes.length, 10);
+    assert.equal(new Set(codes).size, 10);
+    const signIn = async () => (await ctx.req("POST", "/login", { form: { email: "owner@phasakura.com", password: PASSWORD } })).cookie!;
+    const c1 = await signIn();
+    const used = await ctx.req("POST", "/mfa", { cookie: c1, form: { code: codes[0]!.toUpperCase().replace("-", " ") } });
+    assert.equal(used.location, "/");
+    const c2 = await signIn();
+    assert.equal((await ctx.req("POST", "/mfa", { cookie: c2, form: { code: codes[0]! } })).status, 422, "used once only");
+    for (let i = 1; i <= 6; i++) {
+      const c = await signIn();
+      const r = await ctx.req("POST", "/mfa", { cookie: c, form: { code: codes[i]! } });
+      assert.equal(r.location, i >= 6 ? "/account" : "/", `code ${i}`);
+    }
+    const account = await ctx.req("GET", "/account", { cookie: c1 });
+    assert.match(account.text, /ยังไม่ได้ใช้: 3 รหัส — ควรสร้างชุดใหม่/);
+    assert.equal(ctx.audits("MFA_RECOVERY_USED").length, 7);
+    const renewed = await ctx.req("POST", "/account/recovery-codes", { cookie: c1, form: {} });
+    assert.equal(renewed.status, 200);
+    assert.equal((renewed.text.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)![1]!.trim().split("\n")).length, 10);
+    const c3 = await signIn();
+    assert.equal((await ctx.req("POST", "/mfa", { cookie: c3, form: { code: codes[8]! } })).status, 422, "the old set is gone");
+  });
+
+  it("step-up: sensitive actions want the code from the last 15 minutes, then the page to retry", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    ctx.advance(10 * 60_000);
+    await ctx.req("GET", "/", { cookie: owner }); // keeps the session alive (idle limit is 1 hour)
+    ctx.advance(6 * 60_000);
+    const asked = await ctx.req("POST", "/releases", { cookie: owner, form: { site: "all", reason: "ปล่อยของใหม่" } });
+    assert.equal(asked.status, 403);
+    assert.match(asked.text, /ยืนยันรหัส 2 ขั้นอีกครั้ง/);
+    assert.match(asked.text, /action="\/mfa\?next=%2Freleases"/);
+    assert.equal(ctx.dispatches.length, 0, "nothing was done");
+    assert.equal((await ctx.req("GET", "/sites/phasakura", { cookie: owner })).status, 200, "reading needs no step-up");
+    const back = await ctx.req("POST", "/mfa?next=%2Freleases", { cookie: owner, form: { code: await ctx.codeFor(owner) } });
+    assert.equal(back.location, "/releases");
+    assert.equal((await ctx.req("POST", "/releases", { cookie: owner, form: { site: "all", reason: "ปล่อยของใหม่" } })).status, 200);
+    assert.equal(ctx.dispatches.length, 1);
+    assert.equal((await ctx.req("POST", "/mfa?next=https%3A%2F%2Fevil.example", { cookie: owner, form: { code: await ctx.codeFor(owner) } })).location, "/", "never to another origin");
+  });
+
+  it("the owner resets someone's two-step (phone lost): their sessions end, they set it up again; announced; not for yourself", async () => {
+    const ctx = await setup();
+    withGroup(ctx);
+    const owner = await ctx.ownerSession();
+    const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: "Ops", email: "ops@phasakura.com", role: "OPERATOR" } });
+    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
+    const ops = await ctx.enroll((await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!);
+    const opsId = ctx.db.all<{ id: string }>("SELECT id FROM center_users WHERE email = 'ops@phasakura.com'")[0]!.id;
+    const users = await ctx.req("GET", "/users", { cookie: owner });
+    assert.match(users.text, /2 ขั้น: เปิดแล้ว/);
+    assert.equal((await ctx.req("POST", "/users/u_00000000000000aa/mfa-reset", { cookie: owner, form: { reason: "ทดสอบ" } })).status, 422);
+    assert.equal((await ctx.req("POST", `/users/${opsId}/mfa-reset`, { cookie: ops, form: { reason: "ทดสอบ" } })).status, 403);
+    const reset = await ctx.req("POST", `/users/${opsId}/mfa-reset`, { cookie: owner, form: { reason: "มือถือหาย" } });
+    assert.equal(reset.status, 200);
+    assert.equal((await ctx.req("GET", "/", { cookie: ops })).status, 303, "signed out");
+    const again = (await ctx.req("POST", "/login", { form: { email: "ops@phasakura.com", password: PASSWORD } })).cookie!;
+    assert.match((await ctx.req("GET", "/mfa", { cookie: again })).text, /ตั้งค่ายืนยันตัวตน 2 ขั้น/);
+    assert.ok(ctx.pushes.some((p) => /รีเซ็ตยืนยันตัวตน 2 ขั้นของ ops@phasakura\.com — เหตุผล: มือถือหาย/.test(p.text)));
+    // A new platform owner is announced too.
+    await ctx.req("POST", "/users", { cookie: owner, form: { name: "Owner 2", email: "owner2@phasakura.com", role: "PLATFORM_OWNER" } });
+    assert.ok(ctx.pushes.some((p) => /เพิ่มเจ้าของแพลตฟอร์มคนใหม่: owner2@phasakura\.com/.test(p.text)));
+  });
+
+  it("one IP guessing across accounts is turned away after 20 failures in 15 minutes (announced once); others are not", async () => {
+    const ctx = await setup();
+    withGroup(ctx);
+    await ctx.ownerSession();
+    for (let i = 0; i < IP_MAX_FAILURES; i++) {
+      await ctx.req("POST", "/login", { form: { email: `guess${i}@phasakura.com`, password: "wrong password!!" } });
+    }
+    const blocked = await ctx.req("POST", "/login", { form: { email: "owner@phasakura.com", password: PASSWORD } });
+    assert.equal(blocked.cookie, null);
+    assert.match(blocked.text, /หลายครั้งเกินไป/);
+    const elsewhere = await ctx.req("POST", "/login", { form: { email: "owner@phasakura.com", password: PASSWORD }, headers: { "CF-Connecting-IP": "198.51.100.99" } });
+    assert.equal(elsewhere.location, "/mfa");
+    assert.equal(ctx.audits("LOGIN_THROTTLED").length, 1);
+    assert.equal(ctx.pushes.filter((p) => /หยุดรับจาก IP นี้ชั่วคราว/.test(p.text)).length, 1);
+    ctx.advance(IP_WINDOW_MS + 1000);
+    assert.equal((await ctx.req("POST", "/login", { form: { email: "owner@phasakura.com", password: PASSWORD } })).location, "/mfa");
+  });
+
+  it("backup_stale: a site with no fresh backup is announced (after 36 h of watching); a backup clears it", async () => {
+    const ctx = await setup();
+    withGroup(ctx);
+    const settings = ctx.db.all<{ alert_types: string }>("SELECT alert_types FROM center_settings")[0]!;
+    assert.deepEqual(JSON.parse(settings.alert_types).slice(-2), ["backup_stale", "security"], "new types start switched on");
+    await ctx.check();
+    await ctx.check();
+    assert.ok(!ctx.pushes.some((p) => /สำรองข้อมูล/.test(p.text)), "a newly watched site with no backup yet is fine");
+    ctx.advance(37 * 3_600_000);
+    await ctx.check();
+    const r = await ctx.check();
+    assert.deepEqual(r.events.filter((e) => e.type === "backup_stale").map((e) => e.event), ["OPENED"]);
+    assert.match(ctx.pushes.at(-1)!.text, /Phasakura — ไม่มีไฟล์สำรองข้อมูลใหม่: ยังไม่มีไฟล์สำรองเลย/);
+    await ctx.site.app.scheduled(ctx.site.env, Date.parse("2026-01-01T20:17:00Z")); // any day at 20:17 UTC: the daily backup
+    const cleared = await ctx.check();
+    assert.deepEqual(cleared.events.filter((e) => e.type === "backup_stale").map((e) => e.event), ["RESOLVED"]);
+  });
+
+  it("backupState: unknown when the list cannot be read; stale after 36 h", () => {
+    const now = new Date("2026-10-20T12:00:00Z");
+    assert.deepEqual(backupState({ status: 0 }, now, null), { known: false });
+    assert.deepEqual(backupState({ status: 404 }, now, "2026-01-01T00:00:00Z"), { known: false });
+    assert.deepEqual(backupState({ status: 200, data: { items: [{ createdAt: "2026-10-19T20:17:00Z" }] } }, now, null), { known: true });
+    assert.match(backupState({ status: 200, data: { items: [{ createdAt: "2026-10-18T20:17:00Z" }] } }, now, null).detail!, /40 ชม\./);
+  });
+});
+
 async function fetchWebhook(ctx: Awaited<ReturnType<typeof setup>>, body: string, signature: string | null) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (signature !== null) headers["x-line-signature"] = signature;
   return ctx.req("POST", "/line/webhook", { headers: { ...headers, Origin: "", "Sec-Fetch-Site": "" }, raw: body });
 }
+
+describe("Center setup: break-glass two-step reset (phase C9)", () => {
+  it("clears only a PLATFORM_OWNER's two-step, ends their sessions, writes the audit row", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const { mfaResetSql } = await import("../../scripts/center-setup.ts");
+    assert.throws(() => mfaResetSql("not an email", new Date()));
+    ctx.db.exec(mfaResetSql("Owner@Phasakura.com", new Date()));
+    assert.equal((await ctx.req("GET", "/", { cookie: owner })).status, 303);
+    const row = ctx.db.all<{ totp_secret: string | null }>("SELECT totp_secret FROM center_users")[0]!;
+    assert.equal(row.totp_secret, null);
+    assert.equal(ctx.db.all("SELECT 1 FROM center_recovery_codes").length, 0);
+    assert.equal(ctx.audits("MFA_RESET").length, 1);
+    const c = (await ctx.req("POST", "/login", { form: { email: "owner@phasakura.com", password: PASSWORD } })).cookie!;
+    assert.match((await ctx.req("GET", "/mfa", { cookie: c })).text, /ตั้งค่ายืนยันตัวตน 2 ขั้น/);
+    ctx.db.exec(mfaResetSql("nobody@phasakura.com", new Date()));
+    assert.equal(ctx.audits("MFA_RESET").length, 1, "an unknown e-mail changes nothing");
+  });
+});
