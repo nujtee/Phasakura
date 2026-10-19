@@ -27,6 +27,9 @@ export const ACTION_LABELS: Record<string, string> = {
   SETTINGS_CHANGED: "เปลี่ยนการตั้งค่า",
   CHECKS_RUN: "สั่งตรวจเว็บ",
   ALERT_TEST: "ส่งข้อความทดสอบ LINE",
+  SITE_SUSPENDED: "พักการรับจองของเว็บ",
+  SITE_RESUMED: "เปิดรับจองของเว็บอีกครั้ง",
+  SITE_SESSIONS_REVOKED: "ตัด session ของ Center ในเว็บ",
 };
 
 /** Bangkok time for people reading the console. */

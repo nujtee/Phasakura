@@ -103,6 +103,10 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (sso && request.method === "POST") return startSso(ctx, me, sso[1]!);
     const detail = /^\/sites\/([a-z][a-z0-9-]{1,30})$/.exec(url.pathname);
     if (detail && request.method === "GET") return sitePage(ctx, me, detail[1]!);
+    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke)$/.exec(url.pathname);
+    if (siteAction && request.method === "POST") {
+      return siteAction[2] === "suspension" ? changeSuspension(ctx, me, siteAction[1]!) : revokeSiteSessions(ctx, me, siteAction[1]!);
+    }
     if (key === "POST /checks/run") {
       if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณสั่งตรวจไม่ได้");
       const result = await runChecks(ctx.env, { clock, lineFetch: options.lineFetch });
@@ -283,13 +287,17 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     }));
   }
 
-  async function sitePage(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+  async function sitePage(ctx: Ctx, me: Me, slug: string, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
     const site = ctx.sites.find((s) => s.slug === slug);
     if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
-    const [checks, alerts, log] = await Promise.all([
+    const client = new SiteClient(ctx.env, 5000, clock);
+    const actor = actorOf(me);
+    const [checks, alerts, log, suspension, users] = await Promise.all([
       ctx.repo.db.prepare("SELECT site, checked_at, http_status, schema_state, cron_state, errors_24h, slips_waiting, suspended, detail FROM center_site_checks WHERE site = ?1 ORDER BY checked_at DESC LIMIT 96").bind(slug).all<CheckRow>(),
       ctx.repo.db.prepare("SELECT type, open_since, detail FROM center_alert_states WHERE site = ?1 AND open_since IS NOT NULL").bind(slug).all<{ type: string; open_since: string; detail: string | null }>(),
       ctx.repo.db.prepare("SELECT type, event, message, delivery, created_at FROM center_alert_log WHERE site = ?1 ORDER BY created_at DESC LIMIT 30").bind(slug).all<{ type: string; event: string; message: string; delivery: string; created_at: string }>(),
+      client.call<SuspensionDto>(site, "GET", "/api/center/suspension", actor),
+      client.call<{ items: SiteUserDto[] }>(site, "GET", "/api/center/users", actor),
     ]);
     const openHtml = alerts.results.length
       ? alerts.results.map((a) => `<li class="bad">${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ${esc(a.detail ?? "")} <span class="muted small">(ตั้งแต่ ${esc(bkk(a.open_since))})</span></li>`).join("")
@@ -298,15 +306,83 @@ export function createCenterApp(options: CenterAppOptions = {}) {
 <td>${c.http_status === 200 ? (c.suspended ? '<span class="bad">พัก</span>' : '<span class="ok">ออนไลน์</span>') : `<span class="bad">${c.http_status === 0 ? "ติดต่อไม่ได้" : `HTTP ${c.http_status}`}</span>`}</td>
 <td>${esc(c.schema_state ?? "—")}</td><td>${esc(c.cron_state ?? "—")}</td><td>${esc(c.errors_24h ?? "—")}</td><td>${esc(c.slips_waiting ?? "—")}</td><td class="small">${esc(c.detail ?? "")}</td></tr>`).join("");
     const logRows = log.results.map((l) => `<tr><td class="small">${esc(bkk(l.created_at))}</td><td>${l.event === "OPENED" ? "🔴 เกิดปัญหา" : "✅ กลับมาปกติ"}</td><td>${esc(l.message)}</td><td class="small">${esc(l.delivery)}</td></tr>`).join("");
+
+    // ---- service (suspension)
+    const s = suspension.status === 200 ? suspension.data : undefined;
+    const reasonInput = (label: string) => `<input name="reason" required minlength="3" maxlength="300" placeholder="${esc(label)}" aria-label="${esc(label)}" style="min-width:16rem">`;
+    let serviceHtml: string;
+    if (!s) serviceHtml = `<p class="warn">อ่านสถานะไม่ได้: ${esc(siteError(suspension.status, suspension.error?.code))}</p>`;
+    else if (s.suspended) {
+      serviceHtml = `<p class="bad"><strong>พักการรับจองออนไลน์อยู่</strong> — ค้างค่าบริการ ตั้งแต่ ${esc(bkk(s.since))}${s.note ? ` · ${esc(s.note)}` : ""}</p>
+<p class="muted small">แขกจองใหม่ไม่ได้ · หน้าเว็บ การจองเดิม สลิป และหลังบ้านใช้ได้ตามปกติ</p>
+${me.role === "PLATFORM_OWNER" ? `<form method="post" action="/sites/${esc(slug)}/suspension" class="inline"><input type="hidden" name="op" value="resume">${reasonInput("เหตุผล เช่น ชำระค่าบริการแล้ว")}<button type="submit">เปิดรับจองอีกครั้ง</button></form>` : ""}`;
+    } else {
+      serviceHtml = `<p class="ok"><strong>เปิดรับจองตามปกติ</strong></p>
+${me.role === "PLATFORM_OWNER" ? `<details><summary class="small">พักการรับจอง (เฉพาะกรณีค้างค่าบริการ)</summary>
+<form method="post" action="/sites/${esc(slug)}/suspension" class="stack" style="max-width:420px">
+<input type="hidden" name="op" value="suspend">
+<label for="note">หมายเหตุที่เจ้าของเว็บจะเห็นใน Audit logs (ไม่บังคับ)</label><input id="note" name="note" maxlength="300" placeholder="เช่น ค้างค่าบริการ ก.ย.–ต.ค.">
+<label for="reason">เหตุผล (บันทึกใน Center และในเว็บ)</label><input id="reason" name="reason" required minlength="3" maxlength="300">
+<label style="font-weight:400"><input type="checkbox" name="confirm" value="UNPAID_FEES" required> ยืนยันว่าเว็บนี้ค้างค่าบริการ — แขกจะจองใหม่ไม่ได้จนกว่าจะเปิดอีกครั้ง</label>
+<p><button class="danger" type="submit">พักการรับจอง</button></p></form></details>` : '<p class="muted small">พัก / เปิดเว็บได้เฉพาะเจ้าของแพลตฟอร์ม</p>'}`;
+    }
+
+    // ---- the site's own admins
+    const roleNames: Record<string, string> = { SUPER_ADMIN: "SUPER_ADMIN", MANAGER: "ผู้จัดการ", STAFF: "พนักงาน" };
+    const userRows = users.status === 200 && users.data
+      ? users.data.items.map((u) => `<tr><td>${esc(u.displayName)}<br><span class="small muted">${esc(u.email)}</span></td><td class="small">${esc(u.roles.map((r) => roleNames[r] ?? r).join(", ") || "—")}</td>
+<td class="small ${u.status === "ACTIVE" ? "ok" : "bad"}">${esc(u.status)}</td><td class="small">${esc(bkk(u.lastLoginAt))}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">ไม่มีผู้ใช้</td></tr>'
+      : `<tr><td colspan="4" class="warn">อ่านรายชื่อไม่ได้: ${esc(siteError(users.status, users.error?.code))}</td></tr>`;
+
+    const revokeHtml = me.role === "SUPPORT_READONLY" ? "" : `<div class="card"><h2 style="margin-top:0">session ของ Center ในเว็บนี้</h2>
+<p class="small muted">ออกจากหลังบ้านของเว็บนี้ทุกคนที่เข้ามาจาก Center (บัญชี "Center · …") และยกเลิกตั๋ว SSO ที่ยังไม่ได้ใช้ — admin ของเว็บเองไม่ถูกกระทบ</p>
+<form method="post" action="/sites/${esc(slug)}/revoke" class="inline">${reasonInput("เหตุผล")}<button class="danger" type="submit">ตัด session ของ Center ทั้งหมด</button></form></div>`;
+
     return html(page({
-      title: site.name, user: me, current: "sites",
-      body: `<p class="small"><a href="/">← เว็บทั้งหมด</a></p><h1>${esc(site.name)} <span class="muted small">${esc(site.domain)}</span></h1>
+      title: site.name, user: me, current: "sites", flash,
+      body: `<p class="small"><a href="/">← เว็บทั้งหมด</a></p><h1>${esc(site.name)} <a class="muted small" href="https://${esc(site.domain)}" rel="noopener noreferrer" target="_blank">${esc(site.domain)}</a></h1>
+<div class="card"><h2 style="margin-top:0">หลังบ้าน</h2><form method="post" action="/sites/${esc(slug)}/sso" target="_blank" class="inline">${reasonInput("เหตุผลที่เข้าหลังบ้าน")}<button type="submit">เข้าหลังบ้าน</button></form></div>
+<div class="card"><h2 style="margin-top:0">การให้บริการ</h2>${serviceHtml}</div>
 <div class="card"><h2 style="margin-top:0">ปัญหาที่เปิดอยู่</h2><ul>${openHtml}</ul></div>
+<div class="card scroll"><h2 style="margin-top:0">ผู้ดูแลของเว็บ</h2><table><thead><tr><th>ชื่อ</th><th>บทบาท</th><th>สถานะ</th><th>เข้าล่าสุด</th></tr></thead><tbody>${userRows}</tbody></table>
+<p class="small muted">อ่านจากเว็บโดยตรง (ไม่รวมบัญชี Center) — เพิ่ม / แก้ผู้ใช้ทำในหลังบ้านของเว็บ</p></div>
+${revokeHtml}
 <div class="card scroll"><h2 style="margin-top:0">ผลตรวจล่าสุด (8 ชั่วโมง)</h2><table><thead><tr><th>เวลา</th><th>สถานะ</th><th>ฐานข้อมูล</th><th>cron</th><th>error 24 ชม.</th><th>สลิปรอตรวจ</th><th>รายละเอียด</th></tr></thead>
 <tbody>${checkRows || '<tr><td colspan="7" class="muted">ยังไม่เคยตรวจ</td></tr>'}</tbody></table></div>
 <div class="card scroll"><h2 style="margin-top:0">ประวัติการแจ้งเตือน</h2><table><thead><tr><th>เวลา</th><th>เหตุการณ์</th><th>รายละเอียด</th><th>LINE</th></tr></thead>
 <tbody>${logRows || '<tr><td colspan="4" class="muted">ยังไม่มี</td></tr>'}</tbody></table></div>`,
-    }));
+    }), flash?.kind === "error" ? 422 : 200);
+  }
+
+  async function changeSuspension(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+    const site = ctx.sites.find((s) => s.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "พัก / เปิดเว็บได้เฉพาะเจ้าของแพลตฟอร์ม");
+    const form = await readForm(ctx.request);
+    const op = form.get("op");
+    const reason = (form.get("reason") ?? "").trim();
+    const note = (form.get("note") ?? "").trim().slice(0, 300) || null;
+    if (op !== "suspend" && op !== "resume") throw new HttpError(422, "คำสั่งไม่ถูกต้อง");
+    if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    if (op === "suspend" && form.get("confirm") !== "UNPAID_FEES") return sitePage(ctx, me, slug, { kind: "error", text: "ต้องติ๊กยืนยันว่าเว็บนี้ค้างค่าบริการ" });
+    const suspended = op === "suspend";
+    const res = await new SiteClient(ctx.env, 8000, clock).call<SuspensionDto>(site, "PUT", "/api/center/suspension", { ...actorOf(me), reason }, { suspended, note: suspended ? note : null });
+    const ok = res.status === 200;
+    await audit(ctx, me.id, suspended ? "SITE_SUSPENDED" : "SITE_RESUMED", site.slug, reason, { ok, status: res.status, note: suspended ? note : null, error: res.error?.code ?? null }).run();
+    if (!ok) return sitePage(ctx, me, slug, { kind: "error", text: `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}` });
+    return sitePage(ctx, me, slug, { kind: "ok", text: suspended ? `พักการรับจองของ ${site.name} แล้ว` : `เปิดรับจองของ ${site.name} อีกครั้งแล้ว` });
+  }
+
+  async function revokeSiteSessions(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+    const site = ctx.sites.find((s) => s.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณทำไม่ได้");
+    const reason = ((await readForm(ctx.request)).get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    const res = await new SiteClient(ctx.env, 8000, clock).call<{ revoked: number }>(site, "POST", "/api/center/sessions/revoke", { ...actorOf(me), reason }, {});
+    await audit(ctx, me.id, "SITE_SESSIONS_REVOKED", site.slug, reason, { ok: res.status === 200, revoked: res.data?.revoked ?? null }).run();
+    if (res.status !== 200) return sitePage(ctx, me, slug, { kind: "error", text: `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}` });
+    return sitePage(ctx, me, slug, { kind: "ok", text: `ตัด session ของ Center ใน ${site.name} แล้ว (${res.data?.revoked ?? 0} session)` });
   }
 
   async function settingsPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
@@ -544,6 +620,12 @@ ${self ? "" : `<form method="post" action="/users/${u.id}/disable" class="inline
 }
 
 type D1Statement = ReturnType<CenterRepository["auditStatement"]>;
+interface SuspensionDto {
+  suspended: boolean; reasonCode: string | null; note: string | null; since: string | null;
+}
+interface SiteUserDto {
+  id: string; email: string; displayName: string; status: string; roles: string[]; lastLoginAt: string | null;
+}
 interface CheckRow {
   site: string; checked_at: string; http_status: number; schema_state: string | null; cron_state: string | null;
   errors_24h: number | null; slips_waiting: number | null; suspended: number | null; detail: string | null;
