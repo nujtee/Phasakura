@@ -52,9 +52,31 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
   let siteDown = false;
   /** Fake GitHub API: dispatches are recorded; runs are listed. */
   const dispatches: { url: string; body: Record<string, unknown>; auth: string | null }[] = [];
+  const merges: { url: string; sha: string; merge_method: string; commit_message: string }[] = [];
   let githubStatus = 204;
   const githubFetch = async (input: string, init?: RequestInit) => {
     const auth = new Headers(init?.headers).get("Authorization");
+    const SHA_OK = "a".repeat(40), SHA_RED = "b".repeat(40), SHA_DRAFT = "c".repeat(40);
+    if (input.includes("/pulls?state=open")) {
+      return new Response(JSON.stringify([
+        { number: 20, title: "Fix <b>layout</b>", user: { login: "nujtee" }, html_url: "https://github.com/nujtee/Phasakura/pull/20", head: { sha: SHA_OK }, draft: false, created_at: "2026-10-19T12:00:00Z" },
+        { number: 21, title: "Risky", user: { login: "nujtee" }, html_url: "https://github.com/nujtee/Phasakura/pull/21", head: { sha: SHA_RED }, draft: false, created_at: "2026-10-19T12:00:00Z" },
+        { number: 22, title: "WIP", user: { login: "nujtee" }, html_url: "https://github.com/nujtee/Phasakura/pull/22", head: { sha: SHA_DRAFT }, draft: true, created_at: "2026-10-19T12:00:00Z" },
+      ]), { status: githubStatus === 204 ? 200 : githubStatus });
+    }
+    if (input.includes("/actions/runs?head_sha=")) {
+      const sha = input.match(/head_sha=([0-9a-f]{40})/)![1];
+      const runs = sha === SHA_OK ? [{ status: "completed", conclusion: "success", html_url: "https://github.com/x/1" }, { status: "completed", conclusion: "skipped" }]
+        : sha === SHA_RED ? [{ status: "completed", conclusion: "success" }, { status: "completed", conclusion: "failure", html_url: "https://github.com/x/2" }] : [];
+      return new Response(JSON.stringify({ workflow_runs: runs }));
+    }
+    if (/\/pulls\/\d+\/merge$/.test(input)) {
+      const body = JSON.parse(String(init?.body)) as { sha: string; merge_method: string; commit_message: string };
+      merges.push({ url: input, ...body });
+      return body.sha === SHA_OK || body.sha === SHA_RED
+        ? new Response(JSON.stringify({ merged: true, sha: "d".repeat(40) }), { status: 200 })
+        : new Response(JSON.stringify({ message: "Head branch was modified" }), { status: 409 });
+    }
     if (input.endsWith("/dispatches")) {
       dispatches.push({ url: input, body: JSON.parse(String(init?.body)) as Record<string, unknown>, auth });
       return new Response(null, { status: githubStatus });
@@ -128,7 +150,7 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
   return {
     site, db, env, req, firstOwner, ownerSession, audits, enroll, secrets, codeFor, advance: (ms: number) => { now = new Date(now.getTime() + ms); }, keys, pushes, check,
     setSiteDown: (v: boolean) => { siteDown = v; }, setLineStatus: (v: number) => { lineStatus = v; },
-    dispatches, setGithubStatus: (v: number) => { githubStatus = v; },
+    dispatches, merges, setGithubStatus: (v: number) => { githubStatus = v; },
   };
 }
 
@@ -729,6 +751,49 @@ describe("Center: backups and Release (phase C8)", () => {
     const res = await ctx.req("POST", "/releases", { cookie: owner, form: { site: "all", reason: "ทุกเว็บ" } });
     assert.equal(res.status, 422);
     assert.equal(ctx.dispatches.length, 0);
+  });
+});
+
+describe("Center: merge pull requests from the Release page", () => {
+  it("lists open PRs with CI; the owner merges the exact commit shown, with a reason; a red CI needs an extra tick; audited", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const page = await ctx.req("GET", "/releases", { cookie: owner });
+    assert.match(page.text, /Pull requests รอ merge/);
+    assert.match(page.text, /Fix &lt;b&gt;layout&lt;\/b&gt;/);
+    assert.match(page.text, />ผ่าน</);
+    assert.match(page.text, />ไม่ผ่าน</);
+    assert.ok(page.text.includes("Merge #20") && page.text.includes("Merge #21") && !page.text.includes("Merge #22"), "no merge for a draft");
+    const SHA_OK = "a".repeat(40), SHA_RED = "b".repeat(40);
+    assert.equal((await ctx.req("POST", "/releases/merge", { cookie: owner, form: { number: "20", sha: SHA_OK, reason: "" } })).status, 422);
+    const red = await ctx.req("POST", "/releases/merge", { cookie: owner, form: { number: "21", sha: SHA_RED, reason: "ด่วน" } });
+    assert.equal(red.status, 422);
+    assert.match(red.text, /CI ของ #21 ยังไม่ผ่าน/);
+    assert.equal(ctx.merges.length, 0);
+    const ok = await ctx.req("POST", "/releases/merge", { cookie: owner, form: { number: "20", sha: SHA_OK, reason: "แก้หน้าเว็บ" } });
+    assert.equal(ok.status, 200, ok.text.slice(0, 300));
+    assert.match(ok.text, /Merge #20 แล้ว/);
+    assert.deepEqual(ctx.merges[0], { url: "https://api.github.com/repos/nujtee/Phasakura/pulls/20/merge", merge_method: "merge", sha: SHA_OK, commit_message: "Merged from Center by owner@phasakura.com: แก้หน้าเว็บ" });
+    assert.equal((await ctx.req("POST", "/releases/merge", { cookie: owner, form: { number: "21", sha: SHA_RED, reason: "รู้ความเสี่ยง", force: "1" } })).status, 200);
+    const moved = await ctx.req("POST", "/releases/merge", { cookie: owner, form: { number: "20", sha: "e".repeat(40), reason: "อีกครั้ง" } });
+    assert.match(moved.text, /มีการเปลี่ยนแปลงหลังจากที่เปิดหน้านี้/);
+    assert.equal((await ctx.req("POST", "/releases/merge", { cookie: owner, form: { number: "22", sha: "c".repeat(40), reason: "ร่าง", force: "1" } })).status, 422, "never a draft");
+    assert.equal(ctx.audits("PR_MERGED").length, 3);
+  });
+
+  it("only the owner merges; it is a sensitive action (step-up)", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: "Ops", email: "ops@phasakura.com", role: "OPERATOR" } });
+    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
+    const ops = await ctx.enroll((await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!);
+    assert.ok(!(await ctx.req("GET", "/releases", { cookie: ops })).text.includes("Merge #20"));
+    assert.equal((await ctx.req("POST", "/releases/merge", { cookie: ops, form: { number: "20", sha: "a".repeat(40), reason: "ปล่อย" } })).status, 403);
+    ctx.advance(16 * 60_000);
+    const asked = await ctx.req("POST", "/releases/merge", { cookie: owner, form: { number: "20", sha: "a".repeat(40), reason: "ปล่อย" } });
+    assert.equal(asked.status, 403);
+    assert.match(asked.text, /next=%2Freleases/);
+    assert.equal(ctx.merges.length, 0);
   });
 });
 

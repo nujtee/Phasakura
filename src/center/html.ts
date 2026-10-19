@@ -34,6 +34,7 @@ export const ACTION_LABELS: Record<string, string> = {
   SITE_BACKUP: "สำรองข้อมูลของเว็บ",
   BACKUP_DOWNLOAD: "ดาวน์โหลดไฟล์สำรอง",
   RELEASE_STARTED: "สั่ง Release",
+  PR_MERGED: "Merge pull request",
   MFA_OK: "ยืนยันรหัส 2 ขั้น",
   MFA_FAILED: "รหัส 2 ขั้นไม่ถูกต้อง",
   MFA_ENABLED: "เปิดใช้ยืนยันตัวตน 2 ขั้น",

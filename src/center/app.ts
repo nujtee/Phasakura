@@ -1,4 +1,4 @@
-import { listReleaseRuns, releaseSelection, startRelease, type ReleaseRun } from "./releases.ts";
+import { listOpenPulls, listReleaseRuns, mergePull, releaseSelection, startRelease, type OpenPull, type ReleaseRun } from "./releases.ts";
 import { CENTER_ROLES, type CenterActor, type CenterRole } from "../shared/center-protocol.ts";
 import { hashPassword, validatePasswordPolicy, verifyPassword } from "../worker/security/password.ts";
 import { randomToken, sha256Hex } from "../worker/security/tokens.ts";
@@ -140,6 +140,7 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     }
     if (key === "GET /releases") return releasesPage(ctx, me);
     if (key === "POST /releases") return requestRelease(ctx, me);
+    if (key === "POST /releases/merge") return mergeFromCenter(ctx, me);
     if (key === "POST /checks/run") {
       if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณสั่งตรวจไม่ได้");
       const result = await runChecks(ctx.env, { clock, lineFetch: options.lineFetch });
@@ -665,7 +666,24 @@ ${revokeHtml}
   // ---------------------------------------------------------------- release (phase C8)
 
   async function releasesPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
-    const runs = await listReleaseRuns(ctx.env, options.githubFetch);
+    const [runs, pulls] = await Promise.all([listReleaseRuns(ctx.env, options.githubFetch), listOpenPulls(ctx.env, options.githubFetch)]);
+    const ciText = (p: OpenPull) => {
+      const label = { success: '<span class="ok">ผ่าน</span>', failure: '<span class="bad">ไม่ผ่าน</span>', pending: '<span class="warn">กำลังตรวจ</span>', none: '<span class="muted">ไม่มีผลตรวจ</span>' }[p.ci];
+      return p.ciUrl ? `<a href="${esc(p.ciUrl)}" rel="noopener noreferrer" target="_blank">${label}</a>` : label;
+    };
+    const pullRows = pulls.ok
+      ? pulls.value.map((p) => `<tr><td>${p.url ? `<a href="${esc(p.url)}" rel="noopener noreferrer" target="_blank">#${p.number}</a>` : `#${p.number}`}</td>
+<td>${esc(p.title)}${p.draft ? ' <span class="muted small">(ฉบับร่าง)</span>' : ""}<br><span class="small muted">${esc(p.author ?? "")} · ${esc(bkk(p.createdAt))} · <span class="mono">${esc(p.sha.slice(0, 7))}</span></span></td>
+<td>${ciText(p)}</td>
+<td>${me.role !== "PLATFORM_OWNER" || p.draft ? "" : `<form method="post" action="/releases/merge" class="stack" style="min-width:220px">
+<input type="hidden" name="number" value="${p.number}"><input type="hidden" name="sha" value="${esc(p.sha)}">
+<input name="reason" required minlength="3" maxlength="100" placeholder="เหตุผล" aria-label="เหตุผลที่ merge #${p.number}">
+${p.ci === "success" ? "" : `<label class="check"><input type="checkbox" name="force" value="1" required> CI ยังไม่ผ่าน — ยืนยันว่าจะ merge</label>`}
+<button type="submit">Merge #${p.number}</button></form>`}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">ไม่มี PR ที่รอ merge</td></tr>'
+      : `<tr><td colspan="4" class="warn">${esc(pulls.reason)}</td></tr>`;
+    const pullCard = `<div class="card scroll"><h2 style="margin-top:0">Pull requests รอ merge</h2>
+<table><thead><tr><th>PR</th><th>รายการ</th><th>CI</th><th></th></tr></thead><tbody>${pullRows}</tbody></table>
+<p class="small muted">Merge แล้วโค้ดยังไม่ขึ้นเว็บ — เลือกเว็บด้านล่างแล้วกด "เริ่ม Release" · ดูรายละเอียดการเปลี่ยนแปลงได้จากลิงก์ #PR</p></div>`;
     const statusText = (r: ReleaseRun) => r.status !== "completed" ? `<span class="warn">${r.status === "queued" ? "รอคิว" : r.status === "waiting" ? "รออนุมัติ" : "กำลังทำ"}</span>`
       : r.conclusion === "success" ? '<span class="ok">สำเร็จ</span>' : `<span class="bad">${esc(r.conclusion ?? "ไม่สำเร็จ")}</span>`;
     const rows = runs.ok
@@ -683,10 +701,30 @@ ${revokeHtml}
 <p><button type="submit">เริ่ม Release</button></p></form>`;
     return html(page({
       title: "Release", user: me, current: "releases", flash,
-      body: `<h1>Release</h1><div class="card">${form}</div>
+      body: `<h1>Release</h1>${pullCard}<div class="card">${form}</div>
 <div class="card scroll"><h2 style="margin-top:0">Release ล่าสุด</h2><table><thead><tr><th>Run</th><th>รายการ</th><th>สถานะ</th><th>เริ่ม</th><th>commit</th><th>โดย</th><th></th></tr></thead><tbody>${rows}</tbody></table>
 <p class="small muted"><a href="/releases">รีเฟรช</a> · รายละเอียดแต่ละขั้นและจุดย้อนกลับ (bookmark) อยู่ในหน้า Summary ของ run บน GitHub</p></div>`,
     }), flash?.kind === "error" ? 422 : 200);
+  }
+
+  async function mergeFromCenter(ctx: Ctx, me: Me): Promise<Response> {
+    if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "Merge ได้เฉพาะเจ้าของแพลตฟอร์ม");
+    const form = await readForm(ctx.request);
+    const number = Number(form.get("number"));
+    const sha = form.get("sha") ?? "";
+    const reason = (form.get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 100) return releasesPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–100 ตัวอักษร" });
+    // CI is checked again now, not trusted from the page.
+    const pulls = await listOpenPulls(ctx.env, options.githubFetch);
+    const pull = pulls.ok ? pulls.value.find((p) => p.number === number) : undefined;
+    if (!pull) return releasesPage(ctx, me, { kind: "error", text: pulls.ok ? `ไม่พบ PR #${number} ที่เปิดอยู่` : pulls.reason });
+    if (pull.draft) return releasesPage(ctx, me, { kind: "error", text: `#${number} เป็นฉบับร่าง` });
+    if (pull.ci !== "success" && form.get("force") !== "1") return releasesPage(ctx, me, { kind: "error", text: `CI ของ #${number} ยังไม่ผ่าน — ติ๊กยืนยันถ้าต้องการ merge` });
+    const res = await mergePull(ctx.env, number, sha, `Merged from Center by ${me.email}: ${reason}`, options.githubFetch);
+    await audit(ctx, me.id, "PR_MERGED", null, reason, { number, title: pull.title.slice(0, 200), sha, ci: pull.ci, ok: res.ok, error: res.ok ? null : res.reason }).run();
+    return releasesPage(ctx, me, res.ok
+      ? { kind: "ok", text: `Merge #${number} แล้ว — เลือกเว็บแล้วกด "เริ่ม Release" เพื่อนำขึ้นเว็บ` }
+      : { kind: "error", text: `Merge #${number} ไม่สำเร็จ: ${res.reason}` });
   }
 
   async function requestRelease(ctx: Ctx, me: Me): Promise<Response> {
@@ -970,7 +1008,7 @@ function sensitiveReturnPath(method: string, path: string): string | null {
   if (method !== "POST") return null;
   const site = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup-download)$/.exec(path);
   if (site) return `/sites/${site[1]}`;
-  if (path === "/releases") return "/releases";
+  if (path === "/releases" || path === "/releases/merge") return "/releases";
   if (path === "/users" || path.startsWith("/users/")) return "/users";
   if (path === "/settings") return "/settings";
   if (path === "/account/recovery-codes" || path === "/account/password") return "/account";
