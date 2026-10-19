@@ -37,6 +37,20 @@ export function signingKey(secret: string | undefined): Promise<{ keyId: string;
 export class SiteClient {
   constructor(private readonly env: CenterEnv, private readonly timeoutMs = 8000, private readonly clock: () => Date = () => new Date()) {}
 
+  /** A signed GET whose answer is a file (backups): the raw Response, or null when the site cannot be reached. */
+  async raw(site: CenterSite, path: string, actor: CenterActor, timeoutMs = 30000): Promise<Response | null> {
+    const binding = this.env[site.binding] as Fetcher | undefined;
+    const key = await signingKey(this.env.CENTER_SIGNING_KEY);
+    if (!binding || typeof binding.fetch !== "function" || !key) return null;
+    const url = `https://${site.domain}${path}`;
+    const headers = await signCenterRequest({ privateKey: key.key, keyId: key.keyId, method: "GET", url, actor, now: this.clock() });
+    try {
+      return await binding.fetch(new Request(url, { headers: { ...headers, "User-Agent": "phasakura-center/1" }, signal: AbortSignal.timeout(timeoutMs) }));
+    } catch {
+      return null;
+    }
+  }
+
   async call<T>(site: CenterSite, method: "GET" | "POST" | "PUT", path: string, actor: CenterActor, body?: unknown): Promise<SiteResponse<T>> {
     const binding = this.env[site.binding] as Fetcher | undefined;
     if (!binding || typeof binding.fetch !== "function") return { status: 0, error: { code: "NO_BINDING", message: `service binding ${site.binding} is missing` } };

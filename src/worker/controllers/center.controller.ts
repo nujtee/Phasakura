@@ -64,6 +64,32 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       return jsonOk(await services(ctx).centerAdmin.setSuspension(req, body.suspended, note, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
+    /** Backups of this site's database in its private bucket (phase C8), newest first. */
+    listBackups: (async (ctx) => {
+      await verify(ctx);
+      return jsonOk({ items: await services(ctx).centerAdmin.listBackups() }, NO_STORE);
+    }) satisfies Handler,
+
+    /** A backup now (PLATFORM_OWNER / OPERATOR, reason). */
+    createBackup: (async (ctx) => {
+      const req = await verify(ctx);
+      return jsonOk(await services(ctx).centerAdmin.backupNow(req, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
+    /** `?name=` — the gzip file itself (PLATFORM_OWNER, reason; audited). */
+    downloadBackup: (async (ctx) => {
+      const req = await verify(ctx);
+      const name = ctx.url.searchParams.get("name") ?? "";
+      const file = await services(ctx).centerAdmin.downloadBackup(req, name, requestMeta(ctx));
+      return new Response(file.body, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/gzip", "Content-Length": String(file.size), "Cache-Control": "no-store",
+          "Content-Disposition": `attachment; filename="${name}"`, "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }) satisfies Handler,
+
     /** `{ email, name }` — a new site's first owner (PLATFORM_OWNER, phase C7): returns a one-time invite link. */
     inviteOwner: (async (ctx) => {
       const req = await verify(ctx);

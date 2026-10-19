@@ -6,6 +6,7 @@ import { newId, randomToken, sha256Hex } from "../security/tokens.ts";
 import { addMs, iso, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { CenterRequest } from "./center-access.service.ts";
 import type { PasswordLinkService } from "./password-link.service.ts";
+import { BackupService, type BackupDto } from "./backup.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
 import { CENTER_SESSION_TTL_MS, type NewSession, type SessionService } from "./session.service.ts";
 
@@ -57,6 +58,8 @@ export class CenterAdminService {
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
     private readonly links?: PasswordLinkService,
+    private readonly backups?: BackupService,
+    private readonly siteName = "site",
   ) {}
 
   // ---------------------------------------------------------------- SSO
@@ -155,6 +158,46 @@ export class CenterAdminService {
       this.audit(caller.id, "CENTER_OWNER_INVITED", userId, null, { email, displayName: name, created: !same, expiresAt: link.expiresAt }, req, reason, meta),
     ]);
     return { userId, created: !same, url: link.url, expiresAt: link.expiresAt };
+  }
+
+  // ---------------------------------------------------------------- backups (phase C8)
+
+  /** A backup now (PLATFORM_OWNER / OPERATOR). */
+  async backupNow(req: CenterRequest, meta: RequestMeta): Promise<BackupDto> {
+    requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
+    const reason = requireReason(req.actor);
+    const backups = this.requireBackups();
+    const caller = centerUser(req.actor);
+    const done = await backups.create("CENTER", this.siteName);
+    await this.db.batch([
+      ...this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }),
+      this.audit(caller.id, "CENTER_BACKUP", done.name, null, { size: done.size, tables: done.tables, rows: done.rows, sha256: done.sha256 }, req, reason, meta),
+    ]);
+    return done;
+  }
+
+  async listBackups(): Promise<BackupDto[]> {
+    return this.backups ? this.backups.list() : [];
+  }
+
+  /** The file itself — guest data, so PLATFORM_OWNER only, with a reason, audited before it is handed over. */
+  async downloadBackup(req: CenterRequest, name: string, meta: RequestMeta): Promise<{ body: ReadableStream; size: number }> {
+    requireRole(req.actor, ["PLATFORM_OWNER"]);
+    const reason = requireReason(req.actor);
+    if (!BackupService.isName(name)) throw new ValidationError({ name: "INVALID" });
+    const file = await this.requireBackups().open(name);
+    if (!file) throw new HttpError(404, "BACKUP_NOT_FOUND", "No such backup");
+    const caller = centerUser(req.actor);
+    await this.db.batch([
+      ...this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }),
+      this.audit(caller.id, "CENTER_BACKUP_DOWNLOAD", name, null, { size: file.size }, req, reason, meta),
+    ]);
+    return file;
+  }
+
+  private requireBackups(): BackupService {
+    if (!this.backups) throw new HttpError(503, "BACKUPS_UNAVAILABLE", "Backups are not set up on this site");
+    return this.backups;
   }
 
   // ---------------------------------------------------------------- reads

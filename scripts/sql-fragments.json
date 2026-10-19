@@ -84,6 +84,10 @@
     "n + 3",
     "siteUser()"
   ],
+  "src/worker/services/backup.service.ts": [
+    "ident(t.name)",
+    "select"
+  ],
   "src/worker/services/translation-coverage.service.ts": [
     "has(k.tt, k.fk, k.text, \"en\")",
     "has(k.tt, k.fk, k.text, \"zh-CN\")",

@@ -1,4 +1,5 @@
 name: Release
+run-name: "Release ${{ inputs.sites }}${{ inputs.note && format(' — {0}', inputs.note) || '' }}"
 
 # Center phase C1: the ONLY way code reaches the booking sites (Workers Builds is switched off for every site).
 # Run it from GitHub → Actions → Release → Run workflow. Each site in turn: preflight → D1 Time Travel bookmark
@@ -26,6 +27,10 @@ on:
         description: '"all", or site slugs separated by spaces (e.g. "chomkhao cherngdoi"); "center" = the Center console'
         default: all
         required: true
+      note:
+        description: Optional — who / why (Center fills this in when it starts a release)
+        required: false
+        default: ""
 
 concurrency:
   group: release

@@ -17,6 +17,9 @@ export interface CenterEnv {
   /** Secrets of Center's own LINE Official Account (Messaging API channel) for system alerts (phase C5). */
   CENTER_LINE_TOKEN?: string;
   CENTER_LINE_SECRET?: string;
+  /** Release from Center (phase C8): "owner/repo" (var) and a fine-grained token with Actions read/write on it (secret). */
+  CENTER_GITHUB_REPO?: string;
+  CENTER_GITHUB_TOKEN?: string;
   /** SITE_<SLUG> service bindings. */
   [binding: string]: unknown;
 }

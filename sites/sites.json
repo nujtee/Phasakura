@@ -4,7 +4,8 @@
   "center": {
     "$comment": "Center Management console (phase C4): its own Worker and D1; reaches every site through a service binding. center/wrangler.jsonc is GENERATED from this registry.",
     "domain": "center.phasakura.com",
-    "d1": { "name": "center-db", "id": "0a640198-a742-43ac-b1d9-96facf21731e" }
+    "d1": { "name": "center-db", "id": "0a640198-a742-43ac-b1d9-96facf21731e" },
+    "githubRepo": "nujtee/Phasakura"
   },
   "reservedRateLimitBases": [
     { "base": 3000, "note": "suanpho Worker exists in the account (created 2026-10-15); not on the platform" }

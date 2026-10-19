@@ -74,6 +74,8 @@ import { createEmailSender } from "./email/provider.ts";
 import type { FetchLike as EmailFetch } from "./email/sender.ts";
 import { CreditRepository } from "./repositories/credit.repository.ts";
 import { CreditService } from "./services/credit.service.ts";
+import { BackupService } from "./services/backup.service.ts";
+import { siteSlug } from "../shared/site-name.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -117,6 +119,7 @@ export interface Services {
   center: CenterAccessService;
   /** What Center may change on this site: SSO, sign-out, suspension (phase C3). */
   centerAdmin: CenterAdminService;
+  backups: BackupService;
   /** Footer map thumbnail tiles (OpenStreetMap, through the Worker). */
   mapTiles: MapTileService;
   /** E-mail notifications through Zoho Mail or Resend (migration 0023). */
@@ -189,6 +192,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const authorization = new AuthorizationService(log);
   const sessions = new SessionService(new SessionRepository(db), rbac, clock);
   const links = new PasswordLinkService(resets, resolveBaseUrl(env, options.origin), clock);
+  const backups = new BackupService(db, env.MEDIA_PRIVATE, clock);
   const delivery = options.delivery ?? new ConsoleOrNoopDelivery(env.APP_ENV === "development");
 
   const mediaRepo = new MediaRepository(db);
@@ -268,7 +272,8 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     health,
     monitoring: new MonitoringService(new MonitoringRepository(db), health, authorization, clock, env),
     center: new CenterAccessService(env.CENTER_PUBLIC_KEYS, new CenterNonceRepository(db), log, clock),
-    centerAdmin: new CenterAdminService(db, new CenterAdminRepository(db), sessions, log, clock, links),
+    centerAdmin: new CenterAdminService(db, new CenterAdminRepository(db), sessions, log, clock, links, backups, siteSlug(resolveBaseUrl(env, options.origin))),
+    backups,
     adminMenu: new AdminMenuService(db, new AdminMenuRepository(db), authorization, log, clock),
     sessions,
     authorization,

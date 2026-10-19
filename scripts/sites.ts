@@ -43,6 +43,8 @@ export interface Site {
 export interface CenterEntry {
   domain: string;
   d1: { name: string; id: string };
+  /** "owner/repo" whose Actions → Release Center may start (phase C8). */
+  githubRepo?: string;
 }
 export interface Registry {
   template: string;
@@ -98,6 +100,7 @@ export function centerConfig(registry: Registry, template: Obj): Obj {
     vars: {
       APP_BASE_URL: `https://${center.domain}`,
       CENTER_SITES: JSON.stringify(registry.sites.map((s) => ({ slug: s.slug, name: s.name, domain: s.domain, binding: siteBinding(s.slug) }))),
+      ...(center.githubRepo ? { CENTER_GITHUB_REPO: center.githubRepo } : {}),
     },
     d1_databases: [{ binding: "DB", database_name: center.d1.name, database_id: center.d1.id, migrations_dir: "migrations" }],
     services: registry.sites.map((s) => ({ binding: siteBinding(s.slug), service: s.slug })),
@@ -150,6 +153,7 @@ export function validateRegistry(registry: Registry): string[] {
     if (c.d1?.name !== "center-db") out.push('center: D1 name must be "center-db"');
     if (!UUID.test(c.d1?.id ?? "")) out.push("center: D1 id is not a UUID");
     if (registry.sites.some((s) => s.d1.id === c.d1?.id)) out.push("center: D1 id is a site's database");
+    if (c.githubRepo !== undefined && !/^[A-Za-z0-9_.-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/.test(c.githubRepo)) out.push('center: githubRepo must be "owner/repo"');
   }
   return out;
 }
