@@ -1,3 +1,4 @@
+import { SqliteD1 } from "../helpers/sqlite-d1.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
@@ -368,5 +369,87 @@ describe("A new site's first owner (phase C7)", () => {
     const res = await signed("POST", "/api/center/owner", OWNER, { email: "another@site.test", name: "Owner" });
     assert.equal(res.status, 409);
     assert.equal(res.error?.code, "SITE_HAS_OWNER");
+  });
+});
+
+describe("Backups (phase C8)", () => {
+  const gunzip = async (bytes: Uint8Array) => new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  const bucket = (h: Awaited<ReturnType<typeof c3>>["h"]) => h.env.MEDIA_PRIVATE as unknown as { objects: Map<string, { bytes: Uint8Array }> };
+
+  it("a backup into the private bucket: OPERATOR / OWNER with a reason; SUPPORT can only list; audited", async () => {
+    const { h, signed } = await c3();
+    assert.equal((await signed("POST", "/api/center/backups", SUPPORT)).status, 403);
+    assert.equal((await signed("POST", "/api/center/backups", { ...OPERATOR, reason: "" })).status, 422);
+    const made = await signed<{ name: string; size: number; tables: number; rows: number; sha256: string; trigger: string }>("POST", "/api/center/backups", OPERATOR);
+    assert.equal(made.status, 200, JSON.stringify(made.error));
+    assert.match(made.data.name, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-[A-Za-z0-9_-]{6}\.sql\.gz$/);
+    assert.equal(made.data.trigger, "CENTER");
+    assert.ok(made.data.tables > 30 && made.data.rows > 0);
+    assert.ok(bucket(h).objects.has(`backups/${made.data.name}`));
+    const list = await signed<{ items: { name: string; rows: number; sha256: string }[] }>("GET", "/api/center/backups", SUPPORT);
+    assert.deepEqual(list.data.items.map((b) => [b.name, b.rows, b.sha256]), [[made.data.name, made.data.rows, made.data.sha256]]);
+    const audit = h.audits("CENTER_BACKUP");
+    assert.equal(audit.length, 1);
+    assert.match(audit[0]!.new_value!, /ops@phasakura\.com/);
+  });
+
+  it("download: PLATFORM_OWNER only; the file is SQL that rebuilds the database in an empty one, without sessions", async () => {
+    const { h, signed, key } = await c3();
+    await h.login("owner@site.test"); // a live session must not travel in a backup
+    const made = await signed<{ name: string; sha256: string }>("POST", "/api/center/backups", OWNER);
+    const path = `/api/center/backups/download?name=${encodeURIComponent(made.data.name)}`;
+    const raw = async (p: string, actor: CenterActor) => h.app.fetch(new Request(`${ORIGIN}${p}`, {
+      headers: { ...(await signCenterRequest({ privateKey: key.privateKey, keyId: "c1", method: "GET", url: `${ORIGIN}${p}`, actor, now: h.now })), "CF-Connecting-IP": "198.51.100.7" },
+    }), h.env);
+    assert.equal((await raw(path, OPERATOR)).status, 403);
+    assert.equal((await raw("/api/center/backups/download?name=..%2Fslips%2Fx", OWNER)).status, 422);
+    assert.equal((await raw("/api/center/backups/download?name=2026-01-01T00-00-00Z-abcdef.sql.gz", OWNER)).status, 404);
+    const res = await raw(path, OWNER);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("Content-Type"), "application/gzip");
+    assert.match(res.headers.get("Content-Disposition") ?? "", /attachment; filename="\d{4}-.*\.sql\.gz"/);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    assert.equal(digest, made.data.sha256);
+    assert.equal(h.audits("CENTER_BACKUP_DOWNLOAD").length, 1);
+    const sql = await gunzip(bytes);
+    assert.match(sql, /^-- [a-z0-9-]+ D1 backup .* schema 0031_center_sso_suspension\.sql/);
+    assert.match(sql, /CREATE TABLE users/);
+    assert.match(sql, /INSERT INTO "users" \(/);
+    assert.ok(!/INSERT INTO "sessions"/.test(sql), "no sessions");
+    assert.ok(sql.indexOf("CREATE TRIGGER") > sql.lastIndexOf('\nINSERT INTO "'), "triggers after the rows");
+    // Restore into a fresh database and compare.
+    const fresh = new SqliteD1();
+    fresh.raw.exec(sql);
+    const count = async (db: SqliteD1, t: string) => (await db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).first<{ n: number }>())!.n;
+    for (const t of ["roles", "permissions", "role_permissions", "site_settings", "languages"]) {
+      assert.equal(await count(fresh, t), await count(h.db as SqliteD1, t), t);
+    }
+    // The backup was taken before Center's own account was added for the request: only the site's owner.
+    assert.equal((await fresh.prepare("SELECT group_concat(email) AS e FROM users").first<{ e: string }>())!.e, "owner@site.test");
+    assert.equal(await count(fresh, "sessions"), 0);
+    assert.ok(await count(h.db as SqliteD1, "sessions") > 0);
+  });
+
+  it("daily backup from the cron at 03:17 Bangkok, once a day; only the newest 30 are kept", async () => {
+    const { h, signed } = await c3();
+    const at = (iso: string) => { h.now = new Date(iso); return h.app.scheduled(h.env, h.now.getTime()); };
+    await at("2026-10-20T20:16:00Z");
+    assert.equal(bucket(h).objects.size, 0, "not at another minute");
+    await at("2026-10-20T20:17:00Z");
+    assert.equal(bucket(h).objects.size, 1);
+    await at("2026-10-20T20:17:30Z");
+    assert.equal(bucket(h).objects.size, 1, "not twice the same day");
+    await at("2026-10-21T20:17:00Z");
+    assert.equal(bucket(h).objects.size, 2);
+    const list = await signed<{ items: { trigger: string; createdAt: string }[] }>("GET", "/api/center/backups", SUPPORT);
+    assert.deepEqual(list.data.items.map((b) => [b.trigger, b.createdAt]), [["CRON", "2026-10-21T20:17:00.000Z"], ["CRON", "2026-10-20T20:17:00.000Z"]]);
+    for (let i = 0; i < 31; i++) {
+      h.now = new Date(Date.parse("2026-11-01T00:00:00Z") + i * 1000);
+      await signed("POST", "/api/center/backups", OWNER);
+    }
+    const kept = await signed<{ items: { createdAt: string }[] }>("GET", "/api/center/backups", SUPPORT);
+    assert.equal(kept.data.items.length, 30);
+    assert.equal(kept.data.items.at(-1)!.createdAt, "2026-11-01T00:00:01.000Z", "the oldest went first");
   });
 });

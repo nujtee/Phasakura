@@ -83,7 +83,7 @@ export function seededSite(seed: SeedSite): FakeD1 {
 
 /** In-memory R2 bucket (the subset we use). */
 export class MemoryBucket implements R2BucketLike {
-  readonly objects = new Map<string, { bytes: Uint8Array; contentType?: string }>();
+  readonly objects = new Map<string, { bytes: Uint8Array; contentType?: string; customMetadata?: Record<string, string>; uploaded: Date }>();
 
   async head(key: string) {
     return this.objects.has(key) ? { key } : null;
@@ -95,9 +95,21 @@ export class MemoryBucket implements R2BucketLike {
     return { body: new Blob([o.bytes as BlobPart]).stream(), size: o.bytes.length };
   }
 
-  async put(key: string, value: ArrayBuffer | Uint8Array, options?: { httpMetadata?: { contentType?: string } }) {
-    this.objects.set(key, { bytes: new Uint8Array(value), contentType: options?.httpMetadata?.contentType });
+  async put(key: string, value: ArrayBuffer | Uint8Array, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> }) {
+    this.objects.set(key, { bytes: new Uint8Array(value), contentType: options?.httpMetadata?.contentType, customMetadata: options?.customMetadata, uploaded: new Date() });
     return { key };
+  }
+
+  async list(options: { prefix?: string; cursor?: string; limit?: number }) {
+    const keys = [...this.objects.keys()].filter((k) => k.startsWith(options.prefix ?? "")).sort();
+    const start = options.cursor ? Number(options.cursor) : 0;
+    const limit = options.limit ?? 1000;
+    const page = keys.slice(start, start + limit);
+    const truncated = start + limit < keys.length;
+    return {
+      objects: page.map((key) => { const o = this.objects.get(key)!; return { key, size: o.bytes.length, uploaded: o.uploaded, customMetadata: o.customMetadata }; }),
+      truncated, cursor: truncated ? String(start + limit) : undefined,
+    };
   }
 
   async delete(key: string) {

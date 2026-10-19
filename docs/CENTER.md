@@ -82,6 +82,53 @@ Center ตรวจทุกเว็บ **ทุก 5 นาที** (cron ข�
 
 ทุกคำสั่งบันทึกทั้งใน "บันทึกการใช้งาน" ของ Center และใน Audit logs ของเว็บนั้น ถ้าเว็บติดต่อไม่ได้ หน้านี้ยังเปิดได้และบอกสาเหตุ ส่วนคำสั่งที่ไม่สำเร็จจะถูกบันทึกว่าล้มเหลว
 
+## Release และสำรองข้อมูลจาก Center (เฟส C8)
+
+### Release
+
+เมนู **Release** แสดง run ล่าสุดของ GitHub Actions → Release สถานะเป็น กำลังทำ / รออนุมัติ / สำเร็จ / ไม่สำเร็จ พร้อมลิงก์ไปหน้า run
+
+- **เจ้าของแพลตฟอร์ม** เลือกเว็บ (หรือ "ทุกเว็บ + Center") ใส่เหตุผล แล้วกด **เริ่ม Release**
+- Center สั่ง GitHub ให้รัน workflow Release บน `main` โดยชื่อ run จะเป็น `Release <เว็บ> — <อีเมล>: <เหตุผล>`
+- ขั้นตอนจริงยังอยู่ใน GitHub Actions เหมือนเดิม: preflight → จุดย้อนกลับ D1 → migrate → deploy → smoke test
+
+**ตั้งค่าครั้งเดียว (ทำเอง ห้ามวาง token ในแชต):**
+1. GitHub → รูปโปรไฟล์ → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**
+   - **Token name:** `center-release`
+   - **Expiration:** 90 วัน หรือตามสะดวก (หมดแล้วต้องสร้างใหม่)
+   - **Repository access:** Only select repositories → `nujtee/Phasakura`
+   - **Permissions → Repository permissions → Actions:** **Read and write** (ที่เหลือปล่อยเป็น No access; Metadata: Read-only ถูกเลือกให้อัตโนมัติ)
+   - กด **Generate token** แล้วคัดลอกไว้ชั่วคราว
+2. Cloudflare → **Workers & Pages** → **center** → **Settings** → **Variables and Secrets** → **Add**
+   - Type: **Secret**
+   - Name: `CENTER_GITHUB_TOKEN`
+   - Value: token จากข้อ 1 → **Deploy**
+3. เปิด Center → **Release** ควรเห็นรายการ run ล่าสุด
+   - repo กำหนดใน `sites/sites.json` → `center.githubRepo` (var `CENTER_GITHUB_REPO`)
+   - token หมดอายุ: Center จะขึ้น "GitHub ไม่รับ token" ให้ทำข้อ 1–2 ใหม่
+
+### สำรองข้อมูล
+
+- แต่ละเว็บสำรองฐานข้อมูลของตัวเองเป็นไฟล์ `.sql.gz` ลง R2 ส่วนตัวของเว็บนั้น (`<slug>-media-private/backups/`)
+  - ข้อมูลไม่ออกจากบัญชี Cloudflare และไม่ผ่าน GitHub
+- **อัตโนมัติ** ทุกวัน 03:17 น. (เวลาไทย) เก็บ 30 ไฟล์ล่าสุด
+- **หน้าเว็บใน Center → สำรองข้อมูล**
+  - เจ้าของแพลตฟอร์มและผู้ดูแลระบบกด "สำรองตอนนี้" ได้ (ต้องใส่เหตุผล)
+  - การ์ดเตือนสีเหลืองถ้าไม่มีไฟล์ในช่วง 48 ชั่วโมง
+- **ดาวน์โหลด:** เจ้าของแพลตฟอร์มเท่านั้น ต้องใส่เหตุผล บันทึกทั้งใน Center และใน Audit logs ของเว็บ
+  - ไฟล์มีข้อมูลแขก ใช้เมื่อจำเป็น เช่น เจ้าของเว็บขอข้อมูลตอนเลิกใช้บริการ
+- ในไฟล์ไม่มี session, ลิงก์รีเซ็ตรหัส, ตั๋ว SSO และ nonce (มีแค่โครงตาราง) จึงไม่มีใครเข้าระบบค้างอยู่ได้จากการกู้คืน
+
+**กู้คืนจากไฟล์ (ลงฐานข้อมูลใหม่ที่ว่างเท่านั้น):**
+```bash
+gunzip -k 2026-10-19T20-17-00Z-abc123.sql.gz
+npx wrangler d1 create <slug>-restore --location=apac
+npx wrangler d1 execute <slug>-restore --remote --file 2026-10-19T20-17-00Z-abc123.sql
+```
+ตรวจข้อมูลในฐานใหม่ก่อน แล้วค่อยเปลี่ยน D1 id ของเว็บใน `sites/sites.json` → `npm run sites:generate` → Release
+
+ถ้าแค่ย้อนเวลาภายใน 30 วัน ใช้ **D1 Time Travel** (`wrangler d1 time-travel restore`) เร็วกว่า: bookmark ก่อนแต่ละ Release อยู่ในหน้า Summary ของ run
+
 ## เปลี่ยน key (สงสัยว่ารั่ว)
 
 Center setup → `keys` อีกครั้ง → Center ใช้ key ใหม่ทันที (เว็บจะตอบ 401 จนกว่าจะได้ public key ใหม่) → ใส่ public key ใหม่ใน

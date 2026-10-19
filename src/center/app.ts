@@ -1,3 +1,4 @@
+import { listReleaseRuns, releaseSelection, startRelease, type ReleaseRun } from "./releases.ts";
 import { CENTER_ROLES, type CenterActor, type CenterRole } from "../shared/center-protocol.ts";
 import { hashPassword, validatePasswordPolicy, verifyPassword } from "../worker/security/password.ts";
 import { randomToken, sha256Hex } from "../worker/security/tokens.ts";
@@ -25,6 +26,8 @@ export interface CenterAppOptions {
   hashIterations?: number;
   /** LINE Messaging API calls (tests pass a fake). */
   lineFetch?: FetchLike;
+  /** GitHub API calls for Release from Center (tests pass a fake). */
+  githubFetch?: FetchLike;
 }
 
 interface Ctx {
@@ -103,12 +106,19 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (sso && request.method === "POST") return startSso(ctx, me, sso[1]!);
     const detail = /^\/sites\/([a-z][a-z0-9-]{1,30})$/.exec(url.pathname);
     if (detail && request.method === "GET") return sitePage(ctx, me, detail[1]!);
-    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner)$/.exec(url.pathname);
+    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup|backup-download)$/.exec(url.pathname);
     if (siteAction && request.method === "POST") {
       const slug = siteAction[1]!;
-      return siteAction[2] === "suspension" ? changeSuspension(ctx, me, slug)
-        : siteAction[2] === "revoke" ? revokeSiteSessions(ctx, me, slug) : inviteSiteOwner(ctx, me, slug);
+      switch (siteAction[2]) {
+        case "suspension": return changeSuspension(ctx, me, slug);
+        case "revoke": return revokeSiteSessions(ctx, me, slug);
+        case "owner": return inviteSiteOwner(ctx, me, slug);
+        case "backup": return backupSite(ctx, me, slug);
+        default: return downloadBackup(ctx, me, slug);
+      }
     }
+    if (key === "GET /releases") return releasesPage(ctx, me);
+    if (key === "POST /releases") return requestRelease(ctx, me);
     if (key === "POST /checks/run") {
       if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณสั่งตรวจไม่ได้");
       const result = await runChecks(ctx.env, { clock, lineFetch: options.lineFetch });
@@ -295,12 +305,13 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
     const client = new SiteClient(ctx.env, 5000, clock);
     const actor = actorOf(me);
-    const [checks, alerts, log, suspension, users] = await Promise.all([
+    const [checks, alerts, log, suspension, users, backups] = await Promise.all([
       ctx.repo.db.prepare("SELECT site, checked_at, http_status, schema_state, cron_state, errors_24h, slips_waiting, suspended, detail FROM center_site_checks WHERE site = ?1 ORDER BY checked_at DESC LIMIT 96").bind(slug).all<CheckRow>(),
       ctx.repo.db.prepare("SELECT type, open_since, detail FROM center_alert_states WHERE site = ?1 AND open_since IS NOT NULL").bind(slug).all<{ type: string; open_since: string; detail: string | null }>(),
       ctx.repo.db.prepare("SELECT type, event, message, delivery, created_at FROM center_alert_log WHERE site = ?1 ORDER BY created_at DESC LIMIT 30").bind(slug).all<{ type: string; event: string; message: string; delivery: string; created_at: string }>(),
       client.call<SuspensionDto>(site, "GET", "/api/center/suspension", actor),
       client.call<{ items: SiteUserDto[] }>(site, "GET", "/api/center/users", actor),
+      client.call<{ items: BackupDto[] }>(site, "GET", "/api/center/backups", actor),
     ]);
     const openHtml = alerts.results.length
       ? alerts.results.map((a) => `<li class="bad">${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ${esc(a.detail ?? "")} <span class="muted small">(ตั้งแต่ ${esc(bkk(a.open_since))})</span></li>`).join("")
@@ -359,6 +370,21 @@ ${me.role === "PLATFORM_OWNER" ? `<details><summary class="small">พักก�
 <p><button type="submit">${pendingOwner ? "สร้างลิงก์ใหม่" : "สร้างบัญชีเจ้าของเว็บ"}</button></p></form></div>`;
     }
 
+    // ---- backups (phase C8): in the site's own private bucket; the file only for PLATFORM_OWNER (guest data).
+    const backupRows = backups.status === 200 && backups.data
+      ? backups.data.items.slice(0, 10).map((b) => `<tr><td class="small">${esc(bkk(b.createdAt))}</td><td class="small">${b.trigger === "CRON" ? "อัตโนมัติ" : "จาก Center"}</td>
+<td class="small">${esc(sizeText(b.size))}</td><td class="small">${esc(b.rows ?? "—")} แถว</td>
+<td>${me.role === "PLATFORM_OWNER" ? `<form method="post" action="/sites/${esc(slug)}/backup-download" class="inline"><input type="hidden" name="name" value="${esc(b.name)}"><input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล" aria-label="เหตุผลที่ดาวน์โหลด" style="width:9rem"><button class="plain" type="submit">ดาวน์โหลด</button></form>` : ""}</td></tr>`).join("")
+        || '<tr><td colspan="5" class="muted">ยังไม่มีไฟล์สำรอง (สำรองอัตโนมัติทุกวัน 03:17 น.)</td></tr>'
+      : `<tr><td colspan="5" class="warn">อ่านรายการไม่ได้: ${esc(siteError(backups.status, backups.error?.code))}</td></tr>`;
+    const latestBackup = backups.data?.items[0];
+    const backupStale = !latestBackup || ctx.now.getTime() - new Date(latestBackup.createdAt).getTime() > 48 * 3_600_000;
+    const backupHtml = `<div class="card scroll"><h2 style="margin-top:0">สำรองข้อมูล</h2>
+<p class="small ${backups.status === 200 && backupStale ? "warn" : "muted"}">ฐานข้อมูลของเว็บนี้สำรองเป็นไฟล์ .sql.gz ไว้ในที่เก็บไฟล์ส่วนตัวของเว็บเอง (ในบัญชี Cloudflare ของแพลตฟอร์ม) อัตโนมัติวันละครั้ง เก็บ 30 ไฟล์ล่าสุด${backups.status === 200 && backupStale ? " — ไม่มีไฟล์สำรองในช่วง 48 ชั่วโมงที่ผ่านมา" : ""}</p>
+<table><thead><tr><th>เวลา</th><th>ที่มา</th><th>ขนาด</th><th>ข้อมูล</th><th></th></tr></thead><tbody>${backupRows}</tbody></table>
+${me.role === "SUPPORT_READONLY" ? "" : `<form method="post" action="/sites/${esc(slug)}/backup" class="inline" style="margin-top:12px">${reasonInput("เหตุผล เช่น ก่อนแก้ข้อมูลจำนวนมาก")}<button type="submit">สำรองตอนนี้</button></form>`}
+${me.role === "PLATFORM_OWNER" ? '<p class="small muted">ไฟล์มีข้อมูลแขก: ดาวน์โหลดเฉพาะเมื่อจำเป็น (เช่น เจ้าของเว็บขอข้อมูลตอนเลิกใช้บริการ) ทุกครั้งถูกบันทึกทั้งใน Center และในเว็บ</p>' : ""}</div>`;
+
     const revokeHtml = me.role === "SUPPORT_READONLY" ? "" : `<div class="card"><h2 style="margin-top:0">session ของ Center ในเว็บนี้</h2>
 <p class="small muted">ออกจากหลังบ้านของเว็บนี้ทุกคนที่เข้ามาจาก Center (บัญชี "Center · …") และยกเลิกตั๋ว SSO ที่ยังไม่ได้ใช้ — admin ของเว็บเองไม่ถูกกระทบ</p>
 <form method="post" action="/sites/${esc(slug)}/revoke" class="inline">${reasonInput("เหตุผล")}<button class="danger" type="submit">ตัด session ของ Center ทั้งหมด</button></form></div>`;
@@ -372,6 +398,7 @@ ${ownerHtml}
 <div class="card"><h2 style="margin-top:0">ปัญหาที่เปิดอยู่</h2><ul>${openHtml}</ul></div>
 <div class="card scroll"><h2 style="margin-top:0">ผู้ดูแลของเว็บ</h2><table><thead><tr><th>ชื่อ</th><th>บทบาท</th><th>สถานะ</th><th>เข้าล่าสุด</th></tr></thead><tbody>${userRows}</tbody></table>
 <p class="small muted">อ่านจากเว็บโดยตรง (ไม่รวมบัญชี Center) — เพิ่ม / แก้ผู้ใช้ทำในหลังบ้านของเว็บ</p></div>
+${backupHtml}
 ${revokeHtml}
 <div class="card scroll"><h2 style="margin-top:0">ผลตรวจล่าสุด (8 ชั่วโมง)</h2><table><thead><tr><th>เวลา</th><th>สถานะ</th><th>ฐานข้อมูล</th><th>cron</th><th>error 24 ชม.</th><th>สลิปรอตรวจ</th><th>รายละเอียด</th></tr></thead>
 <tbody>${checkRows || '<tr><td colspan="7" class="muted">ยังไม่เคยตรวจ</td></tr>'}</tbody></table></div>
@@ -420,6 +447,85 @@ ${revokeHtml}
     }
     return sitePage(ctx, me, slug, { kind: "ok", text: res.data.created ? `สร้างบัญชีเจ้าของ ${site.name} แล้ว` : "สร้างลิงก์ใหม่แล้ว (ลิงก์เดิมใช้ไม่ได้)" },
       { email, url: res.data.url, expiresAt: res.data.expiresAt });
+  }
+
+  async function backupSite(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+    const site = ctx.sites.find((s) => s.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณทำไม่ได้");
+    const reason = ((await readForm(ctx.request)).get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    const res = await new SiteClient(ctx.env, 30000, clock).call<BackupDto>(site, "POST", "/api/center/backups", { ...actorOf(me), reason });
+    await audit(ctx, me.id, "SITE_BACKUP", site.slug, reason, { ok: res.status === 200, name: res.data?.name ?? null, size: res.data?.size ?? null, error: res.error?.code ?? null }).run();
+    if (res.status !== 200 || !res.data) return sitePage(ctx, me, slug, { kind: "error", text: `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}` });
+    return sitePage(ctx, me, slug, { kind: "ok", text: `สำรองข้อมูล ${site.name} แล้ว (${sizeText(res.data.size)}, ${res.data.rows ?? 0} แถว)` });
+  }
+
+  async function downloadBackup(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+    const site = ctx.sites.find((s) => s.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "ดาวน์โหลดไฟล์สำรองได้เฉพาะเจ้าของแพลตฟอร์ม");
+    const form = await readForm(ctx.request);
+    const name = form.get("name") ?? "";
+    const reason = (form.get("reason") ?? "").trim();
+    if (!BACKUP_NAME.test(name)) throw new HttpError(422, "ชื่อไฟล์ไม่ถูกต้อง");
+    if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผลที่ดาวน์โหลด 3–300 ตัวอักษร" });
+    const res = await new SiteClient(ctx.env, 8000, clock).raw(site, `/api/center/backups/download?name=${encodeURIComponent(name)}`, { ...actorOf(me), reason });
+    const ok = res?.status === 200 && res.headers.get("Content-Type") === "application/gzip";
+    await audit(ctx, me.id, "BACKUP_DOWNLOAD", site.slug, reason, { ok, name, status: res?.status ?? 0 }).run();
+    if (!ok || !res?.body) {
+      await res?.body?.cancel();
+      return sitePage(ctx, me, slug, { kind: "error", text: `ดาวน์โหลดไม่ได้ (${res ? `HTTP ${res.status}` : "ติดต่อเว็บไม่ได้"})` });
+    }
+    return new Response(res.body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/gzip", "Content-Disposition": `attachment; filename="${site.slug}-${name}"`,
+        ...(res.headers.get("Content-Length") ? { "Content-Length": res.headers.get("Content-Length")! } : {}),
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------- release (phase C8)
+
+  async function releasesPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
+    const runs = await listReleaseRuns(ctx.env, options.githubFetch);
+    const statusText = (r: ReleaseRun) => r.status !== "completed" ? `<span class="warn">${r.status === "queued" ? "รอคิว" : r.status === "waiting" ? "รออนุมัติ" : "กำลังทำ"}</span>`
+      : r.conclusion === "success" ? '<span class="ok">สำเร็จ</span>' : `<span class="bad">${esc(r.conclusion ?? "ไม่สำเร็จ")}</span>`;
+    const rows = runs.ok
+      ? runs.value.map((r) => `<tr><td>#${r.number}</td><td>${esc(r.title)}</td><td>${statusText(r)}</td><td class="small">${esc(bkk(r.createdAt))}</td>
+<td class="small mono">${esc(r.sha)}</td><td class="small">${esc(r.actor ?? "")}</td><td>${r.url ? `<a href="${esc(r.url)}" rel="noopener noreferrer" target="_blank">ดูใน GitHub</a>` : ""}</td></tr>`).join("")
+        || '<tr><td colspan="7" class="muted">ยังไม่มี</td></tr>'
+      : `<tr><td colspan="7" class="warn">${esc(runs.reason)}</td></tr>`;
+    const choices = [...ctx.sites.map((s) => [s.slug, `${s.name} (${s.domain})`]), ["center", "Center (center.phasakura.com)"]]
+      .map(([v, l]) => `<label style="font-weight:400;margin:4px 0"><input type="checkbox" name="site" value="${esc(v)}"> ${esc(l)}</label>`).join("");
+    const form = me.role !== "PLATFORM_OWNER" ? '<p class="small muted">สั่ง Release ได้เฉพาะเจ้าของแพลตฟอร์ม</p>'
+      : `<form method="post" action="/releases" class="stack" style="max-width:520px">
+<p class="small muted">GitHub Actions จะปล่อยโค้ดล่าสุดของ main ทีละเว็บตามรอบ (wave): preflight → จุดย้อนกลับ D1 → migrate → deploy → smoke test</p>
+<label style="font-weight:400"><input type="checkbox" name="site" value="all"> <strong>ทุกเว็บ + Center</strong></label>${choices}
+<label for="rel-reason">เหตุผล (แสดงในชื่อ run บน GitHub และบันทึกใน Center)</label><input id="rel-reason" name="reason" required minlength="3" maxlength="100">
+<p><button type="submit">เริ่ม Release</button></p></form>`;
+    return html(page({
+      title: "Release", user: me, current: "releases", flash,
+      body: `<h1>Release</h1><div class="card">${form}</div>
+<div class="card scroll"><h2 style="margin-top:0">Release ล่าสุด</h2><table><thead><tr><th>Run</th><th>รายการ</th><th>สถานะ</th><th>เริ่ม</th><th>commit</th><th>โดย</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+<p class="small muted"><a href="/releases">รีเฟรช</a> · รายละเอียดแต่ละขั้นและจุดย้อนกลับ (bookmark) อยู่ในหน้า Summary ของ run บน GitHub</p></div>`,
+    }), flash?.kind === "error" ? 422 : 200);
+  }
+
+  async function requestRelease(ctx: Ctx, me: Me): Promise<Response> {
+    if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "สั่ง Release ได้เฉพาะเจ้าของแพลตฟอร์ม");
+    const form = await readForm(ctx.request);
+    const reason = (form.get("reason") ?? "").trim();
+    const sites = releaseSelection(form.getAll("site"), ctx.sites);
+    if (!sites) return releasesPage(ctx, me, { kind: "error", text: "เลือกอย่างน้อยหนึ่งเว็บ" });
+    if (reason.length < 3 || reason.length > 100) return releasesPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–100 ตัวอักษร" });
+    const note = `${me.email}: ${reason}`.replace(/[\r\n]+/g, " ");
+    const res = await startRelease(ctx.env, sites, note, options.githubFetch);
+    await audit(ctx, me.id, "RELEASE_STARTED", null, reason, { sites, ok: res.ok, error: res.ok ? null : res.reason }).run();
+    return releasesPage(ctx, me, res.ok
+      ? { kind: "ok", text: `ส่งคำสั่ง Release "${sites}" ให้ GitHub แล้ว — run ใหม่จะขึ้นในรายการภายในไม่กี่วินาที` }
+      : { kind: "error", text: `GitHub ไม่รับคำสั่ง: ${res.reason}` });
   }
 
   async function revokeSiteSessions(ctx: Ctx, me: Me, slug: string): Promise<Response> {
@@ -669,6 +775,16 @@ ${self ? "" : `<form method="post" action="/users/${u.id}/disable" class="inline
 }
 
 type D1Statement = ReturnType<CenterRepository["auditStatement"]>;
+const BACKUP_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-[A-Za-z0-9_-]{6}\.sql\.gz$/;
+
+interface BackupDto {
+  name: string; size: number; createdAt: string; tables: number | null; rows: number | null; trigger: string | null;
+}
+
+function sizeText(bytes: number): string {
+  return bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 interface SuspensionDto {
   suspended: boolean; reasonCode: string | null; note: string | null; since: string | null;
 }

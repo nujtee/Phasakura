@@ -47,7 +47,24 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
     return new Response("{}", { status: 404 });
   };
   let siteDown = false;
-  const app = createCenterApp({ clock: () => new Date(now), hashIterations: 1000, lineFetch });
+  /** Fake GitHub API: dispatches are recorded; runs are listed. */
+  const dispatches: { url: string; body: Record<string, unknown>; auth: string | null }[] = [];
+  let githubStatus = 204;
+  const githubFetch = async (input: string, init?: RequestInit) => {
+    const auth = new Headers(init?.headers).get("Authorization");
+    if (input.endsWith("/dispatches")) {
+      dispatches.push({ url: input, body: JSON.parse(String(init?.body)) as Record<string, unknown>, auth });
+      return new Response(null, { status: githubStatus });
+    }
+    if (input.includes("/actions/workflows/release.yml/runs")) {
+      return new Response(JSON.stringify({ workflow_runs: [
+        { run_number: 16, display_title: "Release all — owner@phasakura.com: <b>ทดสอบ</b>", status: "in_progress", conclusion: null, created_at: "2026-10-19T11:00:00Z", html_url: "https://github.com/nujtee/Phasakura/actions/runs/1", head_sha: "abcdef1234", triggering_actor: { login: "nujtee" } },
+        { run_number: 15, display_title: "Release suanpho center", status: "completed", conclusion: "success", created_at: "2026-10-19T10:16:00Z", html_url: "javascript:alert(1)", head_sha: "dea7725aa", triggering_actor: { login: "nujtee" } },
+      ] }), { status: githubStatus === 204 ? 200 : githubStatus });
+    }
+    return new Response("{}", { status: 404 });
+  };
+  const app = createCenterApp({ clock: () => new Date(now), hashIterations: 1000, lineFetch, githubFetch });
   const env: CenterEnv = {
     DB: db,
     APP_BASE_URL: CENTER,
@@ -57,6 +74,8 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
     SITE_PHASAKURA: { fetch: (req: Request) => { if (siteDown) throw new Error("connection refused"); site.now = new Date(now); return site.app.fetch(req, site.env); } },
     CENTER_LINE_TOKEN: "line-token",
     CENTER_LINE_SECRET: "line-secret",
+    CENTER_GITHUB_REPO: "nujtee/Phasakura",
+    CENTER_GITHUB_TOKEN: "github-token",
   };
   const req = async (method: string, path: string, opts: { form?: Record<string, string>; raw?: string; cookie?: string | null; headers?: Record<string, string> } = {}) => {
     const headers: Record<string, string> = { "CF-Connecting-IP": "203.0.113.5", "User-Agent": "test" };
@@ -87,6 +106,7 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
   return {
     site, db, env, req, firstOwner, ownerSession, audits, advance: (ms: number) => { now = new Date(now.getTime() + ms); }, keys, pushes, check,
     setSiteDown: (v: boolean) => { siteDown = v; }, setLineStatus: (v: number) => { lineStatus = v; },
+    dispatches, setGithubStatus: (v: number) => { githubStatus = v; },
   };
 }
 
@@ -595,6 +615,95 @@ describe("Center: a new site's first owner (phase C7)", () => {
     const ops = (await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!;
     assert.ok(!(await ctx.req("GET", "/sites/phasakura", { cookie: ops })).text.includes("/sites/phasakura/owner"));
     assert.equal((await ctx.req("POST", "/sites/phasakura/owner", { cookie: ops, form: { email: "owner@site.test", name: "Owner", reason: "abc" } })).status, 403);
+  });
+});
+
+describe("Center: backups and Release (phase C8)", () => {
+  async function person(ctx: Awaited<ReturnType<typeof setup>>, owner: string, role: string, email: string) {
+    const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: role, email, role } });
+    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
+    return (await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!;
+  }
+
+  it("site page: backup now (owner / operator, reason); the list; the file downloads for the owner only; audited both sides", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const ops = await person(ctx, owner, "OPERATOR", "ops@phasakura.com");
+    const support = await person(ctx, owner, "SUPPORT_READONLY", "sup@phasakura.com");
+    const empty = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    assert.match(empty.text, /ยังไม่มีไฟล์สำรอง/);
+    assert.match(empty.text, /ไม่มีไฟล์สำรองในช่วง 48 ชั่วโมง/);
+    assert.ok(!(await ctx.req("GET", "/sites/phasakura", { cookie: support })).text.includes("/sites/phasakura/backup\""));
+    assert.equal((await ctx.req("POST", "/sites/phasakura/backup", { cookie: support, form: { reason: "abc" } })).status, 403);
+    assert.equal((await ctx.req("POST", "/sites/phasakura/backup", { cookie: ops, form: { reason: "" } })).status, 422);
+    const made = await ctx.req("POST", "/sites/phasakura/backup", { cookie: ops, form: { reason: "ก่อนนำเข้าข้อมูล" } });
+    assert.equal(made.status, 200, made.text.slice(0, 300));
+    assert.match(made.text, /สำรองข้อมูล Phasakura แล้ว/);
+    const name = made.text.match(/name="name" value="([^"]+\.sql\.gz)"/)?.[1];
+    assert.equal(name, undefined, "an OPERATOR sees no download form");
+    const ownerPage = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    const file = ownerPage.text.match(/name="name" value="([^"]+\.sql\.gz)"/)![1]!;
+    assert.match(ownerPage.text, /จาก Center/);
+    assert.equal((await ctx.req("POST", "/sites/phasakura/backup-download", { cookie: ops, form: { name: file, reason: "ขอข้อมูล" } })).status, 403);
+    assert.equal((await ctx.req("POST", "/sites/phasakura/backup-download", { cookie: owner, form: { name: "../x", reason: "ขอข้อมูล" } })).status, 422);
+    assert.equal((await ctx.req("POST", "/sites/phasakura/backup-download", { cookie: owner, form: { name: file, reason: "" } })).status, 422);
+    const app = createCenterApp({ clock: () => new Date(ctx.site.now), hashIterations: 1000 });
+    const raw = await app.fetch(new Request(`${CENTER}/sites/phasakura/backup-download`, {
+      method: "POST", body: new URLSearchParams({ name: file, reason: "เจ้าของเว็บขอข้อมูลตอนเลิกใช้บริการ" }).toString(),
+      headers: { Origin: CENTER, "Sec-Fetch-Site": "same-origin", "Content-Type": "application/x-www-form-urlencoded", Cookie: `__Host-csid=${owner}` },
+    }), ctx.env);
+    assert.equal(raw.status, 200);
+    assert.equal(raw.headers.get("Content-Type"), "application/gzip");
+    assert.equal(raw.headers.get("Content-Disposition"), `attachment; filename="phasakura-${file}"`);
+    const sql = await new Response(raw.body!.pipeThrough(new DecompressionStream("gzip"))).text();
+    assert.match(sql, /CREATE TABLE users/);
+    assert.equal(ctx.audits("SITE_BACKUP").length, 1);
+    assert.equal(ctx.audits("BACKUP_DOWNLOAD").filter((a) => JSON.parse(a.detail_json!).ok).length, 1);
+    assert.equal(ctx.site.audits("CENTER_BACKUP").length, 1);
+    assert.equal(ctx.site.audits("CENTER_BACKUP_DOWNLOAD").length, 1);
+  });
+
+  it("Release: the owner picks sites and a reason → GitHub runs Actions → Release; everyone sees the runs; escaped", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const ops = await person(ctx, owner, "OPERATOR", "ops@phasakura.com");
+    const page = await ctx.req("GET", "/releases", { cookie: owner });
+    assert.equal(page.status, 200);
+    assert.match(page.text, /#16/);
+    assert.match(page.text, /กำลังทำ/);
+    assert.match(page.text, /&lt;b&gt;ทดสอบ&lt;\/b&gt;/);
+    assert.ok(!page.text.includes("javascript:alert"), "only github.com links");
+    const opsPage = await ctx.req("GET", "/releases", { cookie: ops });
+    assert.match(opsPage.text, /สั่ง Release ได้เฉพาะเจ้าของแพลตฟอร์ม/);
+    assert.equal((await ctx.req("POST", "/releases", { cookie: ops, form: { site: "all", reason: "ปล่อย" } })).status, 403);
+    assert.equal((await ctx.req("POST", "/releases", { cookie: owner, form: { reason: "ปล่อยของใหม่" } })).status, 422, "no site chosen");
+    assert.equal((await ctx.req("POST", "/releases", { cookie: owner, form: { site: "nosuch", reason: "ปล่อยของใหม่" } })).status, 422);
+    const body = new URLSearchParams([["site", "center"], ["site", "phasakura"], ["reason", "แก้หน้าเว็บ"]]).toString();
+    const res = await ctx.req("POST", "/releases", { cookie: owner, raw: body, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+    assert.equal(res.status, 200, res.text.slice(0, 300));
+    assert.match(res.text, /ส่งคำสั่ง Release &quot;phasakura center&quot;/);
+    assert.equal(ctx.dispatches.length, 1);
+    assert.match(ctx.dispatches[0]!.url, /\/repos\/nujtee\/Phasakura\/actions\/workflows\/release\.yml\/dispatches$/);
+    assert.deepEqual(ctx.dispatches[0]!.body, { ref: "main", inputs: { ref: "main", sites: "phasakura center", note: "owner@phasakura.com: แก้หน้าเว็บ" } });
+    assert.equal(ctx.dispatches[0]!.auth, "Bearer github-token");
+    await ctx.req("POST", "/releases", { cookie: owner, form: { site: "all", reason: "ทุกเว็บ" } });
+    assert.equal((ctx.dispatches[1]!.body.inputs as { sites: string }).sites, "all");
+    assert.equal(ctx.audits("RELEASE_STARTED").length, 2);
+    ctx.setGithubStatus(401);
+    const refused = await ctx.req("POST", "/releases", { cookie: owner, form: { site: "all", reason: "ทุกเว็บ" } });
+    assert.equal(refused.status, 422);
+    assert.match(refused.text, /GitHub ไม่รับ token/);
+  });
+
+  it("Release without a GitHub token says what to set up", async () => {
+    const ctx = await setup();
+    delete ctx.env.CENTER_GITHUB_TOKEN;
+    const owner = await ctx.ownerSession();
+    const page = await ctx.req("GET", "/releases", { cookie: owner });
+    assert.match(page.text, /ยังไม่ได้ตั้ง secret CENTER_GITHUB_TOKEN/);
+    const res = await ctx.req("POST", "/releases", { cookie: owner, form: { site: "all", reason: "ทุกเว็บ" } });
+    assert.equal(res.status, 422);
+    assert.equal(ctx.dispatches.length, 0);
   });
 });
 

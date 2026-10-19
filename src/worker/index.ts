@@ -1,3 +1,4 @@
+import { siteSlug } from "../shared/site-name.ts";
 import { createServices, resolveBaseUrl, type Services, type ServiceOptions } from "./container.ts";
 import { canonicalHostRedirect } from "./http/canonical-host.ts";
 import { accommodationController } from "./controllers/accommodation.controller.ts";
@@ -87,6 +88,9 @@ export function createApp(options: AppOptions = {}) {
     .put("/api/center/suspension", center.setSuspension)
     .post("/api/center/sessions/revoke", center.revokeSessions)
     .post("/api/center/owner", center.inviteOwner)
+    .get("/api/center/backups", center.listBackups)
+    .post("/api/center/backups", center.createBackup)
+    .get("/api/center/backups/download", center.downloadBackup)
     .post("/api/center/sso", center.issueSso)
     // Unsigned: the browser of the Center user posts the one-time ticket here (a form on center.phasakura.com).
     .post("/api/center/sso/consume", center.consumeSso)
@@ -434,6 +438,12 @@ export function createApp(options: AppOptions = {}) {
       if (s.center.enabled && (minute === null || minute % 5 === 0)) {
         await task("center_nonce_purge", () => s.center.purgeNonces());
         await task("center_ticket_purge", () => s.centerAdmin.purgeTickets());
+      }
+
+      // Database backup into the private bucket (phase C8): once a day at 03:17 Bangkok (20:17 UTC).
+      if (scheduledTime !== undefined && minute === 17 && new Date(scheduledTime).getUTCHours() === 20) {
+        const b = await task("daily_backup", () => s.backups.daily(siteSlug(resolveBaseUrl(env, "https://localhost"))));
+        if (b) console.log(JSON.stringify({ level: "info", message: "backup_created", name: b.name, size: b.size, rows: b.rows }));
       }
 
       // Heartbeat last: /api/health turns "stale" if this stops happening.

@@ -31,15 +31,26 @@ export interface R2ObjectBodyLike {
   size: number;
 }
 
+export interface R2ListedObjectLike {
+  key: string;
+  size: number;
+  uploaded: Date;
+  customMetadata?: Record<string, string>;
+}
+
 export interface R2BucketLike {
   head(key: string): Promise<unknown>;
   get(key: string): Promise<R2ObjectBodyLike | null>;
   put(
     key: string,
     value: ArrayBuffer | Uint8Array,
-    options?: { httpMetadata?: { contentType?: string; cacheControl?: string }; sha256?: string },
+    options?: { httpMetadata?: { contentType?: string; cacheControl?: string }; sha256?: string; customMetadata?: Record<string, string> },
   ): Promise<unknown>;
   delete(key: string): Promise<void>;
+  /** Used for the private bucket's backups/ prefix (Center phase C8). */
+  list?(options: { prefix?: string; cursor?: string; limit?: number; include?: ("customMetadata" | "httpMetadata")[] }): Promise<{
+    objects: R2ListedObjectLike[]; truncated: boolean; cursor?: string;
+  }>;
 }
 
 /** Cloudflare Workers Rate Limiting binding (`ratelimits` in wrangler.jsonc). */

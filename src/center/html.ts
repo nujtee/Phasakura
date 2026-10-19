@@ -31,6 +31,9 @@ export const ACTION_LABELS: Record<string, string> = {
   SITE_RESUMED: "เปิดรับจองของเว็บอีกครั้ง",
   SITE_SESSIONS_REVOKED: "ตัด session ของ Center ในเว็บ",
   OWNER_INVITED: "สร้างบัญชี / ลิงก์ของเจ้าของเว็บ",
+  SITE_BACKUP: "สำรองข้อมูลของเว็บ",
+  BACKUP_DOWNLOAD: "ดาวน์โหลดไฟล์สำรอง",
+  RELEASE_STARTED: "สั่ง Release",
 };
 
 /** Bangkok time for people reading the console. */
@@ -72,7 +75,7 @@ export function page(opts: { title: string; body: string; user?: LayoutUser | nu
   const u = opts.user;
   const link = (href: string, label: string, key: string) => `<a href="${href}"${opts.current === key ? ' aria-current="page"' : ""}>${label}</a>`;
   const nav = u
-    ? `<nav>${link("/", "เว็บทั้งหมด", "sites")}${u.role === "PLATFORM_OWNER" ? link("/users", "ผู้ใช้ Center", "users") + link("/settings", "ตั้งค่า", "settings") : ""}${link("/audit", "บันทึกการใช้งาน", "audit")}${link("/account", "บัญชีของฉัน", "account")}
+    ? `<nav>${link("/", "เว็บทั้งหมด", "sites")}${link("/releases", "Release", "releases")}${u.role === "PLATFORM_OWNER" ? link("/users", "ผู้ใช้ Center", "users") + link("/settings", "ตั้งค่า", "settings") : ""}${link("/audit", "บันทึกการใช้งาน", "audit")}${link("/account", "บัญชีของฉัน", "account")}
 <form method="post" action="/logout" class="inline"><button class="plain" type="submit">ออกจากระบบ</button></form></nav>
 <span class="muted small">${esc(u.displayName)} · ${esc(ROLE_LABELS[u.role])}</span>`
     : "";
