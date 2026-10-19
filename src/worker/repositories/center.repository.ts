@@ -125,6 +125,20 @@ export class CenterAdminRepository {
   }
 
   /** The site's own accounts (never Center users), for Center's site page. No password hashes. */
+  /**
+   * The site's first owner (phase C7): a SUPER_ADMIN whose password can only be set through an invite link —
+   * the stored value is not a password hash, so no password logs in until the link is used.
+   */
+  insertOwnerStatements(id: string, email: string, displayName: string, now: string): D1PreparedStatementLike[] {
+    return [
+      this.db.prepare(
+        `INSERT INTO users (id, email, username, display_name, password_hash, password_changed_at, must_change_password, status, created_at, updated_at)
+         VALUES (?1, ?2, NULL, ?3, '!owner-invite-pending', ?4, 0, 'ACTIVE', ?4, ?4)`,
+      ).bind(id, email, displayName, now),
+      this.db.prepare("INSERT INTO user_roles (user_id, role_id, granted_by, granted_at) VALUES (?1, 'role_super_admin', NULL, ?2)").bind(id, now),
+    ];
+  }
+
   async siteUsers(): Promise<SiteUserRow[]> {
     const { results } = await this.db
       .prepare(

@@ -1,0 +1,83 @@
+name: Create site
+
+# A new booking site on the platform (Center phase C7). Run from GitHub → Actions → Create site → Run workflow.
+# Before: the owner's domain is in the platform's Cloudflare account and its zone is Active.
+# This run: checks the input and the zone, creates the site's D1 + R2 (reused if they already exist), adds it to
+# sites/sites.json, regenerates the configs and opens a pull request. Nothing is deployed and nothing reaches guests.
+# After: merge the pull request → Actions → Release, sites "<slug> center" → Center → the site's page → owner account.
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "Short id: lower-case letters, digits, - (e.g. baanrim) — also the Worker, D1 and R2 names"
+        required: true
+      name:
+        description: "Site name shown in Center (e.g. Baan Rim)"
+        required: true
+      domain:
+        description: "Apex domain, no https:// or www (e.g. baanrim.com)"
+        required: true
+
+concurrency:
+  group: site-create
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package*.json
+      - name: Install
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Create
+        id: create
+        env:
+          SLUG: ${{ inputs.slug }}
+          NAME: ${{ inputs.name }}
+          DOMAIN: ${{ inputs.domain }}
+        run: npx tsx scripts/site-create.ts --slug "$SLUG" --name "$NAME" --domain "$DOMAIN"
+      # A pull request opened by this workflow does not start CI by itself, so the full check runs here.
+      - name: Check
+        run: npm run check
+      - name: Pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLUG: ${{ steps.create.outputs.slug }}
+          NAME: ${{ steps.create.outputs.name }}
+          DOMAIN: ${{ steps.create.outputs.domain }}
+        run: |
+          branch="site/$SLUG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add sites/sites.json "sites/$SLUG/wrangler.jsonc" center/wrangler.jsonc
+          git commit -m "Add site $NAME ($DOMAIN)" -m "Created by Actions → Create site: D1 $SLUG-db, R2 $SLUG-media-public / $SLUG-media-private."
+          git push --force-with-lease origin "$branch"
+          body="Created by **Actions → Create site** (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}); \`npm run check\` passed in that run.
+
+          After merging:
+          1. Actions → Release → sites \`$SLUG center\`
+          2. Center → $NAME → create the owner's account and send them the link"
+          if url=$(gh pr create --base main --head "$branch" --title "Add site $NAME ($DOMAIN)" --body "$body" 2>&1); then
+            echo "- ✓ Pull request: $url" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "$url"
+            echo "- ⚠️ Could not open the pull request automatically (Settings → Actions → General → allow GitHub Actions to create pull requests). Open it here: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...$branch" >> "$GITHUB_STEP_SUMMARY"
+          fi

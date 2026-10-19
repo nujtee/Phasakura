@@ -268,7 +268,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     health,
     monitoring: new MonitoringService(new MonitoringRepository(db), health, authorization, clock, env),
     center: new CenterAccessService(env.CENTER_PUBLIC_KEYS, new CenterNonceRepository(db), log, clock),
-    centerAdmin: new CenterAdminService(db, new CenterAdminRepository(db), sessions, log, clock),
+    centerAdmin: new CenterAdminService(db, new CenterAdminRepository(db), sessions, log, clock, links),
     adminMenu: new AdminMenuService(db, new AdminMenuRepository(db), authorization, log, clock),
     sessions,
     authorization,

@@ -103,9 +103,11 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (sso && request.method === "POST") return startSso(ctx, me, sso[1]!);
     const detail = /^\/sites\/([a-z][a-z0-9-]{1,30})$/.exec(url.pathname);
     if (detail && request.method === "GET") return sitePage(ctx, me, detail[1]!);
-    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke)$/.exec(url.pathname);
+    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner)$/.exec(url.pathname);
     if (siteAction && request.method === "POST") {
-      return siteAction[2] === "suspension" ? changeSuspension(ctx, me, siteAction[1]!) : revokeSiteSessions(ctx, me, siteAction[1]!);
+      const slug = siteAction[1]!;
+      return siteAction[2] === "suspension" ? changeSuspension(ctx, me, slug)
+        : siteAction[2] === "revoke" ? revokeSiteSessions(ctx, me, slug) : inviteSiteOwner(ctx, me, slug);
     }
     if (key === "POST /checks/run") {
       if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณสั่งตรวจไม่ได้");
@@ -287,7 +289,8 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     }));
   }
 
-  async function sitePage(ctx: Ctx, me: Me, slug: string, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
+  async function sitePage(ctx: Ctx, me: Me, slug: string, flash: { kind: "ok" | "error"; text: string } | null = null,
+    invite: { email: string; url: string; expiresAt: string } | null = null): Promise<Response> {
     const site = ctx.sites.find((s) => s.slug === slug);
     if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
     const client = new SiteClient(ctx.env, 5000, clock);
@@ -334,6 +337,28 @@ ${me.role === "PLATFORM_OWNER" ? `<details><summary class="small">พักก�
 <td class="small ${u.status === "ACTIVE" ? "ok" : "bad"}">${esc(u.status)}</td><td class="small">${esc(bkk(u.lastLoginAt))}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">ไม่มีผู้ใช้</td></tr>'
       : `<tr><td colspan="4" class="warn">อ่านรายชื่อไม่ได้: ${esc(siteError(users.status, users.error?.code))}</td></tr>`;
 
+    // ---- a new site's first owner (phase C7): only while the site has no account of its own, or its only
+    // SUPER_ADMIN has never signed in (then a new link replaces the old one).
+    const siteUsers = users.status === 200 && users.data ? users.data.items : null;
+    const pendingOwner = siteUsers?.length === 1 && siteUsers[0]!.lastLoginAt === null && siteUsers[0]!.roles.includes("SUPER_ADMIN") ? siteUsers[0]! : null;
+    let ownerHtml = "";
+    if (invite) {
+      ownerHtml = `<div class="card" style="border-color:var(--ok)"><h2 style="margin-top:0">ลิงก์สำหรับเจ้าของเว็บ</h2>
+<p>ส่งลิงก์นี้ให้ <strong>${esc(invite.email)}</strong> ทางช่องทางส่วนตัว — ใช้ตั้งรหัสผ่านได้ครั้งเดียว ภายใน ${esc(bkk(invite.expiresAt))}
+<br><span class="small muted">แสดงครั้งเดียวและไม่ถูกบันทึกที่ใด ถ้าทำหายให้สร้างใหม่ (ลิงก์เก่าจะใช้ไม่ได้)</span></p>
+<p class="mono">${esc(invite.url)}</p></div>`;
+    } else if (me.role === "PLATFORM_OWNER" && siteUsers && (siteUsers.length === 0 || pendingOwner)) {
+      ownerHtml = `<div class="card"><h2 style="margin-top:0">เจ้าของเว็บ</h2>
+<p class="small muted">${pendingOwner
+  ? `${esc(pendingOwner.email)} ยังไม่ได้เข้าใช้ — สร้างลิงก์ใหม่ได้ (ลิงก์เดิมจะใช้ไม่ได้)`
+  : "เว็บนี้ยังไม่มีผู้ดูแล — สร้างบัญชี SUPER_ADMIN ให้เจ้าของ แล้วส่งลิงก์ตั้งรหัสผ่าน (72 ชั่วโมง) ให้เขา"}</p>
+<form method="post" action="/sites/${esc(slug)}/owner" class="stack" style="max-width:420px">
+<label for="owner-email">อีเมลเจ้าของ</label><input id="owner-email" name="email" type="email" required maxlength="254" value="${esc(pendingOwner?.email ?? "")}"${pendingOwner ? " readonly" : ""}>
+<label for="owner-name">ชื่อ</label><input id="owner-name" name="name" required maxlength="120" value="${esc(pendingOwner?.displayName ?? "")}"${pendingOwner ? " readonly" : ""}>
+<label for="owner-reason">เหตุผล</label><input id="owner-reason" name="reason" required minlength="3" maxlength="300" value="${pendingOwner ? "" : "เปิดเว็บใหม่"}">
+<p><button type="submit">${pendingOwner ? "สร้างลิงก์ใหม่" : "สร้างบัญชีเจ้าของเว็บ"}</button></p></form></div>`;
+    }
+
     const revokeHtml = me.role === "SUPPORT_READONLY" ? "" : `<div class="card"><h2 style="margin-top:0">session ของ Center ในเว็บนี้</h2>
 <p class="small muted">ออกจากหลังบ้านของเว็บนี้ทุกคนที่เข้ามาจาก Center (บัญชี "Center · …") และยกเลิกตั๋ว SSO ที่ยังไม่ได้ใช้ — admin ของเว็บเองไม่ถูกกระทบ</p>
 <form method="post" action="/sites/${esc(slug)}/revoke" class="inline">${reasonInput("เหตุผล")}<button class="danger" type="submit">ตัด session ของ Center ทั้งหมด</button></form></div>`;
@@ -342,6 +367,7 @@ ${me.role === "PLATFORM_OWNER" ? `<details><summary class="small">พักก�
       title: site.name, user: me, current: "sites", flash,
       body: `<p class="small"><a href="/">← เว็บทั้งหมด</a></p><h1>${esc(site.name)} <a class="muted small" href="https://${esc(site.domain)}" rel="noopener noreferrer" target="_blank">${esc(site.domain)}</a></h1>
 <div class="card"><h2 style="margin-top:0">หลังบ้าน</h2><form method="post" action="/sites/${esc(slug)}/sso" target="_blank" class="inline">${reasonInput("เหตุผลที่เข้าหลังบ้าน")}<button type="submit">เข้าหลังบ้าน</button></form></div>
+${ownerHtml}
 <div class="card"><h2 style="margin-top:0">การให้บริการ</h2>${serviceHtml}</div>
 <div class="card"><h2 style="margin-top:0">ปัญหาที่เปิดอยู่</h2><ul>${openHtml}</ul></div>
 <div class="card scroll"><h2 style="margin-top:0">ผู้ดูแลของเว็บ</h2><table><thead><tr><th>ชื่อ</th><th>บทบาท</th><th>สถานะ</th><th>เข้าล่าสุด</th></tr></thead><tbody>${userRows}</tbody></table>
@@ -371,6 +397,29 @@ ${revokeHtml}
     await audit(ctx, me.id, suspended ? "SITE_SUSPENDED" : "SITE_RESUMED", site.slug, reason, { ok, status: res.status, note: suspended ? note : null, error: res.error?.code ?? null }).run();
     if (!ok) return sitePage(ctx, me, slug, { kind: "error", text: `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}` });
     return sitePage(ctx, me, slug, { kind: "ok", text: suspended ? `พักการรับจองของ ${site.name} แล้ว` : `เปิดรับจองของ ${site.name} อีกครั้งแล้ว` });
+  }
+
+  async function inviteSiteOwner(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+    const site = ctx.sites.find((s) => s.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "สร้างบัญชีเจ้าของเว็บได้เฉพาะเจ้าของแพลตฟอร์ม");
+    const form = await readForm(ctx.request);
+    const email = (form.get("email") ?? "").trim().toLowerCase();
+    const name = (form.get("name") ?? "").trim();
+    const reason = (form.get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || !name || name.length > 120) {
+      return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาใส่อีเมลและชื่อให้ถูกต้อง" });
+    }
+    const res = await new SiteClient(ctx.env, 8000, clock).call<{ created: boolean; url: string; expiresAt: string }>(site, "POST", "/api/center/owner", { ...actorOf(me), reason }, { email, name });
+    // The link itself is never stored in Center.
+    await audit(ctx, me.id, "OWNER_INVITED", site.slug, reason, { ok: res.status === 200, email, created: res.data?.created ?? null, error: res.error?.code ?? null }).run();
+    if (res.status !== 200 || !res.data) {
+      const text = res.error?.code === "SITE_HAS_OWNER" ? `${site.name} มีผู้ดูแลของตัวเองแล้ว — ให้ admin ของเว็บเพิ่มผู้ใช้ในหลังบ้าน` : `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}`;
+      return sitePage(ctx, me, slug, { kind: "error", text });
+    }
+    return sitePage(ctx, me, slug, { kind: "ok", text: res.data.created ? `สร้างบัญชีเจ้าของ ${site.name} แล้ว` : "สร้างลิงก์ใหม่แล้ว (ลิงก์เดิมใช้ไม่ได้)" },
+      { email, url: res.data.url, expiresAt: res.data.expiresAt });
   }
 
   async function revokeSiteSessions(ctx: Ctx, me: Me, slug: string): Promise<Response> {
