@@ -456,6 +456,105 @@ describe("Center: health checks and LINE alerts (phase C5)", () => {
 });
 
 /** LINE → Center webhook (server to server: no Origin, no cookies). */
+describe("Center: site page (phase C6)", () => {
+  async function addPerson(ctx: Awaited<ReturnType<typeof setup>>, ownerCookie: string, role: string, email: string) {
+    const res = await ctx.req("POST", "/users", { cookie: ownerCookie, form: { name: role, email, role } });
+    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
+    return (await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!;
+  }
+  const quote = (ctx: Awaited<ReturnType<typeof setup>>) => ctx.site.api("POST", "/api/public/bookings/quote", { body: {} });
+
+  it("shows the site's own admins (never Center accounts), read live; names escaped", async () => {
+    const ctx = await setup();
+    await ctx.site.user({ id: "site-mgr", email: "mgr@site.test", roles: ["SUPER_ADMIN"] });
+    ctx.site.db.exec("UPDATE users SET display_name = '<b>Mgr</b>' WHERE id = 'site-mgr'");
+    const owner = await ctx.ownerSession();
+    await ctx.req("POST", "/sites/phasakura/sso", { cookie: owner, form: { reason: "ดูระบบ" } }); // creates the site's center_ user
+    const page = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    assert.equal(page.status, 200);
+    assert.match(page.text, /owner@site\.test/);
+    assert.match(page.text, /&lt;b&gt;Mgr&lt;\/b&gt;/);
+    assert.ok(!page.text.includes("@center.invalid"), "Center accounts are hidden");
+    assert.match(page.text, /เปิดรับจองตามปกติ/);
+    assert.equal((await ctx.req("GET", "/sites/nosuch", { cookie: owner })).status, 404);
+  });
+
+  it("suspend: owner only, needs a reason and the unpaid-fees confirmation; bookings stop; resume reopens; audited on both sides", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const ops = await addPerson(ctx, owner, "OPERATOR", "ops@phasakura.com");
+    const opsPage = await ctx.req("GET", "/sites/phasakura", { cookie: ops });
+    assert.ok(!opsPage.text.includes('value="suspend"'), "no suspend form for an OPERATOR");
+    assert.equal((await ctx.req("POST", "/sites/phasakura/suspension", { cookie: ops, form: { op: "suspend", reason: "ค้างจ่าย", confirm: "UNPAID_FEES" } })).status, 403);
+
+    const ownerPage = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    assert.match(ownerPage.text, /value="suspend"/);
+    assert.equal((await ctx.req("POST", "/sites/phasakura/suspension", { cookie: owner, form: { op: "suspend", reason: "ค้างจ่าย" } })).status, 422, "confirmation required");
+    assert.equal((await ctx.req("POST", "/sites/phasakura/suspension", { cookie: owner, form: { op: "suspend", reason: "", confirm: "UNPAID_FEES" } })).status, 422, "reason required");
+    assert.notEqual((await quote(ctx)).status, 423);
+
+    const on = await ctx.req("POST", "/sites/phasakura/suspension", { cookie: owner, form: { op: "suspend", note: "ค้าง ต.ค.", reason: "ค้างค่าบริการ 2 เดือน", confirm: "UNPAID_FEES" } });
+    assert.equal(on.status, 200, on.text.slice(0, 400));
+    assert.match(on.text, /พักการรับจองของ Phasakura แล้ว/);
+    assert.match(on.text, /พักการรับจองออนไลน์อยู่/);
+    assert.match(on.text, /ค้าง ต\.ค\./);
+    assert.equal((await quote(ctx)).status, 423);
+    assert.equal(ctx.site.audits("CENTER_SUSPEND").length, 1);
+    const a = ctx.audits("SITE_SUSPENDED");
+    assert.equal(a.length, 1);
+    assert.deepEqual([a[0]!.site, a[0]!.reason], ["phasakura", "ค้างค่าบริการ 2 เดือน"]);
+
+    const off = await ctx.req("POST", "/sites/phasakura/suspension", { cookie: owner, form: { op: "resume", reason: "ชำระแล้ว" } });
+    assert.equal(off.status, 200);
+    assert.match(off.text, /เปิดรับจองตามปกติ/);
+    assert.notEqual((await quote(ctx)).status, 423);
+    assert.equal(ctx.audits("SITE_RESUMED").length, 1);
+    assert.equal(ctx.site.audits("CENTER_RESUME").length, 1);
+  });
+
+  it("revoke: signs every Center user out of that site's back office; readonly cannot; the site's own admins stay signed in", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const support = await addPerson(ctx, owner, "SUPPORT_READONLY", "sup@phasakura.com");
+    const sso = await ctx.req("POST", "/sites/phasakura/sso", { cookie: owner, form: { reason: "ตรวจการจอง" } });
+    const ticket = sso.text.match(/name="ticket" value="([^"]+)"/)![1]!;
+    const consumed = await ctx.site.app.fetch(new Request(`${ORIGIN}/api/center/sso/consume`, {
+      method: "POST", body: `ticket=${ticket}`, headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    }), ctx.site.env);
+    const centerToken = consumed.headers.get("Set-Cookie")!.match(/__Host-sid=([A-Za-z0-9_-]+)/)![1]!;
+    const siteOwnerToken = await ctx.site.login("owner@site.test");
+    assert.equal((await ctx.site.api("GET", "/api/auth/me", { token: centerToken })).status, 200);
+
+    const supPage = await ctx.req("GET", "/sites/phasakura", { cookie: support });
+    assert.ok(!supPage.text.includes("/sites/phasakura/revoke"));
+    assert.ok(!supPage.text.includes('value="suspend"'));
+    assert.equal((await ctx.req("POST", "/sites/phasakura/revoke", { cookie: support, form: { reason: "abc" } })).status, 403);
+    assert.equal((await ctx.req("POST", "/sites/phasakura/revoke", { cookie: owner, form: { reason: "" } })).status, 422);
+
+    const res = await ctx.req("POST", "/sites/phasakura/revoke", { cookie: owner, form: { reason: "สงสัยว่ามีคนเข้าผิดปกติ" } });
+    assert.equal(res.status, 200, res.text.slice(0, 400));
+    assert.match(res.text, /ตัด session ของ Center ใน Phasakura แล้ว \(1 session\)/);
+    assert.equal((await ctx.site.api("GET", "/api/auth/me", { token: centerToken })).status, 401);
+    assert.equal((await ctx.site.api("GET", "/api/auth/me", { token: siteOwnerToken })).status, 200);
+    assert.equal(ctx.audits("SITE_SESSIONS_REVOKED").length, 1);
+    assert.equal(ctx.site.audits("CENTER_REVOKE_SESSIONS").length, 1);
+  });
+
+  it("a site that cannot be reached: the page still opens and says so; actions are refused with the reason, audited as failed", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    ctx.setSiteDown(true);
+    const page = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    assert.equal(page.status, 200);
+    assert.match(page.text, /อ่านสถานะไม่ได้/);
+    assert.match(page.text, /อ่านรายชื่อไม่ได้/);
+    const res = await ctx.req("POST", "/sites/phasakura/suspension", { cookie: owner, form: { op: "suspend", reason: "ค้างจ่าย", confirm: "UNPAID_FEES" } });
+    assert.equal(res.status, 422);
+    assert.match(res.text, /Phasakura ไม่รับคำสั่ง/);
+    assert.equal(JSON.parse(ctx.audits("SITE_SUSPENDED")[0]!.detail_json!).ok, false);
+  });
+});
+
 async function fetchWebhook(ctx: Awaited<ReturnType<typeof setup>>, body: string, signature: string | null) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (signature !== null) headers["x-line-signature"] = signature;
