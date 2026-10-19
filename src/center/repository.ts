@@ -12,6 +12,11 @@ export interface CenterUserRow {
   locked_until: string | null;
   last_login_at: string | null;
   created_at: string;
+  /** Two-step sign-in (phase C9). */
+  totp_secret: string | null;
+  totp_pending_secret: string | null;
+  totp_enabled_at: string | null;
+  totp_last_step: number | null;
 }
 
 export interface CenterAuditRow {
@@ -25,7 +30,7 @@ export interface CenterAuditRow {
   created_at: string;
 }
 
-const USER = "id, email, display_name, role, password_hash, status, failed_login_count, locked_until, last_login_at, created_at";
+const USER = "id, email, display_name, role, password_hash, status, failed_login_count, locked_until, last_login_at, created_at, totp_secret, totp_pending_secret, totp_enabled_at, totp_last_step";
 
 /** Everything Center keeps in center-db (center/migrations). Writes that belong together return statements to batch. */
 export class CenterRepository {
@@ -82,11 +87,11 @@ export class CenterRepository {
       .bind(s.id, s.userId, s.tokenHash, s.now, s.expiresAt, s.ip, s.userAgent);
   }
 
-  sessionByTokenHash(tokenHash: string, now: string): Promise<(CenterUserRow & { session_id: string; last_seen_at: string; expires_at: string }) | null> {
+  sessionByTokenHash(tokenHash: string, now: string): Promise<(CenterUserRow & { session_id: string; last_seen_at: string; expires_at: string; mfa_at: string | null }) | null> {
     return this.db
       .prepare(
-        `SELECT s.id AS session_id, s.last_seen_at, s.expires_at, u.id, u.email, u.display_name, u.role, u.password_hash, u.status,
-                u.failed_login_count, u.locked_until, u.last_login_at, u.created_at
+        `SELECT s.id AS session_id, s.last_seen_at, s.expires_at, s.mfa_at, u.id, u.email, u.display_name, u.role, u.password_hash, u.status,
+                u.failed_login_count, u.locked_until, u.last_login_at, u.created_at, u.totp_secret, u.totp_pending_secret, u.totp_enabled_at, u.totp_last_step
            FROM center_sessions s JOIN center_users u ON u.id = s.user_id
           WHERE s.token_hash = ?1 AND s.revoked_at IS NULL AND s.expires_at > ?2 AND u.status = 'ACTIVE'`,
       )
@@ -104,6 +109,68 @@ export class CenterRepository {
 
   revokeUserSessionsStatement(userId: string, now: string): D1PreparedStatementLike {
     return this.db.prepare("UPDATE center_sessions SET revoked_at = ?2 WHERE user_id = ?1 AND revoked_at IS NULL").bind(userId, now);
+  }
+
+  // ---------------------------------------------------------------- two-step sign-in (phase C9)
+
+  setPendingSecretStatement(id: string, secret: string, now: string): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE center_users SET totp_pending_secret = ?2, updated_at = ?3 WHERE id = ?1").bind(id, secret, now);
+  }
+
+  /** The pending secret becomes the real one (the first code proved the app has it). */
+  enableTotpStatement(id: string, step: number, now: string): D1PreparedStatementLike {
+    return this.db.prepare(
+      `UPDATE center_users SET totp_secret = totp_pending_secret, totp_pending_secret = NULL, totp_enabled_at = ?3, totp_last_step = ?2,
+              failed_login_count = 0, locked_until = NULL, updated_at = ?3
+        WHERE id = ?1 AND totp_pending_secret IS NOT NULL`,
+    ).bind(id, step, now);
+  }
+
+  /** A code was accepted: remember its step (never again) and clear the failure count. */
+  totpUsedStatement(id: string, step: number, now: string): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE center_users SET totp_last_step = ?2, failed_login_count = 0, locked_until = NULL, updated_at = ?3 WHERE id = ?1").bind(id, step, now);
+  }
+
+  resetMfaStatements(id: string, now: string): D1PreparedStatementLike[] {
+    return [
+      this.db.prepare("UPDATE center_users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = ?2 WHERE id = ?1").bind(id, now),
+      this.db.prepare("DELETE FROM center_recovery_codes WHERE user_id = ?1").bind(id),
+      this.revokeUserSessionsStatement(id, now),
+    ];
+  }
+
+  sessionMfaStatement(sessionId: string, now: string): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE center_sessions SET mfa_at = ?2, last_seen_at = ?2 WHERE id = ?1").bind(sessionId, now);
+  }
+
+  replaceRecoveryCodesStatements(userId: string, hashes: string[], now: string): D1PreparedStatementLike[] {
+    return [
+      this.db.prepare("DELETE FROM center_recovery_codes WHERE user_id = ?1").bind(userId),
+      ...hashes.map((h) => this.db.prepare("INSERT INTO center_recovery_codes (code_hash, user_id, created_at) VALUES (?1, ?2, ?3)").bind(h, userId, now)),
+    ];
+  }
+
+  /** Marks one unused recovery code of this person used; true if there was one. */
+  async useRecoveryCode(userId: string, hash: string, now: string): Promise<boolean> {
+    const row = await this.db
+      .prepare("UPDATE center_recovery_codes SET used_at = ?3 WHERE code_hash = ?2 AND user_id = ?1 AND used_at IS NULL RETURNING code_hash")
+      .bind(userId, hash, now)
+      .first<{ code_hash: string }>();
+    return !!row;
+  }
+
+  async recoveryCodesLeft(userId: string): Promise<number> {
+    const row = await this.db.prepare("SELECT COUNT(*) AS n FROM center_recovery_codes WHERE user_id = ?1 AND used_at IS NULL").bind(userId).first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+
+  /** Failed sign-ins (password or code, any or no account) from one IP since `since`. */
+  async failuresFromIp(ip: string, since: string): Promise<number> {
+    const row = await this.db
+      .prepare("SELECT COUNT(*) AS n FROM center_audit WHERE ip = ?1 AND created_at > ?2 AND action IN ('LOGIN_FAILED', 'LOGIN_LOCKED', 'MFA_FAILED')")
+      .bind(ip, since)
+      .first<{ n: number }>();
+    return row?.n ?? 0;
   }
 
   // ---------------------------------------------------------------- setup links

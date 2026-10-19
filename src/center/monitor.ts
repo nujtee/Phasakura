@@ -6,9 +6,10 @@ import { parseSites, type CenterEnv, type CenterSite } from "./env.ts";
 import { SiteClient, type SiteResponse } from "./site-client.ts";
 
 /** Alert types a site can raise; "recovered" (in settings) switches the all-clear messages on or off. */
-export const ALERT_TYPES = ["site_down", "schema_outdated", "cron_stale", "server_errors", "config_errors"] as const;
+export const ALERT_TYPES = ["site_down", "schema_outdated", "cron_stale", "server_errors", "config_errors", "backup_stale"] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
-export const SETTING_TYPES = [...ALERT_TYPES, "recovered"] as const;
+/** "security" (phase C9): account locked, two-step reset, recovery code used, new platform owner, sign-in flood. */
+export const SETTING_TYPES = [...ALERT_TYPES, "recovered", "security"] as const;
 export type SettingType = (typeof SETTING_TYPES)[number];
 
 export const ALERT_LABELS: Record<SettingType, string> = {
@@ -17,8 +18,28 @@ export const ALERT_LABELS: Record<SettingType, string> = {
   cron_stale: "งานเบื้องหลัง (cron) หยุด",
   server_errors: "ข้อผิดพลาดของเซิร์ฟเวอร์สูง",
   config_errors: "การตั้งค่าของเว็บผิดพลาด",
+  backup_stale: "ไม่มีไฟล์สำรองข้อมูลใหม่",
   recovered: "แจ้งเมื่อกลับมาปกติ",
+  security: "ความปลอดภัยของ Center (บัญชีถูกล็อก, รีเซ็ต 2 ขั้น, เจ้าของแพลตฟอร์มใหม่)",
 };
+
+/** No backup newer than this = backup_stale (the daily one runs at 03:17 Bangkok). */
+export const BACKUP_STALE_MS = 36 * 3_600_000;
+
+/**
+ * What a site's backup list says (phase C9). `known: false` = the list could not be read (site down, or older code):
+ * leave the alert's state alone. An empty list is only a problem once Center has watched the site for BACKUP_STALE_MS.
+ */
+export function backupState(res: SiteResponse<{ items: { createdAt: string }[] }>, now: Date, watchedSince: string | null): { known: boolean; detail?: string } {
+  if (res.status !== 200 || !res.data) return { known: false };
+  const latest = res.data.items[0];
+  if (!latest) {
+    const watched = watchedSince ? now.getTime() - Date.parse(watchedSince) : 0;
+    return watched > BACKUP_STALE_MS ? { known: true, detail: "ยังไม่มีไฟล์สำรองเลย" } : { known: true };
+  }
+  const age = now.getTime() - Date.parse(latest.createdAt);
+  return age > BACKUP_STALE_MS ? { known: true, detail: `ไฟล์ล่าสุดเมื่อ ${Math.round(age / 3_600_000)} ชม. ก่อน` } : { known: true };
+}
 
 /** A problem must be seen in this many checks in a row (5 minutes apart) before it is announced. */
 export const OPEN_AFTER_CHECKS = 2;
@@ -125,7 +146,12 @@ export async function runChecks(env: CenterEnv, options: MonitorOptions = {}): P
   const db = env.DB;
   const sites = parseSites(env.CENTER_SITES);
   const client = new SiteClient(env, 8000, clock);
-  const readings = await Promise.all(sites.map((s) => client.call<SystemStatusDto>(s, "GET", "/api/center/status", MONITOR_ACTOR)));
+  const [readings, backupLists, watched] = await Promise.all([
+    Promise.all(sites.map((s) => client.call<SystemStatusDto>(s, "GET", "/api/center/status", MONITOR_ACTOR))),
+    Promise.all(sites.map((s) => client.call<{ items: { createdAt: string }[] }>(s, "GET", "/api/center/backups", MONITOR_ACTOR))),
+    db.prepare("SELECT site, MIN(checked_at) AS since FROM center_site_checks GROUP BY site").all<{ site: string; since: string }>(),
+  ]);
+  const watchedSince = new Map(watched.results.map((r) => [r.site, r.since]));
   const { results: stateRows } = await db.prepare("SELECT site, type, bad_checks, open_since, detail FROM center_alert_states").all<StateRow>();
   const states = new Map(stateRows.map((r) => [`${r.site}/${r.type}`, r]));
 
@@ -133,6 +159,8 @@ export async function runChecks(env: CenterEnv, options: MonitorOptions = {}): P
   const events: AlertEvent[] = [];
   sites.forEach((site, i) => {
     const { problems, row } = evaluate(readings[i]!);
+    const backup = backupState(backupLists[i]!, now, watchedSince.get(site.slug) ?? null);
+    if (backup.detail) problems.set("backup_stale", backup.detail);
     statements.push(db.prepare(
       `INSERT INTO center_site_checks (site, checked_at, http_status, health, database_state, schema_state, cron_state, errors_24h, slips_waiting, suspended, problems, detail)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
@@ -143,6 +171,7 @@ export async function runChecks(env: CenterEnv, options: MonitorOptions = {}): P
     const blind = problems.has("site_down");
     for (const type of ALERT_TYPES) {
       if (blind && type !== "site_down") continue;
+      if (type === "backup_stale" && !backup.known) continue; // could not read the list: no news
       const prev = states.get(`${site.slug}/${type}`);
       const detail = problems.get(type);
       let bad = 0;
@@ -213,6 +242,33 @@ async function announce(env: CenterEnv, events: AlertEvent[], now: Date, lineFet
   ).bind(crypto.randomUUID(), e.site.slug, e.type, e.event, `${ALERT_LABELS[e.type]}: ${e.detail}`.slice(0, 2000), wanted.includes(e) ? delivery : "OFF", wanted.includes(e) ? error : null, nowIso)));
   if (delivery === "FAILED") console.error(JSON.stringify({ level: "error", message: "center_alert_line_failed", error }));
   return delivery;
+}
+
+/**
+ * A security event (phase C9) to the LINE group — when "security" is switched on — and the alert log. Never throws:
+ * a LINE outage must not block a sign-in or an admin action.
+ */
+export async function securityAlert(env: CenterEnv, text: string, now: Date, lineFetch?: FetchLike): Promise<void> {
+  try {
+    const settings = await loadSettings(env.DB);
+    const token = env.CENTER_LINE_TOKEN?.trim();
+    let delivery: "SENT" | "FAILED" | "OFF" | "NO_GROUP" | "NO_TOKEN" = "OFF";
+    let error: string | null = null;
+    if (settings.alertTypes.has("security")) {
+      if (!token) delivery = "NO_TOKEN";
+      else if (!settings.lineGroupId) delivery = "NO_GROUP";
+      else {
+        const host = new URL(env.APP_BASE_URL?.trim() || "https://center.invalid").host;
+        const res = await createLineApi(token, lineFetch).push(settings.lineGroupId, [{ type: "text", text: `🔐 Center ความปลอดภัย · ${bangkokTime(now)}\n\n${text}\n\n${host}`.slice(0, 4800) }], crypto.randomUUID());
+        delivery = res.ok ? "SENT" : "FAILED";
+        if (!res.ok) error = res.error.slice(0, 300);
+      }
+    }
+    await env.DB.prepare("INSERT INTO center_alert_log (id, site, type, event, message, delivery, error, created_at) VALUES (?1, NULL, 'security', 'SECURITY', ?2, ?3, ?4, ?5)")
+      .bind(crypto.randomUUID(), text.slice(0, 2000), delivery, error, now.toISOString()).run();
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", message: "center_security_alert_failed", error: String(error).slice(0, 200) }));
+  }
 }
 
 /** Settings → "ส่งข้อความทดสอบ". */

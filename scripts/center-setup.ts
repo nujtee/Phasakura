@@ -56,6 +56,38 @@ export function firstOwnerSql(input: { id: string; email: string; name: string; 
   ].join("\n");
 }
 
+/**
+ * Break-glass (phase C9): clear a PLATFORM_OWNER's two-step sign-in when nobody else can (the only owner lost both
+ * phone and recovery codes). Their sessions end; the next sign-in sets up a new app. Recorded in Center's audit log.
+ */
+export function mfaResetSql(email: string, now: Date): string {
+  if (!EMAIL.test(email)) throw new Error("invalid email");
+  const e = sqlText(email.toLowerCase());
+  const t = sqlText(now.toISOString());
+  const who = `(SELECT id FROM center_users WHERE email = ${e} AND role = 'PLATFORM_OWNER')`;
+  return [
+    `INSERT INTO center_audit (id, user_id, action, site, reason, detail_json, ip, created_at)
+       SELECT ${sqlText(crypto.randomUUID())}, ${who}, 'MFA_RESET', NULL, 'Actions → Center setup (break-glass)', json_object('target', ${who}, 'email', ${e}), NULL, ${t}
+        WHERE ${who} IS NOT NULL;`,
+    `UPDATE center_users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL,
+            failed_login_count = 0, locked_until = NULL, updated_at = ${t} WHERE id = ${who};`,
+    `DELETE FROM center_recovery_codes WHERE user_id = ${who};`,
+    `UPDATE center_sessions SET revoked_at = ${t} WHERE user_id = ${who} AND revoked_at IS NULL;`,
+  ].join("\n");
+}
+
+async function mfaReset(email: string): Promise<void> {
+  const registry = loadRegistry(ROOT);
+  if (!registry.center) throw new Error("sites/sites.json has no \"center\" entry");
+  const db = registry.center.d1.name;
+  const found = wrangler(["d1", "execute", db, "--remote", "--json", "--command", `SELECT count(*) AS n FROM center_users WHERE email = ${sqlText(email.toLowerCase())} AND role = 'PLATFORM_OWNER'`]);
+  const n = (JSON.parse(found) as { results: { n: number }[] }[])[0]?.results[0]?.n ?? 0;
+  if (n !== 1) throw new Error("no PLATFORM_OWNER with that e-mail (this task is only for a platform owner who is locked out)");
+  wrangler(["d1", "execute", db, "--remote", "--command", mfaResetSql(email, new Date())]);
+  summary("## Two-step sign-in reset");
+  summary(`- ${email}: two-step sign-in cleared, every session ended. Sign in with the password; Center asks to scan a new QR.`);
+}
+
 function summary(line: string): void {
   console.log(line);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${line}\n`);
@@ -102,7 +134,12 @@ async function main(): Promise<void> {
     if (!values.email || !EMAIL.test(values.email) || !values.name || !NAME.test(values.name.trim())) throw new Error("usage: first-owner --email <email> --name <name>");
     return firstOwner(values.email, values.name);
   }
-  throw new Error("usage: tsx scripts/center-setup.ts keys | first-owner --email <email> --name <name>");
+  if (action === "mfa-reset") {
+    const { values } = parseArgs({ args: rest, options: { email: { type: "string" } } });
+    if (!values.email || !EMAIL.test(values.email)) throw new Error("usage: mfa-reset --email <platform owner email>");
+    return mfaReset(values.email);
+  }
+  throw new Error("usage: tsx scripts/center-setup.ts keys | first-owner --email <email> --name <name> | mfa-reset --email <email>");
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop()!)) {

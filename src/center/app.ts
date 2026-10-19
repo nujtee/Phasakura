@@ -7,7 +7,8 @@ import { ACTION_LABELS, bkk, esc, page, ROLE_LABELS, SSO_SCRIPT, ssoHandoffPage,
 import { CenterRepository, type CenterUserRow } from "./repository.ts";
 import { SiteClient, signingKey } from "./site-client.ts";
 import { verifyLineSignature, createLineApi, type FetchLike } from "../worker/line/line-api.ts";
-import { ALERT_LABELS, lineWebhook, loadSettings, runChecks, sendTest, SETTING_TYPES, type SettingType } from "./monitor.ts";
+import { ALERT_LABELS, lineWebhook, loadSettings, runChecks, securityAlert, sendTest, SETTING_TYPES, type SettingType } from "./monitor.ts";
+import { newRecoveryCodes, newTotpSecret, normalizeRecoveryCode, otpauthUri, qrSvg, verifyTotp } from "./totp.ts";
 
 const COOKIE = "__Host-csid";
 const HOUR = 3_600_000;
@@ -19,6 +20,12 @@ export const LOCK_MS = 15 * 60_000;
 export const INVITE_TTL_MS = 48 * HOUR;
 export const RESET_TTL_MS = 24 * HOUR;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+/** Sensitive actions want the two-step code to have been entered within this long (step-up, phase C9). */
+export const STEP_UP_MS = 15 * 60_000;
+/** Failed sign-ins (password or code) from one IP within IP_WINDOW_MS before that IP is turned away. */
+export const IP_MAX_FAILURES = 20;
+export const IP_WINDOW_MS = 15 * 60_000;
+const ISSUER = "Center Phasakura";
 
 export interface CenterAppOptions {
   clock?: () => Date;
@@ -44,6 +51,8 @@ interface Me extends LayoutUser {
   id: string;
   email: string;
   sessionId: string;
+  /** When this session passed the two-step check; null = password only so far. */
+  mfaAt: string | null;
 }
 
 class HttpError extends Error {
@@ -98,10 +107,22 @@ export function createCenterApp(options: CenterAppOptions = {}) {
       throw new HttpError(401, "กรุณาเข้าสู่ระบบอีกครั้ง");
     }
     if (key === "POST /logout") return logout(ctx, me);
+    // Two-step sign-in (phase C9): nothing else until this session has passed it (or set it up).
+    if (key === "GET /mfa") return mfaPage(ctx, me);
+    if (key === "POST /mfa") return mfaVerify(ctx, me);
+    if (key === "POST /mfa/setup") return mfaSetup(ctx, me);
+    if (!me.mfaAt) {
+      if (request.method === "GET") return redirect("/mfa");
+      throw new HttpError(401, "กรุณายืนยันรหัส 2 ขั้นก่อน");
+    }
+    // Step-up: sensitive actions want the code entered within STEP_UP_MS; otherwise ask for it, then come back.
+    const back = sensitiveReturnPath(request.method, url.pathname);
+    if (back && ctx.now.getTime() - Date.parse(me.mfaAt) > STEP_UP_MS) return stepUpPage(ctx, me, back);
     if (key === "GET /") return dashboard(ctx, me);
     if (key === "GET /audit") return auditPage(ctx, me);
     if (key === "GET /account") return accountPage(ctx, me);
     if (key === "POST /account/password") return changePassword(ctx, me);
+    if (key === "POST /account/recovery-codes") return regenerateRecoveryCodes(ctx, me);
     const sso = /^\/sites\/([a-z][a-z0-9-]{1,30})\/sso$/.exec(url.pathname);
     if (sso && request.method === "POST") return startSso(ctx, me, sso[1]!);
     const detail = /^\/sites\/([a-z][a-z0-9-]{1,30})$/.exec(url.pathname);
@@ -138,8 +159,11 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (me.role !== "PLATFORM_OWNER" && url.pathname.startsWith("/users")) throw new HttpError(403, "หน้านี้สำหรับเจ้าของแพลตฟอร์มเท่านั้น");
     if (key === "GET /users") return usersPage(ctx, me);
     if (key === "POST /users") return createUser(ctx, me);
-    const user = /^\/users\/(u_[0-9a-f]{8,38})\/(role|disable|enable|setup-link)$/.exec(url.pathname);
-    if (user && request.method === "POST") return changeUser(ctx, me, user[1]!, user[2] as "role" | "disable" | "enable" | "setup-link");
+    const user = /^\/users\/(u_[0-9a-f]{8,38})\/(role|disable|enable|setup-link|mfa-reset)$/.exec(url.pathname);
+    if (user && request.method === "POST") {
+      if (user[2] === "mfa-reset") return resetUserMfa(ctx, me, user[1]!);
+      return changeUser(ctx, me, user[1]!, user[2] as "role" | "disable" | "enable" | "setup-link");
+    }
     throw new HttpError(404, "ไม่พบหน้านี้");
   }
 
@@ -156,7 +180,7 @@ export function createCenterApp(options: CenterAppOptions = {}) {
       return null;
     }
     if (idle > TOUCH_MS) await ctx.repo.touchSession(row.session_id, iso(ctx.now));
-    return { id: row.id, email: row.email, displayName: row.display_name, role: row.role, sessionId: row.session_id };
+    return { id: row.id, email: row.email, displayName: row.display_name, role: row.role, sessionId: row.session_id, mfaAt: row.mfa_at };
   }
 
   async function newSession(ctx: Ctx, user: CenterUserRow, action: "LOGIN" | "PASSWORD_SET", extra: D1Statements = []): Promise<Response> {
@@ -171,7 +195,154 @@ export function createCenterApp(options: CenterAppOptions = {}) {
       ctx.repo.recordLoginStatement(user.id, now),
       audit(ctx, user.id, action),
     ]);
-    return redirect("/", `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${CENTER_SESSION_TTL_MS / 1000}`);
+    // Password only so far: the two-step check (or its set-up) comes next (phase C9).
+    return redirect("/mfa", `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${CENTER_SESSION_TTL_MS / 1000}`);
+  }
+
+  // ---------------------------------------------------------------- two-step sign-in (phase C9)
+
+  async function ipThrottled(ctx: Ctx): Promise<boolean> {
+    if (!ctx.ip) return false;
+    return (await ctx.repo.failuresFromIp(ctx.ip, iso(new Date(ctx.now.getTime() - IP_WINDOW_MS)))) >= IP_MAX_FAILURES;
+  }
+
+  /** Announce once, when an IP reaches the limit. */
+  async function noteIpFailure(ctx: Ctx): Promise<void> {
+    if (!ctx.ip) return;
+    const n = await ctx.repo.failuresFromIp(ctx.ip, iso(new Date(ctx.now.getTime() - IP_WINDOW_MS)));
+    if (n === IP_MAX_FAILURES) {
+      await audit(ctx, null, "LOGIN_THROTTLED", null, null, { failures: n }).run();
+      await securityAlert(ctx.env, `IP ${ctx.ip} เข้าสู่ระบบผิด ${n} ครั้งใน 15 นาที — หยุดรับจาก IP นี้ชั่วคราว`, ctx.now, options.lineFetch);
+    }
+  }
+
+  function codeForm(action: string, label: string, button: string, recovery: boolean): string {
+    return `<form method="post" action="${esc(action)}" class="stack" style="max-width:320px">
+<label for="code">${esc(label)}</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="12" pattern="[0-9 ]{6,7}|[A-Za-z2-7 -]{8,10}" autofocus>
+<p><button type="submit">${esc(button)}</button></p></form>${recovery ? '<p class="small muted">ไม่มีมือถือ: ใส่รหัสสำรอง (เช่น abcd-2345) ในช่องเดียวกัน — ใช้ได้รหัสละครั้ง</p>' : ""}`;
+  }
+
+  async function mfaPage(ctx: Ctx, me: Me, flash: string | null = null): Promise<Response> {
+    const user = (await ctx.repo.userById(me.id))!;
+    const next = safeNext(ctx.url.searchParams.get("next"));
+    if (user.totp_secret) {
+      return html(page({
+        title: "ยืนยันรหัส 2 ขั้น", flash: flash ? { kind: "error", text: flash } : null,
+        body: `<div class="narrow card"><h1>ยืนยันรหัส 2 ขั้น</h1><p class="muted">${esc(me.email)}</p>
+${codeForm(`/mfa${next ? `?next=${encodeURIComponent(next)}` : ""}`, "รหัส 6 หลักจากแอปยืนยันตัวตน", "ยืนยัน", true)}
+<form method="post" action="/logout" class="inline"><button class="plain" type="submit">ออกจากระบบ</button></form></div>`,
+      }), flash ? 422 : 200);
+    }
+    // First sign-in since phase C9 (or after a reset): set it up now.
+    let secret = user.totp_pending_secret;
+    if (!secret) {
+      secret = newTotpSecret();
+      await ctx.repo.setPendingSecretStatement(me.id, secret, iso(ctx.now)).run();
+    }
+    const uri = otpauthUri(secret, user.email, ISSUER);
+    return html(page({
+      title: "ตั้งค่ายืนยันตัวตน 2 ขั้น", flash: flash ? { kind: "error", text: flash } : null,
+      body: `<div class="narrow card" style="max-width:520px"><h1>ตั้งค่ายืนยันตัวตน 2 ขั้น</h1>
+<p>Center บังคับทุกบัญชีใช้รหัสจากแอปบนมือถือทุกครั้งที่เข้าสู่ระบบ</p>
+<ol class="small"><li>เปิดแอป Google Authenticator, Microsoft Authenticator หรือ 1Password บนมือถือ</li>
+<li>เพิ่มบัญชีใหม่ → สแกน QR ด้านล่าง</li><li>ใส่รหัส 6 หลักที่แอปแสดง</li></ol>
+<div style="max-width:240px;margin:12px 0">${qrSvg(uri)}</div>
+<p class="small muted">สแกนไม่ได้: เลือก "ใส่คีย์เอง" ในแอป แล้วพิมพ์</p><p class="mono">${esc(secret.replace(/(.{4})/g, "$1 ").trim())}</p>
+${codeForm("/mfa/setup", "รหัส 6 หลักจากแอป", "ยืนยันและเปิดใช้", false)}
+<form method="post" action="/logout" class="inline"><button class="plain" type="submit">ออกจากระบบ</button></form></div>`,
+    }), flash ? 422 : 200);
+  }
+
+  /** A wrong code counts like a wrong password (5 → locked 15 minutes, session ended). */
+  async function mfaFailure(ctx: Ctx, user: CenterUserRow): Promise<Response | null> {
+    const count = user.failed_login_count + 1;
+    const locked = count >= MAX_FAILED_LOGINS ? iso(new Date(ctx.now.getTime() + LOCK_MS)) : null;
+    await ctx.repo.recordLoginFailure(user.id, locked ? 0 : count, locked, iso(ctx.now));
+    await audit(ctx, user.id, locked ? "LOGIN_LOCKED" : "MFA_FAILED").run();
+    await noteIpFailure(ctx);
+    if (!locked) return null;
+    await ctx.repo.revokeUserSessionsStatement(user.id, iso(ctx.now)).run();
+    await securityAlert(ctx.env, `บัญชี ${user.email} ถูกล็อก 15 นาที — ใส่รหัส 2 ขั้นผิด ${MAX_FAILED_LOGINS} ครั้ง (IP ${ctx.ip ?? "?"})`, ctx.now, options.lineFetch);
+    return redirect("/login", `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
+  }
+
+  async function mfaVerify(ctx: Ctx, me: Me): Promise<Response> {
+    const user = (await ctx.repo.userById(me.id))!;
+    if (!user.totp_secret) return redirect("/mfa");
+    if (user.locked_until && Date.parse(user.locked_until) > ctx.now.getTime()) return mfaPage(ctx, me, "บัญชีถูกล็อกชั่วคราว ลองใหม่ภายหลัง");
+    const code = ((await readForm(ctx.request)).get("code") ?? "").trim();
+    const next = safeNext(ctx.url.searchParams.get("next")) ?? "/";
+    const now = iso(ctx.now);
+    const step = await verifyTotp(user.totp_secret, code, ctx.now, user.totp_last_step);
+    if (step !== null) {
+      await ctx.repo.db.batch([ctx.repo.totpUsedStatement(user.id, step, now), ctx.repo.sessionMfaStatement(me.sessionId, now), audit(ctx, me.id, "MFA_OK")]);
+      return redirect(next);
+    }
+    const recovery = normalizeRecoveryCode(code);
+    if (recovery && (await ctx.repo.useRecoveryCode(user.id, await sha256Hex(recovery), now))) {
+      const left = await ctx.repo.recoveryCodesLeft(user.id);
+      await ctx.repo.db.batch([ctx.repo.recordLoginStatement(user.id, now), ctx.repo.sessionMfaStatement(me.sessionId, now), audit(ctx, me.id, "MFA_RECOVERY_USED", null, null, { left })]);
+      await securityAlert(ctx.env, `${user.email} เข้าสู่ระบบด้วยรหัสสำรอง (เหลือ ${left} รหัส)`, ctx.now, options.lineFetch);
+      return redirect(left <= 3 ? "/account" : next);
+    }
+    return (await mfaFailure(ctx, user)) ?? mfaPage(ctx, me, "รหัสไม่ถูกต้อง (หรือใช้ไปแล้ว) ลองรหัสใหม่จากแอป");
+  }
+
+  async function mfaSetup(ctx: Ctx, me: Me): Promise<Response> {
+    const user = (await ctx.repo.userById(me.id))!;
+    if (user.totp_secret || !user.totp_pending_secret) return redirect("/mfa");
+    const code = ((await readForm(ctx.request)).get("code") ?? "").trim();
+    const step = await verifyTotp(user.totp_pending_secret, code, ctx.now, null);
+    if (step === null) return (await mfaFailure(ctx, user)) ?? mfaPage(ctx, me, "รหัสไม่ถูกต้อง ตรวจว่าเวลาในมือถือตรง แล้วใส่รหัสล่าสุดจากแอป");
+    const now = iso(ctx.now);
+    const codes = newRecoveryCodes();
+    await ctx.repo.db.batch([
+      ctx.repo.enableTotpStatement(user.id, step, now),
+      ...ctx.repo.replaceRecoveryCodesStatements(user.id, await Promise.all(codes.map((c) => sha256Hex(c))), now),
+      ctx.repo.sessionMfaStatement(me.sessionId, now),
+      audit(ctx, me.id, "MFA_ENABLED"),
+    ]);
+    return recoveryCodesPage(me, codes, "เปิดใช้ยืนยันตัวตน 2 ขั้นแล้ว");
+  }
+
+  function recoveryCodesPage(me: Me, codes: string[], title: string): Response {
+    return html(page({
+      title, user: me,
+      body: `<div class="narrow card" style="max-width:520px"><h1>${esc(title)}</h1>
+<p><strong>รหัสสำรอง 10 รหัส</strong> — ใช้แทนรหัสจากแอปเมื่อมือถือหาย รหัสละครั้ง เก็บไว้ในที่ปลอดภัย (เช่น password manager หรือพิมพ์เก็บ) <strong>หน้านี้แสดงครั้งเดียว</strong></p>
+<pre class="mono" style="font-size:1.05rem;line-height:1.9">${codes.map(esc).join("\n")}</pre>
+<p><a href="/">ไปหน้าแรก</a></p></div>`,
+    }));
+  }
+
+  async function regenerateRecoveryCodes(ctx: Ctx, me: Me): Promise<Response> {
+    const codes = newRecoveryCodes();
+    const now = iso(ctx.now);
+    await ctx.repo.db.batch([
+      ...ctx.repo.replaceRecoveryCodesStatements(me.id, await Promise.all(codes.map((c) => sha256Hex(c))), now),
+      audit(ctx, me.id, "MFA_RECOVERY_RENEWED"),
+    ]);
+    return recoveryCodesPage(me, codes, "รหัสสำรองชุดใหม่ (ชุดเก่าใช้ไม่ได้แล้ว)");
+  }
+
+  function stepUpPage(_ctx: Ctx, me: Me, back: string): Response {
+    return html(page({
+      title: "ยืนยันรหัสอีกครั้ง", user: me,
+      body: `<div class="narrow card"><h1>ยืนยันรหัส 2 ขั้นอีกครั้ง</h1>
+<p class="muted">งานนี้ต้องยืนยันรหัสภายใน 15 นาทีล่าสุด ใส่รหัสแล้วระบบจะพากลับไปหน้าเดิม ให้กดคำสั่งอีกครั้ง</p>
+${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลักจากแอป", "ยืนยัน", true)}</div>`,
+    }), 403);
+  }
+
+  async function resetUserMfa(ctx: Ctx, me: Me, id: string): Promise<Response> {
+    const target = await ctx.repo.userById(id);
+    if (!target) throw new HttpError(404, "ไม่พบผู้ใช้นี้");
+    if (id === me.id) return usersPage(ctx, me, { kind: "error", text: "รีเซ็ต 2 ขั้นของตัวเองไม่ได้ — ให้เจ้าของแพลตฟอร์มอีกคนทำ หรือใช้รหัสสำรอง" });
+    const reason = ((await readForm(ctx.request)).get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) return usersPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    await ctx.repo.db.batch([...ctx.repo.resetMfaStatements(id, iso(ctx.now)), audit(ctx, me.id, "MFA_RESET", null, reason, { target: id, email: target.email })]);
+    await securityAlert(ctx.env, `${me.email} รีเซ็ตยืนยันตัวตน 2 ขั้นของ ${target.email} — เหตุผล: ${reason}`, ctx.now, options.lineFetch);
+    return usersPage(ctx, me, { kind: "ok", text: `รีเซ็ต 2 ขั้นของ ${target.display_name} แล้ว — เข้าสู่ระบบครั้งถัดไปต้องสแกน QR ใหม่` });
   }
 
   // ---------------------------------------------------------------- public pages
@@ -205,8 +376,11 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     const password = form.get("password") ?? "";
     const user = EMAIL.test(email) ? await ctx.repo.userByEmail(email) : null;
     const wrong = "อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกล็อกชั่วคราว";
+    if (await ipThrottled(ctx)) return loginPage(ctx, "ลองเข้าสู่ระบบจากเครือข่ายนี้หลายครั้งเกินไป รอ 15 นาทีแล้วลองใหม่", email);
     if (!user || user.status !== "ACTIVE" || !user.password_hash) {
       await hash("timing-equaliser-not-a-password");
+      await audit(ctx, null, "LOGIN_FAILED", null, null, { unknownAccount: true }).run();
+      await noteIpFailure(ctx);
       return loginPage(ctx, wrong, email);
     }
     if (user.locked_until && Date.parse(user.locked_until) > ctx.now.getTime()) return loginPage(ctx, wrong, email);
@@ -215,6 +389,8 @@ export function createCenterApp(options: CenterAppOptions = {}) {
       const locked = count >= MAX_FAILED_LOGINS ? iso(new Date(ctx.now.getTime() + LOCK_MS)) : null;
       await ctx.repo.recordLoginFailure(user.id, locked ? 0 : count, locked, iso(ctx.now));
       await audit(ctx, user.id, locked ? "LOGIN_LOCKED" : "LOGIN_FAILED").run();
+      if (locked) await securityAlert(ctx.env, `บัญชี ${user.email} ถูกล็อก 15 นาที — ใส่รหัสผ่านผิด ${MAX_FAILED_LOGINS} ครั้ง (IP ${ctx.ip ?? "?"})`, ctx.now, options.lineFetch);
+      await noteIpFailure(ctx);
       return loginPage(ctx, wrong, email);
     }
     return newSession(ctx, user, "LOGIN");
@@ -631,7 +807,12 @@ ${revokeHtml}
     }));
   }
 
-  function accountPage(_ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Response {
+  async function accountPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
+    const left = await ctx.repo.recoveryCodesLeft(me.id);
+    const mfaCard = `<div class="card"><h2 style="margin-top:0">ยืนยันตัวตน 2 ขั้น</h2><p class="ok">เปิดใช้อยู่</p>
+<p class="small ${left <= 3 ? "warn" : "muted"}">รหัสสำรองที่ยังไม่ได้ใช้: ${left} รหัส${left <= 3 ? " — ควรสร้างชุดใหม่" : ""}</p>
+<form method="post" action="/account/recovery-codes" class="inline"><button type="submit">สร้างรหัสสำรองชุดใหม่</button></form>
+<p class="small muted">มือถือหาย: ใช้รหัสสำรองเข้าสู่ระบบ แล้วขอเจ้าของแพลตฟอร์มอีกคน "รีเซ็ต 2 ขั้น" ให้ เพื่อสแกน QR ใหม่</p></div>`;
     return html(page({
       title: "บัญชีของฉัน", user: me, current: "account", flash,
       body: `<h1>บัญชีของฉัน</h1><div class="card"><p>${esc(me.displayName)} · ${esc(me.email)} · ${esc(ROLE_LABELS[me.role])}</p>
@@ -639,7 +820,7 @@ ${revokeHtml}
 <label for="current">รหัสผ่านปัจจุบัน</label><input id="current" name="current" type="password" autocomplete="current-password" required maxlength="200">
 <label for="password">รหัสผ่านใหม่ (อย่างน้อย 12 ตัว)</label><input id="password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="200">
 <label for="confirm">พิมพ์อีกครั้ง</label><input id="confirm" name="confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="200">
-<p><button type="submit">เปลี่ยนรหัสผ่าน</button></p></form><p class="muted small">เปลี่ยนแล้ว ทุก session อื่นของคุณจะออกจากระบบ</p></div>`,
+<p><button type="submit">เปลี่ยนรหัสผ่าน</button></p></form><p class="muted small">เปลี่ยนแล้ว ทุก session อื่นของคุณจะออกจากระบบ</p></div>${mfaCard}`,
     }), flash?.kind === "error" ? 422 : 200);
   }
 
@@ -670,10 +851,12 @@ ${revokeHtml}
         ? `<form method="post" action="/users/${u.id}/role" class="inline"><select name="role" aria-label="บทบาทของ ${esc(u.display_name)}">${roleOptions(u.role)}</select>
 <input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล" aria-label="เหตุผล"><button type="submit">เปลี่ยนบทบาท</button></form>
 <form method="post" action="/users/${u.id}/setup-link" class="inline" style="margin-top:6px"><button class="plain" type="submit">สร้างลิงก์ตั้งรหัสผ่านใหม่</button></form>
+${self || !u.totp_secret ? "" : `<form method="post" action="/users/${u.id}/mfa-reset" class="inline" style="margin-top:6px"><input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล เช่น มือถือหาย" aria-label="เหตุผลที่รีเซ็ต 2 ขั้น"><button class="plain" type="submit">รีเซ็ต 2 ขั้น</button></form>`}
 ${self ? "" : `<form method="post" action="/users/${u.id}/disable" class="inline" style="margin-top:6px"><input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผลที่ปิดบัญชี" aria-label="เหตุผลที่ปิดบัญชี"><button class="danger" type="submit">ปิดบัญชี</button></form>`}`
         : `<form method="post" action="/users/${u.id}/enable" class="inline"><input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล" aria-label="เหตุผล"><button type="submit">เปิดบัญชีอีกครั้ง</button></form>`;
       return `<tr><td><strong>${esc(u.display_name)}</strong>${self ? ' <span class="muted small">(คุณ)</span>' : ""}<br><span class="small">${esc(u.email)}</span></td>
-<td>${esc(ROLE_LABELS[u.role])}<br><span class="small ${u.status === "ACTIVE" ? "ok" : "bad"}">${u.status === "ACTIVE" ? (u.password_hash ? "ใช้งานอยู่" : "รอตั้งรหัสผ่าน") : "ปิดบัญชีแล้ว"}</span></td>
+<td>${esc(ROLE_LABELS[u.role])}<br><span class="small ${u.status === "ACTIVE" ? "ok" : "bad"}">${u.status === "ACTIVE" ? (u.password_hash ? "ใช้งานอยู่" : "รอตั้งรหัสผ่าน") : "ปิดบัญชีแล้ว"}</span>
+<br><span class="small ${u.totp_secret ? "ok" : "warn"}">${u.totp_secret ? "2 ขั้น: เปิดแล้ว" : "2 ขั้น: ยังไม่ได้ตั้ง"}</span></td>
 <td class="small">${esc(bkk(u.last_login_at))}</td><td>${actions}</td></tr>`;
     }).join("");
     return html(page({
@@ -715,6 +898,7 @@ ${self ? "" : `<form method="post" action="/users/${u.id}/disable" class="inline
       statement,
       audit(ctx, me.id, "USER_CREATED", null, null, { target: id, email, role }),
     ]);
+    if (role === "PLATFORM_OWNER") await securityAlert(ctx.env, `${me.email} เพิ่มเจ้าของแพลตฟอร์มคนใหม่: ${email}`, ctx.now, options.lineFetch);
     return usersPage(ctx, me, { kind: "ok", text: `เพิ่ม ${name} แล้ว` }, box);
   }
 
@@ -754,6 +938,7 @@ ${self ? "" : `<form method="post" action="/users/${u.id}/disable" class="inline
       if (String(error).includes("LAST_PLATFORM_OWNER")) return usersPage(ctx, me, { kind: "error", text: "ต้องมีเจ้าของแพลตฟอร์มที่ใช้งานได้อย่างน้อย 1 คน" });
       throw error;
     }
+    if (op === "role" && detail.to === "PLATFORM_OWNER") await securityAlert(ctx.env, `${me.email} เปลี่ยน ${target.email} เป็นเจ้าของแพลตฟอร์ม — เหตุผล: ${reason}`, ctx.now, options.lineFetch);
     // A role change or a disabled account: sign that person out of every site's back office too.
     let note = "";
     if (op === "role" || op === "disable") {
@@ -775,6 +960,23 @@ ${self ? "" : `<form method="post" action="/users/${u.id}/disable" class="inline
 }
 
 type D1Statement = ReturnType<CenterRepository["auditStatement"]>;
+/** A local path to return to after the two-step check (never another origin). */
+function safeNext(next: string | null): string | null {
+  return next && /^\/(?!\/)[A-Za-z0-9/_-]{0,200}$/.test(next) ? next : null;
+}
+
+/** Sensitive POSTs (step-up) and the page to come back to. */
+function sensitiveReturnPath(method: string, path: string): string | null {
+  if (method !== "POST") return null;
+  const site = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup-download)$/.exec(path);
+  if (site) return `/sites/${site[1]}`;
+  if (path === "/releases") return "/releases";
+  if (path === "/users" || path.startsWith("/users/")) return "/users";
+  if (path === "/settings") return "/settings";
+  if (path === "/account/recovery-codes" || path === "/account/password") return "/account";
+  return null;
+}
+
 const BACKUP_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-[A-Za-z0-9_-]{6}\.sql\.gz$/;
 
 interface BackupDto {
