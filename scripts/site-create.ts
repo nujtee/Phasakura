@@ -49,6 +49,7 @@ export function planSite(registry: Registry, raw: NewSiteInput, d1Id = PLACEHOLD
   const input = normalizeInput(raw);
   const problems: string[] = [];
   if (input.slug === CENTER_SLUG) problems.push(`slug "${CENTER_SLUG}" is reserved for the Center console`);
+  if (input.slug === "new") problems.push('slug "new" is reserved (Center → เพิ่มเว็บใหม่)');
   if (registry.sites.some((s) => s.slug === input.slug)) problems.push(`slug "${input.slug}" is already a site`);
   if (registry.sites.some((s) => s.domain === input.domain)) problems.push(`domain "${input.domain}" is already a site`);
   if (registry.center && input.domain === registry.center.domain) problems.push("that is Center's domain");

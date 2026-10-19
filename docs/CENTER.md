@@ -142,6 +142,34 @@ npx wrangler d1 execute <slug>-restore --remote --file 2026-10-19T20-17-00Z-abc1
 
 ถ้าแค่ย้อนเวลาภายใน 30 วัน ใช้ **D1 Time Travel** (`wrangler d1 time-travel restore`) เร็วกว่า: bookmark ก่อนแต่ละ Release อยู่ในหน้า Summary ของ run
 
+## เพิ่มเว็บใหม่จาก Center
+
+**Center → เว็บทั้งหมด → + เพิ่มเว็บใหม่** (เจ้าของแพลตฟอร์มเท่านั้น ทุกคำสั่งต้องใส่เหตุผล ยืนยันรหัส 2 ขั้น และบันทึกทุกครั้ง)
+
+1. ใส่โดเมน ชื่อเว็บ และ slug → **เพิ่มโดเมนเข้า Cloudflare**
+   - Center เพิ่มโดเมนเข้าบัญชีแพลตฟอร์ม และนำเข้า DNS เดิมให้ (อีเมลยังใช้ได้)
+   - Center ลบ record A / AAAA / CNAME ของโดเมนหลักและ `www` ที่จะชนกับเว็บ แล้วแสดงว่าลบอะไรไปบ้าง
+   - ถ้าโดเมนอยู่ในบัญชีแล้ว จะใช้ต่อ
+2. ส่ง **nameserver 2 ตัว** ที่แสดงให้เจ้าของเว็บเปลี่ยนที่ผู้ให้บริการโดเมน (และปิด DNSSEC) → กด **ตรวจสถานะอีกครั้ง** จนขึ้น Active
+3. **สร้างเว็บ** → Center สั่ง Actions → Create site (D1, R2, ทะเบียน) → ได้ PR มารอในหน้า Release
+4. หน้า Release → **Merge** → ติ๊กเว็บใหม่ + Center → **เริ่ม Release**
+5. หน้าเว็บนั้นใน Center → **สร้างบัญชีเจ้าของเว็บ**
+   - เว็บที่เข้าทะเบียนแล้วจะหายจากรายการ "เพิ่มเว็บใหม่" เอง
+
+Center **ไม่ลบโดเมน**จาก Cloudflare: "เอาออกจากรายการ" เอาออกแค่จาก Center
+
+**ตั้งค่าครั้งเดียว: Cloudflare token ของ Center** (ห้ามวางในแชต)
+1. Cloudflare → Profile → **API Tokens** → **Create Token** → **Custom token**
+   - **Name:** `center-domains`
+   - **Permissions:** `Zone › Zone › Edit` และ `Zone › DNS › Edit`
+   - **Zone Resources:** Include → All zones from an account → บัญชีแพลตฟอร์ม
+2. Cloudflare → Workers & Pages → **center** → Settings → Variables and Secrets → **Add**
+   - Type: Secret
+   - Name: `CENTER_CF_TOKEN`
+   - Value: token → Deploy
+3. token นี้ไม่มีสิทธิ์ Workers / D1 / R2 แต่แก้ DNS ของทุกโดเมนในบัญชีได้ ให้เก็บรักษาเหมือนรหัสผ่านหลัก
+   - ถ้าสงสัยว่ารั่ว: Roll / Delete token ใน Cloudflare แล้วสร้างใหม่
+
 ## ความปลอดภัย (เฟส C9)
 
 ### ยืนยันตัวตน 2 ขั้น (บังคับทุกบัญชี)
