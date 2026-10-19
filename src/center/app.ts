@@ -337,7 +337,7 @@ ${me.role === "PLATFORM_OWNER" ? `<details><summary class="small">พักก�
 <input type="hidden" name="op" value="suspend">
 <label for="note">หมายเหตุที่เจ้าของเว็บจะเห็นใน Audit logs (ไม่บังคับ)</label><input id="note" name="note" maxlength="300" placeholder="เช่น ค้างค่าบริการ ก.ย.–ต.ค.">
 <label for="reason">เหตุผล (บันทึกใน Center และในเว็บ)</label><input id="reason" name="reason" required minlength="3" maxlength="300">
-<label style="font-weight:400"><input type="checkbox" name="confirm" value="UNPAID_FEES" required> ยืนยันว่าเว็บนี้ค้างค่าบริการ — แขกจะจองใหม่ไม่ได้จนกว่าจะเปิดอีกครั้ง</label>
+<label class="check"><input type="checkbox" name="confirm" value="UNPAID_FEES" required> ยืนยันว่าเว็บนี้ค้างค่าบริการ — แขกจะจองใหม่ไม่ได้จนกว่าจะเปิดอีกครั้ง</label>
 <p><button class="danger" type="submit">พักการรับจอง</button></p></form></details>` : '<p class="muted small">พัก / เปิดเว็บได้เฉพาะเจ้าของแพลตฟอร์ม</p>'}`;
     }
 
@@ -498,11 +498,11 @@ ${revokeHtml}
         || '<tr><td colspan="7" class="muted">ยังไม่มี</td></tr>'
       : `<tr><td colspan="7" class="warn">${esc(runs.reason)}</td></tr>`;
     const choices = [...ctx.sites.map((s) => [s.slug, `${s.name} (${s.domain})`]), ["center", "Center (center.phasakura.com)"]]
-      .map(([v, l]) => `<label style="font-weight:400;margin:4px 0"><input type="checkbox" name="site" value="${esc(v)}"> ${esc(l)}</label>`).join("");
+      .map(([v, l]) => `<label class="check"><input type="checkbox" name="site" value="${esc(v)}"> ${esc(l)}</label>`).join("");
     const form = me.role !== "PLATFORM_OWNER" ? '<p class="small muted">สั่ง Release ได้เฉพาะเจ้าของแพลตฟอร์ม</p>'
       : `<form method="post" action="/releases" class="stack" style="max-width:520px">
 <p class="small muted">GitHub Actions จะปล่อยโค้ดล่าสุดของ main ทีละเว็บตามรอบ (wave): preflight → จุดย้อนกลับ D1 → migrate → deploy → smoke test</p>
-<label style="font-weight:400"><input type="checkbox" name="site" value="all"> <strong>ทุกเว็บ + Center</strong></label>${choices}
+<label class="check"><input type="checkbox" name="site" value="all"> <strong>ทุกเว็บ + Center</strong></label>${choices}
 <label for="rel-reason">เหตุผล (แสดงในชื่อ run บน GitHub และบันทึกใน Center)</label><input id="rel-reason" name="reason" required minlength="3" maxlength="100">
 <p><button type="submit">เริ่ม Release</button></p></form>`;
     return html(page({
@@ -553,7 +553,7 @@ ${revokeHtml}
       ? groups.map((g) => `<label style="font-weight:400"><input type="radio" name="line_group_id" value="${esc(g.group_id)}"${g.group_id === settings.lineGroupId ? " checked" : ""}> ${esc(g.name ?? "(ไม่ทราบชื่อกลุ่ม)")} <span class="muted small mono">${esc(g.group_id)}</span></label>`).join("")
         + `<label style="font-weight:400"><input type="radio" name="line_group_id" value=""${settings.lineGroupId ? "" : " checked"}> ไม่ส่ง</label>`
       : '<p class="muted">ยังไม่มีกลุ่ม — เชิญบอทของ Center เข้ากลุ่ม LINE แล้วพิมพ์ข้อความอะไรก็ได้ในกลุ่ม 1 ครั้ง จากนั้นรีเฟรชหน้านี้</p><input type="hidden" name="line_group_id" value="">';
-    const typeBoxes = SETTING_TYPES.map((t) => `<label style="font-weight:400"><input type="checkbox" name="type" value="${t}"${settings.alertTypes.has(t) ? " checked" : ""}> ${esc(ALERT_LABELS[t])}</label>`).join("");
+    const typeBoxes = SETTING_TYPES.map((t) => `<label class="check"><input type="checkbox" name="type" value="${t}"${settings.alertTypes.has(t) ? " checked" : ""}> ${esc(ALERT_LABELS[t])}</label>`).join("");
     const logRows = log.map((l) => `<tr><td class="small">${esc(bkk(l.created_at))}</td><td>${esc(l.site ?? "—")}</td><td>${esc(l.event)}</td><td class="small">${esc(l.message)}</td><td class="small ${l.delivery === "SENT" ? "ok" : l.delivery === "FAILED" ? "bad" : "muted"}">${esc(l.delivery)}${l.error ? ` — ${esc(l.error)}` : ""}</td></tr>`).join("");
     return html(page({
       title: "ตั้งค่า", user: me, current: "settings", flash,
