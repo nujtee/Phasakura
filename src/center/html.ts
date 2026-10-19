@@ -30,6 +30,7 @@ export const ACTION_LABELS: Record<string, string> = {
   SITE_SUSPENDED: "พักการรับจองของเว็บ",
   SITE_RESUMED: "เปิดรับจองของเว็บอีกครั้ง",
   SITE_SESSIONS_REVOKED: "ตัด session ของ Center ในเว็บ",
+  OWNER_INVITED: "สร้างบัญชี / ลิงก์ของเจ้าของเว็บ",
 };
 
 /** Bangkok time for people reading the console. */

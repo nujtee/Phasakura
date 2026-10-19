@@ -64,6 +64,17 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       return jsonOk(await services(ctx).centerAdmin.setSuspension(req, body.suspended, note, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
+    /** `{ email, name }` — a new site's first owner (PLATFORM_OWNER, phase C7): returns a one-time invite link. */
+    inviteOwner: (async (ctx) => {
+      const req = await verify(ctx);
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["email", "name"]);
+      if (typeof body.email !== "string") throw new ValidationError({ email: "REQUIRED" });
+      if (typeof body.name !== "string") throw new ValidationError({ name: "REQUIRED" });
+      v.assertValid();
+      return jsonOk(await services(ctx).centerAdmin.inviteOwner(req, { email: body.email, name: body.name }, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
     /** `{ actorId?: string }` — sign out one Center user on this site, or all of them. */
     revokeSessions: (async (ctx) => {
       const req = await verify(ctx);

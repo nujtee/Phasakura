@@ -239,7 +239,7 @@ export function checkAll(root = ROOT): string[] {
   return problems;
 }
 
-function generate(): void {
+export function generate(): void {
   const registry = loadRegistry();
   const problems = validateRegistry(registry);
   if (problems.length) fail(problems);

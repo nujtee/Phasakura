@@ -2,9 +2,10 @@ import type { CenterActor, CenterRole } from "../../shared/center-protocol.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ForbiddenError, HttpError, ValidationError } from "../http/errors.ts";
 import { CENTER_USER_PREFIX, type CenterAccessLevel, type CenterAdminRepository } from "../repositories/center.repository.ts";
-import { randomToken, sha256Hex } from "../security/tokens.ts";
+import { newId, randomToken, sha256Hex } from "../security/tokens.ts";
 import { addMs, iso, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { CenterRequest } from "./center-access.service.ts";
+import type { PasswordLinkService } from "./password-link.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
 import { CENTER_SESSION_TTL_MS, type NewSession, type SessionService } from "./session.service.ts";
 
@@ -55,6 +56,7 @@ export class CenterAdminService {
     private readonly sessions: SessionService,
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
+    private readonly links?: PasswordLinkService,
   ) {}
 
   // ---------------------------------------------------------------- SSO
@@ -118,6 +120,41 @@ export class CenterAdminService {
     ];
     await this.db.batch(statements);
     return this.suspension();
+  }
+
+  /**
+   * The new site's first owner (phase C7) — PLATFORM_OWNER only, and only while the site has no account of its own
+   * (Center accounts do not count). Creates a SUPER_ADMIN and returns a one-time invite link (72 h) to set the
+   * password. Asking again for the same person before they have signed in replaces the link (the old one stops
+   * working); once anyone else exists, or the owner has signed in, the site's own admins manage people.
+   */
+  async inviteOwner(req: CenterRequest, input: { email: string; name: string }, meta: RequestMeta): Promise<{ userId: string; created: boolean; url: string; expiresAt: string }> {
+    requireRole(req.actor, ["PLATFORM_OWNER"]);
+    const reason = requireReason(req.actor);
+    if (!this.links) throw new Error("password links are not wired");
+    const email = input.email.trim().toLowerCase();
+    const name = input.name.trim();
+    const errors: Record<string, string> = {};
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith(".invalid")) errors.email = "INVALID";
+    if (!name || name.length > 120) errors.name = "INVALID";
+    if (Object.keys(errors).length) throw new ValidationError(errors);
+
+    const existing = await this.repo.siteUsers();
+    const same = existing.length === 1 && existing[0]!.email.toLowerCase() === email && existing[0]!.last_login_at === null
+      && (existing[0]!.roles ?? "").split(",").includes("SUPER_ADMIN") ? existing[0]! : null;
+    if (existing.length && !same) throw new HttpError(409, "SITE_HAS_OWNER", "This site already has its own accounts — its admins manage people");
+
+    const now = iso(this.clock());
+    const caller = centerUser(req.actor);
+    const userId = same?.id ?? newId();
+    const link = await this.links.issue(userId, "INVITE", null, meta);
+    await this.db.batch([
+      ...this.repo.upsertUserStatements({ ...caller, now }),
+      ...(same ? [] : this.repo.insertOwnerStatements(userId, email, name, now)),
+      ...link.statements,
+      this.audit(caller.id, "CENTER_OWNER_INVITED", userId, null, { email, displayName: name, created: !same, expiresAt: link.expiresAt }, req, reason, meta),
+    ]);
+    return { userId, created: !same, url: link.url, expiresAt: link.expiresAt };
   }
 
   // ---------------------------------------------------------------- reads

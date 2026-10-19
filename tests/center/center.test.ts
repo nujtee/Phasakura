@@ -26,9 +26,9 @@ async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function setup(options: { siteKeys?: boolean; signingKey?: boolean } = {}) {
+async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOwner?: boolean } = {}) {
   const site = new Harness();
-  await site.user({ id: "site-owner", email: "owner@site.test", roles: ["SUPER_ADMIN"] });
+  if (options.siteOwner !== false) await site.user({ id: "site-owner", email: "owner@site.test", roles: ["SUPER_ADMIN"] });
   const keys = await generateKeys(new Date("2026-10-17T00:00:00Z"));
   if (options.siteKeys !== false) site.env.CENTER_PUBLIC_KEYS = JSON.stringify(keys.publicKeys);
   const db = centerDb();
@@ -552,6 +552,49 @@ describe("Center: site page (phase C6)", () => {
     assert.equal(res.status, 422);
     assert.match(res.text, /Phasakura ไม่รับคำสั่ง/);
     assert.equal(JSON.parse(ctx.audits("SITE_SUSPENDED")[0]!.detail_json!).ok, false);
+  });
+});
+
+describe("Center: a new site's first owner (phase C7)", () => {
+  it("a site without accounts: the owner creates its SUPER_ADMIN; the link is shown once and never stored", async () => {
+    const ctx = await setup({ siteOwner: false });
+    const owner = await ctx.ownerSession();
+    const page = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    assert.match(page.text, /เว็บนี้ยังไม่มีผู้ดูแล/);
+    assert.equal((await ctx.req("POST", "/sites/phasakura/owner", { cookie: owner, form: { email: "bad", name: "X", reason: "เปิดเว็บใหม่" } })).status, 422);
+    const res = await ctx.req("POST", "/sites/phasakura/owner", { cookie: owner, form: { email: "Boss@NewSite.test", name: "Boss", reason: "เปิดเว็บใหม่" } });
+    assert.equal(res.status, 200, res.text.slice(0, 400));
+    const url = res.text.match(/https:\/\/[^\s<"]+\/admin\/reset-password#token=[A-Za-z0-9_-]{43}&amp;invite=1/)?.[0];
+    assert.ok(url, "the invite link is shown");
+    const token = url.match(/token=([A-Za-z0-9_-]{43})/)![1]!;
+    assert.match(res.text, /boss@newsite\.test/);
+    const a = ctx.audits("OWNER_INVITED");
+    assert.equal(a.length, 1);
+    assert.ok(!JSON.stringify(ctx.db.all("SELECT * FROM center_audit")).includes(token), "Center never stores the link");
+    // The owner sets a password and signs in to the site.
+    const pw = "quiet mountain river lantern 2026";
+    assert.equal((await ctx.site.api("POST", "/api/auth/reset-password", { body: { token, newPassword: pw } })).status, 200);
+    await ctx.site.login("boss@newsite.test", pw);
+    const after = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    assert.ok(!after.text.includes("/sites/phasakura/owner"), "no owner form once the owner has signed in");
+    const again = await ctx.req("POST", "/sites/phasakura/owner", { cookie: owner, form: { email: "x@y.test", name: "X", reason: "ลองอีกครั้ง" } });
+    assert.equal(again.status, 422);
+    assert.match(again.text, /มีผู้ดูแลของตัวเองแล้ว/);
+  });
+
+  it("an owner who has not signed in yet gets a new link; only PLATFORM_OWNER can do it", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const page = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    assert.match(page.text, /owner@site\.test ยังไม่ได้เข้าใช้/);
+    const res = await ctx.req("POST", "/sites/phasakura/owner", { cookie: owner, form: { email: "owner@site.test", name: "Owner", reason: "ลิงก์หมดอายุ" } });
+    assert.equal(res.status, 200, res.text.slice(0, 300));
+    assert.match(res.text, /สร้างลิงก์ใหม่แล้ว/);
+    const added = await ctx.req("POST", "/users", { cookie: owner, form: { name: "Ops", email: "ops@phasakura.com", role: "OPERATOR" } });
+    const token = added.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
+    const ops = (await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!;
+    assert.ok(!(await ctx.req("GET", "/sites/phasakura", { cookie: ops })).text.includes("/sites/phasakura/owner"));
+    assert.equal((await ctx.req("POST", "/sites/phasakura/owner", { cookie: ops, form: { email: "owner@site.test", name: "Owner", reason: "abc" } })).status, 403);
   });
 });
 

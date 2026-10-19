@@ -86,6 +86,7 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/center/suspension", center.getSuspension)
     .put("/api/center/suspension", center.setSuspension)
     .post("/api/center/sessions/revoke", center.revokeSessions)
+    .post("/api/center/owner", center.inviteOwner)
     .post("/api/center/sso", center.issueSso)
     // Unsigned: the browser of the Center user posts the one-time ticket here (a form on center.phasakura.com).
     .post("/api/center/sso/consume", center.consumeSso)

@@ -56,27 +56,34 @@ Push / merge เข้า `main` = แค่ CI (ทดสอบ) **ไม่ข
 
 ระหว่างยังไม่ได้ตั้งค่าข้างบน ใช้คำสั่งจากเครื่องตัวเองได้: `npm run site -- <slug> migrate && npm run site -- <slug> deploy`
 
-## เพิ่มเว็บใหม่ (จนกว่า `site:create` ในเฟส C7 จะทำให้อัตโนมัติ)
+## เพิ่มเว็บใหม่ (เฟส C7)
 
-1. เจ้าของย้าย zone โดเมนเข้าบัญชี Cloudflare ของแพลตฟอร์ม (zone ต้อง Active และยังไม่มี CNAME ของ apex / www)
-2. สร้างทรัพยากร:
-   ```bash
-   npx wrangler d1 create <slug>-db --location=apac
-   npx wrangler r2 bucket create <slug>-media-public
-   npx wrangler r2 bucket create <slug>-media-private
-   ```
-3. เพิ่มเว็บใน `sites/sites.json` (D1 id จากข้อ 2, `rateLimitBase` เป็นพันที่ยังไม่มีใครใช้ รวม `reservedRateLimitBases`, `wave: 1`)
-4. `npm run sites:generate && npm run site -- <slug> preflight` → 0 error
-5. `npm run site -- <slug> migrate`
-6. SUPER_ADMIN ของเจ้าของ:
-   ```bash
-   npm run admin:bootstrap -- --email owner@<domain> --name "Owner" --database <slug>-db --out bootstrap.sql
-   npx wrangler d1 execute <slug>-db --remote --file bootstrap.sql --config sites/<slug>/wrangler.jsonc
-   rm bootstrap.sql
-   ```
-7. ตั้ง secret ของเว็บนั้น (`npx wrangler secret put <NAME> --config sites/<slug>/wrangler.jsonc`) ตาม docs/PRODUCTION.md ข้อ 4
-8. `npm run site -- <slug> deploy && npm run site -- <slug> smoke`
-9. Commit `sites/sites.json` และ `sites/<slug>/wrangler.jsonc`
+**ก่อนเริ่ม:** เจ้าของเว็บเพิ่มโดเมนเข้า **บัญชี Cloudflare ของแพลตฟอร์ม** (Cloudflare → Add a domain → เปลี่ยน nameserver ที่ผู้ให้บริการโดเมน)
+แล้วรอจน zone ขึ้น **Active** ทั้ง apex และ `www` ต้องยังไม่มี DNS record (ระเบียนจอดโดเมนเดิมให้ลบก่อน ไม่งั้น custom domain จะ deploy ไม่ผ่าน)
+
+1. GitHub → **Actions → Create site → Run workflow** ใส่ข้อมูลดังนี้
+   - **slug:** ตัวพิมพ์เล็ก ตัวเลข และ `-` เช่น `baanrim` (ใช้เป็นชื่อ Worker, D1 และ R2 ด้วย)
+   - **name:** ชื่อเว็บที่แสดงใน Center
+   - **domain:** โดเมนหลัก เช่น `baanrim.com`
+2. workflow จะทำตามลำดับนี้ ถ้ารันซ้ำ ส่วนที่สร้างไว้แล้วจะถูกใช้ต่อ
+   - ตรวจ slug และโดเมนกับทะเบียน แล้วตรวจว่า zone อยู่ในบัญชีและ Active (ถ้า token อ่าน zone ไม่ได้ ระบบจะเตือนและข้ามขั้นนี้)
+   - สร้าง D1 `<slug>-db` (apac) และ R2 `<slug>-media-public` กับ `<slug>-media-private`
+   - เพิ่มเว็บใน `sites/sites.json` (rate limit ช่วงพันถัดไปที่ว่าง, `wave: 1`) และ generate config ใหม่
+   - รัน `npm run check` แล้วเปิด **pull request** `Add site …`
+   - ขั้นนี้ยังไม่ deploy และไม่สร้างบัญชีใด
+3. **Merge** pull request นั้น
+4. **Actions → Release** ใส่ sites = `<slug> center`
+   - เว็บใหม่: migrate → deploy → smoke
+   - Center: ได้ binding ของเว็บใหม่
+5. **Center → เว็บใหม่ → เจ้าของเว็บ:** ใส่อีเมลและชื่อเจ้าของ → ได้ลิงก์ตั้งรหัสผ่าน (72 ชั่วโมง) → ส่งให้เจ้าของทางช่องทางส่วนตัว
+   - ลิงก์แสดงครั้งเดียว ถ้าหายให้สร้างใหม่ได้ตราบที่เจ้าของยังไม่เคยเข้าใช้
+6. secret ของบริการเสริม (LINE, อีเมล, PayPal…) ตั้งเมื่อเจ้าของจะใช้: `npx wrangler secret put <NAME> --config sites/<slug>/wrangler.jsonc` ตาม docs/PRODUCTION.md ข้อ 4
+
+ถ้า workflow เปิด PR ไม่ได้: GitHub → Settings → Actions → General → Workflow permissions → ติ๊ก
+"Allow GitHub Actions to create and approve pull requests" (หรือเปิด PR เองจากลิงก์ในหน้า summary)
+
+ทำจากเครื่องตัวเองได้เช่นกัน: `npm run site:create -- --slug baanrim --name "Baan Rim" --domain baanrim.com` (มี `--dry-run` สำหรับตรวจอย่างเดียว)
+แล้ว commit `sites/sites.json`, `sites/<slug>/wrangler.jsonc` และ `center/wrangler.jsonc`
 
 ## สิทธิ์ CENTER (เฟส C2)
 
@@ -101,6 +108,7 @@ Center Management สั่งเว็บได้ผ่าน `/api/center/*` 
 |---|---|---|
 | `POST /api/center/sso` | ทุก role | ตั๋วใช้ครั้งเดียว อายุ 60 วินาที → browser ของคนใน Center โพสต์ฟอร์ม `ticket=…` ไปที่ `POST /api/center/sso/consume` → session หลังบ้าน **2 ชั่วโมง** แล้วไป `/admin` |
 | `POST /api/center/sessions/revoke` `{actorId?}` | PLATFORM_OWNER, OPERATOR | ตัด session ของ Center user คนนั้น (หรือทั้งหมด) และตั๋วที่ยังไม่ใช้ |
+| `POST /api/center/owner` `{email, name}` | PLATFORM_OWNER | (เฟส C7) เจ้าของคนแรกของเว็บใหม่: สร้าง SUPER_ADMIN ที่ยังไม่มีรหัสผ่าน และคืน **ลิงก์ตั้งรหัสผ่าน 72 ชั่วโมง** — ทำได้เฉพาะตอนเว็บยังไม่มีบัญชีของตัวเอง หรือมีแค่เจ้าของคนนั้นที่ยังไม่เคยเข้าใช้ (ลิงก์ใหม่แทนลิงก์เดิม); มีบัญชีอื่นแล้ว = 409 `SITE_HAS_OWNER` |
 | `PUT /api/center/suspension` `{suspended, note?}` | PLATFORM_OWNER | **พักเว็บได้เฉพาะกรณีค้างค่าบริการ** (`UNPAID_FEES` — ฐานข้อมูลรับค่าอื่นไม่ได้): แขกจองใหม่ไม่ได้ (423 `SITE_SUSPENDED`), หน้าเว็บ / การจองเดิม / สลิป / หลังบ้าน / export ใช้ได้ตามปกติ, หน้า System status ของเจ้าของขึ้นสีแดงพร้อมเหตุผล |
 
 **Center user ในเว็บ** = แถวใน `users` ที่ id ขึ้นต้นด้วย `center_` (สร้างโดย Center API เท่านั้น):

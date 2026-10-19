@@ -148,10 +148,10 @@ const OWNER: CenterActor = { id: "u_owner", email: "owner@phasakura.com", role: 
 const OPERATOR: CenterActor = { id: "u_ops", email: "ops@phasakura.com", role: "OPERATOR", reason: "ตรวจการจองที่ค้าง" };
 const SUPPORT: CenterActor = { id: "u_support", email: "support@phasakura.com", role: "SUPPORT_READONLY", reason: "ดูปัญหาที่แจ้งมา" };
 
-async function c3() {
+async function c3(opts: { noOwner?: boolean } = {}) {
   const base = await setup();
   const { h, key } = base;
-  await h.user({ id: "site-owner", email: "owner@site.test", roles: ["SUPER_ADMIN"] });
+  if (!opts.noOwner) await h.user({ id: "site-owner", email: "owner@site.test", roles: ["SUPER_ADMIN"] });
   const signed = async <T = Record<string, unknown>>(method: string, path: string, actor: CenterActor, body?: unknown) => {
     const raw = body === undefined ? undefined : JSON.stringify(body);
     const headers = await signCenterRequest({ privateKey: key.privateKey, keyId: "c1", method, url: `${ORIGIN}${path}`, actor, now: h.now, body: raw });
@@ -316,5 +316,57 @@ describe("Center writes (phase C3)", () => {
     assert.deepEqual(res.data.items.map((u) => u.id), ["site-owner"]);
     assert.deepEqual(res.data.items[0]!.roles, ["SUPER_ADMIN"]);
     assert.ok(!JSON.stringify(res.data).includes("password"));
+  });
+});
+
+describe("A new site's first owner (phase C7)", () => {
+  it("PLATFORM_OWNER only, reason required; creates a SUPER_ADMIN with a one-time invite link; audited", async () => {
+    const { h, signed } = await c3({ noOwner: true });
+    const body = { email: " New.Owner@Example.com ", name: "เจ้าของใหม่" };
+    assert.equal((await signed("POST", "/api/center/owner", OPERATOR, body)).status, 403);
+    assert.equal((await signed("POST", "/api/center/owner", { ...OWNER, reason: "" }, body)).status, 422);
+    assert.equal((await signed("POST", "/api/center/owner", OWNER, { email: "nope", name: "x" })).error?.details?.email, "INVALID");
+    assert.equal((await signed("POST", "/api/center/owner", OWNER, { ...body, extra: 1 })).status, 422);
+    const res = await signed<{ userId: string; created: boolean; url: string; expiresAt: string }>("POST", "/api/center/owner", OWNER, body);
+    assert.equal(res.status, 200, JSON.stringify(res.error));
+    assert.equal(res.data.created, true);
+    assert.match(res.data.url, /\/admin\/reset-password#token=[A-Za-z0-9_-]{43}&invite=1$/);
+    const users = await signed<{ items: { email: string; roles: string[] }[] }>("GET", "/api/center/users", SUPPORT);
+    assert.deepEqual(users.data.items.map((u) => [u.email, u.roles]), [["new.owner@example.com", ["SUPER_ADMIN"]]]);
+    // No password logs in before the link is used.
+    assert.equal((await h.api("POST", "/api/auth/login", { body: { identifier: "new.owner@example.com", password: "!owner-invite-pending" } })).status, 401);
+    const token = res.data.url.match(/token=([A-Za-z0-9_-]{43})/)![1]!;
+    const newPassword = "a long owner passphrase 2026";
+    assert.equal((await h.api("POST", "/api/auth/reset-password", { body: { token, newPassword } })).status, 200);
+    await h.login("new.owner@example.com", newPassword);
+    const audit = h.audits("CENTER_OWNER_INVITED");
+    assert.equal(audit.length, 1);
+    assert.ok(!audit[0]!.new_value!.includes(token), "the link is never in the audit log");
+  });
+
+  it("asking again before the owner signs in replaces the link; once they have, or anyone else exists, it is refused", async () => {
+    const { h, signed } = await c3({ noOwner: true });
+    const body = { email: "owner@new.test", name: "Owner" };
+    const first = await signed<{ url: string; userId: string }>("POST", "/api/center/owner", OWNER, body);
+    const second = await signed<{ url: string; userId: string; created: boolean }>("POST", "/api/center/owner", OWNER, body);
+    assert.equal(second.status, 200);
+    assert.equal(second.data.created, false);
+    assert.equal(second.data.userId, first.data.userId);
+    const oldToken = first.data.url.match(/token=([A-Za-z0-9_-]{43})/)![1]!;
+    assert.notEqual((await h.api("POST", "/api/auth/reset-password", { body: { token: oldToken, newPassword: "quiet mountain river lantern 2026" } })).status, 200, "the old link stopped working");
+    assert.equal((await signed("POST", "/api/center/owner", OWNER, { email: "someone@else.test", name: "X" })).error?.code, "SITE_HAS_OWNER");
+    const token = second.data.url.match(/token=([A-Za-z0-9_-]{43})/)![1]!;
+    const pw = "quiet mountain river lantern 2026";
+    const set = await h.api("POST", "/api/auth/reset-password", { body: { token, newPassword: pw } });
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+    await h.login("owner@new.test", pw);
+    assert.equal((await signed("POST", "/api/center/owner", OWNER, body)).status, 409, "signed in: the site's admins manage people now");
+  });
+
+  it("a site that already has its own admin refuses", async () => {
+    const { signed } = await c3();
+    const res = await signed("POST", "/api/center/owner", OWNER, { email: "another@site.test", name: "Owner" });
+    assert.equal(res.status, 409);
+    assert.equal(res.error?.code, "SITE_HAS_OWNER");
   });
 });

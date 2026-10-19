@@ -23,6 +23,7 @@
     "sites:generate": "tsx scripts/sites.ts generate",
     "sites:check": "tsx scripts/sites.ts check",
     "site": "tsx scripts/sites.ts run",
+    "site:create": "tsx scripts/site-create.ts",
     "typecheck": "tsc -p tsconfig.worker.json && tsc -p tsconfig.app.json && tsc -p tsconfig.test.json && tsc -p tsconfig.node.json",
     "lint": "eslint .",
     "check": "npm run typecheck && npm run lint && npm run check:static && npm test",
