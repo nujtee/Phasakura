@@ -89,7 +89,41 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
     }
     return new Response("{}", { status: 404 });
   };
-  const app = createCenterApp({ clock: () => new Date(now), hashIterations: 1000, lineFetch, githubFetch });
+  /** Fake Cloudflare API: zones of the platform's account and their DNS records. */
+  const cfZones = new Map<string, { id: string; name: string; status: string; name_servers: string[]; account: { id: string }; records: { id: string; type: string; name: string; content: string }[] }>();
+  const siteHost = new URL(ORIGIN).host;
+  cfZones.set(siteHost, { id: "1".repeat(32), name: siteHost, status: "active", name_servers: ["a.ns.cloudflare.com"], account: { id: "acc_platform" }, records: [] });
+  const cfCalls: string[] = [];
+  const cloudflareFetch = async (input: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    cfCalls.push(`${method} ${input.replace("https://api.cloudflare.com/client/v4", "")}`);
+    if (new Headers(init?.headers).get("Authorization") !== "Bearer cf-token") return new Response(JSON.stringify({ success: false, errors: [{ code: 10000, message: "Authentication error" }] }), { status: 403 });
+    const ok = (result: unknown) => new Response(JSON.stringify({ success: true, result }));
+    const byId = (id: string) => [...cfZones.values()].find((z) => z.id === id);
+    let m = /\/zones\?name=([^&]+)/.exec(input);
+    if (m && method === "GET") { const z = cfZones.get(decodeURIComponent(m[1]!)); return ok(z ? [z] : []); }
+    if (input.endsWith("/zones") && method === "POST") {
+      const body = JSON.parse(String(init?.body)) as { name: string; account: { id: string }; jump_start: boolean };
+      if (body.name === "taken-elsewhere.com") return new Response(JSON.stringify({ success: false, errors: [{ code: 1061, message: "taken-elsewhere.com already exists" }] }), { status: 400 });
+      const z = { id: crypto.randomUUID().replace(/-/g, ""), name: body.name, status: "pending", name_servers: ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"], account: body.account,
+        records: body.jump_start ? [
+          { id: "r1", type: "A", name: body.name, content: "192.0.2.10" }, { id: "r2", type: "CNAME", name: `www.${body.name}`, content: "parking.example" },
+          { id: "r3", type: "MX", name: body.name, content: "mx.zoho.com" }, { id: "r4", type: "A", name: `mail.${body.name}`, content: "192.0.2.20" },
+        ] : [] };
+      cfZones.set(body.name, z);
+      return ok(z);
+    }
+    m = /\/zones\/([0-9a-f]{32})\/dns_records\/([^/?]+)$/.exec(input);
+    if (m && method === "DELETE") { const z = byId(m[1]!)!; z.records = z.records.filter((r) => r.id !== m![2]); return ok({ id: m[2] }); }
+    m = /\/zones\/([0-9a-f]{32})\/dns_records/.exec(input);
+    if (m) return ok(byId(m[1]!)!.records);
+    m = /\/zones\/([0-9a-f]{32})\/activation_check$/.exec(input);
+    if (m) return ok({ id: m[1] });
+    m = /\/zones\/([0-9a-f]{32})$/.exec(input);
+    if (m) return ok(byId(m[1]!));
+    return new Response("{}", { status: 404 });
+  };
+  const app = createCenterApp({ clock: () => new Date(now), hashIterations: 1000, lineFetch, githubFetch, cloudflareFetch });
   const env: CenterEnv = {
     DB: db,
     APP_BASE_URL: CENTER,
@@ -101,6 +135,7 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
     CENTER_LINE_SECRET: "line-secret",
     CENTER_GITHUB_REPO: "nujtee/Phasakura",
     CENTER_GITHUB_TOKEN: "github-token",
+    CENTER_CF_TOKEN: "cf-token",
   };
   const req = async (method: string, path: string, opts: { form?: Record<string, string>; raw?: string; cookie?: string | null; headers?: Record<string, string> } = {}) => {
     const headers: Record<string, string> = { "CF-Connecting-IP": "203.0.113.5", "User-Agent": "test" };
@@ -150,7 +185,7 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
   return {
     site, db, env, req, firstOwner, ownerSession, audits, enroll, secrets, codeFor, advance: (ms: number) => { now = new Date(now.getTime() + ms); }, keys, pushes, check,
     setSiteDown: (v: boolean) => { siteDown = v; }, setLineStatus: (v: number) => { lineStatus = v; },
-    dispatches, merges, setGithubStatus: (v: number) => { githubStatus = v; },
+    dispatches, merges, cfZones, cfCalls, setGithubStatus: (v: number) => { githubStatus = v; },
   };
 }
 
@@ -797,6 +832,78 @@ describe("Center: merge pull requests from the Release page", () => {
   });
 });
 
+describe("Center: เพิ่มเว็บใหม่ — domain to Create site", () => {
+  it("adds the domain to the platform's account, clears the old apex / www records (keeps e-mail), shows the nameservers; then Create site once Active", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    assert.match((await ctx.req("GET", "/", { cookie: owner })).text, /href="\/sites\/new"/);
+    const form = { domain: "https://www.BaanRim.com/", name: "Baan Rim", slug: "baanrim", reason: "เปิดเว็บใหม่" };
+    assert.equal((await ctx.req("POST", "/sites/new", { cookie: owner, form: { ...form, slug: "new" } })).status, 422);
+    assert.equal((await ctx.req("POST", "/sites/new", { cookie: owner, form: { ...form, slug: "phasakura" } })).status, 422);
+    assert.equal((await ctx.req("POST", "/sites/new", { cookie: owner, form: { ...form, domain: "not a domain" } })).status, 422);
+    const added = await ctx.req("POST", "/sites/new", { cookie: owner, form });
+    assert.equal(added.status, 200, added.text.slice(0, 400));
+    assert.match(added.text, /เพิ่ม baanrim\.com เข้า Cloudflare แล้ว/);
+    assert.match(added.text, /ada\.ns\.cloudflare\.com<br>bob\.ns\.cloudflare\.com/);
+    assert.match(added.text, /รอเปลี่ยน nameserver/);
+    const zone = ctx.cfZones.get("baanrim.com")!;
+    assert.equal(zone.account.id, "acc_platform", "the account of the existing sites");
+    assert.deepEqual(zone.records.map((r) => `${r.type} ${r.name}`), ["MX baanrim.com", "A mail.baanrim.com"], "e-mail and other names stay");
+    assert.match(added.text, /ลบ record เดิม.*A baanrim\.com → 192\.0\.2\.10/);
+    assert.equal((await ctx.req("POST", "/sites/new", { cookie: owner, form })).status, 422, "already in the list");
+    // Not Active yet: no Create site.
+    const early = await ctx.req("POST", "/sites/new/baanrim/create", { cookie: owner, form: { reason: "สร้าง" } });
+    assert.match(early.text, /ยังไม่ Active/);
+    assert.equal(ctx.dispatches.length, 0);
+    // The owner switches nameservers → Active.
+    zone.status = "active";
+    const checked = await ctx.req("POST", "/sites/new/baanrim/check", { cookie: owner, form: {} });
+    assert.match(checked.text, /พร้อมแล้ว \(Active\)/);
+    assert.ok(ctx.cfCalls.some((c) => c.endsWith("/activation_check")));
+    const create = await ctx.req("POST", "/sites/new/baanrim/create", { cookie: owner, form: { reason: "สร้างเว็บ" } });
+    assert.equal(create.status, 200, create.text.slice(0, 300));
+    assert.match(create.text, /สั่งสร้าง Baan Rim แล้ว/);
+    assert.match(ctx.dispatches[0]!.url, /\/actions\/workflows\/site-create\.yml\/dispatches$/);
+    assert.deepEqual(ctx.dispatches[0]!.body, { ref: "main", inputs: { slug: "baanrim", name: "Baan Rim", domain: "baanrim.com" } });
+    assert.match((await ctx.req("GET", "/sites/new", { cookie: owner })).text, /กำลังสร้าง/);
+    assert.deepEqual(["NEW_SITE_ZONE", "NEW_SITE_CREATE"].map((a) => ctx.audits(a).length), [1, 1]);
+  });
+
+  it("a domain already in the account is reused; a domain Cloudflare refuses says why; no token says what to set; owner only", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    ctx.cfZones.set("ready.com", { id: "2".repeat(32), name: "ready.com", status: "active", name_servers: ["x.ns.cloudflare.com"], account: { id: "acc_platform" }, records: [{ id: "q", type: "CNAME", name: "www.ready.com", content: "old.host" }] });
+    const reused = await ctx.req("POST", "/sites/new", { cookie: owner, form: { domain: "ready.com", name: "Ready", slug: "ready", reason: "เปิดเว็บใหม่" } });
+    assert.match(reused.text, /ready\.com อยู่ในบัญชีอยู่แล้ว/);
+    assert.match(reused.text, /โดเมนพร้อมแล้ว \(Active\)/);
+    assert.equal(ctx.cfZones.get("ready.com")!.records.length, 0);
+    const refused = await ctx.req("POST", "/sites/new", { cookie: owner, form: { domain: "taken-elsewhere.com", name: "X", slug: "taken", reason: "เปิดเว็บใหม่" } });
+    assert.equal(refused.status, 422);
+    assert.match(refused.text, /already exists \(1061\)/);
+    const removed = await ctx.req("POST", "/sites/new/ready/remove", { cookie: owner, form: { reason: "ยกเลิก" } });
+    assert.match(removed.text, /เอา Ready ออกจากรายการแล้ว/);
+    assert.ok(ctx.cfZones.has("ready.com"), "the zone is never deleted");
+    ctx.env.CENTER_CF_TOKEN = "wrong";
+    assert.match((await ctx.req("POST", "/sites/new", { cookie: owner, form: { domain: "b.com", name: "B", slug: "bb", reason: "เปิดเว็บใหม่" } })).text, /ไม่รับ token/);
+    delete ctx.env.CENTER_CF_TOKEN;
+    assert.match((await ctx.req("GET", "/sites/new", { cookie: owner })).text, /ยังไม่ได้ตั้ง Cloudflare token/);
+    const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: "Ops", email: "ops@phasakura.com", role: "OPERATOR" } });
+    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1]!;
+    const ops = await ctx.enroll((await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } })).cookie!);
+    assert.equal((await ctx.req("GET", "/sites/new", { cookie: ops })).status, 403);
+    assert.ok(!(await ctx.req("GET", "/", { cookie: ops })).text.includes('href="/sites/new"'));
+  });
+
+  it("once the site is in the registry the entry is done and leaves the list", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    ctx.db.exec(`INSERT INTO center_new_sites (slug, name, domain, zone_id, status, created_at, updated_at) VALUES ('phasakura', 'Phasakura', 'p.example', NULL, 'CREATING', '2026-01-01', '2026-01-01')`);
+    const page = await ctx.req("GET", "/sites/new", { cookie: owner });
+    assert.match(page.text, /Phasakura อยู่ในระบบแล้ว/);
+    assert.equal(ctx.db.all("SELECT 1 FROM center_new_sites").length, 0);
+  });
+});
+
 describe("Center: two-step sign-in and hardening (phase C9)", () => {
   const GROUP = `C${"a".repeat(32)}`;
   const withGroup = (ctx: Awaited<ReturnType<typeof setup>>) => ctx.db.exec(`UPDATE center_settings SET line_group_id = '${GROUP}' WHERE id = 1`);
@@ -935,11 +1042,23 @@ describe("Center: two-step sign-in and hardening (phase C9)", () => {
     assert.deepEqual(cleared.events.filter((e) => e.type === "backup_stale").map((e) => e.event), ["RESOLVED"]);
   });
 
+  it("a site watched for days before backups existed is not flagged at once: the 36 h count from the first readable list", async () => {
+    const ctx = await setup();
+    // Days of health checks from before the backup code (no backup_state recorded).
+    ctx.db.exec(`INSERT INTO center_site_checks (site, checked_at, http_status, problems) VALUES ('phasakura', '2026-01-01T00:00:00Z', 200, '[]')`);
+    await ctx.check();
+    const r = await ctx.check();
+    assert.ok(!r.events.some((e) => e.type === "backup_stale"));
+    assert.deepEqual(ctx.db.all<{ backup_state: string | null }>("SELECT backup_state FROM center_site_checks ORDER BY checked_at DESC LIMIT 1").map((x) => x.backup_state), ["empty"]);
+  });
+
   it("backupState: unknown when the list cannot be read; stale after 36 h", () => {
     const now = new Date("2026-10-20T12:00:00Z");
     assert.deepEqual(backupState({ status: 0 }, now, null), { known: false });
     assert.deepEqual(backupState({ status: 404 }, now, "2026-01-01T00:00:00Z"), { known: false });
-    assert.deepEqual(backupState({ status: 200, data: { items: [{ createdAt: "2026-10-19T20:17:00Z" }] } }, now, null), { known: true });
+    assert.deepEqual(backupState({ status: 200, data: { items: [{ createdAt: "2026-10-19T20:17:00Z" }] } }, now, null), { known: true, state: "ok" });
+    assert.deepEqual(backupState({ status: 200, data: { items: [] } }, now, "2026-10-19T12:00:00Z"), { known: true, state: "empty" }, "readable for 24 h only");
+    assert.equal(backupState({ status: 200, data: { items: [] } }, now, "2026-10-18T12:00:00Z").state, "stale");
     assert.match(backupState({ status: 200, data: { items: [{ createdAt: "2026-10-18T20:17:00Z" }] } }, now, null).detail!, /40 ชม\./);
   });
 });

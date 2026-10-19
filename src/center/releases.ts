@@ -173,3 +173,41 @@ export async function mergePull(env: CenterEnv, number: number, sha: string, mes
     return { ok: false, reason: `ติดต่อ GitHub ไม่ได้: ${String(error).slice(0, 120)}` };
   }
 }
+
+/** Actions → Create site for a new site (D1, R2, registry PR) — its pull request then shows on the Release page. */
+export async function startCreateSite(env: CenterEnv, input: { slug: string; name: string; domain: string }, fetchFn: FetchLike = fetch): Promise<GithubResult<null>> {
+  const c = config(env);
+  if (!c.ok) return c;
+  try {
+    const res = await fetchFn(`${API}/repos/${c.value.repo}/actions/workflows/site-create.yml/dispatches`, {
+      method: "POST",
+      headers: { ...headers(c.value.token), "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main", inputs: input }),
+    });
+    return res.status === 204 || res.ok ? { ok: true, value: null } : { ok: false, reason: failure(res.status) };
+  } catch (error) {
+    return { ok: false, reason: `ติดต่อ GitHub ไม่ได้: ${String(error).slice(0, 120)}` };
+  }
+}
+
+/** Latest runs of Actions → Create site (status of the step after "สร้างเว็บ"). */
+export async function listCreateSiteRuns(env: CenterEnv, fetchFn: FetchLike = fetch): Promise<GithubResult<ReleaseRun[]>> {
+  const c = config(env);
+  if (!c.ok) return c;
+  try {
+    const res = await fetchFn(`${API}/repos/${c.value.repo}/actions/workflows/site-create.yml/runs?per_page=5`, { headers: headers(c.value.token) });
+    if (!res.ok) return { ok: false, reason: failure(res.status) };
+    const body = (await res.json()) as { workflow_runs?: Record<string, unknown>[] };
+    return {
+      ok: true,
+      value: (body.workflow_runs ?? []).map((r) => ({
+        number: Number(r.run_number), title: String(r.display_title ?? r.name ?? ""), status: String(r.status ?? ""),
+        conclusion: r.conclusion == null ? null : String(r.conclusion), createdAt: String(r.created_at ?? ""),
+        url: /^https:\/\/github\.com\//.test(String(r.html_url)) ? String(r.html_url) : "",
+        sha: String(r.head_sha ?? "").slice(0, 7), actor: (r.triggering_actor as { login?: string } | undefined)?.login ?? null,
+      })),
+    };
+  } catch (error) {
+    return { ok: false, reason: `ติดต่อ GitHub ไม่ได้: ${String(error).slice(0, 120)}` };
+  }
+}

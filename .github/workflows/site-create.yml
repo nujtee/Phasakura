@@ -1,4 +1,5 @@
 name: Create site
+run-name: "Create site ${{ inputs.slug }} (${{ inputs.domain }})"
 
 # A new booking site on the platform (Center phase C7). Run from GitHub → Actions → Create site → Run workflow.
 # Before: the owner's domain is in the platform's Cloudflare account and its zone is Active.

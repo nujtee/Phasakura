@@ -20,6 +20,8 @@ export interface CenterEnv {
   /** Release from Center (phase C8): "owner/repo" (var) and a fine-grained token with Actions read/write on it (secret). */
   CENTER_GITHUB_REPO?: string;
   CENTER_GITHUB_TOKEN?: string;
+  /** "เพิ่มเว็บใหม่": Cloudflare token with Zone › Edit + DNS › Edit on the platform's account (secret). */
+  CENTER_CF_TOKEN?: string;
   /** SITE_<SLUG> service bindings. */
   [binding: string]: unknown;
 }

@@ -1,4 +1,5 @@
-import { listOpenPulls, listReleaseRuns, mergePull, releaseSelection, startRelease, type OpenPull, type ReleaseRun } from "./releases.ts";
+import { listCreateSiteRuns, listOpenPulls, listReleaseRuns, mergePull, releaseSelection, startCreateSite, startRelease, type OpenPull, type ReleaseRun } from "./releases.ts";
+import { CloudflareZones, normalizeDomain, validDomain } from "./cloudflare.ts";
 import { CENTER_ROLES, type CenterActor, type CenterRole } from "../shared/center-protocol.ts";
 import { hashPassword, validatePasswordPolicy, verifyPassword } from "../worker/security/password.ts";
 import { randomToken, sha256Hex } from "../worker/security/tokens.ts";
@@ -35,6 +36,8 @@ export interface CenterAppOptions {
   lineFetch?: FetchLike;
   /** GitHub API calls for Release from Center (tests pass a fake). */
   githubFetch?: FetchLike;
+  /** Cloudflare API calls for "เพิ่มเว็บใหม่" (tests pass a fake). */
+  cloudflareFetch?: FetchLike;
 }
 
 interface Ctx {
@@ -123,6 +126,15 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (key === "GET /account") return accountPage(ctx, me);
     if (key === "POST /account/password") return changePassword(ctx, me);
     if (key === "POST /account/recovery-codes") return regenerateRecoveryCodes(ctx, me);
+    // "เพิ่มเว็บใหม่" (PLATFORM_OWNER): before /sites/:slug — "new" is not a site.
+    if (url.pathname === "/sites/new" || url.pathname.startsWith("/sites/new/")) {
+      if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "เพิ่มเว็บใหม่ได้เฉพาะเจ้าของแพลตฟอร์ม");
+      if (key === "GET /sites/new") return newSitesPage(ctx, me);
+      if (key === "POST /sites/new") return newSiteZone(ctx, me);
+      const step = /^\/sites\/new\/([a-z][a-z0-9-]{1,30})\/(check|create|remove)$/.exec(url.pathname);
+      if (step && request.method === "POST") return newSiteStep(ctx, me, step[1]!, step[2] as "check" | "create" | "remove");
+      throw new HttpError(404, "ไม่พบหน้านี้");
+    }
     const sso = /^\/sites\/([a-z][a-z0-9-]{1,30})\/sso$/.exec(url.pathname);
     if (sso && request.method === "POST") return startSso(ctx, me, sso[1]!);
     const detail = /^\/sites\/([a-z][a-z0-9-]{1,30})$/.exec(url.pathname);
@@ -466,10 +478,11 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
 <button type="submit">เข้าหลังบ้าน</button></form></td></tr>`;
     }).join("");
     const keyNote = keyOk ? "" : '<div class="flash error">ยังไม่มี key สำหรับเซ็นคำสั่ง — GitHub → Actions → Center setup → keys</div>';
-    const runButton = me.role === "SUPPORT_READONLY" ? "" : '<form method="post" action="/checks/run" class="inline"><button class="plain" type="submit">ตรวจตอนนี้</button></form>';
+    const runButton = (me.role === "PLATFORM_OWNER" ? '<a href="/sites/new" style="margin-right:12px">+ เพิ่มเว็บใหม่</a>' : "")
+      + (me.role === "SUPPORT_READONLY" ? "" : '<form method="post" action="/checks/run" class="inline"><button class="plain" type="submit">ตรวจตอนนี้</button></form>');
     return html(page({
       title: "เว็บทั้งหมด", user: me, current: "sites", flash,
-      body: `<div class="inline" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h1 style="margin:0">เว็บทั้งหมด (${ctx.sites.length})</h1>${runButton}</div>
+      body: `<div class="inline" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h1 style="margin:0">เว็บทั้งหมด (${ctx.sites.length})</h1><div style="display:flex;align-items:center">${runButton}</div></div>
 <p class="muted small">ตรวจอัตโนมัติทุก 5 นาที · ปัญหาที่เห็น 2 รอบติดกันจะแจ้งเตือนเข้ากลุ่ม LINE</p>${keyNote}
 <div class="card scroll"><table><thead><tr><th>เว็บ</th><th>สถานะ</th><th>หลังบ้าน</th></tr></thead><tbody>${rows}</tbody></table>
 <p class="muted small">การเข้าหลังบ้านทุกครั้งถูกบันทึกทั้งใน Center และใน Audit logs ของเว็บนั้น พร้อมเหตุผล${me.role === "SUPPORT_READONLY" ? " — บทบาทของคุณเข้าได้แบบดูอย่างเดียว" : ""}</p></div>`,
@@ -705,6 +718,144 @@ ${p.ci === "success" ? "" : `<label class="check"><input type="checkbox" name="f
 <div class="card scroll"><h2 style="margin-top:0">Release ล่าสุด</h2><table><thead><tr><th>Run</th><th>รายการ</th><th>สถานะ</th><th>เริ่ม</th><th>commit</th><th>โดย</th><th></th></tr></thead><tbody>${rows}</tbody></table>
 <p class="small muted"><a href="/releases">รีเฟรช</a> · รายละเอียดแต่ละขั้นและจุดย้อนกลับ (bookmark) อยู่ในหน้า Summary ของ run บน GitHub</p></div>`,
     }), flash?.kind === "error" ? 422 : 200);
+  }
+
+  // ---------------------------------------------------------------- new site: domain → Create site (PLATFORM_OWNER)
+
+  interface NewSiteRow {
+    slug: string; name: string; domain: string; zone_id: string | null; status: "ZONE_PENDING" | "ZONE_ACTIVE" | "CREATING";
+    name_servers: string; removed_records: string; created_at: string; updated_at: string; checked_at: string | null;
+  }
+
+  async function newSitesPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
+    const cf = new CloudflareZones(ctx.env, options.cloudflareFetch);
+    // A site that reached the registry (merged + released) is done: drop it from the list.
+    const live = new Set(ctx.sites.map((s) => s.slug));
+    const { results } = await ctx.repo.db.prepare("SELECT * FROM center_new_sites ORDER BY created_at").all<NewSiteRow>();
+    const done = results.filter((r) => live.has(r.slug));
+    for (const r of done) await ctx.repo.db.prepare("DELETE FROM center_new_sites WHERE slug = ?1").bind(r.slug).run();
+    const rows = results.filter((r) => !live.has(r.slug));
+    const runs = rows.some((r) => r.status === "CREATING") ? await listCreateSiteRuns(ctx.env, options.githubFetch) : null;
+    const reasonField = (id: string) => `<input name="reason" required minlength="3" maxlength="100" placeholder="เหตุผล" aria-label="เหตุผล" id="${id}">`;
+    const card = (r: NewSiteRow) => {
+      const ns = (JSON.parse(r.name_servers) as string[]);
+      const removed = (JSON.parse(r.removed_records) as { type: string; name: string; content: string }[]);
+      const removedNote = removed.length ? `<p class="small muted">ลบ record เดิมของ ${esc(r.domain)} / www ที่จะชนกับเว็บแล้ว: ${removed.map((x) => `${esc(x.type)} ${esc(x.name)} → ${esc(x.content)}`).join(", ")}</p>` : "";
+      const removeForm = `<form method="post" action="/sites/new/${esc(r.slug)}/remove" class="inline" style="margin-top:8px">${reasonField(`rm-${r.slug}`)}<button class="plain" type="submit">เอาออกจากรายการ</button></form>`;
+      let body = "";
+      if (r.status === "ZONE_PENDING") {
+        body = `<p class="warn"><strong>รอเปลี่ยน nameserver</strong></p>
+<p>ส่งให้เจ้าของเว็บ: ที่ผู้ให้บริการโดเมน ${esc(r.domain)} ให้ลบ nameserver เดิม แล้วใส่ 2 ตัวนี้ (และปิด DNSSEC ถ้าเปิดอยู่)</p>
+<p class="mono" style="font-size:1.05rem">${ns.map(esc).join("<br>")}</p>
+<p class="small muted">ส่วนใหญ่ไม่กี่นาทีถึงไม่กี่ชั่วโมง (บางครั้งถึง 24 ชม.) — ตรวจล่าสุด ${esc(bkk(r.checked_at))}</p>
+<form method="post" action="/sites/new/${esc(r.slug)}/check" class="inline"><button type="submit">ตรวจสถานะอีกครั้ง</button></form>`;
+      } else if (r.status === "ZONE_ACTIVE") {
+        body = `<p class="ok"><strong>โดเมนพร้อมแล้ว (Active)</strong></p>
+<p class="small muted">ขั้นถัดไป: สร้าง D1 / R2 และเพิ่มเว็บในทะเบียน — ได้ pull request มารอในหน้า Release (ยังไม่ขึ้นเว็บจริง)</p>
+<form method="post" action="/sites/new/${esc(r.slug)}/create" class="inline">${reasonField(`cr-${r.slug}`)}<button type="submit">สร้างเว็บ</button></form>`;
+      } else {
+        body = `<p class="warn"><strong>กำลังสร้าง</strong> — GitHub Actions → Create site</p>
+<ol class="small"><li>รอ run "Create site ${esc(r.slug)}" ด้านล่างขึ้น สำเร็จ (ประมาณ 5 นาที)</li>
+<li>ไปที่ <a href="/releases">Release</a> → Merge PR "Add site ${esc(r.name)} (${esc(r.domain)})"</li>
+<li>ติ๊ก ${esc(r.name)} และ Center → เริ่ม Release</li><li>เปิดหน้าเว็บนั้นใน Center → สร้างบัญชีเจ้าของเว็บ</li></ol>`;
+      }
+      return `<div class="card"><h2 style="margin-top:0">${esc(r.name)} <span class="muted small">${esc(r.domain)} · ${esc(r.slug)}</span></h2>${body}${removedNote}${removeForm}</div>`;
+    };
+    const runRows = runs?.ok ? runs.value.map((x) => `<tr><td>#${x.number}</td><td>${esc(x.title)}</td><td>${x.status !== "completed" ? '<span class="warn">กำลังทำ</span>' : x.conclusion === "success" ? '<span class="ok">สำเร็จ</span>' : `<span class="bad">${esc(x.conclusion ?? "ไม่สำเร็จ")}</span>`}</td><td class="small">${esc(bkk(x.createdAt))}</td><td>${x.url ? `<a href="${esc(x.url)}" rel="noopener noreferrer" target="_blank">ดู</a>` : ""}</td></tr>`).join("") : "";
+    const runsCard = runs ? `<div class="card scroll"><h2 style="margin-top:0">Create site ล่าสุด</h2>${runs.ok ? `<table><tbody>${runRows || '<tr><td class="muted">ยังไม่มี</td></tr>'}</tbody></table>` : `<p class="warn">${esc(runs.reason)}</p>`}<p class="small"><a href="/sites/new">รีเฟรช</a></p></div>` : "";
+    const setup = cf.configured ? "" : `<div class="flash error">ยังไม่ได้ตั้ง Cloudflare token ของ Center (secret CENTER_CF_TOKEN) — ดูวิธีใน docs/CENTER.md หัวข้อ "เพิ่มเว็บใหม่จาก Center"</div>`;
+    const doneNote = done.length ? `<div class="flash ok">${done.map((d) => esc(d.name)).join(", ")} อยู่ในระบบแล้ว — ดูได้ในหน้าเว็บทั้งหมด</div>` : "";
+    return html(page({
+      title: "เพิ่มเว็บใหม่", user: me, current: "sites", flash,
+      body: `<p class="small"><a href="/">← เว็บทั้งหมด</a></p><h1>เพิ่มเว็บใหม่</h1>${setup}${doneNote}${rows.map(card).join("")}
+<div class="card"><h2 style="margin-top:0">เริ่มเว็บใหม่จากโดเมน</h2>
+<form method="post" action="/sites/new" class="stack" style="max-width:440px">
+<label for="ns-domain">โดเมน (เช่น baanrim.com)</label><input id="ns-domain" name="domain" required maxlength="253">
+<label for="ns-name">ชื่อเว็บใน Center</label><input id="ns-name" name="name" required maxlength="60">
+<label for="ns-slug">slug — ตัวพิมพ์เล็ก ตัวเลข และ - (เปลี่ยนภายหลังไม่ได้)</label><input id="ns-slug" name="slug" required pattern="[a-z][a-z0-9-]{1,30}" maxlength="31">
+<label for="ns-reason">เหตุผล</label><input id="ns-reason" name="reason" required minlength="3" maxlength="100" value="เปิดเว็บใหม่">
+<p><button type="submit">เพิ่มโดเมนเข้า Cloudflare</button></p></form>
+<p class="small muted">Center เพิ่มโดเมนเข้าบัญชี Cloudflare ของแพลตฟอร์ม นำเข้า DNS เดิม (เช่นอีเมล) และลบ record ของโดเมนหลัก / www ที่จะชนกับเว็บ — แล้วแสดง nameserver ให้ส่งเจ้าของเว็บ ถ้าโดเมนอยู่ในบัญชีแล้วจะใช้ต่อ (Center ไม่ลบโดเมนจาก Cloudflare)</p></div>
+${runsCard}`,
+    }), flash?.kind === "error" ? 422 : 200);
+  }
+
+  async function newSiteZone(ctx: Ctx, me: Me): Promise<Response> {
+    const form = await readForm(ctx.request);
+    const domain = normalizeDomain(form.get("domain") ?? "");
+    const name = (form.get("name") ?? "").trim().replace(/\s+/g, " ");
+    const slug = (form.get("slug") ?? "").trim().toLowerCase();
+    const reason = (form.get("reason") ?? "").trim();
+    const bad = (text: string) => newSitesPage(ctx, me, { kind: "error", text });
+    if (reason.length < 3 || reason.length > 100) return bad("กรุณาระบุเหตุผล 3–100 ตัวอักษร");
+    if (!/^[a-z][a-z0-9-]{1,30}$/.test(slug) || slug === "center" || slug === "new") return bad("slug ใช้ตัวพิมพ์เล็ก ตัวเลข และ - ยาว 2–31 ตัว ขึ้นต้นด้วยตัวอักษร (ห้าม center / new)");
+    if (!name || name.length > 60) return bad("ใส่ชื่อเว็บไม่เกิน 60 ตัวอักษร");
+    if (!validDomain(domain)) return bad("โดเมนไม่ถูกต้อง — ใส่แบบ baanrim.com");
+    const centerHost = new URL(ctx.env.APP_BASE_URL?.trim() || "https://center.invalid").host;
+    if (ctx.sites.some((s) => s.slug === slug) || ctx.sites.some((s) => s.domain === domain) || domain === centerHost) return bad("slug หรือโดเมนนี้เป็นของเว็บที่มีอยู่แล้ว");
+    if (await ctx.repo.db.prepare("SELECT 1 FROM center_new_sites WHERE slug = ?1 OR domain = ?2").bind(slug, domain).first()) return bad("slug หรือโดเมนนี้อยู่ในรายการแล้ว");
+    const cf = new CloudflareZones(ctx.env, options.cloudflareFetch);
+    let zone = await cf.findZone(domain);
+    if (!zone.ok) return bad(zone.reason);
+    let created = false;
+    if (!zone.value) {
+      const account = await cf.accountId(ctx.sites[0]?.domain ?? "");
+      if (!account.ok) return bad(account.reason);
+      const made = await cf.createZone(domain, account.value);
+      if (!made.ok) return bad(`เพิ่มโดเมนไม่สำเร็จ — ${made.reason}`);
+      zone = { ok: true, value: made.value };
+      created = true;
+    }
+    const z = zone.value!;
+    const removed = await cf.clearSiteHostnames(z.id, domain);
+    const now = iso(ctx.now);
+    const status = z.status === "active" ? "ZONE_ACTIVE" : "ZONE_PENDING";
+    await ctx.repo.db.batch([
+      ctx.repo.db.prepare(
+        `INSERT INTO center_new_sites (slug, name, domain, zone_id, status, name_servers, removed_records, created_by, created_at, updated_at, checked_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?9)`,
+      ).bind(slug, name, domain, z.id, status, JSON.stringify(z.nameServers), JSON.stringify(removed.ok ? removed.value : []), me.id, now),
+      audit(ctx, me.id, "NEW_SITE_ZONE", slug, reason, { domain, zoneId: z.id, created, status: z.status, removed: removed.ok ? removed.value.map((r) => `${r.type} ${r.name}`) : `error: ${removed.reason}` }),
+    ]);
+    const text = created ? `เพิ่ม ${domain} เข้า Cloudflare แล้ว` : `${domain} อยู่ในบัญชีอยู่แล้ว — ใช้ต่อ`;
+    return newSitesPage(ctx, me, removed.ok ? { kind: "ok", text } : { kind: "error", text: `${text} แต่ลบ record เดิมไม่สำเร็จ: ${removed.reason}` });
+  }
+
+  async function newSiteStep(ctx: Ctx, me: Me, slug: string, op: "check" | "create" | "remove"): Promise<Response> {
+    const row = await ctx.repo.db.prepare("SELECT * FROM center_new_sites WHERE slug = ?1").bind(slug).first<NewSiteRow>();
+    if (!row) return newSitesPage(ctx, me, { kind: "error", text: "ไม่พบรายการนี้" });
+    const form = await readForm(ctx.request);
+    const reason = (form.get("reason") ?? "").trim();
+    const now = iso(ctx.now);
+    if (op === "remove") {
+      if (reason.length < 3) return newSitesPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล" });
+      await ctx.repo.db.batch([ctx.repo.db.prepare("DELETE FROM center_new_sites WHERE slug = ?1").bind(slug), audit(ctx, me.id, "NEW_SITE_REMOVED", slug, reason, { domain: row.domain })]);
+      return newSitesPage(ctx, me, { kind: "ok", text: `เอา ${row.name} ออกจากรายการแล้ว (โดเมนยังอยู่ใน Cloudflare)` });
+    }
+    const cf = new CloudflareZones(ctx.env, options.cloudflareFetch);
+    if (!row.zone_id) return newSitesPage(ctx, me, { kind: "error", text: "ไม่มีข้อมูลโดเมนใน Cloudflare" });
+    if (row.status === "ZONE_PENDING") await cf.activationCheck(row.zone_id);
+    const zone = await cf.getZone(row.zone_id);
+    if (!zone.ok) return newSitesPage(ctx, me, { kind: "error", text: zone.reason });
+    const active = zone.value.status === "active";
+    if (op === "check") {
+      const removed = active ? await cf.clearSiteHostnames(row.zone_id, row.domain) : null;
+      const before = JSON.parse(row.removed_records) as unknown[];
+      await ctx.repo.db.prepare("UPDATE center_new_sites SET status = ?2, name_servers = ?3, removed_records = ?4, checked_at = ?5, updated_at = ?5 WHERE slug = ?1")
+        .bind(slug, row.status === "CREATING" ? "CREATING" : active ? "ZONE_ACTIVE" : "ZONE_PENDING", JSON.stringify(zone.value.nameServers),
+          JSON.stringify([...before, ...(removed?.ok ? removed.value : [])]), now).run();
+      return newSitesPage(ctx, me, active ? { kind: "ok", text: `${row.domain} พร้อมแล้ว (Active) — กด "สร้างเว็บ" ได้เลย` } : { kind: "ok", text: `${row.domain} ยังรอเปลี่ยน nameserver (${zone.value.status})` });
+    }
+    // create
+    if (reason.length < 3 || reason.length > 100) return newSitesPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–100 ตัวอักษร" });
+    if (!active) return newSitesPage(ctx, me, { kind: "error", text: `${row.domain} ยังไม่ Active — รอเจ้าของเว็บเปลี่ยน nameserver` });
+    const cleared = await cf.clearSiteHostnames(row.zone_id, row.domain);
+    if (!cleared.ok) return newSitesPage(ctx, me, { kind: "error", text: `ลบ record ของ ${row.domain} / www ไม่สำเร็จ: ${cleared.reason}` });
+    const res = await startCreateSite(ctx.env, { slug: row.slug, name: row.name, domain: row.domain }, options.githubFetch);
+    await audit(ctx, me.id, "NEW_SITE_CREATE", slug, reason, { domain: row.domain, ok: res.ok, error: res.ok ? null : res.reason }).run();
+    if (!res.ok) return newSitesPage(ctx, me, { kind: "error", text: `สั่ง Create site ไม่สำเร็จ: ${res.reason}` });
+    await ctx.repo.db.prepare("UPDATE center_new_sites SET status = 'CREATING', updated_at = ?2 WHERE slug = ?1").bind(slug, now).run();
+    return newSitesPage(ctx, me, { kind: "ok", text: `สั่งสร้าง ${row.name} แล้ว — รอ run เสร็จ แล้วไป Merge ในหน้า Release` });
   }
 
   async function mergeFromCenter(ctx: Ctx, me: Me): Promise<Response> {
@@ -1009,6 +1160,7 @@ function sensitiveReturnPath(method: string, path: string): string | null {
   const site = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup-download)$/.exec(path);
   if (site) return `/sites/${site[1]}`;
   if (path === "/releases" || path === "/releases/merge") return "/releases";
+  if (path === "/sites/new" || path.startsWith("/sites/new/")) return "/sites/new";
   if (path === "/users" || path.startsWith("/users/")) return "/users";
   if (path === "/settings") return "/settings";
   if (path === "/account/recovery-codes" || path === "/account/password") return "/account";
