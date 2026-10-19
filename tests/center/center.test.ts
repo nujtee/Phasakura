@@ -377,10 +377,11 @@ describe("Center: health checks and LINE alerts (phase C5)", () => {
     ctx.setSiteDown(false);
     ctx.advance(5 * 60_000);
     const resolved = await ctx.check();
-    assert.deepEqual(resolved.events.map((e) => [e.type, e.event]), [["site_down", "RESOLVED"]]);
+    // (The bare test site also has a real config error — the "no primary account" check — which may open now; this test is about site_down.)
+    assert.deepEqual(resolved.events.filter((e) => e.type === "site_down").map((e) => [e.type, e.event]), [["site_down", "RESOLVED"]]);
     assert.match(ctx.pushes[1]!.text, /✅ Phasakura — กลับมาปกติ: เว็บล่ม .*\(นาน 10 นาที\)/);
-    assert.equal(ctx.pushes.length, 2);
-    assert.equal(ctx.db.all("SELECT id FROM center_alert_log").length, 2);
+    assert.equal(ctx.pushes.length, 2, "one message per round");
+    assert.equal(ctx.db.all("SELECT id FROM center_alert_log WHERE type = 'site_down'").length, 2);
   });
 
   it("switched-off types and the all-clear are logged but not sent; no group / no token says so", async () => {
@@ -415,6 +416,22 @@ describe("Center: health checks and LINE alerts (phase C5)", () => {
     assert.match(page.text, /ฐานข้อมูลไม่ตรงกับโค้ด/);
     assert.match(page.text, /outdated/);
     assert.equal((await ctx.req("GET", "/sites/nosuch", { cookie: owner })).status, 404);
+  });
+
+  it("one unreachable check does not “resolve” other open problems (no all-clear + re-alert flapping)", async () => {
+    const ctx = await setup();
+    await ctx.ownerSession();
+    ctx.site.db.exec("DROP TABLE IF EXISTS d1_migrations; CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY, name TEXT, applied_at TEXT); INSERT INTO d1_migrations (name) VALUES ('0019_privacy_marketing.sql')");
+    await ctx.check();
+    ctx.advance(300_000);
+    assert.ok((await ctx.check()).events.some((e) => e.type === "schema_outdated" && e.event === "OPENED"));
+    ctx.setSiteDown(true);
+    ctx.advance(300_000);
+    assert.deepEqual((await ctx.check()).events, [], "blind round: nothing resolved, site_down not yet open");
+    ctx.setSiteDown(false);
+    ctx.advance(300_000);
+    assert.deepEqual((await ctx.check()).events, [], "still outdated: no re-alert");
+    assert.equal(ctx.db.all<{ open_since: string | null }>("SELECT open_since FROM center_alert_states WHERE type = 'schema_outdated'")[0]!.open_since !== null, true);
   });
 
   it("the alert text is one message per round, in Bangkok time, with the console host", () => {

@@ -138,7 +138,11 @@ export async function runChecks(env: CenterEnv, options: MonitorOptions = {}): P
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
     ).bind(site.slug, nowIso, row.http_status, row.health, row.database_state, row.schema_state, row.cron_state, row.errors_24h, row.slips_waiting, row.suspended,
       JSON.stringify([...problems.keys()]), row.detail));
+    // A reading without data (site unreachable / database down) says nothing about the other problems:
+    // leave their state alone instead of "resolving" them for one round.
+    const blind = problems.has("site_down");
     for (const type of ALERT_TYPES) {
+      if (blind && type !== "site_down") continue;
       const prev = states.get(`${site.slug}/${type}`);
       const detail = problems.get(type);
       let bad = 0;
