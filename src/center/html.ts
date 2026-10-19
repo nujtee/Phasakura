@@ -61,7 +61,8 @@ input,select,button{font:inherit;padding:7px 10px;border:1px solid var(--line);b
 input{min-width:0}button{cursor:pointer;background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 button.plain{background:transparent;color:var(--accent)}button.danger{background:var(--bad);border-color:var(--bad)}
 form.inline{display:flex;gap:8px;flex-wrap:wrap;align-items:center}label{display:block;margin:10px 0 4px;font-weight:600}
-.stack input,.stack select{width:100%}.flash{padding:10px 14px;border-radius:8px;margin-bottom:16px;border:1px solid var(--line);background:var(--card)}
+.stack input,.stack select{width:100%}.stack input[type=checkbox],.stack input[type=radio]{width:auto}
+label.check{display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:6px 0;cursor:pointer}label.check input{margin:3px 0 0;flex:none}.flash{padding:10px 14px;border-radius:8px;margin-bottom:16px;border:1px solid var(--line);background:var(--card)}
 .flash.error{border-color:var(--bad)}.flash.ok{border-color:var(--ok)}code,.mono{font-family:ui-monospace,Menlo,monospace;font-size:.9em;word-break:break-all}
 .narrow{max-width:420px;margin:48px auto}.scroll{overflow-x:auto}
 `;
