@@ -75,7 +75,7 @@ await check("admin: System status page — readiness checks sorted by severity w
   const table = pa.locator("table.sys-checks");
   await table.waitFor();
   const rows = await table.locator("tr").allInnerTexts();
-  assert(rows.length === 19, `19 checks, got ${rows.length}`);
+  assert(rows.length === 20, `20 checks, got ${rows.length}`);
   const levels = await table.locator("tr td:first-child .adm-badge").allInnerTexts();
   const rank = { Fix: 0, Check: 1, OK: 2 };
   assert(levels.every((l, i) => i === 0 || rank[levels[i - 1]] <= rank[l]), `not sorted: ${levels}`);

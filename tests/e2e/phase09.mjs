@@ -403,7 +403,7 @@ await check("Administration → Menu: hide the Marketing group and Kitchen repor
   if (!(await pa.getByRole("checkbox", { name: "Admin menu · Always shown" }).isDisabled())) throw new Error("menu page hideable");
   await pa.getByRole("group", { name: "Marketing" }).getByLabel("Show the whole group").uncheck();
   await pa.getByRole("group", { name: "Food" }).getByLabel("Kitchen report").uncheck();
-  await pa.getByText("32 of 36 items shown").waitFor();
+  await pa.getByText("34 of 38 items shown").waitFor();
   await pa.getByRole("button", { name: "Save" }).click();
   await pa.getByText(/Menu saved/).waitFor();
   await nav.getByRole("button", { name: "Marketing" }).waitFor({ state: "detached" });
