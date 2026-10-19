@@ -92,12 +92,25 @@ Center ตรวจทุกเว็บ **ทุก 5 นาที** (cron ข�
 - Center สั่ง GitHub ให้รัน workflow Release บน `main` โดยชื่อ run จะเป็น `Release <เว็บ> — <อีเมล>: <เหตุผล>`
 - ขั้นตอนจริงยังอยู่ใน GitHub Actions เหมือนเดิม: preflight → จุดย้อนกลับ D1 → migrate → deploy → smoke test
 
+**Merge pull request จาก Center:** หัวข้อ "Pull requests รอ merge" ในหน้า Release แสดง PR ที่เปิดอยู่บน `main` พร้อมผล CI
+(จาก GitHub Actions ของ commit นั้น) — เจ้าของแพลตฟอร์มกด **Merge** ได้
+- ต้องใส่เหตุผล และยืนยันรหัส 2 ขั้นภายใน 15 นาที
+- CI ไม่ผ่านหรือยังตรวจไม่เสร็จ ต้องติ๊กยืนยันเพิ่ม
+- ฉบับร่างกด merge ไม่ได้
+- merge เฉพาะ commit ที่เห็นบนหน้าเท่านั้น ถ้า PR เปลี่ยนระหว่างนั้น GitHub จะปฏิเสธ
+- merge แล้วโค้ดยังไม่ขึ้นเว็บจนกว่าจะกด "เริ่ม Release"
+
 **ตั้งค่าครั้งเดียว (ทำเอง ห้ามวาง token ในแชต):**
 1. GitHub → รูปโปรไฟล์ → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**
    - **Token name:** `center-release`
    - **Expiration:** 90 วัน หรือตามสะดวก (หมดแล้วต้องสร้างใหม่)
    - **Repository access:** Only select repositories → `nujtee/Phasakura`
-   - **Permissions → Repository permissions → Actions:** **Read and write** (ที่เหลือปล่อยเป็น No access; Metadata: Read-only ถูกเลือกให้อัตโนมัติ)
+   - **Permissions → Repository permissions:**
+     - **Actions:** Read and write — สั่ง Release และอ่านผล CI
+     - **Pull requests:** Read and write — แสดงรายการ PR และใช้ merge
+     - **Contents:** Read and write — GitHub บังคับต้องมีเพื่อ merge
+     - ที่เหลือปล่อยเป็น No access; Metadata: Read-only ถูกเลือกให้อัตโนมัติ
+   - token ที่สร้างไว้แล้วแก้สิทธิ์ได้: Fine-grained tokens → กดชื่อ token → **Edit** → เพิ่มสิทธิ์ → **Update** (ค่า token เดิมใช้ต่อได้)
    - กด **Generate token** แล้วคัดลอกไว้ชั่วคราว
 2. Cloudflare → **Workers & Pages** → **center** → **Settings** → **Variables and Secrets** → **Add**
    - Type: **Secret**
