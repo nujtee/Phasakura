@@ -25,7 +25,7 @@
   "preview_urls": false,
   "vars": {
     "APP_BASE_URL": "https://center.phasakura.com",
-    "CENTER_SITES": "[{\"slug\":\"phasakura\",\"name\":\"Phasakura\",\"domain\":\"phasakura.com\",\"binding\":\"SITE_PHASAKURA\"},{\"slug\":\"chomkhao\",\"name\":\"Chomkhao\",\"domain\":\"chomkhao.com\",\"binding\":\"SITE_CHOMKHAO\"},{\"slug\":\"cherngdoi\",\"name\":\"Cherngdoi\",\"domain\":\"cherngdoi.com\",\"binding\":\"SITE_CHERNGDOI\"}]"
+    "CENTER_SITES": "[{\"slug\":\"phasakura\",\"name\":\"Phasakura\",\"domain\":\"phasakura.com\",\"binding\":\"SITE_PHASAKURA\"},{\"slug\":\"chomkhao\",\"name\":\"Chomkhao\",\"domain\":\"chomkhao.com\",\"binding\":\"SITE_CHOMKHAO\"},{\"slug\":\"cherngdoi\",\"name\":\"Cherngdoi\",\"domain\":\"cherngdoi.com\",\"binding\":\"SITE_CHERNGDOI\"},{\"slug\":\"suanpho\",\"name\":\"Suanpho\",\"domain\":\"suanpho.com\",\"binding\":\"SITE_SUANPHO\"}]"
   },
   "d1_databases": [
     {
@@ -47,6 +47,10 @@
     {
       "binding": "SITE_CHERNGDOI",
       "service": "cherngdoi"
+    },
+    {
+      "binding": "SITE_SUANPHO",
+      "service": "suanpho"
     }
   ]
 }
