@@ -103,7 +103,7 @@ await check("calendar: select a whole row of next month, lock it with a reason, 
   await pa.getByRole("button", { name: /Lock \/ unlock dates/ }).click();
   await pa.getByText(/Shift\+click selects a run/).waitFor();
   const row = pa.locator(".adm-cal tbody tr").first();
-  const free = await row.locator("button.adm-cal__pick:not([disabled])").count();
+  const free = await row.locator('button.adm-cal__pick:not([aria-disabled="true"])').count();
   if (free < 20) throw new Error(`only ${free} selectable cells`);
   await row.locator("th button.adm-cal__headpick").click();
   await pa.getByText(`${free} selected`).waitFor();
@@ -140,6 +140,65 @@ await check("calendar: set camping to 23 tents for a week of next month, then ba
   await pa.getByRole("button", { name: /Back to default/ }).click();
   await pa.getByText("Tents set for 7 nights").waitFor();
   if ((await camp.getByText(/\/23 tents/).count()) !== 0) throw new Error("not back to default");
+});
+
+await check("calendar: lock / unlock works in the Day, Month (this month) and Custom views too; past days are greyed out", async () => {
+  const lockBtn = (n) => pa.getByRole("button", { name: `Lock ${n}`, exact: true });
+  const unlockBtn = (n) => pa.getByRole("button", { name: `Unlock ${n}`, exact: true });
+  // Day view (today): one cell of the last unit.
+  await pa.goto(`${BASE}/en/admin/calendar`);
+  await pa.getByRole("tab", { name: "Day" }).click();
+  await pa.waitForTimeout(400);
+  await pa.getByRole("button", { name: /Lock \/ unlock dates/ }).click();
+  // Today: the first unit that is free (earlier checks booked some units for today).
+  const dayCell = pa.locator(`.adm-cal tbody tr:not(:last-child) button.adm-cal__pick:not([aria-disabled="true"])`).first();
+  const dayUnit = await dayCell.getAttribute("aria-label");
+  await dayCell.click();
+  await pa.getByText("1 selected").waitFor();
+  await pa.getByLabel("Reason for the lock").fill("Day view");
+  await lockBtn(1).click();
+  await pa.getByText("Locked 1 cells").waitFor();
+  await pa.getByRole("button", { name: dayUnit, exact: true }).click();
+  await unlockBtn(1).click();
+  await pa.getByText("Unlocked 1 cells").waitFor();
+  await pa.getByRole("button", { name: "Done" }).click();
+
+  // Month view, this month: today's column is scrolled into view; past days are greyed and say why.
+  await pa.getByRole("tab", { name: "Month" }).click();
+  await pa.waitForTimeout(400);
+  await pa.getByRole("button", { name: /Lock \/ unlock dates/ }).click();
+  const today = day(0);
+  const head = pa.locator(`.adm-cal thead th[data-date="${today}"]`);
+  if (!(await head.isVisible())) throw new Error("today's column not visible");
+  if (today.slice(8) !== "01") {
+    const first = pa.locator(".adm-cal thead th[data-date]").first();
+    if (!(await first.getAttribute("class"))?.includes("adm-cal__past")) throw new Error("past day not greyed");
+    await first.locator("button").click();
+    await pa.getByText(/Can't select this: past days/).waitFor();
+    await pa.screenshot({ path: `${SHOTS}/g-admin-calendar-month-past.png` });
+  }
+  await head.locator("button").click();
+  const picked = Number((await pa.locator(".adm-cal__actions strong").textContent()).split(" ")[0]);
+  if (!(picked >= 1)) throw new Error("today's column picked nothing");
+  await pa.getByRole("button", { name: "Clear selection" }).click();
+  await pa.getByRole("button", { name: "Done" }).click();
+
+  // Custom range.
+  await pa.getByRole("tab", { name: "Custom" }).click();
+  await pa.getByLabel("From").fill(day(40));
+  await pa.getByLabel("To").fill(day(44));
+  await pa.getByRole("button", { name: "Show", exact: true }).click();
+  await pa.locator(`.adm-cal thead th[data-date="${day(40)}"]`).waitFor();
+  await pa.getByRole("button", { name: /Lock \/ unlock dates/ }).click();
+  const row = pa.locator(".adm-cal tbody tr").first();
+  await row.locator("th button.adm-cal__headpick").click();
+  await pa.getByText("4 selected").waitFor();
+  await pa.getByLabel("Reason for the lock").fill("Custom view");
+  await lockBtn(4).click();
+  await pa.getByText("Locked 4 cells").waitFor();
+  await row.locator("th button.adm-cal__headpick").click();
+  await unlockBtn(4).click();
+  await pa.getByText("Unlocked 4 cells").waitFor();
 });
 
 await check("check-in from the booking page", async () => {

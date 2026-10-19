@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { formatBaht } from "../../../shared/booking-rules.ts";
 import type { CalendarBookingDto, CalendarDto, CalendarLockRequestDto, CalendarLockResultDto } from "../../../shared/dashboard-types.ts";
 import { addDays, diffDays, monthRange } from "../../../shared/dates.ts";
@@ -48,6 +48,8 @@ export function CalendarPage() {
   const [tents, setTents] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (from: string | null, to: string | null) => {
     setError(null);
@@ -114,6 +116,7 @@ export function CalendarPage() {
   /** Adds all `keys` (selectable ones), or removes them if they are all selected already. */
   const toggleMany = (keys: string[]) => {
     const pickable = keys.filter(selectable);
+    setHint(pickable.length ? null : c.cal.nothingToPick);
     if (!pickable.length) return;
     setSelected((prev) => {
       const next = new Set(prev);
@@ -131,7 +134,10 @@ export function CalendarPage() {
       const [a, b] = [keys.indexOf(lastPick), keys.indexOf(key)].sort((x, y) => x - y);
       const run = keys.slice(a, (b ?? a!) + 1).filter(selectable);
       setSelected((prev) => new Set([...prev, ...run]));
-    } else if (selectable(key)) {
+    } else if (!selectable(key)) {
+      setHint(c.cal.nothingToPick);
+    } else {
+      setHint(null);
       setSelected((prev) => {
         const next = new Set(prev);
         if (next.has(key)) next.delete(key);
@@ -145,6 +151,15 @@ export function CalendarPage() {
     setNotice(null);
     toggleMany([...(data?.units ?? []).map((u) => unitKey(u.id, date)), ...(data?.camping.enabled ? [campKey(date)] : [])]);
   };
+  // Month / custom views are wide: bring today's column into view (past days cannot be locked).
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap || !data || !data.dates.includes(data.today)) return;
+    const head = wrap.querySelector<HTMLElement>(`th[data-date="${data.today}"]`);
+    const unitCol = wrap.querySelector<HTMLElement>("thead .adm-cal__unit");
+    if (head) wrap.scrollLeft = Math.max(0, head.offsetLeft - (unitCol?.offsetWidth ?? 0));
+  }, [data, picking]);
+
   const toLock = [...selected].filter((k) => !isLocked(k));
   const toUnlock = [...selected].filter(isLocked);
   const needsReason = toLock.some((k) => k.startsWith("u|"));
@@ -209,7 +224,7 @@ export function CalendarPage() {
       {(canBlock || canCamp) && data && (
         <div className="adm-row adm-row--wrap adm-cal__lockbar">
           <Button variant={picking ? "primary" : "secondary"} aria-pressed={picking}
-            onClick={() => { setPicking(!picking); setSelected(new Set()); setLastPick(null); setNotice(null); }}>
+            onClick={() => { setPicking(!picking); setSelected(new Set()); setLastPick(null); setNotice(null); setHint(null); }}>
             {picking ? c.cal.selectDone : `🔒 ${c.cal.selectMode}`}
           </Button>
           {picking && <span className="adm-field__hint">{c.cal.selectHint}</span>}
@@ -237,18 +252,20 @@ export function CalendarPage() {
         </div>
       )}
       {notice && <Alert kind="success">{notice}</Alert>}
+      {picking && hint && <Alert kind="info">{hint}</Alert>}
       {error && <Alert kind="error">{error}</Alert>}
       {!data && !error && <p role="status">{t.common.loading}</p>}
       {data && (
         <>
           <h2 className="adm-h2">{title}</h2>
-          <div className="adm-tablewrap adm-calwrap">
+          <div className="adm-tablewrap adm-calwrap" ref={wrapRef}>
             <table className={`adm-cal${picking ? " adm-cal--picking" : ""}`}>
               <thead>
                 <tr>
                   <th scope="col" className="adm-cal__unit">{c.cal.unit}</th>
                   {data.dates.map((d) => (
-                    <th key={d} scope="col" className={d === data.today ? "adm-cal__today" : undefined}>
+                    <th key={d} scope="col" data-date={d}
+                      className={[d === data.today ? "adm-cal__today" : "", picking && d < data.today ? "adm-cal__past" : ""].filter(Boolean).join(" ") || undefined}>
                       {picking
                         ? <button type="button" className="adm-cal__headpick" onClick={() => pickColumn(d)}>{dayHead.format(new Date(`${d}T00:00:00Z`))}</button>
                         : dayHead.format(new Date(`${d}T00:00:00Z`))}
@@ -273,10 +290,11 @@ export function CalendarPage() {
                       const name = u.names[locale.code] ?? u.names.th ?? u.code;
                       if (picking && !n?.bookingCode) {
                         const on = selected.has(key);
-                        const cls = [n ? "adm-cal__blocked" : d === data.today ? "adm-cal__today" : "", "adm-cal__pickcell", on ? "is-selected" : ""].filter(Boolean).join(" ");
+                        const cls = [n ? "adm-cal__blocked" : d === data.today ? "adm-cal__today" : "", "adm-cal__pickcell", on ? "is-selected" : "",
+                          !selectable(key) ? "adm-cal__past" : ""].filter(Boolean).join(" ");
                         return (
                           <td key={d} className={cls}>
-                            <button type="button" className="adm-cal__pick" aria-pressed={on} disabled={!selectable(key)}
+                            <button type="button" className="adm-cal__pick" aria-pressed={on} aria-disabled={!selectable(key)}
                               aria-label={format(c.cal.pick, { unit: name, date: stayDate(d) })}
                               title={n ? format(c.cal.blocked, { reason: n.blockReason ?? "" }) : undefined}
                               onClick={(e) => pick(key, e)}>{n ? "✕" : on ? "✓" : ""}</button>
@@ -316,8 +334,8 @@ export function CalendarPage() {
                       const tip = [n.closed ? c.cal.campClosedTitle : null, n.override ? format(c.cal.tentsOverride, { max: data.camping.defaultMax }) : null].filter(Boolean).join(" · ") || undefined;
                       if (picking && canCamp) {
                         return (
-                          <td key={n.date} className={`${cls} adm-cal__pickcell${on ? " is-selected" : ""}`}>
-                            <button type="button" className="adm-cal__pick" aria-pressed={on} disabled={!selectable(key)}
+                          <td key={n.date} className={`${cls} adm-cal__pickcell${on ? " is-selected" : ""}${selectable(key) ? "" : " adm-cal__past"}`}>
+                            <button type="button" className="adm-cal__pick" aria-pressed={on} aria-disabled={!selectable(key)}
                               aria-label={format(c.cal.pick, { unit: c.cal.camping, date: stayDate(n.date) })}
                               title={tip} onClick={(e) => pick(key, e)}>{label}</button>
                           </td>

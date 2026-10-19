@@ -2470,12 +2470,22 @@
   cursor: pointer;
 }
 
-.adm-cal__pick:disabled {
+.adm-cal__pick[aria-disabled="true"] {
   cursor: not-allowed;
-  opacity: 0.45;
 }
 
-.adm-cal__pick:hover:not(:disabled) {
+/* picking: past days (and booked cells) cannot be picked — greyed out */
+.adm-cal--picking .adm-cal__past {
+  background: color-mix(in srgb, var(--color-muted) 14%, var(--color-surface));
+  color: var(--color-muted);
+}
+
+.adm-cal--picking th.adm-cal__past .adm-cal__headpick {
+  color: var(--color-muted);
+  text-decoration: none;
+}
+
+.adm-cal__pick:hover:not([aria-disabled="true"]) {
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
