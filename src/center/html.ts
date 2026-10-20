@@ -30,6 +30,8 @@ export const ACTION_LABELS: Record<string, string> = {
   SITE_SUSPENDED: "พักการรับจองของเว็บ",
   CHANNEL_ICAL_ON: "เปิด iCal (OTA) ของเว็บ",
   CHANNEL_ICAL_OFF: "ปิด iCal (OTA) ของเว็บ",
+  CHANNEL_CHANNEX_ON: "เปิด Channex ของเว็บ",
+  CHANNEL_CHANNEX_OFF: "ปิด Channex ของเว็บ",
   SITE_RESUMED: "เปิดรับจองของเว็บอีกครั้ง",
   SITE_SESSIONS_REVOKED: "ตัด session ของ Center ในเว็บ",
   OWNER_INVITED: "สร้างบัญชี / ลิงก์ของเจ้าของเว็บ",

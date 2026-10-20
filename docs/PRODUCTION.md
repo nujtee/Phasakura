@@ -49,6 +49,16 @@ Time Travel bookmark (จุดย้อนกลับใน summary) → migra
 แก้ trigger "ต้องเหลือ SUPER_ADMIN อย่างน้อย 1" ให้นับเฉพาะบัญชีของเว็บ (ไม่นับ Center user), เพิ่มตาราง `center_sso_tickets` และ
 `site_suspension` — ไม่แตะข้อมูลเดิม ปล่อยผ่าน Release ตามปกติ (`docs/SITES.md` หัวข้อคำสั่งแก้ข้อมูลและ SSO)
 
+### Channex: เชื่อมบัญชีและจับคู่ห้อง (migration 0034, เฟส O2)
+
+ตาราง `channex_settings` (ที่พักใน Channex ของเว็บนี้) และ `channex_unit_map` (บ้าน / เต็นท์ VIP ↔ ประเภทห้อง + แผนราคา) — ไม่แตะข้อมูลเดิม
+- Secret ของ Worker แต่ละเว็บ (Cloudflare → Workers → <เว็บ> → Settings → Variables and Secrets): `CHANNEX_API_KEY` (key จาก Channex →
+  โปรไฟล์ผู้ใช้ → API keys) และ `CHANNEX_ENV` = `production` เมื่อใช้บัญชีจริง (ไม่ตั้ง = staging.channex.io ซึ่งเป็นบัญชีทดลองแยกกัน)
+- ไม่มี key = เปิด Channex ไม่ได้ (`CHANNEX_NOT_CONFIGURED`); key ไม่เคยถูกเก็บในฐานข้อมูลหรือ Audit logs
+- หลังบ้าน → ที่พัก → เชื่อมต่อ OTA → เปิด Channex → ทดสอบการเชื่อมต่อ → เลือกที่พัก (SUPER_ADMIN / MANAGER) → สร้างห้องใน Channex ให้อัตโนมัติ
+  (1 ประเภทห้องต่อหลัง จำนวน 1 ห้อง + แผนราคา "Standard" ตามราคาปกติ) หรือจับคู่เองกับห้องที่มีอยู่
+- เฟสนี้ยังไม่ส่งห้องว่าง / ราคา (O3) และยังไม่รับการจอง (O4) จึงยังไม่มีผลกับ OTA
+
 ### เชื่อมต่อ OTA: iCal กับ Booking.com / Agoda / Airbnb / Vrbo / OTA อื่น (migration 0033, เฟส O1)
 
 ตาราง `channel_settings`, `ical_feeds`, `ical_conflicts`, คอลัมน์ `booking_unit_nights.ical_feed_id` และสิทธิ์ `channels.view` /

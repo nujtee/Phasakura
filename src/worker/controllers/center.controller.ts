@@ -9,6 +9,18 @@ import { LATEST_MIGRATION } from "../services/health.service.ts";
 import { Validator } from "../validation.ts";
 
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
+
+/** `{ ical?: boolean, channex?: boolean }` — at least one. */
+export function switches(body: Record<string, unknown>): { ical?: boolean; channex?: boolean } {
+  const out: { ical?: boolean; channex?: boolean } = {};
+  for (const key of ["ical", "channex"] as const) {
+    if (body[key] === undefined) continue;
+    if (typeof body[key] !== "boolean") throw new ValidationError({ [key]: "REQUIRED" });
+    out[key] = body[key] as boolean;
+  }
+  if (out.ical === undefined && out.channex === undefined) throw new ValidationError({ ical: "REQUIRED" });
+  return out;
+}
 const ACTOR_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
@@ -70,14 +82,14 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       return jsonOk(await services(ctx).channels.centerOverview(), NO_STORE);
     }) satisfies Handler,
 
-    /** `{ ical: boolean }` — PLATFORM_OWNER / OPERATOR, reason; audited as the Center user. */
+    /** `{ ical?: boolean, channex?: boolean }` — PLATFORM_OWNER / OPERATOR, reason; audited as the Center user. */
     setChannels: (async (ctx) => {
       const req = await verify(ctx);
       const body = await readJsonObject(ctx.request);
-      new Validator(body).allowOnly(["ical"]).assertValid();
-      if (typeof body.ical !== "boolean") throw new ValidationError({ ical: "REQUIRED" });
+      new Validator(body).allowOnly(["ical", "channex"]).assertValid();
+      const change = switches(body);
       const s = services(ctx);
-      return jsonOk(await s.centerAdmin.setChannels(req, s.channels, { ical: body.ical }, requestMeta(ctx)), NO_STORE);
+      return jsonOk(await s.centerAdmin.setChannels(req, s.channels, change, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
     /** Backups of this site's database in its private bucket (phase C8), newest first. */

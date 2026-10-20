@@ -3400,3 +3400,11 @@
 .adm-channels__error {
   color: var(--color-error);
 }
+
+.adm-channels__channex .adm-h3 {
+  margin-top: 16px;
+}
+
+.adm-channels__pick {
+  margin-top: 8px;
+}

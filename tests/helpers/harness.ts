@@ -59,6 +59,9 @@ export class Harness {
   /** Fake OTA calendars (iCal, migration 0033): url → .ics text (or a Response / an error); every read is recorded. */
   readonly icalFiles = new Map<string, string | (() => Response | Promise<Response>)>();
   readonly icalReads: string[] = [];
+  /** Fake Channex API (phase O2): set by tests that need it; every call is recorded. */
+  channex: ((url: string, init?: RequestInit) => Response | Promise<Response>) | null = null;
+  readonly channexCalls: { method: string; url: string; key: string | null; body: unknown }[] = [];
   readonly app = createApp({
     requestId: () => "req",
     serviceOptions: {
@@ -78,6 +81,14 @@ export class Harness {
         const file = this.icalFiles.get(input);
         if (file === undefined) return new Response("not found", { status: 404 });
         return typeof file === "string" ? new Response(file, { headers: { "Content-Type": "text/calendar" } }) : file();
+      },
+      channexFetch: async (input: string, init?: RequestInit) => {
+        this.channexCalls.push({
+          method: init?.method ?? "GET", url: input, key: new Headers(init?.headers).get("user-api-key"),
+          body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+        });
+        if (!this.channex) throw new Error("no fake Channex");
+        return this.channex(input, init);
       },
       mapFetch: async (input: string, init?: RequestInit) => {
         this.tileRequests.push({ url: input, headers: Object.fromEntries(new Headers(init?.headers).entries()) });

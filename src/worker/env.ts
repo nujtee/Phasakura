@@ -122,4 +122,8 @@ export interface Env {
   PAYPAL_CLIENT_SECRET?: string;
   /** "sandbox" while testing with sandbox app credentials; anything else / unset = live PayPal. */
   PAYPAL_ENV?: string;
+  /** Channex.io API key (user-api-key) for OTA connections (phase O2) — Cloudflare Secret only. */
+  CHANNEX_API_KEY?: string;
+  /** "production" = app.channex.io; anything else / unset = staging.channex.io (a separate test account and key). */
+  CHANNEX_ENV?: string;
 }

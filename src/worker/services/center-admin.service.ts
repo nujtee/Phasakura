@@ -180,12 +180,12 @@ export class CenterAdminService {
 
   // ---------------------------------------------------------------- OTA channels (phase O1)
 
-  /** Switch iCal on / off (PLATFORM_OWNER / OPERATOR, reason) — the same switch as the site's SUPER_ADMIN. */
-  async setChannels(req: CenterRequest, channels: ChannelService, change: { ical: boolean }, meta: RequestMeta): Promise<CenterChannelsDto> {
+  /** Switch iCal / Channex on / off (PLATFORM_OWNER / OPERATOR, reason) — the same switches as the site's SUPER_ADMIN. */
+  async setChannels(req: CenterRequest, channels: ChannelService, change: { ical?: boolean; channex?: boolean }, meta: RequestMeta): Promise<CenterChannelsDto> {
     requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
     const reason = requireReason(req.actor);
     const caller = centerUser(req.actor);
-    await channels.switchIcal(change.ical, caller.id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
+    await channels.switchFeatures(change, caller.id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
       { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
     return channels.centerOverview();
   }

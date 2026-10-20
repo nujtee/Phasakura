@@ -114,13 +114,13 @@ describe("iCal files", () => {
 });
 
 describe("OTA channels — on / off switch", () => {
-  it("off by default; only SUPER_ADMIN switches (audited); others see the page; Channex not available yet", async () => {
+  it("off by default; only SUPER_ADMIN switches (audited); others see the page; Channex needs its key", async () => {
     const { h, owner, overview } = await setup({ on: false });
     const manager = await staff(h, ["MANAGER"]);
     const viewer = await staff(h, ["VIEWER"]);
     const before = await overview();
     assert.equal(before.ical.enabled, false);
-    assert.deepEqual(before.channex, { enabled: false, available: false });
+    assert.deepEqual([before.channex.enabled, before.channex.available], [false, false], "no CHANNEX_API_KEY on this site");
     assert.equal(before.canToggle, true);
     assert.equal((await overview(manager.token)).canToggle, false);
     assert.equal((await h.api("GET", "/api/admin/channels", { token: viewer.token })).status, 403);
