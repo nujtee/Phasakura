@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ICAL_CHANNEL_NAMES, type ChannelsDto, type IcalFeedDto } from "../../../shared/channel-types.ts";
+import { ICAL_LABEL_MAX, icalChannelName, type ChannelsDto, type IcalFeedDto } from "../../../shared/channel-types.ts";
 import { getChannelMessages, type AdminChannelMessages } from "../../../shared/i18n/admin-channel-messages.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
@@ -92,7 +92,7 @@ export function ChannelsPage() {
               <ul>
                 {data.ical.conflicts.map((c) => (
                   <li key={`${c.unitId}|${c.channel}|${c.date}`}>
-                    {format(m.conflictRow, { unit: c.unitCode, channel: ICAL_CHANNEL_NAMES[c.channel], date: c.date, code: c.bookingCode ?? "—" })}
+                    {format(m.conflictRow, { unit: c.unitCode, channel: icalChannelName(c.channel, c.label), date: c.date, code: c.bookingCode ?? "—" })}
                   </li>
                 ))}
               </ul>
@@ -132,8 +132,10 @@ function FeedRow({ feed, canEdit, onChange, setMsg, fail, setConfirm }: {
 }) {
   const m = useTexts();
   const date = useDateFormatter();
-  const channel = ICAL_CHANNEL_NAMES[feed.channel];
+  const channel = feed.channel === "OTHER" ? (feed.label ?? m.otherUnnamed) : icalChannelName(feed.channel, feed.label);
   const [url, setUrl] = useState(feed.importUrl ?? "");
+  const [label, setLabel] = useState(feed.label ?? "");
+  useEffect(() => setLabel(feed.label ?? ""), [feed.label]);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   useEffect(() => setUrl(feed.importUrl ?? ""), [feed.importUrl]);
@@ -160,7 +162,21 @@ function FeedRow({ feed, canEdit, onChange, setMsg, fail, setConfirm }: {
 
   return (
     <div className="adm-channels__feed">
-      <h3 className="adm-h3">{channel}</h3>
+      <h3 className="adm-h3">{feed.channel === "OTHER" ? `${m.otherTitle}${feed.label ? ` · ${feed.label}` : ""}` : channel}</h3>
+      {feed.channel === "OTHER" && (
+        <form className="adm-field" onSubmit={(e) => {
+          e.preventDefault();
+          void run(() => apiRequest<IcalFeedDto>("PUT", base, { label: label.trim() || null }), () => m.otherSaved);
+        }}>
+          <label htmlFor={`name-${id}`}>{m.otherName}</label>
+          <div className="adm-row adm-row--wrap">
+            <input id={`name-${id}`} value={label} maxLength={ICAL_LABEL_MAX} placeholder={m.otherPlaceholder} disabled={!canEdit}
+              onChange={(e) => setLabel(e.currentTarget.value)} />
+            {canEdit && <Button type="submit" variant="secondary" disabled={busy || label.trim() === (feed.label ?? "")}>{m.save}</Button>}
+          </div>
+          <p className="adm-field__hint">{m.otherHint}</p>
+        </form>
+      )}
       {feed.exportUrl && (
         <div className="adm-field">
           <label htmlFor={`exp-${id}`}>{format(m.exportLabel, { channel })}</label>

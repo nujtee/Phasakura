@@ -3,11 +3,11 @@ import type { LocaleCode } from "./locales.ts";
 /** Admin texts for OTA channels (migration 0033): Accommodation → OTA channels (iCal with Booking.com / Agoda / Airbnb). */
 
 const th = {
-  title: "เชื่อมต่อ Booking.com / Agoda / Airbnb",
-  intro: "ซิงก์วันว่างของบ้านและเต็นท์ VIP กับ Booking.com, Agoda และ Airbnb เพื่อไม่ให้จองซ้ำ (ลานกางเต็นท์ขายเฉพาะบนเว็บนี้)",
+  title: "เชื่อมต่อ OTA (iCal)",
+  intro: "ซิงก์วันว่างของบ้านและเต็นท์ VIP กับ Booking.com, Agoda, Airbnb, Vrbo และเว็บอื่นที่มีลิงก์ iCal เพื่อไม่ให้จองซ้ำ (ลานกางเต็นท์ขายเฉพาะบนเว็บนี้)",
   switches: "การเปิดใช้งาน",
   icalName: "ปฏิทิน iCal",
-  icalWhat: "แลกลิงก์ปฏิทินกับ Booking.com / Agoda / Airbnb: OTA เห็นวันที่ไม่ว่างของเรา และเราปิดวันที่ขายไปบน OTA อัตโนมัติทุก 15 นาที",
+  icalWhat: "แลกลิงก์ปฏิทินกับ OTA: OTA เห็นวันที่ไม่ว่างของเรา และเราปิดวันที่ขายไปบน OTA อัตโนมัติทุก 15 นาที",
   channexName: "Channex (OTA โดยตรง)",
   channexSoon: "เร็ว ๆ นี้ — ส่งห้องว่าง ราคา และรับการจองจาก OTA ผ่าน Channex",
   on: "เปิดอยู่",
@@ -19,7 +19,7 @@ const th = {
   offNote: "iCal ปิดอยู่ — ให้ Super Admin เปิดใช้ก่อน แล้วหน้านี้จะแสดงลิงก์ของแต่ละห้อง",
   howTitle: "วิธีเชื่อมต่อ (ทำทีละห้อง ทีละ OTA)",
   how: [
-    "คัดลอก \"ลิงก์ปฏิทินของเรา\" ไปวางในเมนูซิงก์ปฏิทินของ OTA (Booking.com: Extranet → ปฏิทิน → Sync calendars · Agoda: YCS → ปฏิทิน → iCal / Import calendar · Airbnb: ปฏิทิน → เลือกที่พัก → Availability → Connect calendars) — บาง OTA เปิดเมนูนี้ให้เฉพาะที่พักบางประเภท ถ้าไม่พบให้รอใช้ Channex",
+    "คัดลอก \"ลิงก์ปฏิทินของเรา\" ไปวางในเมนูซิงก์ปฏิทินของ OTA (Booking.com: Extranet → ปฏิทิน → Sync calendars · Agoda: YCS → ปฏิทิน → iCal / Import calendar · Airbnb: ปฏิทิน → เลือกที่พัก → Availability → Connect calendars · Vrbo: Vrbo Dashboard → Calendar → Availability → Connect calendars) — บาง OTA เปิดเมนูนี้ให้เฉพาะที่พักบางประเภท ถ้าไม่พบให้รอใช้ Channex",
     "คัดลอกลิงก์ปฏิทินที่ OTA ให้ (Export) มาวางในช่อง \"ลิงก์ปฏิทินจาก OTA\" แล้วกดบันทึก",
     "ระบบอ่านปฏิทิน OTA ทุก 15 นาที — วันที่ขายบน OTA จะขึ้นในปฏิทินการจองว่า \"iCal · Booking.com\" และลูกค้าจองวันนั้นบนเว็บไม่ได้",
     "iCal ส่งแค่ว่าง / ไม่ว่าง (ไม่มีชื่อลูกค้าหรือราคา) และ OTA อ่านลิงก์ของเราตามรอบของ OTA เอง (มักทุก 1–3 ชั่วโมง) จึงยังมีโอกาสจองซ้ำได้ในช่วงสั้น ๆ",
@@ -60,6 +60,12 @@ const th = {
     HTTP: "OTA ตอบกลับ {code}",
   },
   errors: { INVALID_URL: "ลิงก์ไม่ถูกต้อง — ต้องขึ้นต้นด้วย https:// และเป็นลิงก์ปฏิทินของ OTA", ICAL_DISABLED: "iCal ปิดอยู่" },
+  otherTitle: "OTA อื่น (iCal)",
+  otherUnnamed: "OTA อื่น",
+  otherName: "ชื่อ OTA",
+  otherPlaceholder: "เช่น ชื่อเว็บที่ให้ลิงก์ iCal",
+  otherHint: "ใช้กับเว็บอื่นที่มีลิงก์ปฏิทิน iCal (Export / Import) — ชื่อนี้จะขึ้นในปฏิทินการจองว่า \"iCal · ชื่อ\"",
+  otherSaved: "บันทึกชื่อแล้ว",
   unitHouse: "บ้าน",
   unitTent: "เต็นท์ VIP",
 };
@@ -67,11 +73,11 @@ const th = {
 export type AdminChannelMessages = typeof th;
 
 const en: AdminChannelMessages = {
-  title: "Booking.com / Agoda / Airbnb connection",
-  intro: "Sync the free nights of houses and VIP tents with Booking.com, Agoda and Airbnb so nothing is booked twice (camping is sold on this website only).",
+  title: "OTA channels (iCal)",
+  intro: "Sync the free nights of houses and VIP tents with Booking.com, Agoda, Airbnb, Vrbo and any other site with an iCal link so nothing is booked twice (camping is sold on this website only).",
   switches: "Features",
   icalName: "iCal calendars",
-  icalWhat: "Swap calendar links with Booking.com / Agoda / Airbnb: they see our unavailable nights, and nights sold there are closed here automatically every 15 minutes.",
+  icalWhat: "Swap calendar links with the OTAs: they see our unavailable nights, and nights sold there are closed here automatically every 15 minutes.",
   channexName: "Channex (direct OTA connection)",
   channexSoon: "Coming soon — availability, prices and OTA bookings through Channex",
   on: "On",
@@ -83,7 +89,7 @@ const en: AdminChannelMessages = {
   offNote: "iCal is off — a Super Admin switches it on first; then this page shows each unit's links.",
   howTitle: "How to connect (per unit, per OTA)",
   how: [
-    "Copy \"Our calendar link\" into the OTA's calendar sync menu (Booking.com: Extranet → Calendar → Sync calendars · Agoda: YCS → Calendar → iCal / Import calendar · Airbnb: Calendar → pick the listing → Availability → Connect calendars). Some OTAs offer it only for some property types; if it isn't there, wait for Channex.",
+    "Copy \"Our calendar link\" into the OTA's calendar sync menu (Booking.com: Extranet → Calendar → Sync calendars · Agoda: YCS → Calendar → iCal / Import calendar · Airbnb: Calendar → pick the listing → Availability → Connect calendars · Vrbo: Vrbo Dashboard → Calendar → Availability → Connect calendars). Some OTAs offer it only for some property types; if it isn't there, wait for Channex.",
     "Copy the OTA's own (export) calendar link into \"Calendar link from the OTA\" and save.",
     "The OTA calendar is read every 15 minutes — nights sold there show in the booking calendar as \"iCal · Booking.com\" and can't be booked on the website.",
     "iCal only says free / not free (no guest names or prices), and the OTA reads our link on its own schedule (often every 1–3 hours), so a double booking is still possible for a short while.",
@@ -124,16 +130,22 @@ const en: AdminChannelMessages = {
     HTTP: "The OTA answered {code}",
   },
   errors: { INVALID_URL: "Invalid link — it must start with https:// and be the OTA's calendar link", ICAL_DISABLED: "iCal is off" },
+  otherTitle: "Other OTA (iCal)",
+  otherUnnamed: "Other OTA",
+  otherName: "OTA name",
+  otherPlaceholder: "e.g. the name of the site that gives the iCal link",
+  otherHint: "For any other site with an iCal calendar link (export / import) — its nights show in the booking calendar as \"iCal · name\"",
+  otherSaved: "Name saved",
   unitHouse: "House",
   unitTent: "VIP tent",
 };
 
 const zhCN: AdminChannelMessages = {
-  title: "连接 Booking.com / Agoda / Airbnb",
-  intro: "将房屋和 VIP 帐篷的空房与 Booking.com、Agoda、Airbnb 同步，避免重复预订（露营区仅在本网站销售）。",
+  title: "OTA 渠道（iCal）",
+  intro: "将房屋和 VIP 帐篷的空房与 Booking.com、Agoda、Airbnb、Vrbo 以及其他提供 iCal 链接的网站同步，避免重复预订（露营区仅在本网站销售）。",
   switches: "功能开关",
   icalName: "iCal 日历",
-  icalWhat: "与 Booking.com / Agoda / Airbnb 交换日历链接：对方看到我们不可订的日期，对方售出的日期每 15 分钟自动在这里关闭。",
+  icalWhat: "与 OTA 交换日历链接：对方看到我们不可订的日期，对方售出的日期每 15 分钟自动在这里关闭。",
   channexName: "Channex（直连 OTA）",
   channexSoon: "即将推出 —— 通过 Channex 同步空房、价格并接收 OTA 预订",
   on: "已开启",
@@ -145,7 +157,7 @@ const zhCN: AdminChannelMessages = {
   offNote: "iCal 已关闭 —— 请超级管理员先开启，之后此页会显示每个房间的链接。",
   howTitle: "连接方法（逐个房间、逐个 OTA）",
   how: [
-    "复制“我们的日历链接”，粘贴到 OTA 的日历同步菜单（Booking.com：Extranet → 日历 → Sync calendars · Agoda：YCS → 日历 → iCal / Import calendar · Airbnb：日历 → 选择房源 → Availability → Connect calendars）。部分 OTA 只对某些房源类型开放此菜单；若找不到，请等待 Channex。",
+    "复制“我们的日历链接”，粘贴到 OTA 的日历同步菜单（Booking.com：Extranet → 日历 → Sync calendars · Agoda：YCS → 日历 → iCal / Import calendar · Airbnb：日历 → 选择房源 → Availability → Connect calendars · Vrbo：Vrbo Dashboard → Calendar → Availability → Connect calendars）。部分 OTA 只对某些房源类型开放此菜单；若找不到，请等待 Channex。",
     "复制 OTA 提供的（导出）日历链接，粘贴到“来自 OTA 的日历链接”并保存。",
     "每 15 分钟读取一次 OTA 日历 —— 在 OTA 售出的日期会在预订日历中显示为“iCal · Booking.com”，网站上无法预订。",
     "iCal 只传递可订 / 不可订（没有客人姓名或价格），且 OTA 按自己的频率读取我们的链接（通常每 1–3 小时），因此短时间内仍可能重复预订。",
@@ -186,6 +198,12 @@ const zhCN: AdminChannelMessages = {
     HTTP: "OTA 返回 {code}",
   },
   errors: { INVALID_URL: "链接无效 —— 必须以 https:// 开头且为 OTA 的日历链接", ICAL_DISABLED: "iCal 已关闭" },
+  otherTitle: "其他 OTA（iCal）",
+  otherUnnamed: "其他 OTA",
+  otherName: "OTA 名称",
+  otherPlaceholder: "例如提供 iCal 链接的网站名称",
+  otherHint: "适用于其他提供 iCal 日历链接（导出 / 导入）的网站 —— 其日期在预订日历中显示为“iCal · 名称”",
+  otherSaved: "名称已保存",
   unitHouse: "房屋",
   unitTent: "VIP 帐篷",
 };

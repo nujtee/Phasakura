@@ -42,9 +42,9 @@ async function setup(opts: { on?: boolean } = { on: true }) {
   const owner = await staff(h, ["SUPER_ADMIN"]);
   if (opts.on) assert.equal((await h.api("PUT", "/api/admin/channels/settings", { token: owner.token, body: { ical: true } })).status, 200);
   const overview = async (token = owner.token) => (await h.api<ChannelsDto>("GET", "/api/admin/channels", { token })).data;
-  const feed = async (unitId: string, channel: "BOOKING" | "AGODA" | "AIRBNB", token = owner.token) =>
+  const feed = async (unitId: string, channel: "BOOKING" | "AGODA" | "AIRBNB" | "VRBO" | "OTHER", token = owner.token) =>
     (await overview(token)).ical.feeds.find((f) => f.unitId === unitId && f.channel === channel)!;
-  const link = (unitId: string, channel: "BOOKING" | "AGODA" | "AIRBNB", importUrl: string | null, token = owner.token) =>
+  const link = (unitId: string, channel: "BOOKING" | "AGODA" | "AIRBNB" | "VRBO" | "OTHER", importUrl: string | null, token = owner.token) =>
     h.api<IcalFeedDto>("PUT", `/api/admin/channels/ical/${unitId}/${channel.toLowerCase()}`, { token, body: { importUrl } });
   const imported = (unitId: string) =>
     h.db.all<{ stay_date: string; block_reason: string }>("SELECT stay_date, block_reason FROM booking_unit_nights WHERE unit_id = ? AND ical_feed_id IS NOT NULL ORDER BY stay_date", unitId)
@@ -196,7 +196,7 @@ describe("OTA channels — iCal export", () => {
     await overview();
     const bookingAdmin = await staff(h, ["BOOKING_ADMIN"]);
     const seen = await overview(bookingAdmin.token);
-    assert.equal(seen.ical.feeds.length, 15, "5 units × Booking.com, Agoda, Airbnb");
+    assert.equal(seen.ical.feeds.length, 25, "5 units × Booking.com, Agoda, Airbnb, Vrbo, Other");
     assert.ok(seen.ical.feeds.every((f) => f.exportUrl === null && f.importUrl === null));
     assert.equal((await h.api("POST", "/api/admin/channels/ical/dev_house_01/booking/rotate", { token: bookingAdmin.token, body: {} })).status, 403);
   });
@@ -298,5 +298,32 @@ describe("OTA channels — iCal import", () => {
     assert.equal((await link("nope", "BOOKING", BOOKING_URL)).error?.code, "ACCOMMODATION_NOT_FOUND");
     assert.equal((await h.api("PUT", "/api/admin/channels/ical/dev_house_01/expedia", { token: manager.token, body: { importUrl: BOOKING_URL } })).error?.details?.channel, "INVALID_VALUE");
     assert.equal((await h.api("POST", "/api/admin/channels/ical/dev_house_02/agoda/sync", { token: manager.token, body: {} })).error?.details?.importUrl, "REQUIRED");
+  });
+});
+
+describe("OTA channels — Vrbo and a named other OTA", () => {
+  it("Vrbo works like the others; OTHER takes a name (only OTHER), shown on its nights and renamed with them", async () => {
+    const { h, link, imported, feed } = await setup();
+    const VRBO_URL = "https://www.vrbo.com/icalendar/abc.ics";
+    const OTHER_URL = "https://ical.example-ota.com/u/1.ics";
+    h.icalFiles.set(VRBO_URL, ics({ start: "2027-02-01", end: "2027-02-02" }));
+    h.icalFiles.set(OTHER_URL, ics({ start: "2027-02-05", end: "2027-02-06" }));
+    assert.equal((await link("dev_vip_01", "VRBO", VRBO_URL)).data.importedNights, 1);
+    const other = await link("dev_vip_01", "OTHER", OTHER_URL);
+    assert.equal(other.data.importedNights, 1);
+    assert.deepEqual(imported("dev_vip_01"), ["2027-02-01 iCal · Vrbo", "2027-02-05 iCal · Other OTA"]);
+
+    const owner = await staff(h, ["SUPER_ADMIN"]);
+    const named = await h.api<IcalFeedDto>("PUT", "/api/admin/channels/ical/dev_vip_01/other", { token: owner.token, body: { label: "  Hostel Hub " } });
+    assert.equal(named.status, 200, JSON.stringify(named.body));
+    assert.equal(named.data.label, "Hostel Hub");
+    assert.equal(named.data.importUrl, OTHER_URL, "a name alone leaves the link as it is");
+    assert.deepEqual(imported("dev_vip_01"), ["2027-02-01 iCal · Vrbo", "2027-02-05 iCal · Hostel Hub"]);
+    assert.equal(h.audits("ICAL_FEED_RENAMED").length, 1);
+    assert.equal((await feed("dev_vip_01", "OTHER")).label, "Hostel Hub");
+    assert.equal((await h.api("PUT", "/api/admin/channels/ical/dev_vip_01/vrbo", { token: owner.token, body: { label: "x" } })).error?.details?.label, "NOT_ALLOWED");
+    assert.equal((await h.api("PUT", "/api/admin/channels/ical/dev_vip_01/other", { token: owner.token, body: { label: "x".repeat(41) } })).error?.details?.label, "TOO_LONG");
+    assert.equal((await h.api("PUT", "/api/admin/channels/ical/dev_vip_01/other", { token: owner.token, body: {} })).error?.details?.importUrl, "REQUIRED");
+    assert.throws(() => h.db.run("UPDATE ical_feeds SET channel = 'EXPEDIA' WHERE channel = 'OTHER'"), /CHECK/);
   });
 });

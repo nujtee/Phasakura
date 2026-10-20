@@ -203,7 +203,7 @@ await check("calendar: lock / unlock works in the Day, Month (this month) and Cu
 
 await check("OTA channels: Super Admin switches iCal on, each unit gets its calendar links, the link serves an .ics; then off", async () => {
   await pa.goto(`${BASE}/en/admin/channels`);
-  await pa.getByRole("heading", { name: "Booking.com / Agoda / Airbnb connection" }).waitFor();
+  await pa.getByRole("heading", { name: "OTA channels (iCal)" }).waitFor();
   await pa.getByText("iCal is off").waitFor();
   await pa.getByRole("button", { name: "Switch iCal on" }).click();
   const link = pa.getByLabel("Our calendar link (paste into Booking.com)").first();

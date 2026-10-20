@@ -28,15 +28,18 @@ export function channelController(services: ServicesFor) {
       return jsonOk(await services(ctx).channels.setEnabled(auth, { ical: body.ical }, requestMeta(ctx)));
     }),
 
-    /** `{ importUrl: string | null }` — the OTA's calendar link for one unit. */
+    /** `{ importUrl?: string | null, label?: string | null }` — the OTA's calendar link for one unit; label = OTHER's name. */
     setImportUrl: withPermission("channels.edit", services, async (ctx, auth) => {
       const { unitId, channel } = feedKey(ctx);
       const body = await readJsonObject(ctx.request);
-      const v = new Validator(body).allowOnly(["importUrl"]);
-      if (body.importUrl !== null && typeof body.importUrl !== "string") v.errors.importUrl = "REQUIRED";
+      const v = new Validator(body).allowOnly(["importUrl", "label"]);
+      if (body.importUrl !== undefined && body.importUrl !== null && typeof body.importUrl !== "string") v.errors.importUrl = "REQUIRED";
+      if (body.label !== undefined && body.label !== null && typeof body.label !== "string") v.errors.label = "INVALID";
+      if (body.importUrl === undefined && body.label === undefined) v.errors.importUrl = "REQUIRED";
       v.assertValid();
-      const url = typeof body.importUrl === "string" && body.importUrl.trim() ? body.importUrl : null;
-      return jsonOk(await services(ctx).channels.setImportUrl(auth, unitId, channel, url, requestMeta(ctx)));
+      const url = body.importUrl === undefined ? undefined : typeof body.importUrl === "string" && body.importUrl.trim() ? body.importUrl : null;
+      const label = body.label === undefined ? undefined : (body.label as string | null);
+      return jsonOk(await services(ctx).channels.setImportUrl(auth, unitId, channel, url, requestMeta(ctx), label));
     }),
 
     rotate: withPermission("channels.edit", services, async (ctx, auth) => {

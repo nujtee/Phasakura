@@ -49,7 +49,7 @@ Time Travel bookmark (จุดย้อนกลับใน summary) → migra
 แก้ trigger "ต้องเหลือ SUPER_ADMIN อย่างน้อย 1" ให้นับเฉพาะบัญชีของเว็บ (ไม่นับ Center user), เพิ่มตาราง `center_sso_tickets` และ
 `site_suspension` — ไม่แตะข้อมูลเดิม ปล่อยผ่าน Release ตามปกติ (`docs/SITES.md` หัวข้อคำสั่งแก้ข้อมูลและ SSO)
 
-### เชื่อมต่อ OTA: iCal กับ Booking.com / Agoda / Airbnb (migration 0033, เฟส O1)
+### เชื่อมต่อ OTA: iCal กับ Booking.com / Agoda / Airbnb / Vrbo / OTA อื่น (migration 0033, เฟส O1)
 
 ตาราง `channel_settings`, `ical_feeds`, `ical_conflicts`, คอลัมน์ `booking_unit_nights.ical_feed_id` และสิทธิ์ `channels.view` /
 `channels.edit` / `channels.toggle` (เฉพาะ SUPER_ADMIN) — ไม่แตะข้อมูลเดิม ปล่อยผ่าน Release ตามปกติ ฟีเจอร์ **ปิด** อยู่จนกว่า

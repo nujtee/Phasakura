@@ -1,4 +1,5 @@
--- Migration 0033: OTA channels — on/off switch and iCal calendar sync with Booking.com / Agoda / Airbnb (phase O1).
+-- Migration 0033: OTA channels — on/off switch and iCal calendar sync with Booking.com / Agoda / Airbnb / Vrbo and any other OTA
+-- that offers an iCal link (phase O1).
 -- Non-destructive: new tables, one new column (NULL for every existing row), new permissions.
 
 PRAGMA defer_foreign_keys = true;
@@ -13,14 +14,15 @@ CREATE TABLE channel_settings (
 ) STRICT;
 INSERT INTO channel_settings (id) VALUES (1);
 
--- One feed per unit (house / VIP tent) and channel.
+-- One feed per unit (house / VIP tent) and channel. OTHER = any other OTA with an iCal link, named by staff (label).
 --  export_token: the secret in this site's calendar URL that the OTA reads (/api/public/ical/<token>.ics).
 --    The calendar of a channel leaves out the nights imported from that same channel (no echo).
 --  import_url: the OTA's own calendar URL; its nights become blocks here (booking_unit_nights.ical_feed_id).
 CREATE TABLE ical_feeds (
   id                 TEXT PRIMARY KEY,
   unit_id            TEXT NOT NULL REFERENCES accommodation_units (id),
-  channel            TEXT NOT NULL CHECK (channel IN ('BOOKING', 'AGODA', 'AIRBNB')),
+  channel            TEXT NOT NULL CHECK (channel IN ('BOOKING', 'AGODA', 'AIRBNB', 'VRBO', 'OTHER')),
+  label              TEXT CHECK (label IS NULL OR length(label) BETWEEN 1 AND 40),
   export_token       TEXT NOT NULL UNIQUE CHECK (length(export_token) = 43),
   import_url         TEXT CHECK (import_url IS NULL OR (length(import_url) <= 2000 AND substr(import_url, 1, 8) = 'https://')),
   last_import_at     TEXT,

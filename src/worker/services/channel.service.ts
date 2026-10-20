@@ -1,5 +1,5 @@
 import {
-  ICAL_CHANNEL_NAMES, ICAL_CHANNELS, ICAL_IMPORT_EVERY_MINUTES,
+  ICAL_CHANNELS, ICAL_IMPORT_EVERY_MINUTES, ICAL_LABEL_MAX, icalChannelName,
   type CenterChannelsDto, type ChannelsDto, type IcalChannel, type IcalFeedDto,
 } from "../../shared/channel-types.ts";
 import { STAY_RULES } from "../../shared/booking-rules.ts";
@@ -85,7 +85,7 @@ export class ChannelService {
       .map((f) => {
         const u = unitInfo.get(f.unit_id)!;
         return {
-          unitId: f.unit_id, unitCode: u.code, unitType: u.type, names: u.names, channel: f.channel,
+          unitId: f.unit_id, unitCode: u.code, unitType: u.type, names: u.names, channel: f.channel, label: f.label,
           exportUrl: canEdit ? this.exportUrl(f.export_token) : null,
           importUrl: canEdit ? f.import_url : null,
           importSet: f.import_url !== null,
@@ -98,7 +98,7 @@ export class ChannelService {
         enabled,
         feeds: feedDtos,
         conflicts: conflicts.map((c) => ({
-          unitId: c.unit_id, unitCode: c.unit_code, channel: c.channel, date: c.stay_date, bookingCode: c.booking_code,
+          unitId: c.unit_id, unitCode: c.unit_code, channel: c.channel, label: c.label, date: c.stay_date, bookingCode: c.booking_code,
           summary: c.summary, firstSeenAt: c.first_seen_at,
         })),
       },
@@ -116,23 +116,39 @@ export class ChannelService {
     return this.overview(actor, meta);
   }
 
-  /** channels.edit: the OTA's calendar link for one unit (null = unlink: its imported nights are freed). */
-  async setImportUrl(actor: AuthContext, unitId: string, channel: IcalChannel, url: string | null, meta: RequestMeta): Promise<IcalFeedDto> {
+  /**
+   * channels.edit: the OTA's calendar link for one unit (null = unlink: its imported nights are freed) and, for the
+   * OTHER channel, the OTA's name. `undefined` leaves a field as it is.
+   */
+  async setImportUrl(actor: AuthContext, unitId: string, channel: IcalChannel, url: string | null | undefined, meta: RequestMeta,
+    label?: string | null): Promise<IcalFeedDto> {
     await this.authz.requirePermission(actor, "channels.edit", meta);
     await this.requireEnabled();
+    if (label !== undefined && channel !== "OTHER") throw new ValidationError({ label: "NOT_ALLOWED" });
+    const name = label === undefined ? undefined : label?.trim() || null;
+    if (name && name.length > ICAL_LABEL_MAX) throw new ValidationError({ label: "TOO_LONG" });
     const feed = await this.feedFor(unitId, channel);
-    const clean = url === null ? null : validImportUrl(url);
+    const clean = url === undefined ? feed.import_url : url === null ? null : validImportUrl(url);
     const now = iso(this.clock());
     const today = await this.today();
-    const statements: D1PreparedStatementLike[] = [this.repo.setImportUrlStatement(feed.id, clean, now)];
-    if (clean === null || clean !== feed.import_url) {
-      // A new link (or none): the old link's nights go; the new one is read straight away.
-      statements.push(this.repo.clearImportedStatement(feed.id, today), this.repo.clearConflictsStatement(feed.id));
+    const statements: D1PreparedStatementLike[] = [];
+    if (name !== undefined && name !== feed.label) {
+      statements.push(this.repo.setLabelStatement(feed.id, name, now),
+        this.repo.renameImportedStatement(feed.id, `iCal · ${icalChannelName(channel, name)}`));
     }
-    statements.push(this.log.auditStatement(actor.userId, clean ? "ICAL_IMPORT_SET" : "ICAL_IMPORT_REMOVED", "channels", feed.id,
-      { unitId, channel, host: hostOf(feed.import_url) }, { unitId, channel, host: hostOf(clean) }, meta));
-    await this.db.batch(statements);
-    if (clean) await this.syncFeed((await this.repo.feed(unitId, channel))!);
+    const linkChanged = url !== undefined && clean !== feed.import_url;
+    if (linkChanged || url === null) {
+      // A new link (or none): the old link's nights go; the new one is read straight away.
+      statements.push(this.repo.setImportUrlStatement(feed.id, clean, now),
+        this.repo.clearImportedStatement(feed.id, today), this.repo.clearConflictsStatement(feed.id));
+    }
+    if (statements.length) {
+      statements.push(this.log.auditStatement(actor.userId, url === undefined ? "ICAL_FEED_RENAMED" : clean ? "ICAL_IMPORT_SET" : "ICAL_IMPORT_REMOVED",
+        "channels", feed.id, { unitId, channel, label: feed.label, host: hostOf(feed.import_url) },
+        { unitId, channel, label: name === undefined ? feed.label : name, host: hostOf(clean) }, meta));
+      await this.db.batch(statements);
+    }
+    if (clean && (linkChanged || url !== undefined)) await this.syncFeed((await this.repo.feed(unitId, channel))!);
     return this.feedDto(actor, unitId, channel);
   }
 
@@ -255,7 +271,7 @@ export class ChannelService {
     const locks = await this.repo.unitLocks(feed.unit_id, today, until);
     const mine = new Set(locks.filter((l) => l.ical_feed_id === feed.id).map((l) => l.stay_date));
     const others = new Map(locks.filter((l) => l.ical_feed_id !== feed.id).map((l) => [l.stay_date, l]));
-    const reason = `iCal · ${ICAL_CHANNEL_NAMES[feed.channel]}`;
+    const reason = `iCal · ${icalChannelName(feed.channel, feed.label)}`;
     const statements: D1PreparedStatementLike[] = [];
     const conflictNow = new Map<string, string>();
     for (const d of wanted) {

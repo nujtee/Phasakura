@@ -13,6 +13,7 @@ export interface IcalFeedRow {
   id: string;
   unit_id: string;
   channel: IcalChannel;
+  label: string | null;
   export_token: string;
   import_url: string | null;
   last_import_at: string | null;
@@ -35,13 +36,14 @@ export interface IcalConflictRow {
   unit_id: string;
   unit_code: string;
   channel: IcalChannel;
+  label: string | null;
   stay_date: string;
   booking_code: string | null;
   summary: string | null;
   first_seen_at: string;
 }
 
-const FEED_COLUMNS = `id, unit_id, channel, export_token, import_url, last_import_at, last_import_status, last_import_error,
+const FEED_COLUMNS = `id, unit_id, channel, label, export_token, import_url, last_import_at, last_import_status, last_import_error,
   last_import_nights, last_export_at`;
 
 /** OTA channels (migration 0033): the on / off switch, iCal feeds, their imported nights and double bookings. */
@@ -119,6 +121,10 @@ export class ChannelRepository {
     return results;
   }
 
+  setLabelStatement(feedId: string, label: string | null, now: string): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE ical_feeds SET label = ?2, updated_at = ?3 WHERE id = ?1").bind(feedId, label, now);
+  }
+
   setImportUrlStatement(feedId: string, url: string | null, now: string): D1PreparedStatementLike {
     return this.db
       .prepare(
@@ -189,6 +195,11 @@ export class ChannelRepository {
     return this.db.prepare("DELETE FROM booking_unit_nights WHERE ical_feed_id = ?1 AND stay_date = ?2 AND booking_id IS NULL").bind(feedId, date);
   }
 
+  /** The OTHER OTA got a new name: its nights say so (the calendar shows the reason). */
+  renameImportedStatement(feedId: string, reason: string): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE booking_unit_nights SET block_reason = ?2 WHERE ical_feed_id = ?1 AND booking_id IS NULL").bind(feedId, reason);
+  }
+
   /** Every night a feed imported, from `from` on (unlinking the OTA calendar frees them). */
   clearImportedStatement(feedId: string, from: string): D1PreparedStatementLike {
     return this.db.prepare("DELETE FROM booking_unit_nights WHERE ical_feed_id = ?1 AND stay_date >= ?2 AND booking_id IS NULL").bind(feedId, from);
@@ -205,7 +216,7 @@ export class ChannelRepository {
   async conflicts(from: string): Promise<IcalConflictRow[]> {
     const { results } = await this.db
       .prepare(
-        `SELECT c.feed_id, f.unit_id, u.unit_code, f.channel, c.stay_date, b.booking_code, c.summary, c.first_seen_at
+        `SELECT c.feed_id, f.unit_id, u.unit_code, f.channel, f.label, c.stay_date, b.booking_code, c.summary, c.first_seen_at
            FROM ical_conflicts c JOIN ical_feeds f ON f.id = c.feed_id JOIN accommodation_units u ON u.id = f.unit_id
            LEFT JOIN bookings b ON b.id = c.booking_id
           WHERE c.stay_date >= ?1 ORDER BY c.stay_date, u.unit_code LIMIT 200`,
