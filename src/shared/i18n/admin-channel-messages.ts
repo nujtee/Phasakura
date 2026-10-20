@@ -7,7 +7,7 @@ const th = {
   intro: "ซิงก์วันว่างของบ้านและเต็นท์ VIP กับ Booking.com, Agoda, Airbnb, Vrbo และเว็บอื่นที่มีลิงก์ iCal เพื่อไม่ให้จองซ้ำ (ลานกางเต็นท์ขายเฉพาะบนเว็บนี้)",
   switches: "การเปิดใช้งาน",
   icalName: "ปฏิทิน iCal",
-  icalWhat: "แลกลิงก์ปฏิทินกับ OTA: OTA เห็นวันที่ไม่ว่างของเรา และเราปิดวันที่ขายไปบน OTA อัตโนมัติทุก 15 นาที",
+  icalWhat: "แลกลิงก์ปฏิทินกับ OTA: OTA เห็นวันที่ไม่ว่างของเรา และเราปิดวันที่ขายไปบน OTA อัตโนมัติทุก 5 นาที",
   channexName: "Channex (OTA โดยตรง)",
   channexSoon: "เชื่อม Booking.com, Agoda และ OTA อื่นผ่าน Channex — ตอนนี้เชื่อมบัญชีและจับคู่ห้องได้ (การส่งห้องว่าง / ราคา และรับการจองมาในเฟสถัดไป)",
   channex: {
@@ -80,7 +80,7 @@ const th = {
   how: [
     "คัดลอก \"ลิงก์ปฏิทินของเรา\" ไปวางในเมนูซิงก์ปฏิทินของ OTA (Booking.com: Extranet → ปฏิทิน → Sync calendars · Agoda: YCS → ปฏิทิน → iCal / Import calendar · Airbnb: ปฏิทิน → เลือกที่พัก → Availability → Connect calendars · Vrbo: Vrbo Dashboard → Calendar → Availability → Connect calendars) — บาง OTA เปิดเมนูนี้ให้เฉพาะที่พักบางประเภท ถ้าไม่พบให้รอใช้ Channex",
     "คัดลอกลิงก์ปฏิทินที่ OTA ให้ (Export) มาวางในช่อง \"ลิงก์ปฏิทินจาก OTA\" แล้วกดบันทึก",
-    "ระบบอ่านปฏิทิน OTA ทุก 15 นาที — วันที่ขายบน OTA จะขึ้นในปฏิทินการจองว่า \"iCal · Booking.com\" และลูกค้าจองวันนั้นบนเว็บไม่ได้",
+    "ระบบอ่านปฏิทิน OTA ทุก 5 นาที — วันที่ขายบน OTA จะขึ้นในปฏิทินการจองว่า \"iCal · Booking.com\" และลูกค้าจองวันนั้นบนเว็บไม่ได้",
     "iCal ส่งแค่ว่าง / ไม่ว่าง (ไม่มีชื่อลูกค้าหรือราคา) และ OTA อ่านลิงก์ของเราตามรอบของ OTA เอง (มักทุก 1–3 ชั่วโมง) จึงยังมีโอกาสจองซ้ำได้ในช่วงสั้น ๆ",
   ],
   conflictsTitle: "จองซ้ำ! มีคืนที่ขายบน OTA แต่มีคนจองบนเว็บแล้ว",
@@ -141,7 +141,7 @@ const en: AdminChannelMessages = {
   intro: "Sync the free nights of houses and VIP tents with Booking.com, Agoda, Airbnb, Vrbo and any other site with an iCal link so nothing is booked twice (camping is sold on this website only).",
   switches: "Features",
   icalName: "iCal calendars",
-  icalWhat: "Swap calendar links with the OTAs: they see our unavailable nights, and nights sold there are closed here automatically every 15 minutes.",
+  icalWhat: "Swap calendar links with the OTAs: they see our unavailable nights, and nights sold there are closed here automatically every 5 minutes.",
   channexName: "Channex (direct OTA connection)",
   channexSoon: "Connect Booking.com, Agoda and other OTAs through Channex — the account and room mapping can be set up now (availability / prices and bookings come in the next phases)",
   channex: {
@@ -214,7 +214,7 @@ const en: AdminChannelMessages = {
   how: [
     "Copy \"Our calendar link\" into the OTA's calendar sync menu (Booking.com: Extranet → Calendar → Sync calendars · Agoda: YCS → Calendar → iCal / Import calendar · Airbnb: Calendar → pick the listing → Availability → Connect calendars · Vrbo: Vrbo Dashboard → Calendar → Availability → Connect calendars). Some OTAs offer it only for some property types; if it isn't there, wait for Channex.",
     "Copy the OTA's own (export) calendar link into \"Calendar link from the OTA\" and save.",
-    "The OTA calendar is read every 15 minutes — nights sold there show in the booking calendar as \"iCal · Booking.com\" and can't be booked on the website.",
+    "The OTA calendar is read every 5 minutes — nights sold there show in the booking calendar as \"iCal · Booking.com\" and can't be booked on the website.",
     "iCal only says free / not free (no guest names or prices), and the OTA reads our link on its own schedule (often every 1–3 hours), so a double booking is still possible for a short while.",
   ],
   conflictsTitle: "Double booking! A night sold on an OTA is already booked on the website",
@@ -273,7 +273,7 @@ const zhCN: AdminChannelMessages = {
   intro: "将房屋和 VIP 帐篷的空房与 Booking.com、Agoda、Airbnb、Vrbo 以及其他提供 iCal 链接的网站同步，避免重复预订（露营区仅在本网站销售）。",
   switches: "功能开关",
   icalName: "iCal 日历",
-  icalWhat: "与 OTA 交换日历链接：对方看到我们不可订的日期，对方售出的日期每 15 分钟自动在这里关闭。",
+  icalWhat: "与 OTA 交换日历链接：对方看到我们不可订的日期，对方售出的日期每 5 分钟自动在这里关闭。",
   channexName: "Channex（直连 OTA）",
   channexSoon: "通过 Channex 连接 Booking.com、Agoda 等 OTA —— 现在可以连接账户并对应房间（空房 / 价格同步和接收预订在后续阶段）",
   channex: {
@@ -346,7 +346,7 @@ const zhCN: AdminChannelMessages = {
   how: [
     "复制“我们的日历链接”，粘贴到 OTA 的日历同步菜单（Booking.com：Extranet → 日历 → Sync calendars · Agoda：YCS → 日历 → iCal / Import calendar · Airbnb：日历 → 选择房源 → Availability → Connect calendars · Vrbo：Vrbo Dashboard → Calendar → Availability → Connect calendars）。部分 OTA 只对某些房源类型开放此菜单；若找不到，请等待 Channex。",
     "复制 OTA 提供的（导出）日历链接，粘贴到“来自 OTA 的日历链接”并保存。",
-    "每 15 分钟读取一次 OTA 日历 —— 在 OTA 售出的日期会在预订日历中显示为“iCal · Booking.com”，网站上无法预订。",
+    "每 5 分钟读取一次 OTA 日历 —— 在 OTA 售出的日期会在预订日历中显示为“iCal · Booking.com”，网站上无法预订。",
     "iCal 只传递可订 / 不可订（没有客人姓名或价格），且 OTA 按自己的频率读取我们的链接（通常每 1–3 小时），因此短时间内仍可能重复预订。",
   ],
   conflictsTitle: "重复预订！OTA 售出的某晚在网站上已被预订",
