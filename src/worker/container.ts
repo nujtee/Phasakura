@@ -313,7 +313,10 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       resolveBaseUrl(env, options.origin), options.channelFetch,
       new ChannexService(db, channelRepo, authorization, log, clock,
         env.CHANNEX_API_KEY?.trim() ? new ChannexApi(env.CHANNEX_API_KEY.trim(), channexEnvironment(env.CHANNEX_ENV), options.channexFetch) : null,
-        channexEnvironment(env.CHANNEX_ENV))),
+        channexEnvironment(env.CHANNEX_ENV), {
+          inventory, pricing, today: () => availability.today(),
+          maxAdvanceDays: async () => (await pricing.bookingSettings()).max_advance_days,
+        })),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
     dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock, (from, to) => ga4.dashboard(from, to)),
     cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),

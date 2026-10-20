@@ -74,6 +74,21 @@ export function channelController(services: ServicesFor) {
     channexAutoCreate: withPermission("channels.edit", services, async (ctx, auth) =>
       jsonOk(await channex(ctx).autoCreate(auth, requestMeta(ctx)))),
 
+    /** `{ enabled?: boolean, markupPercent?: number }` — sending availability / prices (phase O3). */
+    channexAri: withPermission("channels.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["enabled", "markupPercent"]);
+      if (body.enabled !== undefined && typeof body.enabled !== "boolean") v.errors.enabled = "REQUIRED";
+      if (body.markupPercent !== undefined && (typeof body.markupPercent !== "number" || !Number.isInteger(body.markupPercent)
+        || body.markupPercent < 0 || body.markupPercent > 100)) v.errors.markupPercent = "OUT_OF_RANGE";
+      if (body.enabled === undefined && body.markupPercent === undefined) v.errors.enabled = "REQUIRED";
+      v.assertValid();
+      return jsonOk(await channex(ctx).setAri(auth, { enabled: body.enabled as boolean | undefined, markupPercent: body.markupPercent as number | undefined }, requestMeta(ctx)));
+    }),
+
+    channexPush: withPermission("channels.edit", services, async (ctx, auth) =>
+      jsonOk(await channex(ctx).pushNow(auth, requestMeta(ctx)))),
+
     /** `{ importUrl?: string | null, label?: string | null }` — the OTA's calendar link for one unit; label = OTHER's name. */
     setImportUrl: withPermission("channels.edit", services, async (ctx, auth) => {
       const { unitId, channel } = feedKey(ctx);

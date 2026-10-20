@@ -106,7 +106,10 @@ export class ChannelService {
       },
       channex: this.channex
         ? await this.channex.status(settings?.channex_enabled === 1)
-        : { enabled: false, available: false, environment: "staging", property: null, lastCheckAt: null, lastCheckStatus: null, lastCheckError: null, units: [] },
+        : {
+          ari: { supported: false, enabled: false, markupPercent: 0, lastPushAt: null, lastPushStatus: null, lastPushError: null, lastPushChanges: null, lastFullPushAt: null, liveBlocked: false },
+          enabled: false, available: false, environment: "staging", property: null, lastCheckAt: null, lastCheckStatus: null, lastCheckError: null, units: [],
+        },
       updatedAt: settings?.updated_at ?? null,
       canToggle: this.authz.can(actor, "channels.toggle"),
       canEdit,

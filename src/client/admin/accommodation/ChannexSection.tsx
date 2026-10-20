@@ -118,6 +118,7 @@ export function ChannexSection({ status, canEdit, onStatus, setMsg, fail, setCon
             </table>
           </div>
           <p className="adm-field__hint">{c.icalWarn}</p>
+          {status.ari.supported && <AriBlock status={status} canEdit={canEdit} busy={busy} run={run} onStatus={onStatus} setMsg={setMsg} setConfirm={setConfirm} />}
         </>
       )}
     </div>
@@ -156,5 +157,64 @@ function UnitRow({ unit, rooms, canEdit, busy, name, onSave }: {
       </td>
       <td>{rooms && canEdit && <Button variant="secondary" disabled={busy || !changed} onClick={() => void onSave(room || null, rate || null)}>{c.save}</Button>}</td>
     </tr>
+  );
+}
+
+function AriBlock({ status, canEdit, busy, run, onStatus, setMsg, setConfirm }: {
+  status: ChannexStatusDto; canEdit: boolean; busy: boolean; run: (call: () => Promise<void>) => Promise<void>;
+  onStatus: (s: ChannexStatusDto) => void; setMsg: (m: Msg) => void; setConfirm: (c: Confirm) => void;
+}) {
+  const c = useTexts().channex;
+  const date = useDateFormatter();
+  const a = status.ari;
+  const [markup, setMarkup] = useState(String(a.markupPercent));
+  useEffect(() => setMarkup(String(a.markupPercent)), [a.markupPercent]);
+  const put = (body: { enabled?: boolean; markupPercent?: number }, done: string) => run(async () => {
+    onStatus(await apiRequest<ChannexStatusDto>("PUT", "/api/admin/channels/channex/ari", body));
+    setMsg({ kind: "success", text: done });
+  });
+  const statusText = a.lastPushStatus === "OK" ? c.pushOk : a.lastPushStatus === "WARNING" ? c.pushWarning : c.pushError;
+  const mappedAny = status.units.some((u) => u.roomTypeId);
+  const markupValue = Number(markup);
+  const markupOk = markup.trim() !== "" && Number.isInteger(markupValue) && markupValue >= 0 && markupValue <= 100;
+  return (
+    <div className="adm-channels__ari">
+      <h3 className="adm-h3">{c.step3}</h3>
+      <p className="adm-field__hint">{c.step3Hint}</p>
+      <p className="adm-small">{status.environment === "production" ? c.liveBlocked : c.stagingNote}</p>
+      <p>
+        <span className={`adm-badge ${a.enabled ? "adm-badge--active" : "adm-badge--suspended"}`}>{a.enabled ? c.sending : c.notSending}</span>
+        {a.lastPushAt && (
+          <span className={`adm-small${a.lastPushStatus === "OK" ? "" : " adm-channels__error"}`}>
+            {" "}{format(c.lastPush, { time: date(a.lastPushAt), status: statusText, n: a.lastPushChanges ?? 0 })}
+            {a.lastFullPushAt && <> · {format(c.lastFull, { time: date(a.lastFullPushAt) })}</>}
+          </span>
+        )}
+      </p>
+      {a.lastPushStatus && a.lastPushStatus !== "OK" && a.lastPushError && <p className="adm-small adm-channels__error">{a.lastPushError}</p>}
+      {canEdit && (
+        <>
+          <form className="adm-row adm-row--wrap" onSubmit={(e) => { e.preventDefault(); if (markupOk) void put({ markupPercent: markupValue }, c.markupSaved); }}>
+            <label className="adm-field adm-field--inline"><span>{c.markup}</span>
+              <input type="number" inputMode="numeric" min={0} max={100} step={1} value={markup} onChange={(e) => setMarkup(e.currentTarget.value)} style={{ width: "6em" }} /></label>
+            <Button type="submit" variant="secondary" disabled={busy || !markupOk || markupValue === a.markupPercent}>{c.saveMarkup}</Button>
+          </form>
+          <p className="adm-field__hint">{c.markupHint}</p>
+          <div className="adm-row adm-row--wrap">
+            {a.enabled ? (
+              <>
+                <Button variant="secondary" disabled={busy} onClick={() => void run(async () => {
+                  onStatus(await apiRequest<ChannexStatusDto>("POST", "/api/admin/channels/channex/push", {}));
+                  setMsg({ kind: "success", text: c.pushed });
+                })}>{c.pushNow}</Button>
+                <Button variant="ghost" disabled={busy} onClick={() => setConfirm({ message: c.confirmStop, label: c.stop, danger: true, run: () => put({ enabled: false }, c.notSending) })}>{c.stop}</Button>
+              </>
+            ) : (
+              <Button disabled={busy || !mappedAny || (a.liveBlocked && !a.enabled)} onClick={() => void put({ enabled: true }, c.sending)}>{c.start}</Button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

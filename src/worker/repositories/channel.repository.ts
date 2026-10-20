@@ -53,6 +53,19 @@ export interface ChannexSettingsRow {
   last_check_error: string | null;
 }
 
+export interface ChannexAriSettingsRow {
+  ari_enabled: number;
+  rate_markup_percent: number;
+  last_push_at: string | null;
+  last_push_status: "OK" | "WARNING" | "ERROR" | null;
+  last_push_error: string | null;
+  last_push_changes: number | null;
+  last_full_push_at: string | null;
+  retry_after: string | null;
+}
+
+export interface ChannexAriStateRow { unit_id: string; stay_date: string; availability: number; rate_satang: number | null }
+
 export interface ChannexUnitMapRow {
   unit_id: string;
   room_type_id: string;
@@ -69,6 +82,7 @@ export interface ChannexUnitRow {
   standard_guests: number;
   max_guests: number;
   max_adults: number | null;
+  status: string;
 }
 
 const FEED_COLUMNS = `id, unit_id, channel, label, export_token, import_url, last_import_at, last_import_status, last_import_error,
@@ -126,7 +140,7 @@ export class ChannelRepository {
 
   async channexUnits(): Promise<ChannexUnitRow[]> {
     const { results } = await this.db
-      .prepare(`SELECT id, unit_type, unit_code, base_price_satang, standard_guests, max_guests, max_adults
+      .prepare(`SELECT id, unit_type, unit_code, base_price_satang, standard_guests, max_guests, max_adults, status
                   FROM accommodation_units WHERE status <> 'DELETED' ORDER BY unit_type, sort_order, unit_code`)
       .all<ChannexUnitRow>();
     return results;
@@ -147,6 +161,64 @@ export class ChannelRepository {
                   rate_plan_id = excluded.rate_plan_id, rate_plan_title = excluded.rate_plan_title,
                   updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
       .bind(m.unit_id, m.room_type_id, m.room_type_title, m.rate_plan_id, m.rate_plan_title, userId, now);
+  }
+
+  // ---------------------------------------------------------------- Channex ARI (migration 0035)
+
+  /** null before migration 0035 (nothing is sent). */
+  async channexAri(): Promise<ChannexAriSettingsRow | null> {
+    try {
+      return await this.db
+        .prepare(`SELECT ari_enabled, rate_markup_percent, last_push_at, last_push_status, last_push_error, last_push_changes,
+                         last_full_push_at, retry_after FROM channex_settings WHERE id = 1`)
+        .first<ChannexAriSettingsRow>();
+    } catch (error) {
+      if (isMissingSchema(error)) return null;
+      throw error;
+    }
+  }
+
+  setAriStatement(enabled: boolean, markup: number, userId: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE channex_settings SET ari_enabled = ?1, rate_markup_percent = ?2, updated_by = ?3, updated_at = ?4 WHERE id = 1")
+      .bind(enabled ? 1 : 0, markup, userId, now);
+  }
+
+  pushResultStatement(r: { status: "OK" | "WARNING" | "ERROR"; error: string | null; changes: number | null; full: boolean; retryAfter: string | null }, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(`UPDATE channex_settings SET last_push_at = ?1, last_push_status = ?2, last_push_error = ?3,
+                       last_push_changes = COALESCE(?4, last_push_changes),
+                       last_full_push_at = CASE WHEN ?5 = 1 AND ?2 <> 'ERROR' THEN ?1 ELSE last_full_push_at END,
+                       retry_after = ?6 WHERE id = 1`)
+      .bind(now, r.status, r.error?.slice(0, 500) ?? null, r.changes, r.full ? 1 : 0, r.retryAfter);
+  }
+
+  async ariState(from: string): Promise<ChannexAriStateRow[]> {
+    const { results } = await this.db
+      .prepare("SELECT unit_id, stay_date, availability, rate_satang FROM channex_ari_state WHERE stay_date >= ?1")
+      .bind(from)
+      .all<ChannexAriStateRow>();
+    return results;
+  }
+
+  /** What Channex now holds (one statement per chunk: a JSON array of rows). */
+  saveAriStateStatement(rows: ChannexAriStateRow[], now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(`INSERT INTO channex_ari_state (unit_id, stay_date, availability, rate_satang, pushed_at)
+                SELECT json_extract(value, '$.u'), json_extract(value, '$.d'), json_extract(value, '$.a'), json_extract(value, '$.r'), ?2
+                  FROM json_each(?1) WHERE true
+                ON CONFLICT (unit_id, stay_date) DO UPDATE SET availability = excluded.availability,
+                  rate_satang = excluded.rate_satang, pushed_at = excluded.pushed_at`)
+      .bind(JSON.stringify(rows.map((r) => ({ u: r.unit_id, d: r.stay_date, a: r.availability, r: r.rate_satang }))), now);
+  }
+
+  /** Forget what Channex was told (a unit re-mapped, another property): everything is sent again. */
+  clearAriStateStatement(unitId: string | null = null): D1PreparedStatementLike {
+    return this.db.prepare("DELETE FROM channex_ari_state WHERE ?1 IS NULL OR unit_id = ?1").bind(unitId);
+  }
+
+  pruneAriStateStatement(before: string): D1PreparedStatementLike {
+    return this.db.prepare("DELETE FROM channex_ari_state WHERE stay_date < ?1").bind(before);
   }
 
   deleteUnitMapStatement(unitId: string): D1PreparedStatementLike {

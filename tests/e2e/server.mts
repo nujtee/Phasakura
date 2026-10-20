@@ -97,6 +97,9 @@ const channexFetch = async (url: string, init?: RequestInit) => {
     cxPlans.push(r);
     return json(201, { data: item("rate_plan", r) });
   }
+  if ((path === "/availability" || path === "/restrictions") && init?.method === "POST") {
+    return json(200, { data: [{ id: crypto.randomUUID(), type: "task" }], meta: { message: "Success", warnings: [] } });
+  }
   return json(404, { errors: { code: "not_found", title: "Not Found" } });
 };
 const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch, mapFetch, emailFetch: zoho.fetch, paypalFetch: paypal.fetch, channexFetch } });

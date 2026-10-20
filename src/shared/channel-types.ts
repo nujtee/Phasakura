@@ -62,6 +62,20 @@ export interface ChannexUnitDto {
 }
 
 export interface ChannexStatusDto {
+  /** Availability and prices sent to Channex (phase O3). */
+  ari: {
+    /** Migration 0035 is applied. */
+    supported: boolean;
+    enabled: boolean;
+    markupPercent: number;
+    lastPushAt: string | null;
+    lastPushStatus: "OK" | "WARNING" | "ERROR" | null;
+    lastPushError: string | null;
+    lastPushChanges: number | null;
+    lastFullPushAt: string | null;
+    /** The live account: sending waits for OTA bookings (phase O4). */
+    liveBlocked: boolean;
+  };
   enabled: boolean;
   /** CHANNEX_API_KEY is set on this site (Cloudflare Secret). */
   available: boolean;

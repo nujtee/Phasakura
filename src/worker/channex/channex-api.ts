@@ -30,6 +30,18 @@ export class ChannexError extends Error {
 
 interface JsonApiItem<A> { id: string; type: string; attributes: A }
 
+interface PushResponse { data?: { id: string; type: string }[]; meta?: { message?: string; warnings?: unknown[] } }
+
+/** Channex applies the valid entries and lists the refused ones as warnings (still 200). */
+export interface ChannexPushResult { tasks: string[]; warnings: string[] }
+
+function pushResult(res: PushResponse): ChannexPushResult {
+  return {
+    tasks: (res.data ?? []).map((t) => t.id),
+    warnings: (res.meta?.warnings ?? []).map((w) => JSON.stringify(w).slice(0, 300)),
+  };
+}
+
 export class ChannexApi {
   constructor(
     private readonly key: string,
@@ -82,6 +94,16 @@ export class ChannexApi {
       },
     });
     return { id: res.data.id, title: res.data.attributes.title, roomTypeId: input.roomTypeId, currency: res.data.attributes.currency ?? input.currency, occupancy: input.occupancy, sellMode: res.data.attributes.sell_mode ?? "per_room" };
+  }
+
+  /** Availability per room type and night (0 / 1 for a single-unit room type). */
+  async pushAvailability(values: { property_id: string; room_type_id: string; date: string; availability: number }[]): Promise<ChannexPushResult> {
+    return pushResult(await this.call<PushResponse>("POST", "/availability", { values }));
+  }
+
+  /** Rates per rate plan and night; `rate` in major units ("1800.00"). */
+  async pushRestrictions(values: { property_id: string; rate_plan_id: string; date: string; rate: string }[]): Promise<ChannexPushResult> {
+    return pushResult(await this.call<PushResponse>("POST", "/restrictions", { values }));
   }
 
   private async call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
