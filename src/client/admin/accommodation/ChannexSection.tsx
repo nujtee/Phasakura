@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import type { ChannexAutoCreateDto, ChannexPropertiesDto, ChannexRoomsDto, ChannexStatusDto, ChannexUnitDto } from "../../../shared/channel-types.ts";
+import { useCallback, useEffect, useState } from "react";
+import type { ChannexAutoCreateDto, ChannexPropertiesDto, ChannexRoomsDto, ChannexStatusDto, ChannexUnitDto, OtaBookingDto, OtaBookingsDto } from "../../../shared/channel-types.ts";
+import { formatBaht } from "../../../shared/booking-rules.ts";
+import { Link } from "../../router/Router.tsx";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
 import { useAdmin } from "../AdminContext.tsx";
@@ -119,6 +121,7 @@ export function ChannexSection({ status, canEdit, onStatus, setMsg, fail, setCon
           </div>
           <p className="adm-field__hint">{c.icalWarn}</p>
           {status.ari.supported && <AriBlock status={status} canEdit={canEdit} busy={busy} run={run} onStatus={onStatus} setMsg={setMsg} setConfirm={setConfirm} />}
+          <OtaBookingsBlock canEdit={canEdit} setMsg={setMsg} fail={fail} />
         </>
       )}
     </div>
@@ -214,6 +217,75 @@ function AriBlock({ status, canEdit, busy, run, onStatus, setMsg, setConfirm }: 
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function OtaBookingsBlock({ canEdit, setMsg, fail }: { canEdit: boolean; setMsg: (m: Msg) => void; fail: (err: unknown) => void }) {
+  const c = useTexts().channex;
+  const { locale, href } = useAdmin();
+  const date = useDateFormatter();
+  const [data, setData] = useState<OtaBookingsDto | null>(null);
+  const load = useCallback(async () => {
+    try {
+      setData(await apiGet<OtaBookingsDto>("/api/admin/channels/channex/bookings"));
+    } catch (err) {
+      fail(err);
+    }
+  }, [fail]);
+  useEffect(() => void load(), [load]);
+  if (!data?.supported) return null;
+  const problems = data.items.filter((b) => b.status === "CONFLICT" || b.status === "UNMAPPED");
+  const amount = (b: OtaBookingDto) => (b.currency === "THB" ? formatBaht(b.amountMinor, locale.code) : `${(b.amountMinor / 100).toFixed(2)} ${b.currency}`);
+  return (
+    <div className="adm-channels__ota">
+      <h3 className="adm-h3">{c.step4}</h3>
+      <p className="adm-field__hint">{c.step4Hint}</p>
+      <p className={`adm-small${data.lastFeedStatus === "ERROR" ? " adm-channels__error" : ""}`}>
+        {data.lastFeedAt ? format(c.feed, { time: date(data.lastFeedAt), status: data.lastFeedStatus === "OK" ? "OK" : data.lastFeedError ?? "ERROR" }) : c.feedNever}
+      </p>
+      {problems.length > 0 && (
+        <div className="adm-alert adm-alert--error" role="alert">
+          <strong>{format(c.problemsTitle, { n: problems.length })}</strong>
+          <p className="adm-small">{c.problemsHelp}</p>
+        </div>
+      )}
+      {data.items.length === 0 ? <p className="adm-muted">{c.noBookings}</p> : (
+        <div className="adm-tablewrap">
+          <table className="adm-table">
+            <thead><tr>
+              <th scope="col">{c.colOta}</th><th scope="col">{c.colBooking}</th><th scope="col">{c.colGuest}</th>
+              <th scope="col">{c.colStay}</th><th scope="col" className="adm-num">{c.colAmount}</th><th scope="col">{c.colStatus}</th>
+            </tr></thead>
+            <tbody>
+              {data.items.map((b) => (
+                <tr key={b.id}>
+                  <td>{b.otaName}<div className="adm-small adm-muted adm-mono">{b.otaCode ?? "—"}</div></td>
+                  <td>{b.bookingCode ? <Link to={href("bookings", b.bookingCode)} className="adm-mono">{b.bookingCode}</Link> : "—"}</td>
+                  <td>{b.guestName ?? "—"}</td>
+                  <td className="adm-nowrap">{b.arrival} → {b.departure}</td>
+                  <td className="adm-num">{amount(b)}<div className="adm-small adm-muted">{b.paymentCollect === "ota" ? c.payOta : b.paymentCollect === "property" ? c.payProperty : ""}</div></td>
+                  <td>
+                    <span className={`adm-badge ${b.status === "ACTIVE" ? "adm-badge--active" : b.status === "CONFLICT" || b.status === "UNMAPPED" ? "adm-badge--deleted" : "adm-badge--suspended"}`}>{c[`status${b.status}`]}</span>
+                    {b.problem && <div className="adm-small adm-channels__error">{b.problem}</div>}
+                    {canEdit && (b.status === "CONFLICT" || b.status === "UNMAPPED") && (
+                      <Button variant="ghost" onClick={async () => {
+                        try {
+                          await apiRequest("POST", `/api/admin/channels/channex/bookings/${encodeURIComponent(b.id)}/resolve`, {});
+                          setMsg({ kind: "success", text: c.resolved });
+                          await load();
+                        } catch (err) {
+                          fail(err);
+                        }
+                      }}>{c.resolve}</Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

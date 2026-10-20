@@ -193,6 +193,23 @@ export class ChannelRepository {
       .bind(now, r.status, r.error?.slice(0, 500) ?? null, r.changes, r.full ? 1 : 0, r.retryAfter);
   }
 
+  /** Last read of the Channex booking feed (migration 0036; before it: nothing to record). */
+  feedResultStatement(status: "OK" | "ERROR", error: string | null, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE channex_settings SET last_feed_at = ?1, last_feed_status = ?2, last_feed_error = ?3 WHERE id = 1")
+      .bind(now, status, error?.slice(0, 300) ?? null);
+  }
+
+  async feedState(): Promise<{ last_feed_at: string | null; last_feed_status: "OK" | "ERROR" | null; last_feed_error: string | null } | null> {
+    try {
+      return await this.db.prepare("SELECT last_feed_at, last_feed_status, last_feed_error FROM channex_settings WHERE id = 1")
+        .first<{ last_feed_at: string | null; last_feed_status: "OK" | "ERROR" | null; last_feed_error: string | null }>();
+    } catch (error) {
+      if (isMissingSchema(error)) return null;
+      throw error;
+    }
+  }
+
   async ariState(from: string): Promise<ChannexAriStateRow[]> {
     const { results } = await this.db
       .prepare("SELECT unit_id, stay_date, availability, rate_satang FROM channex_ari_state WHERE stay_date >= ?1")

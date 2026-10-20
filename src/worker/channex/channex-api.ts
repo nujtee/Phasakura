@@ -30,6 +30,55 @@ export class ChannexError extends Error {
 
 interface JsonApiItem<A> { id: string; type: string; attributes: A }
 
+interface RevisionAttributes {
+  booking_id: string; property_id: string; status: string; ota_name: string | null; ota_reservation_code: string | null;
+  unique_id?: string | null; arrival_date: string; departure_date: string; amount: string | null; currency: string | null;
+  payment_collect?: string | null; notes?: string | null;
+  customer?: { name?: string | null; surname?: string | null; mail?: string | null; phone?: string | null; country?: string | null; language?: string | null } | null;
+  occupancy?: { adults?: number; children?: number; infants?: number } | null;
+  rooms?: {
+    room_type_id: string | null; rate_plan_id: string | null; checkin_date: string; checkout_date: string; amount: string | null;
+    occupancy?: { adults?: number; children?: number; infants?: number } | null; days?: Record<string, string> | null;
+  }[] | null;
+}
+
+/** One booking revision from Channex (a new, changed or cancelled OTA booking). Amounts in major units ("1800.00"). */
+export interface ChannexRevision {
+  id: string;
+  bookingId: string;
+  propertyId: string;
+  status: "new" | "modified" | "cancelled";
+  otaName: string;
+  otaCode: string | null;
+  arrival: string;
+  departure: string;
+  amount: string | null;
+  currency: string;
+  paymentCollect: "ota" | "property" | null;
+  notes: string | null;
+  customer: { name: string; email: string | null; phone: string | null; language: string | null };
+  rooms: { roomTypeId: string | null; checkIn: string; checkOut: string; amount: string | null; adults: number; children: number; days: Record<string, string> }[];
+}
+
+function toRevision(id: string, a: RevisionAttributes): ChannexRevision {
+  const status = a.status === "cancelled" ? "cancelled" : a.status === "modified" ? "modified" : "new";
+  const name = [a.customer?.name, a.customer?.surname].filter((x) => x && String(x).trim()).join(" ").trim();
+  return {
+    id, bookingId: a.booking_id, propertyId: a.property_id, status,
+    otaName: (a.ota_name ?? "OTA").slice(0, 60) || "OTA",
+    otaCode: a.ota_reservation_code ?? a.unique_id ?? null,
+    arrival: a.arrival_date, departure: a.departure_date, amount: a.amount ?? null, currency: (a.currency ?? "THB").toUpperCase(),
+    paymentCollect: a.payment_collect === "ota" || a.payment_collect === "property" ? a.payment_collect : null,
+    notes: a.notes ?? null,
+    customer: { name: name || "OTA guest", email: a.customer?.mail ?? null, phone: a.customer?.phone ?? null, language: a.customer?.language ?? null },
+    rooms: (a.rooms ?? []).map((r) => ({
+      roomTypeId: r.room_type_id, checkIn: r.checkin_date, checkOut: r.checkout_date, amount: r.amount ?? null,
+      adults: Math.max(1, r.occupancy?.adults ?? 1), children: Math.max(0, (r.occupancy?.children ?? 0) + (r.occupancy?.infants ?? 0)),
+      days: r.days ?? {},
+    })),
+  };
+}
+
 interface PushResponse { data?: { id: string; type: string }[]; meta?: { message?: string; warnings?: unknown[] } }
 
 /** Channex applies the valid entries and lists the refused ones as warnings (still 200). */
@@ -104,6 +153,18 @@ export class ChannexApi {
   /** Rates per rate plan and night; `rate` in major units ("1800.00"). */
   async pushRestrictions(values: { property_id: string; rate_plan_id: string; date: string; rate: string }[]): Promise<ChannexPushResult> {
     return pushResult(await this.call<PushResponse>("POST", "/restrictions", { values }));
+  }
+
+  /** Booking revisions not acknowledged yet, oldest first (phase O4). */
+  async bookingFeed(propertyId: string, limit = 50): Promise<ChannexRevision[]> {
+    const res = await this.call<{ data: JsonApiItem<RevisionAttributes>[] }>("GET",
+      `/booking_revisions/feed?filter[property_id]=${encodeURIComponent(propertyId)}&order[inserted_at]=asc&pagination[limit]=${limit}&pagination[page]=1`);
+    return res.data.map((r) => toRevision(r.id, r.attributes));
+  }
+
+  /** "Received": Channex stops offering this revision. */
+  async ackRevision(revisionId: string): Promise<void> {
+    await this.call("POST", `/booking_revisions/${encodeURIComponent(revisionId)}/ack`, {});
   }
 
   private async call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {

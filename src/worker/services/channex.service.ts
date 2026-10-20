@@ -82,7 +82,8 @@ export class ChannexService {
         lastPushError: ari?.last_push_error ?? null,
         lastPushChanges: ari?.last_push_changes ?? null,
         lastFullPushAt: ari?.last_full_push_at ?? null,
-        liveBlocked: this.environment === "production",
+        // OTA bookings come in (phase O4): the live account may send.
+        liveBlocked: false,
       },
       enabled,
       available: this.configured,
@@ -259,9 +260,6 @@ export class ChannexService {
     const markup = change.markupPercent ?? before.rate_markup_percent;
     if (!Number.isInteger(markup) || markup < 0 || markup > 100) throw new ValidationError({ markupPercent: "OUT_OF_RANGE" });
     if (enabled && !(await this.repo.channexMap()).length) throw new ConflictError("Map at least one unit first", "CHANNEX_NO_ROOMS");
-    if (enabled && before.ari_enabled !== 1 && this.environment === "production") {
-      throw new ConflictError("Sending to the live Channex account waits for OTA bookings (next phase)", "CHANNEX_LIVE_NEEDS_BOOKINGS");
-    }
     await this.db.batch([
       this.repo.setAriStatement(enabled, markup, actor.userId, iso(this.clock())),
       this.log.auditStatement(actor.userId, "CHANNEX_ARI_SET", "channels", "channex",

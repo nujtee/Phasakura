@@ -49,13 +49,22 @@ Time Travel bookmark (จุดย้อนกลับใน summary) → migra
 แก้ trigger "ต้องเหลือ SUPER_ADMIN อย่างน้อย 1" ให้นับเฉพาะบัญชีของเว็บ (ไม่นับ Center user), เพิ่มตาราง `center_sso_tickets` และ
 `site_suspension` — ไม่แตะข้อมูลเดิม ปล่อยผ่าน Release ตามปกติ (`docs/SITES.md` หัวข้อคำสั่งแก้ข้อมูลและ SSO)
 
+### Channex: รับการจองจาก OTA (migration 0036, เฟส O4)
+
+ตาราง `ota_bookings` และคอลัมน์ผลการดึงใน `channex_settings` — ไม่แตะข้อมูลเดิม
+- cron ทุกนาทีอ่าน Booking Revisions Feed ของ Channex แล้ว ack หลังบันทึกเสร็จ (ไม่ ack = Channex ส่งซ้ำ ไม่มีหาย)
+- ใหม่ → การจองในเว็บ CONFIRMED (BK-…, ล็อกคืน, ราคาต่อคืนตาม OTA, admin_note = OTA + รหัส); OTA เก็บเงิน → PAID + payment OTHER;
+  เก็บที่ที่พัก → UNPAID (รับเงินตอนเช็กอิน); ไม่มีค่าธรรมเนียม App; แจ้ง LINE พนักงาน (ไม่ส่ง Meta / e-mail ถึงลูกค้า OTA)
+- แก้ไข → ยกเลิกการจองเดิม + สร้างใหม่ใน batch เดียว; ยกเลิก → ยกเลิก + คืนคืน
+- คืนชนกับการจองในเว็บ / ห้องไม่ได้จับคู่ → CONFLICT / UNMAPPED แสดงในหน้าเชื่อมต่อ OTA + security event `OTA_BOOKING_CONFLICT`
+- บัญชีจริง (production) เริ่มส่งห้องว่าง/ราคาได้แล้ว
+
 ### Channex: ส่งห้องว่างและราคา (migration 0035, เฟส O3)
 
 คอลัมน์ใหม่ใน `channex_settings` (เริ่ม/หยุดส่ง, % บวกราคา OTA, ผลส่งล่าสุด) และตาราง `channex_ari_state` (สิ่งที่ Channex มีแล้ว) — ไม่แตะข้อมูลเดิม
 - หลังบ้าน → ที่พัก → เชื่อมต่อ OTA → Channex → ข้อ 3 "เริ่มส่งข้อมูล" (SUPER_ADMIN / MANAGER): ส่งทุกคืนของทุกหลังที่จับคู่
   (ว่าง = 1, มีการจอง / ปิดวัน / ปิดจาก iCal / ที่พักไม่ ACTIVE = 0) และราคาต่อคืนตามราคาตามช่วงเวลา × (100 + %) / 100
 - cron ทุกนาทีส่งเฉพาะคืนที่เปลี่ยน และส่งทั้งหมดซ้ำวันละครั้ง; Channex จำกัดจำนวนครั้ง → รอ 1 นาทีแล้วส่งใหม่
-- **บัญชีจริง (CHANNEX_ENV=production) ยังเริ่มส่งไม่ได้** (`CHANNEX_LIVE_NEEDS_BOOKINGS`) จนกว่าจะรับการจองจาก OTA ได้ (เฟส O4)
 
 ### Channex: เชื่อมบัญชีและจับคู่ห้อง (migration 0034, เฟส O2)
 

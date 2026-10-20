@@ -89,6 +89,17 @@ export function channelController(services: ServicesFor) {
     channexPush: withPermission("channels.edit", services, async (ctx, auth) =>
       jsonOk(await channex(ctx).pushNow(auth, requestMeta(ctx)))),
 
+    // ---------------------------------------------------------------- OTA bookings (phase O4)
+
+    otaBookings: withPermission("channels.view", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).otaBookings.list(auth, requestMeta(ctx)))),
+
+    otaResolve: withPermission("channels.edit", services, async (ctx, auth) => {
+      const id = ctx.params.id ?? "";
+      if (!ID_PATTERN.test(id)) throw new ValidationError({ id: "INVALID_ID" });
+      return jsonOk(await services(ctx).otaBookings.resolve(auth, id, requestMeta(ctx)));
+    }),
+
     /** `{ importUrl?: string | null, label?: string | null }` — the OTA's calendar link for one unit; label = OTHER's name. */
     setImportUrl: withPermission("channels.edit", services, async (ctx, auth) => {
       const { unitId, channel } = feedKey(ctx);

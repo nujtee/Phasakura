@@ -105,6 +105,34 @@ export interface ChannexAutoCreateDto {
   status: ChannexStatusDto;
 }
 
+/** A booking that came from an OTA through Channex (phase O4). */
+export interface OtaBookingDto {
+  id: string;
+  otaName: string;
+  otaCode: string | null;
+  status: "ACTIVE" | "CANCELLED" | "CONFLICT" | "UNMAPPED" | "RESOLVED";
+  /** The booking here (BK-…); null when it could not be placed. */
+  bookingCode: string | null;
+  arrival: string;
+  departure: string;
+  amountMinor: number;
+  currency: string;
+  paymentCollect: "ota" | "property" | null;
+  guestName: string | null;
+  problem: string | null;
+  updatedAt: string;
+}
+
+/** GET /api/admin/channels/channex/bookings */
+export interface OtaBookingsDto {
+  /** Migration 0036 is applied. */
+  supported: boolean;
+  lastFeedAt: string | null;
+  lastFeedStatus: "OK" | "ERROR" | null;
+  lastFeedError: string | null;
+  items: OtaBookingDto[];
+}
+
 /** GET /api/admin/channels */
 export interface ChannelsDto {
   ical: { enabled: boolean; feeds: IcalFeedDto[]; conflicts: IcalConflictDto[] };
