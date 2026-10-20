@@ -317,6 +317,8 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/admin/channels/channex/rooms", channels.channexRooms)
     .put("/api/admin/channels/channex/units/:unitId", channels.channexMap)
     .post("/api/admin/channels/channex/auto-create", channels.channexAutoCreate)
+    .put("/api/admin/channels/channex/ari", channels.channexAri)
+    .post("/api/admin/channels/channex/push", channels.channexPush)
     .get("/api/admin/me/line", credit.myLine)
     .post("/api/admin/me/line/link-code", credit.myLineCode)
     .get("/api/admin/me/line/link-code/:id", credit.myLineStatus)
@@ -450,6 +452,9 @@ export function createApp(options: AppOptions = {}) {
       // OTA calendars (iCal, migration 0033): each linked calendar is read every 15 minutes.
       const ical = await task("ical_import", () => s.channels.tick());
       if (ical && (ical.read || ical.conflicts)) console.log(JSON.stringify({ level: ical.conflicts ? "error" : "info", message: "ical_import", ...ical }));
+      // Channex (phase O3): availability / prices that changed, every minute; everything once a day.
+      const ari = await task("channex_ari", async () => s.channels.channex?.tick() ?? null);
+      if (ari?.sent) console.log(JSON.stringify({ level: "info", message: "channex_ari", ...ari }));
       const pp = await task("paypal_reconcile", () => s.paypal.reconcile());
       if (pp?.settled) console.log(JSON.stringify({ level: "info", message: "paypal_reconciled", ...pp }));
       // Error log retention, once an hour.

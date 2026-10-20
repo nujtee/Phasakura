@@ -235,7 +235,15 @@ await check("Channex: Super Admin switches it on, tests the account, picks the p
   const pick = pa.getByLabel("Channex room type HOUSE-01");
   await pick.waitFor();
   if (!(await pick.inputValue())) throw new Error("the saved mapping is not shown in the list");
+  await pa.getByLabel("OTA price markup (%)").fill("12");
+  await pa.getByRole("button", { name: "Save %" }).click();
+  await pa.getByText("Markup saved").waitFor();
+  await pa.getByRole("button", { name: "Start sending" }).click();
+  await pa.getByText(/Last sent .* · OK · \d+ changes/).waitFor();
   await pa.screenshot({ path: `${SHOTS}/g-admin-channex.png`, fullPage: true });
+  await pa.getByRole("button", { name: "Stop sending" }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Stop sending" }).click();
+  await pa.getByRole("button", { name: "Start sending" }).waitFor();
   await pa.getByRole("button", { name: "Switch Channex off" }).click();
   await pa.locator("dialog[open]").getByRole("button", { name: "Switch Channex off" }).click();
   await pa.getByRole("button", { name: "Switch Channex on" }).waitFor();
