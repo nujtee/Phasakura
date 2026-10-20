@@ -15,7 +15,7 @@ export function icalChannelName(channel: IcalChannel, label: string | null | und
 };
 
 /** How often each OTA calendar is read (the cron runs every minute and picks the feeds that are due). */
-export const ICAL_IMPORT_EVERY_MINUTES = 15;
+export const ICAL_IMPORT_EVERY_MINUTES = 5;
 
 export interface IcalFeedDto {
   unitId: string;

@@ -447,7 +447,7 @@ export function createApp(options: AppOptions = {}) {
       // E-mail (Zoho Mail / Resend) and PayPal captures left in flight (migration 0023).
       const mail = await task("email_notifications", () => s.email.tick());
       if (mail && (mail.sent || mail.failed || mail.retried)) console.log(JSON.stringify({ level: "info", message: "email_notifications", ...mail }));
-      // OTA calendars (iCal, migration 0033): each linked calendar is read every 15 minutes.
+      // OTA calendars (iCal, migration 0033): each linked calendar is read every 5 minutes.
       const ical = await task("ical_import", () => s.channels.tick());
       if (ical && (ical.read || ical.conflicts)) console.log(JSON.stringify({ level: ical.conflicts ? "error" : "info", message: "ical_import", ...ical }));
       const pp = await task("paypal_reconcile", () => s.paypal.reconcile());

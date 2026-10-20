@@ -21,7 +21,9 @@ export type ChannelFetch = (input: string, init?: RequestInit) => Promise<Respon
 export const ICAL_MAX_BYTES = 1_000_000;
 const FETCH_TIMEOUT_MS = 10_000;
 /** Feeds read per cron run (each is one HTTP request). */
-const FEEDS_PER_TICK = 6;
+/** Feeds read per cron run, a few at a time (every linked calendar is due every 5 minutes). */
+const FEEDS_PER_TICK = 12;
+const FEEDS_AT_ONCE = 4;
 const EXPORT_MARK_EVERY_MS = 10 * 60_000;
 /** Nights kept in sync: from today to the furthest a guest can book (+ a margin). */
 const SYNC_DAYS = STAY_RULES.maxAdvanceDays + 30;
@@ -39,7 +41,7 @@ export type ChannelSwitches = { ical?: boolean; channex?: boolean };
  * iCal, per house / VIP tent and per channel (Booking.com, Agoda, Airbnb):
  *  - Export: /api/public/ical/<secret>.ics — every night that is not free here (bookings, staff blocks, nights
  *    imported from the OTHER channel), as all-day "Not available" events. No guest data, ever.
- *  - Import: the OTA's calendar link is read every 15 minutes; its nights become blocks here ("iCal · Booking.com")
+ *  - Import: the OTA's calendar link is read every 5 minutes; its nights become blocks here ("iCal · Booking.com")
  *    that staff cannot unlock by hand (the next read would bring them back). A night the OTA sold that is already
  *    booked here is a double booking: kept in ical_conflicts, shown on the Channels page and raised as a CRITICAL
  *    security event (System status). It clears itself when either side frees the night.
@@ -251,17 +253,19 @@ export class ChannelService {
 
   // ================================================================ import (cron)
 
-  /** Reads the OTA calendars that are due (every 15 minutes each). */
+  /** Reads the OTA calendars that are due (every 5 minutes each), a few in parallel. */
   async tick(): Promise<{ read: number; failed: number; conflicts: number }> {
     if (!(await this.icalEnabled())) return { read: 0, failed: 0, conflicts: 0 };
     const now = this.clock();
     const due = await this.repo.dueFeeds(iso(new Date(now.getTime() - (ICAL_IMPORT_EVERY_MINUTES * 60_000 - 30_000))), FEEDS_PER_TICK);
     let failed = 0;
     let conflicts = 0;
-    for (const feed of due) {
-      const r = await this.syncFeed(feed);
-      if (!r.ok) failed++;
-      conflicts += r.newConflicts;
+    for (let i = 0; i < due.length; i += FEEDS_AT_ONCE) {
+      // Different units never touch the same nights; the same unit's feeds are written in their own batches.
+      for (const r of await Promise.all(due.slice(i, i + FEEDS_AT_ONCE).map((f) => this.syncFeed(f)))) {
+        if (!r.ok) failed++;
+        conflicts += r.newConflicts;
+      }
     }
     return { read: due.length, failed, conflicts };
   }
