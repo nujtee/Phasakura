@@ -59,7 +59,8 @@
     "chunk.map((_, j) => `?${j + 1}`).join(\", \")"
   ],
   "src/worker/repositories/inventory.repository.ts": [
-    "closed"
+    "closed",
+    "feed"
   ],
   "src/worker/repositories/line.repository.ts": [
     "deposit",

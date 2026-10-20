@@ -14,7 +14,7 @@ export const ADMIN_MENU_LOCKED = ["", "admin-menu", "credit-topup", "credit-admi
 
 export const ADMIN_MENU_PATHS = [
   "", "bookings", "calendar",
-  "houses", "vip-tents", "camping", "pricing",
+  "houses", "vip-tents", "camping", "pricing", "channels",
   "food", "food-orders", "kitchen",
   "payments", "slips", "receiving-accounts", "payment-settings", "credit-topup", "credit-admin",
   "reports",
@@ -44,6 +44,8 @@ export const MENU_ACCESS: Record<AdminMenuPath, { view: PermissionCode; manage: 
   "vip-tents": { view: "accommodation.view", manage: ["accommodation.edit", "accommodation.block"] },
   camping: { view: "camping.view", manage: ["camping.edit"] },
   pricing: { view: "accommodation.view", manage: ["pricing.edit"] },
+  // OTA channels (migration 0033): switching a feature on / off (channels.toggle) stays with SUPER_ADMIN.
+  channels: { view: "channels.view", manage: ["channels.edit"] },
   food: { view: "food.view", manage: ["food.edit"] },
   "food-orders": { view: "food_orders.view", manage: ["food_orders.manage"] },
   kitchen: { view: "kitchen.view", manage: [] },

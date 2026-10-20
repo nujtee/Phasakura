@@ -3353,3 +3353,50 @@
 .adm-credit__qr-receiver > .adm-btn {
   justify-self: start;
 }
+
+/* OTA channels (migration 0033) */
+.adm-channels__switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.adm-channels__switch:last-of-type {
+  border-bottom: 0;
+}
+
+.adm-channels__switch p {
+  margin: 4px 0 0;
+  max-width: 60ch;
+}
+
+.adm-channels__how {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 6px;
+}
+
+.adm-channels__feed {
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.adm-channels__feed:first-of-type {
+  border-top: 0;
+}
+
+.adm-channels__url {
+  flex: 1 1 28rem;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+}
+
+.adm-channels__error {
+  color: var(--color-error);
+}

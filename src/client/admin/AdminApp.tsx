@@ -47,6 +47,7 @@ import { ReportPrintPage } from "./reports/ReportPrintPage.tsx";
 import { ReportsPage } from "./reports/ReportsPage.tsx";
 import { CreditTopupPage } from "./credits/CreditTopupPage.tsx";
 import { CreditAdminPage } from "./credits/CreditAdminPage.tsx";
+import { ChannelsPage } from "./accommodation/ChannelsPage.tsx";
 import { MyAccountPage } from "./credits/MyAccountPage.tsx";
 import "../styles/admin.css";
 
@@ -269,6 +270,8 @@ function renderPage(segments: string[], notFound: string) {
       return <CreditTopupPage />;
     case "credit-admin":
       return <CreditAdminPage />;
+    case "channels":
+      return <ChannelsPage />;
     case "my-account":
       return <MyAccountPage />;
     case "change-password":

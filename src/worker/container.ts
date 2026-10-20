@@ -76,6 +76,8 @@ import { CreditRepository } from "./repositories/credit.repository.ts";
 import { CreditService } from "./services/credit.service.ts";
 import { BackupService } from "./services/backup.service.ts";
 import { siteSlug } from "../shared/site-name.ts";
+import { ChannelRepository } from "./repositories/channel.repository.ts";
+import { ChannelService, type ChannelFetch } from "./services/channel.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -130,6 +132,8 @@ export interface Services {
   adminMenu: AdminMenuService;
   /** App-usage credits: balance, top-ups, plan, notices (migration 0027). */
   credits: CreditService;
+  /** OTA channels: on / off switch and iCal sync with Booking.com / Agoda (migration 0033). */
+  channels: ChannelService;
 }
 
 export interface ServiceOptions {
@@ -151,6 +155,8 @@ export interface ServiceOptions {
   emailFetch?: EmailFetch;
   /** Tests / e2e: fetch used for the PayPal REST API. */
   paypalFetch?: PaypalFetch;
+  /** Tests / e2e: fetch used to read OTA iCal calendars. */
+  channelFetch?: ChannelFetch;
 }
 
 /** Absolute links (reset / invite) use APP_BASE_URL when configured (https only). */
@@ -298,6 +304,8 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       sender: emailSender, linkBase: configuredBaseUrl(env), siteInfo,
     }, creditRepo),
     credits,
+    channels: new ChannelService(db, new ChannelRepository(db), authorization, log, clock, () => availability.today(),
+      resolveBaseUrl(env, options.origin), options.channelFetch),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
     dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock, (from, to) => ga4.dashboard(from, to)),
     cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),

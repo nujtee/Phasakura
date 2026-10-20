@@ -30,6 +30,7 @@ import { searchController } from "./controllers/search.controller.ts";
 import { systemController } from "./controllers/system.controller.ts";
 import { emailController, paypalController } from "./controllers/notify.controller.ts";
 import { creditController } from "./controllers/credit.controller.ts";
+import { channelController } from "./controllers/channel.controller.ts";
 import { centerController } from "./controllers/center.controller.ts";
 
 export interface AppOptions {
@@ -75,6 +76,7 @@ export function createApp(options: AppOptions = {}) {
   const email = emailController(services);
   const paypal = paypalController(services);
   const credit = creditController(services);
+  const channels = channelController(services);
   const center = centerController(services);
   const servePage = createPageHandler((request, env, url) => services({ request, env, url }));
 
@@ -91,6 +93,8 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/center/backups", center.listBackups)
     .post("/api/center/backups", center.createBackup)
     .get("/api/center/backups/download", center.downloadBackup)
+    .get("/api/center/channels", center.getChannels)
+    .put("/api/center/channels", center.setChannels)
     .post("/api/center/sso", center.issueSso)
     // Unsigned: the browser of the Center user posts the one-time ticket here (a form on center.phasakura.com).
     .post("/api/center/sso/consume", center.consumeSso)
@@ -301,6 +305,13 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/admin/credit-admin/topups/:id/reject", credit.reject)
     .post("/api/admin/credit-admin/adjustments", credit.adjust)
     .put("/api/admin/credit-admin/plan", credit.plan)
+    // OTA channels (migration 0033)
+    .get("/api/admin/channels", channels.overview)
+    .put("/api/admin/channels/settings", channels.setEnabled)
+    .put("/api/admin/channels/ical/:unitId/:channel", channels.setImportUrl)
+    .post("/api/admin/channels/ical/:unitId/:channel/rotate", channels.rotate)
+    .post("/api/admin/channels/ical/:unitId/:channel/sync", channels.sync)
+    .get("/api/public/ical/:file", channels.publicCalendar)
     .get("/api/admin/me/line", credit.myLine)
     .post("/api/admin/me/line/link-code", credit.myLineCode)
     .get("/api/admin/me/line/link-code/:id", credit.myLineStatus)
@@ -431,6 +442,9 @@ export function createApp(options: AppOptions = {}) {
       // E-mail (Zoho Mail / Resend) and PayPal captures left in flight (migration 0023).
       const mail = await task("email_notifications", () => s.email.tick());
       if (mail && (mail.sent || mail.failed || mail.retried)) console.log(JSON.stringify({ level: "info", message: "email_notifications", ...mail }));
+      // OTA calendars (iCal, migration 0033): each linked calendar is read every 15 minutes.
+      const ical = await task("ical_import", () => s.channels.tick());
+      if (ical && (ical.read || ical.conflicts)) console.log(JSON.stringify({ level: ical.conflicts ? "error" : "info", message: "ical_import", ...ical }));
       const pp = await task("paypal_reconcile", () => s.paypal.reconcile());
       if (pp?.settled) console.log(JSON.stringify({ level: "info", message: "paypal_reconciled", ...pp }));
       // Error log retention, once an hour.

@@ -201,6 +201,24 @@ await check("calendar: lock / unlock works in the Day, Month (this month) and Cu
   await pa.getByText("Unlocked 4 cells").waitFor();
 });
 
+await check("OTA channels: Super Admin switches iCal on, each unit gets its calendar links, the link serves an .ics; then off", async () => {
+  await pa.goto(`${BASE}/en/admin/channels`);
+  await pa.getByRole("heading", { name: "Booking.com / Agoda connection" }).waitFor();
+  await pa.getByText("iCal is off").waitFor();
+  await pa.getByRole("button", { name: "Switch iCal on" }).click();
+  const link = pa.getByLabel("Our calendar link (paste into Booking.com)").first();
+  await link.waitFor();
+  const url = await link.inputValue();
+  if (!/\/api\/public\/ical\/[A-Za-z0-9_-]{43}\.ics$/.test(url)) throw new Error(`export link ${url}`);
+  const res = await pa.request.get(url);
+  if (res.status() !== 200 || !(await res.text()).startsWith("BEGIN:VCALENDAR")) throw new Error(`ics ${res.status()}`);
+  await pa.screenshot({ path: `${SHOTS}/g-admin-channels.png`, fullPage: true });
+  await pa.getByRole("button", { name: "Switch iCal off" }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Switch iCal off" }).click();
+  await pa.getByText(/iCal is off — a Super Admin/).waitFor();
+  if ((await pa.request.get(url)).status() !== 404) throw new Error("link still served while off");
+});
+
 await check("check-in from the booking page", async () => {
   await pa.goto(`${BASE}/en/admin/bookings/${A.bookingCode}`);
   await pa.getByRole("button", { name: "Check in" }).click();
@@ -509,7 +527,7 @@ await check("Administration → Menu: hide the Marketing group and Kitchen repor
   if (!(await pa.getByRole("checkbox", { name: "Admin menu · Always shown" }).isDisabled())) throw new Error("menu page hideable");
   await pa.getByRole("group", { name: "Marketing" }).getByLabel("Show the whole group").uncheck();
   await pa.getByRole("group", { name: "Food" }).getByLabel("Kitchen report").uncheck();
-  await pa.getByText("34 of 38 items shown").waitFor();
+  await pa.getByText("35 of 39 items shown").waitFor();
   await pa.getByRole("button", { name: "Save" }).click();
   await pa.getByText(/Menu saved/).waitFor();
   await nav.getByRole("button", { name: "Marketing" }).waitFor({ state: "detached" });

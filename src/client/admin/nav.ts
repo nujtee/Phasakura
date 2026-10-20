@@ -36,6 +36,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { ready: true, path: "vip-tents", label: (t) => t.nav.vipTents, permission: "accommodation.view" },
       { ready: true, path: "camping", label: (t) => t.nav.camping, permission: "camping.view" },
       { ready: true, path: "pricing", label: (t) => t.nav.pricing, permission: "accommodation.view" },
+      { ready: true, path: "channels", label: (t) => t.nav.channels, permission: "channels.view" },
     ],
   },
   {

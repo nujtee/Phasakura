@@ -88,7 +88,7 @@ export function CalendarPage() {
   };
 
   const byUnitDate = useMemo(() => {
-    const map = new Map<string, { bookingCode: string | null; blockReason: string | null }>();
+    const map = new Map<string, { bookingCode: string | null; blockReason: string | null; icalChannel?: string | null }>();
     for (const n of data?.nights ?? []) map.set(`${n.unitId}|${n.date}`, n);
     return map;
   }, [data]);
@@ -105,7 +105,8 @@ export function CalendarPage() {
       return canCamp && data.camping.enabled && !!n && (n.closed || n.date >= data.today);
     }
     const n = byUnitDate.get(`${parts[1]}|${parts[2]}`);
-    return canBlock && (n ? !n.bookingCode : parts[2]! >= data.today);
+    // A night an OTA calendar holds (iCal) is freed only by that OTA.
+    return canBlock && (n ? !n.bookingCode && !n.icalChannel : parts[2]! >= data.today);
   };
   /** Locked now (a block, or a closed camping night)? */
   const isLocked = (key: string): boolean => {

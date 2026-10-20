@@ -139,7 +139,7 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (sso && request.method === "POST") return startSso(ctx, me, sso[1]!);
     const detail = /^\/sites\/([a-z][a-z0-9-]{1,30})$/.exec(url.pathname);
     if (detail && request.method === "GET") return sitePage(ctx, me, detail[1]!);
-    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup|backup-download)$/.exec(url.pathname);
+    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup|backup-download|channels)$/.exec(url.pathname);
     if (siteAction && request.method === "POST") {
       const slug = siteAction[1]!;
       switch (siteAction[2]) {
@@ -147,6 +147,7 @@ export function createCenterApp(options: CenterAppOptions = {}) {
         case "revoke": return revokeSiteSessions(ctx, me, slug);
         case "owner": return inviteSiteOwner(ctx, me, slug);
         case "backup": return backupSite(ctx, me, slug);
+        case "channels": return changeChannels(ctx, me, slug);
         default: return downloadBackup(ctx, me, slug);
       }
     }
@@ -495,13 +496,14 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
     if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
     const client = new SiteClient(ctx.env, 5000, clock);
     const actor = actorOf(me);
-    const [checks, alerts, log, suspension, users, backups] = await Promise.all([
+    const [checks, alerts, log, suspension, users, backups, channels] = await Promise.all([
       ctx.repo.db.prepare("SELECT site, checked_at, http_status, schema_state, cron_state, errors_24h, slips_waiting, suspended, detail FROM center_site_checks WHERE site = ?1 ORDER BY checked_at DESC LIMIT 96").bind(slug).all<CheckRow>(),
       ctx.repo.db.prepare("SELECT type, open_since, detail FROM center_alert_states WHERE site = ?1 AND open_since IS NOT NULL").bind(slug).all<{ type: string; open_since: string; detail: string | null }>(),
       ctx.repo.db.prepare("SELECT type, event, message, delivery, created_at FROM center_alert_log WHERE site = ?1 ORDER BY created_at DESC LIMIT 30").bind(slug).all<{ type: string; event: string; message: string; delivery: string; created_at: string }>(),
       client.call<SuspensionDto>(site, "GET", "/api/center/suspension", actor),
       client.call<{ items: SiteUserDto[] }>(site, "GET", "/api/center/users", actor),
       client.call<{ items: BackupDto[] }>(site, "GET", "/api/center/backups", actor),
+      client.call<ChannelsDto>(site, "GET", "/api/center/channels", actor),
     ]);
     const openHtml = alerts.results.length
       ? alerts.results.map((a) => `<li class="bad">${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ${esc(a.detail ?? "")} <span class="muted small">(ตั้งแต่ ${esc(bkk(a.open_since))})</span></li>`).join("")
@@ -575,6 +577,17 @@ ${me.role === "PLATFORM_OWNER" ? `<details><summary class="small">พักก�
 ${me.role === "SUPPORT_READONLY" ? "" : `<form method="post" action="/sites/${esc(slug)}/backup" class="inline" style="margin-top:12px">${reasonInput("เหตุผล เช่น ก่อนแก้ข้อมูลจำนวนมาก")}<button type="submit">สำรองตอนนี้</button></form>`}
 ${me.role === "PLATFORM_OWNER" ? '<p class="small muted">ไฟล์มีข้อมูลแขก: ดาวน์โหลดเฉพาะเมื่อจำเป็น (เช่น เจ้าของเว็บขอข้อมูลตอนเลิกใช้บริการ) ทุกครั้งถูกบันทึกทั้งใน Center และในเว็บ</p>' : ""}</div>`;
 
+    // ---- OTA channels (phase O1): the same switch as the site's SUPER_ADMIN.
+    const ch = channels.status === 200 ? channels.data : undefined;
+    const canSwitch = me.role === "PLATFORM_OWNER" || me.role === "OPERATOR";
+    const channelsHtml = `<div class="card"><h2 style="margin-top:0">เชื่อมต่อ OTA (Booking.com / Agoda)</h2>
+${!ch ? `<p class="warn">อ่านสถานะไม่ได้: ${esc(siteError(channels.status, channels.error?.code))}</p>` : `
+<p><strong>ปฏิทิน iCal</strong> — ${ch.ical.enabled ? '<span class="ok">เปิดอยู่</span>' : '<span class="muted">ปิดอยู่</span>'}
+${ch.ical.enabled ? `<br><span class="small">เชื่อมปฏิทินจาก OTA ${ch.ical.feedsWithImport} ลิงก์ · อ่านล่าสุด ${esc(bkk(ch.ical.lastImportAt))}${ch.ical.errors ? ` · <span class="warn">อ่านไม่ได้ ${ch.ical.errors} ลิงก์</span>` : ""}${ch.ical.conflicts ? ` · <span class="bad">จองซ้ำ ${ch.ical.conflicts} คืน</span>` : ""}</span>` : ""}</p>
+${canSwitch ? `<form method="post" action="/sites/${esc(slug)}/channels" class="inline"><input type="hidden" name="ical" value="${ch.ical.enabled ? "off" : "on"}">${reasonInput(ch.ical.enabled ? "เหตุผลที่ปิด" : "เหตุผลที่เปิด เช่น เจ้าของเว็บขอเชื่อม Booking.com")}<button type="submit"${ch.ical.enabled ? ' class="danger"' : ""}>${ch.ical.enabled ? "ปิด iCal" : "เปิด iCal"}</button></form>` : '<p class="muted small">เปิด / ปิดได้เฉพาะเจ้าของแพลตฟอร์มและผู้ดูแลระบบ</p>'}
+<p><strong>Channex</strong> — <span class="muted">ยังไม่พร้อมใช้ (เฟสถัดไป)</span></p>
+<p class="small muted">เปิดแล้ว เจ้าของเว็บตั้งลิงก์ปฏิทินของแต่ละห้องได้ที่หลังบ้าน → ที่พัก → เชื่อมต่อ OTA · Super Admin ของเว็บเปิด / ปิดเองได้เช่นกัน</p>`}</div>`;
+
     const revokeHtml = me.role === "SUPPORT_READONLY" ? "" : `<div class="card"><h2 style="margin-top:0">session ของ Center ในเว็บนี้</h2>
 <p class="small muted">ออกจากหลังบ้านของเว็บนี้ทุกคนที่เข้ามาจาก Center (บัญชี "Center · …") และยกเลิกตั๋ว SSO ที่ยังไม่ได้ใช้ — admin ของเว็บเองไม่ถูกกระทบ</p>
 <form method="post" action="/sites/${esc(slug)}/revoke" class="inline">${reasonInput("เหตุผล")}<button class="danger" type="submit">ตัด session ของ Center ทั้งหมด</button></form></div>`;
@@ -585,6 +598,7 @@ ${me.role === "PLATFORM_OWNER" ? '<p class="small muted">ไฟล์มีข�
 <div class="card"><h2 style="margin-top:0">หลังบ้าน</h2><form method="post" action="/sites/${esc(slug)}/sso" target="_blank" class="inline">${reasonInput("เหตุผลที่เข้าหลังบ้าน")}<button type="submit">เข้าหลังบ้าน</button></form></div>
 ${ownerHtml}
 <div class="card"><h2 style="margin-top:0">การให้บริการ</h2>${serviceHtml}</div>
+${channelsHtml}
 <div class="card"><h2 style="margin-top:0">ปัญหาที่เปิดอยู่</h2><ul>${openHtml}</ul></div>
 <div class="card scroll"><h2 style="margin-top:0">ผู้ดูแลของเว็บ</h2><table><thead><tr><th>ชื่อ</th><th>บทบาท</th><th>สถานะ</th><th>เข้าล่าสุด</th></tr></thead><tbody>${userRows}</tbody></table>
 <p class="small muted">อ่านจากเว็บโดยตรง (ไม่รวมบัญชี Center) — เพิ่ม / แก้ผู้ใช้ทำในหลังบ้านของเว็บ</p></div>
@@ -614,6 +628,23 @@ ${revokeHtml}
     await audit(ctx, me.id, suspended ? "SITE_SUSPENDED" : "SITE_RESUMED", site.slug, reason, { ok, status: res.status, note: suspended ? note : null, error: res.error?.code ?? null }).run();
     if (!ok) return sitePage(ctx, me, slug, { kind: "error", text: `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}` });
     return sitePage(ctx, me, slug, { kind: "ok", text: suspended ? `พักการรับจองของ ${site.name} แล้ว` : `เปิดรับจองของ ${site.name} อีกครั้งแล้ว` });
+  }
+
+  async function changeChannels(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+    const site = ctx.sites.find((s) => s.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    if (me.role !== "PLATFORM_OWNER" && me.role !== "OPERATOR") throw new HttpError(403, "บทบาทของคุณเปิด / ปิด OTA ไม่ได้");
+    const form = await readForm(ctx.request);
+    const op = form.get("ical");
+    const reason = (form.get("reason") ?? "").trim();
+    if (op !== "on" && op !== "off") throw new HttpError(422, "คำสั่งไม่ถูกต้อง");
+    if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    const ical = op === "on";
+    const res = await new SiteClient(ctx.env, 8000, clock).call<ChannelsDto>(site, "PUT", "/api/center/channels", { ...actorOf(me), reason }, { ical });
+    const ok = res.status === 200;
+    await audit(ctx, me.id, ical ? "CHANNEL_ICAL_ON" : "CHANNEL_ICAL_OFF", site.slug, reason, { ok, status: res.status, error: res.error?.code ?? null }).run();
+    if (!ok) return sitePage(ctx, me, slug, { kind: "error", text: `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}` });
+    return sitePage(ctx, me, slug, { kind: "ok", text: ical ? `เปิด iCal ของ ${site.name} แล้ว` : `ปิด iCal ของ ${site.name} แล้ว` });
   }
 
   async function inviteSiteOwner(ctx: Ctx, me: Me, slug: string): Promise<Response> {
@@ -1157,7 +1188,7 @@ function safeNext(next: string | null): string | null {
 /** Sensitive POSTs (step-up) and the page to come back to. */
 function sensitiveReturnPath(method: string, path: string): string | null {
   if (method !== "POST") return null;
-  const site = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup-download)$/.exec(path);
+  const site = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup-download|channels)$/.exec(path);
   if (site) return `/sites/${site[1]}`;
   if (path === "/releases" || path === "/releases/merge") return "/releases";
   if (path === "/sites/new" || path.startsWith("/sites/new/")) return "/sites/new";
@@ -1168,6 +1199,11 @@ function sensitiveReturnPath(method: string, path: string): string | null {
 }
 
 const BACKUP_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-[A-Za-z0-9_-]{6}\.sql\.gz$/;
+
+interface ChannelsDto {
+  ical: { enabled: boolean; feedsWithImport: number; errors: number; conflicts: number; lastImportAt: string | null };
+  channex: { enabled: boolean; available: boolean };
+}
 
 interface BackupDto {
   name: string; size: number; createdAt: string; tables: number | null; rows: number | null; trigger: string | null;

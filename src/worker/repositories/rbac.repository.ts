@@ -21,7 +21,7 @@ export class RbacRepository {
 
   /**
    * Effective permissions = role permissions ∪ user GRANTs − user DENYs, then (migration 0027):
-   *   - credits.manage only for a SUPER_ADMIN (whatever the overrides say);
+   *   - credits.manage / channels.toggle only for a SUPER_ADMIN (whatever the overrides say);
    *   - while the credit system is on and the property is on the STANDARD plan, Reports / Marketing / Theme
    *     (PREMIUM_ONLY_PERMISSIONS) are removed for everyone but SUPER_ADMIN.
    */
@@ -45,7 +45,7 @@ export class RbacRepository {
                           WHERE up.user_id = ?1 AND up.permission_id = p.id AND up.effect = 'GRANT'))
             AND NOT EXISTS (SELECT 1 FROM user_permissions up
                              WHERE up.user_id = ?1 AND up.permission_id = p.id AND up.effect = 'DENY')
-            AND (p.code <> 'credits.manage' OR ${SUPER_ADMIN})
+            AND (p.code NOT IN ('credits.manage', 'channels.toggle') OR ${SUPER_ADMIN})
             ${planLock}
           ORDER BY p.code`,
       )

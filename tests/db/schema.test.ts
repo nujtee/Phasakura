@@ -206,8 +206,10 @@ describe("schema covers the spec (§52)", () => {
   it("stores no plaintext secrets (only token hashes, no CAPI/LINE tokens)", () => {
     for (const t of tables()) {
       for (const c of db.all<{ name: string }>(`PRAGMA table_info(${JSON.stringify(t)})`)) {
-        // tokens_json = theme design tokens (colors/fonts), not credentials.
-        if (/token|secret|password/i.test(c.name) && c.name !== "tokens_json") {
+        // tokens_json = theme design tokens (colors/fonts), not credentials. ical_feeds.export_token (migration 0033) is
+        // the secret part of a calendar link that staff must be able to copy again (like any Airbnb / Booking iCal
+        // link): it reveals only free / busy nights of one unit — no guest data — and can be renewed at any time.
+        if (/token|secret|password/i.test(c.name) && c.name !== "tokens_json" && `${t}.${c.name}` !== "ical_feeds.export_token") {
           assert.ok(
             ["token_hash", "password_hash", "password_changed_at", "must_change_password"].includes(c.name),
             `${t}.${c.name} looks like a secret column`,

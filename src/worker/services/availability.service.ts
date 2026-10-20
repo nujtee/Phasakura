@@ -274,7 +274,7 @@ export class AvailabilityService {
             statements.push(this.inventory.insertBlockStatement(cell.unitId, cell.date, input.reason!, actor.userId, now));
             (changedUnits[cell.unitId] ??= []).push(cell.date);
           }
-        } else if (held && !held.booking_id) {
+        } else if (held && !held.booking_id && !held.ical_feed_id) {
           statements.push(this.inventory.deleteBlocksStatement(cell.unitId, cell.date, cell.date));
           (changedUnits[cell.unitId] ??= []).push(cell.date);
         } else skipped++;
