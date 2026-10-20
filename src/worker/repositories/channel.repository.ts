@@ -43,6 +43,34 @@ export interface IcalConflictRow {
   first_seen_at: string;
 }
 
+export interface ChannexSettingsRow {
+  property_id: string | null;
+  property_title: string | null;
+  currency: string | null;
+  environment: "staging" | "production" | null;
+  last_check_at: string | null;
+  last_check_status: "OK" | "ERROR" | null;
+  last_check_error: string | null;
+}
+
+export interface ChannexUnitMapRow {
+  unit_id: string;
+  room_type_id: string;
+  room_type_title: string | null;
+  rate_plan_id: string | null;
+  rate_plan_title: string | null;
+}
+
+export interface ChannexUnitRow {
+  id: string;
+  unit_type: "HOUSE" | "VIP_TENT";
+  unit_code: string;
+  base_price_satang: number;
+  standard_guests: number;
+  max_guests: number;
+  max_adults: number | null;
+}
+
 const FEED_COLUMNS = `id, unit_id, channel, label, export_token, import_url, last_import_at, last_import_status, last_import_error,
   last_import_nights, last_export_at`;
 
@@ -60,6 +88,73 @@ export class ChannelRepository {
       if (isMissingSchema(error)) return null;
       throw error;
     }
+  }
+
+  setChannexStatement(enabled: boolean, userId: string | null, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE channel_settings SET channex_enabled = ?1, updated_by = ?2, updated_at = ?3 WHERE id = 1")
+      .bind(enabled ? 1 : 0, userId, now);
+  }
+
+  // ---------------------------------------------------------------- Channex (migration 0034)
+
+  /** null before migration 0034. */
+  async channexSettings(): Promise<ChannexSettingsRow | null> {
+    try {
+      return await this.db
+        .prepare(`SELECT property_id, property_title, currency, environment, last_check_at, last_check_status, last_check_error
+                    FROM channex_settings WHERE id = 1`)
+        .first<ChannexSettingsRow>();
+    } catch (error) {
+      if (isMissingSchema(error)) return null;
+      throw error;
+    }
+  }
+
+  channexPropertyStatement(p: { id: string | null; title: string | null; currency: string | null; environment: string | null }, userId: string | null, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(`UPDATE channex_settings SET property_id = ?1, property_title = ?2, currency = ?3, environment = ?4,
+                       updated_by = ?5, updated_at = ?6 WHERE id = 1`)
+      .bind(p.id, p.title, p.currency, p.environment, userId, now);
+  }
+
+  channexCheckStatement(status: "OK" | "ERROR", error: string | null, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE channex_settings SET last_check_at = ?1, last_check_status = ?2, last_check_error = ?3 WHERE id = 1")
+      .bind(now, status, error?.slice(0, 300) ?? null);
+  }
+
+  async channexUnits(): Promise<ChannexUnitRow[]> {
+    const { results } = await this.db
+      .prepare(`SELECT id, unit_type, unit_code, base_price_satang, standard_guests, max_guests, max_adults
+                  FROM accommodation_units WHERE status <> 'DELETED' ORDER BY unit_type, sort_order, unit_code`)
+      .all<ChannexUnitRow>();
+    return results;
+  }
+
+  async channexMap(): Promise<ChannexUnitMapRow[]> {
+    const { results } = await this.db
+      .prepare("SELECT unit_id, room_type_id, room_type_title, rate_plan_id, rate_plan_title FROM channex_unit_map")
+      .all<ChannexUnitMapRow>();
+    return results;
+  }
+
+  setUnitMapStatement(m: ChannexUnitMapRow, userId: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(`INSERT INTO channex_unit_map (unit_id, room_type_id, room_type_title, rate_plan_id, rate_plan_title, updated_by, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ON CONFLICT (unit_id) DO UPDATE SET room_type_id = excluded.room_type_id, room_type_title = excluded.room_type_title,
+                  rate_plan_id = excluded.rate_plan_id, rate_plan_title = excluded.rate_plan_title,
+                  updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
+      .bind(m.unit_id, m.room_type_id, m.room_type_title, m.rate_plan_id, m.rate_plan_title, userId, now);
+  }
+
+  deleteUnitMapStatement(unitId: string): D1PreparedStatementLike {
+    return this.db.prepare("DELETE FROM channex_unit_map WHERE unit_id = ?1").bind(unitId);
+  }
+
+  clearUnitMapStatement(): D1PreparedStatementLike {
+    return this.db.prepare("DELETE FROM channex_unit_map");
   }
 
   setIcalStatement(enabled: boolean, userId: string | null, now: string): D1PreparedStatementLike {

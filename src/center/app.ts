@@ -585,7 +585,9 @@ ${!ch ? `<p class="warn">อ่านสถานะไม่ได้: ${esc(si
 <p><strong>ปฏิทิน iCal</strong> — ${ch.ical.enabled ? '<span class="ok">เปิดอยู่</span>' : '<span class="muted">ปิดอยู่</span>'}
 ${ch.ical.enabled ? `<br><span class="small">เชื่อมปฏิทินจาก OTA ${ch.ical.feedsWithImport} ลิงก์ · อ่านล่าสุด ${esc(bkk(ch.ical.lastImportAt))}${ch.ical.errors ? ` · <span class="warn">อ่านไม่ได้ ${ch.ical.errors} ลิงก์</span>` : ""}${ch.ical.conflicts ? ` · <span class="bad">จองซ้ำ ${ch.ical.conflicts} คืน</span>` : ""}</span>` : ""}</p>
 ${canSwitch ? `<form method="post" action="/sites/${esc(slug)}/channels" class="inline"><input type="hidden" name="ical" value="${ch.ical.enabled ? "off" : "on"}">${reasonInput(ch.ical.enabled ? "เหตุผลที่ปิด" : "เหตุผลที่เปิด เช่น เจ้าของเว็บขอเชื่อม Booking.com")}<button type="submit"${ch.ical.enabled ? ' class="danger"' : ""}>${ch.ical.enabled ? "ปิด iCal" : "เปิด iCal"}</button></form>` : '<p class="muted small">เปิด / ปิดได้เฉพาะเจ้าของแพลตฟอร์มและผู้ดูแลระบบ</p>'}
-<p><strong>Channex</strong> — <span class="muted">ยังไม่พร้อมใช้ (เฟสถัดไป)</span></p>
+<p><strong>Channex</strong> — ${ch.channex.enabled ? '<span class="ok">เปิดอยู่</span>' : '<span class="muted">ปิดอยู่</span>'}
+<span class="small"> · บัญชี ${ch.channex.environment === "production" ? "ใช้งานจริง" : "ทดลอง (staging)"}${ch.channex.available ? "" : ' · <span class="warn">ยังไม่ได้ตั้ง CHANNEX_API_KEY</span>'}${ch.channex.propertyTitle ? ` · ที่พัก ${esc(ch.channex.propertyTitle)} · จับคู่แล้ว ${ch.channex.mappedUnits} หลัง` : ""}</span></p>
+${canSwitch && ch.channex.available ? `<form method="post" action="/sites/${esc(slug)}/channels" class="inline"><input type="hidden" name="channex" value="${ch.channex.enabled ? "off" : "on"}">${reasonInput(ch.channex.enabled ? "เหตุผลที่ปิด Channex" : "เหตุผลที่เปิด Channex")}<button type="submit"${ch.channex.enabled ? ' class="danger"' : ""}>${ch.channex.enabled ? "ปิด Channex" : "เปิด Channex"}</button></form>` : ""}
 <p class="small muted">เปิดแล้ว เจ้าของเว็บตั้งลิงก์ปฏิทินของแต่ละห้องได้ที่หลังบ้าน → ที่พัก → เชื่อมต่อ OTA · Super Admin ของเว็บเปิด / ปิดเองได้เช่นกัน</p>`}</div>`;
 
     const revokeHtml = me.role === "SUPPORT_READONLY" ? "" : `<div class="card"><h2 style="margin-top:0">session ของ Center ในเว็บนี้</h2>
@@ -635,16 +637,21 @@ ${revokeHtml}
     if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
     if (me.role !== "PLATFORM_OWNER" && me.role !== "OPERATOR") throw new HttpError(403, "บทบาทของคุณเปิด / ปิด OTA ไม่ได้");
     const form = await readForm(ctx.request);
-    const op = form.get("ical");
+    const feature = form.get("channex") !== null ? "channex" : "ical";
+    const op = form.get(feature);
     const reason = (form.get("reason") ?? "").trim();
     if (op !== "on" && op !== "off") throw new HttpError(422, "คำสั่งไม่ถูกต้อง");
     if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
-    const ical = op === "on";
-    const res = await new SiteClient(ctx.env, 8000, clock).call<ChannelsDto>(site, "PUT", "/api/center/channels", { ...actorOf(me), reason }, { ical });
+    const on = op === "on";
+    const res = await new SiteClient(ctx.env, 8000, clock).call<ChannelsDto>(site, "PUT", "/api/center/channels", { ...actorOf(me), reason }, { [feature]: on });
     const ok = res.status === 200;
-    await audit(ctx, me.id, ical ? "CHANNEL_ICAL_ON" : "CHANNEL_ICAL_OFF", site.slug, reason, { ok, status: res.status, error: res.error?.code ?? null }).run();
-    if (!ok) return sitePage(ctx, me, slug, { kind: "error", text: `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}` });
-    return sitePage(ctx, me, slug, { kind: "ok", text: ical ? `เปิด iCal ของ ${site.name} แล้ว` : `ปิด iCal ของ ${site.name} แล้ว` });
+    const name = feature === "ical" ? "iCal" : "Channex";
+    await audit(ctx, me.id, `CHANNEL_${feature.toUpperCase()}_${on ? "ON" : "OFF"}`, site.slug, reason, { ok, status: res.status, error: res.error?.code ?? null }).run();
+    if (!ok) {
+      const text = res.error?.code === "CHANNEX_NOT_CONFIGURED" ? `${site.name} ยังไม่ได้ตั้ง CHANNEX_API_KEY ใน Cloudflare` : `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}`;
+      return sitePage(ctx, me, slug, { kind: "error", text });
+    }
+    return sitePage(ctx, me, slug, { kind: "ok", text: `${on ? "เปิด" : "ปิด"} ${name} ของ ${site.name} แล้ว` });
   }
 
   async function inviteSiteOwner(ctx: Ctx, me: Me, slug: string): Promise<Response> {
@@ -1202,7 +1209,7 @@ const BACKUP_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-[A-Za-z0-9_-]{6}\.sql
 
 interface ChannelsDto {
   ical: { enabled: boolean; feedsWithImport: number; errors: number; conflicts: number; lastImportAt: string | null };
-  channex: { enabled: boolean; available: boolean };
+  channex: { enabled: boolean; available: boolean; environment: "staging" | "production"; propertyTitle: string | null; mappedUnits: number };
 }
 
 interface BackupDto {

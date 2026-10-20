@@ -476,4 +476,15 @@ describe("Center: OTA channels (phase O1)", () => {
     assert.equal(h.db.get<{ ical_enabled: number }>("SELECT ical_enabled FROM channel_settings")!.ical_enabled, 1);
     assert.equal((await signed<{ ical: { enabled: boolean } }>("PUT", "/api/center/channels", OWNER, { ical: false })).data.ical.enabled, false);
   });
+
+  it("Channex: refused until CHANNEX_API_KEY is set on the site; then switched like iCal", async () => {
+    const { h, signed } = await c3();
+    assert.equal((await signed("PUT", "/api/center/channels", OWNER, { channex: true })).error?.code, "CHANNEX_NOT_CONFIGURED");
+    assert.equal((await signed("PUT", "/api/center/channels", OWNER, {})).error?.details?.ical, "REQUIRED");
+    h.env.CHANNEX_API_KEY = "k";
+    const on = await signed<{ channex: { enabled: boolean; available: boolean; environment: string } }>("PUT", "/api/center/channels", OWNER, { channex: true });
+    assert.equal(on.status, 200, JSON.stringify(on.error));
+    assert.deepEqual([on.data.channex.enabled, on.data.channex.available, on.data.channex.environment], [true, true, "staging"]);
+    assert.equal(h.audits("CHANNEL_CHANNEX_ON")[0]!.user_id, "center_u_owner");
+  });
 });

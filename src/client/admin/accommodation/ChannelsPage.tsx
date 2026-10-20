@@ -5,11 +5,12 @@ import { format } from "../../../shared/i18n/admin-messages.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, errorMessage, useDateFormatter } from "../ui.tsx";
+import { ChannexSection } from "./ChannexSection.tsx";
 
-type Msg = { kind: "error" | "success" | "info"; text: string } | null;
-type Confirm = { message: string; label: string; danger?: boolean; run: () => Promise<void> } | null;
+export type Msg = { kind: "error" | "success" | "info"; text: string } | null;
+export type Confirm = { message: string; label: string; danger?: boolean; run: () => Promise<void> } | null;
 
-function useTexts(): AdminChannelMessages {
+export function useTexts(): AdminChannelMessages {
   const { locale } = useAdmin();
   return getChannelMessages(locale.code);
 }
@@ -40,11 +41,11 @@ export function ChannelsPage() {
 
   if (!can("channels.view")) return <Alert kind="error">{t.errors.FORBIDDEN}</Alert>;
 
-  const toggle = async (ical: boolean) => {
+  const toggle = async (change: boolean | { channex: boolean }) => {
     setBusy(true);
     setMsg(null);
     try {
-      setData(await apiRequest<ChannelsDto>("PUT", "/api/admin/channels/settings", { ical }));
+      setData(await apiRequest<ChannelsDto>("PUT", "/api/admin/channels/settings", typeof change === "boolean" ? { ical: change } : change));
     } catch (err) {
       fail(err);
     } finally {
@@ -77,12 +78,21 @@ export function ChannelsPage() {
             <div className="adm-channels__switch">
               <div>
                 <strong>{m.channexName}</strong>{" "}
-                <span className="adm-badge adm-badge--suspended">{m.off}</span>
+                <span className={`adm-badge ${data.channex.enabled ? "adm-badge--active" : "adm-badge--suspended"}`}>{data.channex.enabled ? m.on : m.off}</span>
                 <p className="adm-small adm-muted">{m.channexSoon}</p>
+                {!data.channex.available && <p className="adm-small adm-channels__error">{m.channex.noKey}</p>}
               </div>
+              {data.canToggle && (data.channex.enabled
+                ? <Button variant="secondary" disabled={busy} onClick={() => setConfirm({ message: m.channex.confirmOff, label: m.channex.turnOff, danger: true, run: () => toggle({ channex: false }) })}>{m.channex.turnOff}</Button>
+                : <Button disabled={busy || !data.channex.available} busy={busy} onClick={() => void toggle({ channex: true })}>{m.channex.turnOn}</Button>)}
             </div>
             {!data.canToggle && <p className="adm-field__hint">{m.toggleNote}</p>}
           </div>
+
+          {data.channex.enabled && (
+            <ChannexSection status={data.channex} canEdit={data.canEdit} canToggle={data.canToggle}
+              onStatus={(channex) => setData({ ...data, channex })} setMsg={setMsg} fail={fail} setConfirm={setConfirm} />
+          )}
 
           {!data.ical.enabled && <Alert kind="info">{m.offNote}</Alert>}
 

@@ -13,6 +13,7 @@ import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-cont
 import type { AuthorizationService } from "./authorization.service.ts";
 import { IcsError, buildIcs, nightsOf, parseIcs, rangesOf } from "./ical.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
+import type { ChannexService } from "./channex.service.ts";
 
 export type ChannelFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -26,7 +27,7 @@ const EXPORT_MARK_EVERY_MS = 10 * 60_000;
 const SYNC_DAYS = STAY_RULES.maxAdvanceDays + 30;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
-export type CenterChannelChange = { ical?: boolean };
+export type ChannelSwitches = { ical?: boolean; channex?: boolean };
 
 /**
  * OTA channels (phase O1, migration 0033).
@@ -53,6 +54,7 @@ export class ChannelService {
     private readonly today: () => Promise<string>,
     private readonly origin: string,
     private readonly fetcher: ChannelFetch = (input, init) => fetch(input, init),
+    readonly channex: ChannexService | null = null,
   ) {}
 
   async icalEnabled(): Promise<boolean> {
@@ -102,17 +104,19 @@ export class ChannelService {
           summary: c.summary, firstSeenAt: c.first_seen_at,
         })),
       },
-      channex: { enabled: settings?.channex_enabled === 1, available: false },
+      channex: this.channex
+        ? await this.channex.status(settings?.channex_enabled === 1)
+        : { enabled: false, available: false, environment: "staging", property: null, lastCheckAt: null, lastCheckStatus: null, lastCheckError: null, units: [] },
       updatedAt: settings?.updated_at ?? null,
       canToggle: this.authz.can(actor, "channels.toggle"),
       canEdit,
     };
   }
 
-  /** SUPER_ADMIN (channels.toggle): switch iCal on / off. */
-  async setEnabled(actor: AuthContext, change: { ical: boolean }, meta: RequestMeta): Promise<ChannelsDto> {
+  /** SUPER_ADMIN (channels.toggle): switch iCal and / or Channex on / off. */
+  async setEnabled(actor: AuthContext, change: ChannelSwitches, meta: RequestMeta): Promise<ChannelsDto> {
     await this.authz.requirePermission(actor, "channels.toggle", meta);
-    await this.switchIcal(change.ical, actor.userId, null, meta);
+    await this.switchFeatures(change, actor.userId, null, meta);
     return this.overview(actor, meta);
   }
 
@@ -178,7 +182,9 @@ export class ChannelService {
 
   async centerOverview(): Promise<CenterChannelsDto> {
     const settings = await this.repo.settings();
-    if (!settings) return { ical: { enabled: false, feedsWithImport: 0, errors: 0, conflicts: 0, lastImportAt: null }, channex: { enabled: false, available: false }, updatedAt: null };
+    const available = this.channex?.configured ?? false;
+    const environment = this.channex?.environment ?? "staging";
+    if (!settings) return { ical: { enabled: false, feedsWithImport: 0, errors: 0, conflicts: 0, lastImportAt: null }, channex: { enabled: false, available, environment, propertyTitle: null, mappedUnits: 0 }, updatedAt: null };
     const [feeds, conflicts] = await Promise.all([this.repo.feeds(), this.repo.conflicts(await this.today())]);
     const linked = feeds.filter((f) => f.import_url);
     return {
@@ -189,23 +195,39 @@ export class ChannelService {
         conflicts: conflicts.length,
         lastImportAt: linked.map((f) => f.last_import_at).filter((x): x is string => !!x).sort().at(-1) ?? null,
       },
-      channex: { enabled: settings.channex_enabled === 1, available: false },
+      channex: await (async () => {
+        const st = this.channex ? await this.channex.status(settings.channex_enabled === 1) : null;
+        return { enabled: settings.channex_enabled === 1, available, environment, propertyTitle: st?.property?.title ?? null, mappedUnits: st?.units.filter((u) => u.roomTypeId).length ?? 0 };
+      })(),
       updatedAt: settings.updated_at,
     };
   }
 
-  /** Center (PLATFORM_OWNER / OPERATOR, checked by CenterAdminService): the same switch, audited as the Center user. */
-  async switchIcal(enabled: boolean, userId: string | null, extraStatements: D1PreparedStatementLike[] | null, meta: RequestMeta,
+  /**
+   * The switches, from the site's SUPER_ADMIN or Center (PLATFORM_OWNER / OPERATOR, checked by CenterAdminService,
+   * audited as the Center user). Channex can be switched on only once CHANNEX_API_KEY is set on the site.
+   */
+  async switchFeatures(change: ChannelSwitches, userId: string | null, extraStatements: D1PreparedStatementLike[] | null, meta: RequestMeta,
     audit: { reason?: string; center?: unknown } = {}): Promise<void> {
+    if (change.ical === undefined && change.channex === undefined) throw new ValidationError({ ical: "REQUIRED" });
     const before = await this.repo.settings();
     if (!before) throw new ConflictError("Run the database migrations first", "SCHEMA_OUTDATED");
+    if (change.channex === true && !this.channex?.configured) {
+      throw new ConflictError("Set the CHANNEX_API_KEY secret on this site first", "CHANNEX_NOT_CONFIGURED");
+    }
     const now = iso(this.clock());
-    await this.db.batch([
-      ...(extraStatements ?? []),
-      this.repo.setIcalStatement(enabled, userId, now),
-      this.log.auditStatement(userId, enabled ? "CHANNEL_ICAL_ON" : "CHANNEL_ICAL_OFF", "channels", "ical",
-        { ical: before.ical_enabled === 1 }, { ical: enabled, ...audit }, meta),
-    ]);
+    const statements: D1PreparedStatementLike[] = [...(extraStatements ?? [])];
+    if (change.ical !== undefined) {
+      statements.push(this.repo.setIcalStatement(change.ical, userId, now),
+        this.log.auditStatement(userId, change.ical ? "CHANNEL_ICAL_ON" : "CHANNEL_ICAL_OFF", "channels", "ical",
+          { ical: before.ical_enabled === 1 }, { ical: change.ical, ...audit }, meta));
+    }
+    if (change.channex !== undefined) {
+      statements.push(this.repo.setChannexStatement(change.channex, userId, now),
+        this.log.auditStatement(userId, change.channex ? "CHANNEL_CHANNEX_ON" : "CHANNEL_CHANNEX_OFF", "channels", "channex",
+          { channex: before.channex_enabled === 1 }, { channex: change.channex, ...audit }, meta));
+    }
+    await this.db.batch(statements);
   }
 
   // ================================================================ export (public)

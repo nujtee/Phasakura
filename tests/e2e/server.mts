@@ -50,6 +50,8 @@ const env = {
   // E-mail (Zoho Mail, US data centre) and PayPal Checkout (sandbox): the APIs are the in-process fakes below.
   ZOHO_CLIENT_ID: "1000.E2EZOHOCLIENT", ZOHO_CLIENT_SECRET: "e2e-zoho-secret", ZOHO_REFRESH_TOKEN: "1000.e2e-zoho-refresh",
   PAYPAL_CLIENT_ID: "e2e-paypal-client", PAYPAL_CLIENT_SECRET: "e2e-paypal-secret", PAYPAL_ENV: "sandbox",
+  // Channex (staging): the API is the in-process fake below.
+  CHANNEX_API_KEY: "e2e-channex-key",
   ASSETS: {
     fetch: async (req: Request) => {
       const url = new URL(req.url);
@@ -70,7 +72,34 @@ const paypal = new FakePaypal();
 db.run("UPDATE site_settings SET map_url = 'https://maps.example.test/phasakura', latitude = 18.6139152, longitude = 98.5062681 WHERE id = 1");
 const tileRequests: string[] = [];
 const mapFetch = async (url: string) => { tileRequests.push(url); return new Response(fakeTile(), { headers: { "Content-Type": "image/png" } }); };
-const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch, mapFetch, emailFetch: zoho.fetch, paypalFetch: paypal.fetch } });
+/** A small stand-in for staging.channex.io: one property, room types and rate plans created on demand. */
+const CX_PROPERTY = "0b7c0c1e-6c1a-4f6e-9a55-5b8f3c7a1e01";
+const cxRooms: { id: string; title: string; property_id: string; occ_adults: number }[] = [];
+const cxPlans: { id: string; title: string; room_type_id: string; property_id: string; currency: string; occupancy: number }[] = [];
+const channexFetch = async (url: string, init?: RequestInit) => {
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  const u = new URL(url);
+  const path = u.pathname.replace("/api/v1", "");
+  const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+  const item = (type: string, a: { id: string }) => ({ type, id: a.id, attributes: a });
+  if (path === "/properties/options") return json(200, { data: [item("property", { id: CX_PROPERTY, title: "Phasakura (Channex staging)", currency: "THB" } as never)] });
+  if (path === `/properties/${CX_PROPERTY}`) return json(200, { data: item("property", { id: CX_PROPERTY, title: "Phasakura (Channex staging)", currency: "THB", timezone: "Asia/Bangkok" } as never) });
+  if (path === "/room_types/options") return json(200, { data: cxRooms.map((r) => item("room_type", r)) });
+  if (path === "/rate_plans/options") return json(200, { data: cxPlans.map((r) => item("rate_plan", r)) });
+  if (path === "/room_types" && init?.method === "POST") {
+    const r = { id: crypto.randomUUID(), ...body.room_type };
+    cxRooms.push(r);
+    return json(201, { data: item("room_type", r) });
+  }
+  if (path === "/rate_plans" && init?.method === "POST") {
+    const b = body.rate_plan;
+    const r = { id: crypto.randomUUID(), title: b.title, room_type_id: b.room_type_id, property_id: b.property_id, currency: b.currency, occupancy: b.options[0].occupancy };
+    cxPlans.push(r);
+    return json(201, { data: item("rate_plan", r) });
+  }
+  return json(404, { errors: { code: "not_found", title: "Not Found" } });
+};
+const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch, mapFetch, emailFetch: zoho.fetch, paypalFetch: paypal.fetch, channexFetch } });
 
 /** A real, decodable 256 × 256 PNG that looks a little like a map tile (land, two roads, a park). */
 function fakeTile(): Uint8Array<ArrayBuffer> {

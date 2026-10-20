@@ -58,6 +58,8 @@ export const SECRETS: { name: string; needs: string }[] = [
   { name: "PAYPAL_CLIENT_ID", needs: "PayPal Checkout (Admin → Finance → Payment settings)" },
   { name: "PAYPAL_CLIENT_SECRET", needs: "PayPal Checkout (Admin → Finance → Payment settings)" },
   { name: "PAYPAL_ENV", needs: "optional: \"sandbox\" while testing with sandbox PayPal credentials (unset = live)" },
+  { name: "CHANNEX_API_KEY", needs: "OTA connection through Channex (Admin → Accommodation → OTA channels)" },
+  { name: "CHANNEX_ENV", needs: "optional: \"production\" once the live Channex account is used (unset = staging)" },
 ];
 const SECRET_NAMES = new Set(SECRETS.map((s) => s.name));
 const KNOWN_SLIP_PROVIDERS = new Set(["easyslip"]);

@@ -78,6 +78,8 @@ import { BackupService } from "./services/backup.service.ts";
 import { siteSlug } from "../shared/site-name.ts";
 import { ChannelRepository } from "./repositories/channel.repository.ts";
 import { ChannelService, type ChannelFetch } from "./services/channel.service.ts";
+import { ChannexApi, channexEnvironment, type ChannexFetch } from "./channex/channex-api.ts";
+import { ChannexService } from "./services/channex.service.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -157,6 +159,8 @@ export interface ServiceOptions {
   paypalFetch?: PaypalFetch;
   /** Tests / e2e: fetch used to read OTA iCal calendars. */
   channelFetch?: ChannelFetch;
+  /** Tests / e2e: fetch used for the Channex API. */
+  channexFetch?: ChannexFetch;
 }
 
 /** Absolute links (reset / invite) use APP_BASE_URL when configured (https only). */
@@ -199,6 +203,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const sessions = new SessionService(new SessionRepository(db), rbac, clock);
   const links = new PasswordLinkService(resets, resolveBaseUrl(env, options.origin), clock);
   const backups = new BackupService(db, env.MEDIA_PRIVATE, clock);
+  const channelRepo = new ChannelRepository(db);
   const delivery = options.delivery ?? new ConsoleOrNoopDelivery(env.APP_ENV === "development");
 
   const mediaRepo = new MediaRepository(db);
@@ -304,8 +309,11 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       sender: emailSender, linkBase: configuredBaseUrl(env), siteInfo,
     }, creditRepo),
     credits,
-    channels: new ChannelService(db, new ChannelRepository(db), authorization, log, clock, () => availability.today(),
-      resolveBaseUrl(env, options.origin), options.channelFetch),
+    channels: new ChannelService(db, channelRepo, authorization, log, clock, () => availability.today(),
+      resolveBaseUrl(env, options.origin), options.channelFetch,
+      new ChannexService(db, channelRepo, authorization, log, clock,
+        env.CHANNEX_API_KEY?.trim() ? new ChannexApi(env.CHANNEX_API_KEY.trim(), channexEnvironment(env.CHANNEX_ENV), options.channexFetch) : null,
+        channexEnvironment(env.CHANNEX_ENV))),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
     dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock, (from, to) => ga4.dashboard(from, to)),
     cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),

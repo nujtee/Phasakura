@@ -203,7 +203,7 @@ await check("calendar: lock / unlock works in the Day, Month (this month) and Cu
 
 await check("OTA channels: Super Admin switches iCal on, each unit gets its calendar links, the link serves an .ics; then off", async () => {
   await pa.goto(`${BASE}/en/admin/channels`);
-  await pa.getByRole("heading", { name: "OTA channels (iCal)" }).waitFor();
+  await pa.getByRole("heading", { name: "OTA channels", exact: true }).waitFor();
   await pa.getByText("iCal is off").waitFor();
   await pa.getByRole("button", { name: "Switch iCal on" }).click();
   const link = pa.getByLabel("Our calendar link (paste into Booking.com)").first();
@@ -217,6 +217,28 @@ await check("OTA channels: Super Admin switches iCal on, each unit gets its cale
   await pa.locator("dialog[open]").getByRole("button", { name: "Switch iCal off" }).click();
   await pa.getByText(/iCal is off — a Super Admin/).waitFor();
   if ((await pa.request.get(url)).status() !== 404) throw new Error("link still served while off");
+});
+
+await check("Channex: Super Admin switches it on, tests the account, picks the property and creates every room in Channex", async () => {
+  await pa.goto(`${BASE}/en/admin/channels`);
+  await pa.getByRole("button", { name: "Switch Channex on" }).click();
+  await pa.getByText("Channex account: test (staging.channex.io)").waitFor();
+  await pa.getByRole("button", { name: "Test connection" }).click();
+  await pa.getByText("Connected — 1 properties in this account").waitFor();
+  await pa.getByRole("button", { name: "Use this property" }).click();
+  await pa.getByText("Property saved").waitFor();
+  await pa.getByRole("button", { name: "Create the rooms in Channex for me" }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Create the rooms in Channex for me" }).click();
+  await pa.getByText("Created 5").waitFor();
+  if ((await pa.locator(".adm-channels__channex tbody tr", { hasText: "Mapped" }).count()) !== 5) throw new Error("not every unit mapped");
+  await pa.getByRole("button", { name: "Load rooms from Channex" }).click();
+  const pick = pa.getByLabel("Channex room type HOUSE-01");
+  await pick.waitFor();
+  if (!(await pick.inputValue())) throw new Error("the saved mapping is not shown in the list");
+  await pa.screenshot({ path: `${SHOTS}/g-admin-channex.png`, fullPage: true });
+  await pa.getByRole("button", { name: "Switch Channex off" }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Switch Channex off" }).click();
+  await pa.getByRole("button", { name: "Switch Channex on" }).waitFor();
 });
 
 await check("check-in from the booking page", async () => {
