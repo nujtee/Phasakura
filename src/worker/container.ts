@@ -80,6 +80,8 @@ import { ChannelRepository } from "./repositories/channel.repository.ts";
 import { ChannelService, type ChannelFetch } from "./services/channel.service.ts";
 import { ChannexApi, channexEnvironment, type ChannexFetch } from "./channex/channex-api.ts";
 import { ChannexService } from "./services/channex.service.ts";
+import { OtaBookingService } from "./services/ota-booking.service.ts";
+import { OtaBookingRepository } from "./repositories/ota-booking.repository.ts";
 
 /**
  * Composition root: wires repositories into services per request.
@@ -134,6 +136,8 @@ export interface Services {
   adminMenu: AdminMenuService;
   /** App-usage credits: balance, top-ups, plan, notices (migration 0027). */
   credits: CreditService;
+  /** Bookings from OTAs through Channex (phase O4). */
+  otaBookings: OtaBookingService;
   /** OTA channels: on / off switch and iCal sync with Booking.com / Agoda / Airbnb (migration 0033). */
   channels: ChannelService;
 }
@@ -204,6 +208,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const links = new PasswordLinkService(resets, resolveBaseUrl(env, options.origin), clock);
   const backups = new BackupService(db, env.MEDIA_PRIVATE, clock);
   const channelRepo = new ChannelRepository(db);
+  const channexApi = env.CHANNEX_API_KEY?.trim() ? new ChannexApi(env.CHANNEX_API_KEY.trim(), channexEnvironment(env.CHANNEX_ENV), options.channexFetch) : null;
   const delivery = options.delivery ?? new ConsoleOrNoopDelivery(env.APP_ENV === "development");
 
   const mediaRepo = new MediaRepository(db);
@@ -309,10 +314,12 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       sender: emailSender, linkBase: configuredBaseUrl(env), siteInfo,
     }, creditRepo),
     credits,
+    otaBookings: new OtaBookingService(db, new OtaBookingRepository(db), channelRepo, bookingRepo, new Outbox(lineRepo), authorization, log, clock,
+      channexApi, () => availability.today()),
     channels: new ChannelService(db, channelRepo, authorization, log, clock, () => availability.today(),
       resolveBaseUrl(env, options.origin), options.channelFetch,
       new ChannexService(db, channelRepo, authorization, log, clock,
-        env.CHANNEX_API_KEY?.trim() ? new ChannexApi(env.CHANNEX_API_KEY.trim(), channexEnvironment(env.CHANNEX_ENV), options.channexFetch) : null,
+        channexApi,
         channexEnvironment(env.CHANNEX_ENV), {
           inventory, pricing, today: () => availability.today(),
           maxAdvanceDays: async () => (await pricing.bookingSettings()).max_advance_days,

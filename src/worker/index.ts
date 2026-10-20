@@ -319,6 +319,8 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/admin/channels/channex/auto-create", channels.channexAutoCreate)
     .put("/api/admin/channels/channex/ari", channels.channexAri)
     .post("/api/admin/channels/channex/push", channels.channexPush)
+    .get("/api/admin/channels/channex/bookings", channels.otaBookings)
+    .post("/api/admin/channels/channex/bookings/:id/resolve", channels.otaResolve)
     .get("/api/admin/me/line", credit.myLine)
     .post("/api/admin/me/line/link-code", credit.myLineCode)
     .get("/api/admin/me/line/link-code/:id", credit.myLineStatus)
@@ -449,9 +451,12 @@ export function createApp(options: AppOptions = {}) {
       // E-mail (Zoho Mail / Resend) and PayPal captures left in flight (migration 0023).
       const mail = await task("email_notifications", () => s.email.tick());
       if (mail && (mail.sent || mail.failed || mail.retried)) console.log(JSON.stringify({ level: "info", message: "email_notifications", ...mail }));
-      // OTA calendars (iCal, migration 0033): each linked calendar is read every 15 minutes.
+      // OTA calendars (iCal, migration 0033): each linked calendar is read every 5 minutes.
       const ical = await task("ical_import", () => s.channels.tick());
       if (ical && (ical.read || ical.conflicts)) console.log(JSON.stringify({ level: ical.conflicts ? "error" : "info", message: "ical_import", ...ical }));
+      // Channex (phase O4): OTA bookings first, so the nights they take go out with this minute's availability.
+      const ota = await task("channex_bookings", async () => s.otaBookings.tick());
+      if (ota && (ota.handled || ota.problems)) console.log(JSON.stringify({ level: ota.problems ? "error" : "info", message: "channex_bookings", ...ota }));
       // Channex (phase O3): availability / prices that changed, every minute; everything once a day.
       const ari = await task("channex_ari", async () => s.channels.channex?.tick() ?? null);
       if (ari?.sent) console.log(JSON.stringify({ level: "info", message: "channex_ari", ...ari }));

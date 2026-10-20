@@ -224,12 +224,12 @@ describe("OTA channels — iCal import", () => {
     await h.api("DELETE", "/api/admin/accommodations/dev_house_01/blocks?startDate=2027-02-01&endDate=2027-02-02", { token: owner.token });
     assert.equal(imported("dev_house_01").length, 2, "the old unblock endpoint leaves OTA nights alone too");
 
-    // The OTA frees one night and adds another; read again after 15 minutes by the cron.
+    // The OTA frees one night and adds another; read again after 5 minutes by the cron.
     h.icalFiles.set(BOOKING_URL, ics({ start: "2027-02-02", end: "2027-02-03" }, { start: "2027-02-10", end: "2027-02-11" }));
-    h.advance(5 * 60_000);
+    h.advance(2 * 60_000);
     await h.app.scheduled(h.env);
     assert.equal(imported("dev_house_01").length, 2, "not due yet");
-    h.advance(11 * 60_000);
+    h.advance(3 * 60_000);
     await h.app.scheduled(h.env);
     assert.deepEqual(imported("dev_house_01"), ["2027-02-02 iCal · Booking.com", "2027-02-10 iCal · Booking.com"]);
     assert.equal((await feed("dev_house_01", "BOOKING")).importedNights, 2);
@@ -325,5 +325,29 @@ describe("OTA channels — Vrbo and a named other OTA", () => {
     assert.equal((await h.api("PUT", "/api/admin/channels/ical/dev_vip_01/other", { token: owner.token, body: { label: "x".repeat(41) } })).error?.details?.label, "TOO_LONG");
     assert.equal((await h.api("PUT", "/api/admin/channels/ical/dev_vip_01/other", { token: owner.token, body: {} })).error?.details?.importUrl, "REQUIRED");
     assert.throws(() => h.db.run("UPDATE ical_feeds SET channel = 'EXPEDIA' WHERE channel = 'OTHER'"), /CHECK/);
+  });
+});
+
+describe("OTA channels — import schedule", () => {
+  it("every linked calendar is read every 5 minutes; up to 12 per cron run, the rest on the next run", async () => {
+    const { h, link } = await setup();
+    const units = ["dev_house_01", "dev_house_02", "dev_vip_01", "dev_vip_02", "dev_vip_03"];
+    const channels = ["BOOKING", "AGODA", "AIRBNB"] as const;
+    for (const u of units) for (const c of channels) {
+      const url = `https://ical.${c.toLowerCase()}.example.com/${u}.ics`;
+      h.icalFiles.set(url, ics({ start: "2027-03-01", end: "2027-03-02" }));
+      await link(u, c, url);
+    }
+    const reads = () => h.icalReads.length;
+    const start = reads();
+    h.advance(5 * 60_000);
+    await h.app.scheduled(h.env);
+    assert.equal(reads() - start, 12);
+    h.advance(60_000);
+    await h.app.scheduled(h.env);
+    assert.equal(reads() - start, 15, "the 3 left over are read on the next run");
+    h.advance(60_000);
+    await h.app.scheduled(h.env);
+    assert.equal(reads() - start, 15, "nothing is read again before its 5 minutes");
   });
 });

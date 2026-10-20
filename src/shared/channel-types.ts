@@ -15,7 +15,7 @@ export function icalChannelName(channel: IcalChannel, label: string | null | und
 };
 
 /** How often each OTA calendar is read (the cron runs every minute and picks the feeds that are due). */
-export const ICAL_IMPORT_EVERY_MINUTES = 15;
+export const ICAL_IMPORT_EVERY_MINUTES = 5;
 
 export interface IcalFeedDto {
   unitId: string;
@@ -103,6 +103,34 @@ export interface ChannexAutoCreateDto {
   created: { unitId: string; roomTypeId: string; ratePlanId: string | null }[];
   failed: { unitId: string; error: string }[];
   status: ChannexStatusDto;
+}
+
+/** A booking that came from an OTA through Channex (phase O4). */
+export interface OtaBookingDto {
+  id: string;
+  otaName: string;
+  otaCode: string | null;
+  status: "ACTIVE" | "CANCELLED" | "CONFLICT" | "UNMAPPED" | "RESOLVED";
+  /** The booking here (BK-…); null when it could not be placed. */
+  bookingCode: string | null;
+  arrival: string;
+  departure: string;
+  amountMinor: number;
+  currency: string;
+  paymentCollect: "ota" | "property" | null;
+  guestName: string | null;
+  problem: string | null;
+  updatedAt: string;
+}
+
+/** GET /api/admin/channels/channex/bookings */
+export interface OtaBookingsDto {
+  /** Migration 0036 is applied. */
+  supported: boolean;
+  lastFeedAt: string | null;
+  lastFeedStatus: "OK" | "ERROR" | null;
+  lastFeedError: string | null;
+  items: OtaBookingDto[];
 }
 
 /** GET /api/admin/channels */

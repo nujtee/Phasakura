@@ -240,6 +240,8 @@ await check("Channex: Super Admin switches it on, tests the account, picks the p
   await pa.getByText("Markup saved").waitFor();
   await pa.getByRole("button", { name: "Start sending" }).click();
   await pa.getByText(/Last sent .* · OK · \d+ changes/).waitFor();
+  await pa.getByRole("heading", { name: "4. Bookings from the OTAs" }).waitFor();
+  await pa.getByText("No OTA bookings yet").waitFor();
   await pa.screenshot({ path: `${SHOTS}/g-admin-channex.png`, fullPage: true });
   await pa.getByRole("button", { name: "Stop sending" }).click();
   await pa.locator("dialog[open]").getByRole("button", { name: "Stop sending" }).click();

@@ -287,10 +287,11 @@ describe("Channex — availability and prices (phase O3)", () => {
     const res = await api<ChannexStatusDto>("PUT", "/ari", { enabled: true });
     assert.equal(res.data.ari.lastPushStatus, "ERROR");
     assert.match(res.data.ari.lastPushError!, /CHANNEX_RATE_LIMITED/);
-    const calls = h.channexCalls.length;
+    const ariCalls = () => h.channexCalls.filter((c) => /\/(availability|restrictions)$/.test(c.url)).length;
+    const calls = ariCalls();
     h.advance(30_000);
     await h.app.scheduled(h.env);
-    assert.equal(h.channexCalls.length, calls, "waits out the minute");
+    assert.equal(ariCalls(), calls, "waits out the minute (the booking feed is read as usual)");
     fakeChannex(h, { warnOn: "/restrictions" });
     h.advance(31_000);
     await h.app.scheduled(h.env);
@@ -299,13 +300,13 @@ describe("Channex — availability and prices (phase O3)", () => {
     assert.match(st.lastPushError!, /1 refused/);
     void fake;
     await api("PUT", "/ari", { enabled: false });
-    const after = h.channexCalls.length;
+    const after = ariCalls();
     h.advance(25 * 3_600_000);
     await h.app.scheduled(h.env);
-    assert.equal(h.channexCalls.length, after);
+    assert.equal(ariCalls(), after);
   });
 
-  it("an inactive unit is closed on the OTA; the live account can't start yet; needs a mapped unit", async () => {
+  it("an inactive unit is closed on the OTA; the live account sends to app.channex.io once a unit is mapped", async () => {
     const { h, api, fake, created } = await ready();
     h.db.run("UPDATE accommodation_units SET status = 'MAINTENANCE' WHERE id = 'dev_vip_02'");
     await api("PUT", "/ari", { enabled: true });
@@ -315,9 +316,11 @@ describe("Channex — availability and prices (phase O3)", () => {
     const live = await setup();
     live.h.env.CHANNEX_ENV = "production";
     fakeChannex(live.h, { production: true });
-    assert.equal((await live.api<ChannexStatusDto>("PUT", "/property", { propertyId: P1 })).data.ari.liveBlocked, true);
+    assert.equal((await live.api<ChannexStatusDto>("PUT", "/property", { propertyId: P1 })).data.ari.liveBlocked, false);
     assert.equal((await live.api("PUT", "/ari", { enabled: true })).error?.code, "CHANNEX_NO_ROOMS");
     live.h.db.run("INSERT INTO channex_unit_map (unit_id, room_type_id, updated_at) VALUES ('dev_house_01', '99999999-9999-4999-8999-999999999999', 'x')");
-    assert.equal((await live.api("PUT", "/ari", { enabled: true })).error?.code, "CHANNEX_LIVE_NEEDS_BOOKINGS");
+    const on = await live.api<ChannexStatusDto>("PUT", "/ari", { enabled: true });
+    assert.equal(on.status, 200, JSON.stringify(on.body));
+    assert.ok(live.h.channexCalls.some((c) => c.url.startsWith("https://app.channex.io/api/v1/availability")));
   });
 });
