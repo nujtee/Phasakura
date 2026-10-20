@@ -580,7 +580,7 @@ ${me.role === "PLATFORM_OWNER" ? '<p class="small muted">ไฟล์มีข�
     // ---- OTA channels (phase O1): the same switch as the site's SUPER_ADMIN.
     const ch = channels.status === 200 ? channels.data : undefined;
     const canSwitch = me.role === "PLATFORM_OWNER" || me.role === "OPERATOR";
-    const channelsHtml = `<div class="card"><h2 style="margin-top:0">เชื่อมต่อ OTA (Booking.com / Agoda)</h2>
+    const channelsHtml = `<div class="card"><h2 style="margin-top:0">เชื่อมต่อ OTA (Booking.com / Agoda / Airbnb)</h2>
 ${!ch ? `<p class="warn">อ่านสถานะไม่ได้: ${esc(siteError(channels.status, channels.error?.code))}</p>` : `
 <p><strong>ปฏิทิน iCal</strong> — ${ch.ical.enabled ? '<span class="ok">เปิดอยู่</span>' : '<span class="muted">ปิดอยู่</span>'}
 ${ch.ical.enabled ? `<br><span class="small">เชื่อมปฏิทินจาก OTA ${ch.ical.feedsWithImport} ลิงก์ · อ่านล่าสุด ${esc(bkk(ch.ical.lastImportAt))}${ch.ical.errors ? ` · <span class="warn">อ่านไม่ได้ ${ch.ical.errors} ลิงก์</span>` : ""}${ch.ical.conflicts ? ` · <span class="bad">จองซ้ำ ${ch.ical.conflicts} คืน</span>` : ""}</span>` : ""}</p>

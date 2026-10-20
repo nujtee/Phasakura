@@ -35,7 +35,7 @@ export type CenterChannelChange = { ical?: boolean };
  * switches them on. Off = the calendar links answer 404 and nothing is imported; nights already imported stay
  * blocked (safer than freeing nights an OTA may have sold) until an import link is removed.
  *
- * iCal, per house / VIP tent and per channel (Booking.com, Agoda):
+ * iCal, per house / VIP tent and per channel (Booking.com, Agoda, Airbnb):
  *  - Export: /api/public/ical/<secret>.ics — every night that is not free here (bookings, staff blocks, nights
  *    imported from the OTHER channel), as all-day "Not available" events. No guest data, ever.
  *  - Import: the OTA's calendar link is read every 15 minutes; its nights become blocks here ("iCal · Booking.com")

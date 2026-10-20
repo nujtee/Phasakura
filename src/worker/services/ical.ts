@@ -1,7 +1,7 @@
 import { addDays, isIsoDate } from "../../shared/dates.ts";
 
 /**
- * iCalendar (RFC 5545) — just what calendar sync with Booking.com / Agoda needs (phase O1):
+ * iCalendar (RFC 5545) — just what calendar sync with Booking.com / Agoda / Airbnb needs (phase O1):
  * reading their VEVENTs as stay nights, and writing ours as all-day "not available" events.
  * A VEVENT's DTEND is exclusive, exactly like a check-out day: [DTSTART, DTEND) are the nights.
  */

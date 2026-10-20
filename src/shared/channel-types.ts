@@ -1,10 +1,10 @@
 import type { LocaleCode } from "./i18n/locales.ts";
 
 /** OTA channels (phase O1, migration 0033). iCal calendar sync is per house / VIP tent and per channel. */
-export const ICAL_CHANNELS = ["BOOKING", "AGODA"] as const;
+export const ICAL_CHANNELS = ["BOOKING", "AGODA", "AIRBNB"] as const;
 export type IcalChannel = (typeof ICAL_CHANNELS)[number];
 
-export const ICAL_CHANNEL_NAMES: Record<IcalChannel, string> = { BOOKING: "Booking.com", AGODA: "Agoda" };
+export const ICAL_CHANNEL_NAMES: Record<IcalChannel, string> = { BOOKING: "Booking.com", AGODA: "Agoda", AIRBNB: "Airbnb" };
 
 /** How often each OTA calendar is read (the cron runs every minute and picks the feeds that are due). */
 export const ICAL_IMPORT_EVERY_MINUTES = 15;

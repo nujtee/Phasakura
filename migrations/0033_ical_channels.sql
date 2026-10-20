@@ -1,4 +1,4 @@
--- Migration 0033: OTA channels — on/off switch and iCal calendar sync with Booking.com / Agoda (phase O1).
+-- Migration 0033: OTA channels — on/off switch and iCal calendar sync with Booking.com / Agoda / Airbnb (phase O1).
 -- Non-destructive: new tables, one new column (NULL for every existing row), new permissions.
 
 PRAGMA defer_foreign_keys = true;
@@ -20,7 +20,7 @@ INSERT INTO channel_settings (id) VALUES (1);
 CREATE TABLE ical_feeds (
   id                 TEXT PRIMARY KEY,
   unit_id            TEXT NOT NULL REFERENCES accommodation_units (id),
-  channel            TEXT NOT NULL CHECK (channel IN ('BOOKING', 'AGODA')),
+  channel            TEXT NOT NULL CHECK (channel IN ('BOOKING', 'AGODA', 'AIRBNB')),
   export_token       TEXT NOT NULL UNIQUE CHECK (length(export_token) = 43),
   import_url         TEXT CHECK (import_url IS NULL OR (length(import_url) <= 2000 AND substr(import_url, 1, 8) = 'https://')),
   last_import_at     TEXT,

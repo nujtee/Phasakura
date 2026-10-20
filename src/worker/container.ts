@@ -132,7 +132,7 @@ export interface Services {
   adminMenu: AdminMenuService;
   /** App-usage credits: balance, top-ups, plan, notices (migration 0027). */
   credits: CreditService;
-  /** OTA channels: on / off switch and iCal sync with Booking.com / Agoda (migration 0033). */
+  /** OTA channels: on / off switch and iCal sync with Booking.com / Agoda / Airbnb (migration 0033). */
   channels: ChannelService;
 }
 

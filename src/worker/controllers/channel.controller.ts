@@ -49,7 +49,7 @@ export function channelController(services: ServicesFor) {
       return jsonOk(await services(ctx).channels.syncNow(auth, unitId, channel, requestMeta(ctx)));
     }),
 
-    /** GET /api/public/ical/<secret>.ics — read by Booking.com / Agoda. */
+    /** GET /api/public/ical/<secret>.ics — read by Booking.com / Agoda / Airbnb. */
     publicCalendar: (async (ctx) => {
       const ics = await services(ctx).channels.exportCalendar(ctx.params.file ?? "");
       if (ics === null) throw new NotFoundError("Calendar not found", "NOT_FOUND");

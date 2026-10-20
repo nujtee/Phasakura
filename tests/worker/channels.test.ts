@@ -10,6 +10,7 @@ import { Harness } from "../helpers/harness.ts";
 // Harness clock: 2027-01-10 10:00 Bangkok.
 const BOOKING_URL = "https://admin.booking.com/hotel/hoteladmin/ical.html?t=abc";
 const AGODA_URL = "https://ycs.agoda.com/en-us/api/ical/export/xyz.ics";
+const AIRBNB_URL = "https://www.airbnb.com/calendar/ical/123456.ics?s=secret";
 
 function ics(...events: { start: string; end?: string; uid?: string; summary?: string; status?: string; dateTime?: boolean }[]): string {
   const d = (x: string) => x.replace(/-/g, "");
@@ -41,9 +42,9 @@ async function setup(opts: { on?: boolean } = { on: true }) {
   const owner = await staff(h, ["SUPER_ADMIN"]);
   if (opts.on) assert.equal((await h.api("PUT", "/api/admin/channels/settings", { token: owner.token, body: { ical: true } })).status, 200);
   const overview = async (token = owner.token) => (await h.api<ChannelsDto>("GET", "/api/admin/channels", { token })).data;
-  const feed = async (unitId: string, channel: "BOOKING" | "AGODA", token = owner.token) =>
+  const feed = async (unitId: string, channel: "BOOKING" | "AGODA" | "AIRBNB", token = owner.token) =>
     (await overview(token)).ical.feeds.find((f) => f.unitId === unitId && f.channel === channel)!;
-  const link = (unitId: string, channel: "BOOKING" | "AGODA", importUrl: string | null, token = owner.token) =>
+  const link = (unitId: string, channel: "BOOKING" | "AGODA" | "AIRBNB", importUrl: string | null, token = owner.token) =>
     h.api<IcalFeedDto>("PUT", `/api/admin/channels/ical/${unitId}/${channel.toLowerCase()}`, { token, body: { importUrl } });
   const imported = (unitId: string) =>
     h.db.all<{ stay_date: string; block_reason: string }>("SELECT stay_date, block_reason FROM booking_unit_nights WHERE unit_id = ? AND ical_feed_id IS NOT NULL ORDER BY stay_date", unitId)
@@ -170,6 +171,14 @@ describe("OTA channels — iCal export", () => {
     assert.doesNotMatch(forBooking.text, /Private Guest|BK-2027|Repair/);
     const forAgoda = parseIcs((await publicIcs((await feed("dev_house_01", "AGODA")).exportUrl!)).text).map((e) => e.start);
     assert.deepEqual(forAgoda, ["2027-02-01", "2027-02-05", "2027-03-01"]);
+    // Airbnb: its own nights stay out of its calendar; both other OTAs' nights go in.
+    h.icalFiles.set(AIRBNB_URL, ics({ start: "2027-05-01", end: "2027-05-03" }));
+    const air = await link("dev_house_01", "AIRBNB", AIRBNB_URL);
+    assert.equal(air.data.importedNights, 2);
+    assert.equal(air.data.lastImportStatus, "OK");
+    const forAirbnb = parseIcs((await publicIcs((await feed("dev_house_01", "AIRBNB")).exportUrl!)).text).map((e) => e.start);
+    assert.deepEqual(forAirbnb, ["2027-02-01", "2027-02-05", "2027-03-01", "2027-04-01"]);
+    assert.ok(parseIcs((await publicIcs((await feed("dev_house_01", "BOOKING")).exportUrl!)).text).some((e) => e.start === "2027-05-01"));
     assert.ok((await feed("dev_house_01", "BOOKING")).lastExportAt, "the OTA's last read is shown");
 
     // A wrong / renewed link is 404.
@@ -187,7 +196,7 @@ describe("OTA channels — iCal export", () => {
     await overview();
     const bookingAdmin = await staff(h, ["BOOKING_ADMIN"]);
     const seen = await overview(bookingAdmin.token);
-    assert.ok(seen.ical.feeds.length >= 10);
+    assert.equal(seen.ical.feeds.length, 15, "5 units × Booking.com, Agoda, Airbnb");
     assert.ok(seen.ical.feeds.every((f) => f.exportUrl === null && f.importUrl === null));
     assert.equal((await h.api("POST", "/api/admin/channels/ical/dev_house_01/booking/rotate", { token: bookingAdmin.token, body: {} })).status, 403);
   });
@@ -287,7 +296,7 @@ describe("OTA channels — iCal import", () => {
     assert.equal((await link("dev_house_01", "BOOKING", BOOKING_URL, bookingAdmin.token)).status, 403);
     assert.equal((await link("dev_house_01", "BOOKING", "http://insecure.example.com/x.ics")).error?.details?.importUrl, "INVALID_URL");
     assert.equal((await link("nope", "BOOKING", BOOKING_URL)).error?.code, "ACCOMMODATION_NOT_FOUND");
-    assert.equal((await h.api("PUT", "/api/admin/channels/ical/dev_house_01/airbnb", { token: manager.token, body: { importUrl: BOOKING_URL } })).error?.details?.channel, "INVALID_VALUE");
+    assert.equal((await h.api("PUT", "/api/admin/channels/ical/dev_house_01/expedia", { token: manager.token, body: { importUrl: BOOKING_URL } })).error?.details?.channel, "INVALID_VALUE");
     assert.equal((await h.api("POST", "/api/admin/channels/ical/dev_house_02/agoda/sync", { token: manager.token, body: {} })).error?.details?.importUrl, "REQUIRED");
   });
 });
