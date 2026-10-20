@@ -55,7 +55,7 @@ Time Travel bookmark (จุดย้อนกลับใน summary) → migra
 - Secret ของ Worker แต่ละเว็บ (Cloudflare → Workers → <เว็บ> → Settings → Variables and Secrets): `CHANNEX_API_KEY` (key จาก Channex →
   โปรไฟล์ผู้ใช้ → API keys) และ `CHANNEX_ENV` = `production` เมื่อใช้บัญชีจริง (ไม่ตั้ง = staging.channex.io ซึ่งเป็นบัญชีทดลองแยกกัน)
 - ไม่มี key = เปิด Channex ไม่ได้ (`CHANNEX_NOT_CONFIGURED`); key ไม่เคยถูกเก็บในฐานข้อมูลหรือ Audit logs
-- หลังบ้าน → ที่พัก → เชื่อมต่อ OTA → เปิด Channex → ทดสอบการเชื่อมต่อ → เลือกที่พัก (SUPER_ADMIN) → สร้างห้องใน Channex ให้อัตโนมัติ
+- หลังบ้าน → ที่พัก → เชื่อมต่อ OTA → เปิด Channex → ทดสอบการเชื่อมต่อ → เลือกที่พัก (SUPER_ADMIN / MANAGER) → สร้างห้องใน Channex ให้อัตโนมัติ
   (1 ประเภทห้องต่อหลัง จำนวน 1 ห้อง + แผนราคา "Standard" ตามราคาปกติ) หรือจับคู่เองกับห้องที่มีอยู่
 - เฟสนี้ยังไม่ส่งห้องว่าง / ราคา (O3) และยังไม่รับการจอง (O4) จึงยังไม่มีผลกับ OTA
 

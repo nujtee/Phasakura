@@ -7,8 +7,8 @@ import { Button, useDateFormatter } from "../ui.tsx";
 import { useTexts, type Confirm, type Msg } from "./ChannelsPage.tsx";
 
 /** Channex (phase O2): connect the account, choose the property, map each house / VIP tent to a room type. */
-export function ChannexSection({ status, canEdit, canToggle, onStatus, setMsg, fail, setConfirm }: {
-  status: ChannexStatusDto; canEdit: boolean; canToggle: boolean; onStatus: (s: ChannexStatusDto) => void;
+export function ChannexSection({ status, canEdit, onStatus, setMsg, fail, setConfirm }: {
+  status: ChannexStatusDto; canEdit: boolean; onStatus: (s: ChannexStatusDto) => void;
   setMsg: (m: Msg) => void; fail: (err: unknown) => void; setConfirm: (c: Confirm) => void;
 }) {
   const m = useTexts();
@@ -82,7 +82,7 @@ export function ChannexSection({ status, canEdit, canToggle, onStatus, setMsg, f
         </p>
       )}
       {canEdit && <Button variant="secondary" disabled={busy} busy={busy} onClick={() => void test()}>{c.test}</Button>}
-      {properties && properties.length > 0 && (canToggle ? (
+      {properties && properties.length > 0 && (canEdit ? (
         <div className="adm-row adm-row--wrap adm-channels__pick">
           <label className="adm-field adm-field--inline"><span>{c.choose}</span>
             <select value={chosen} onChange={(e) => setChosen(e.currentTarget.value)}>

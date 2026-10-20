@@ -40,8 +40,8 @@ export function channelController(services: ServicesFor) {
     channexTest: withPermission("channels.edit", services, async (ctx, auth) =>
       jsonOk(await channex(ctx).testConnection(auth, requestMeta(ctx)))),
 
-    /** `{ propertyId: string | null }` — SUPER_ADMIN (channels.toggle). */
-    channexProperty: withPermission("channels.toggle", services, async (ctx, auth) => {
+    /** `{ propertyId: string | null }` — channels.edit (SUPER_ADMIN, MANAGER). */
+    channexProperty: withPermission("channels.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["propertyId"]);
       if (body.propertyId !== null && typeof body.propertyId !== "string") v.errors.propertyId = "REQUIRED";

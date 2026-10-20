@@ -90,7 +90,7 @@ export function ChannelsPage() {
           </div>
 
           {data.channex.enabled && (
-            <ChannexSection status={data.channex} canEdit={data.canEdit} canToggle={data.canToggle}
+            <ChannexSection status={data.channex} canEdit={data.canEdit}
               onStatus={(channex) => setData({ ...data, channex })} setMsg={setMsg} fail={fail} setConfirm={setConfirm} />
           )}
 

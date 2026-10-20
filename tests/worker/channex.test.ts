@@ -112,15 +112,17 @@ describe("Channex — switch and connection", () => {
     assert.match(h.db.get<{ last_check_error: string }>("SELECT last_check_error FROM channex_settings")!.last_check_error, /CHANNEX_KEY_INVALID/);
   });
 
-  it("only SUPER_ADMIN chooses the property; changing it clears the mapping; everything needs Channex on", async () => {
+  it("SUPER_ADMIN or MANAGER chooses the property; changing it clears the mapping; everything needs Channex on", async () => {
     const { h, owner, api } = await setup();
     const manager = await staff(h, ["MANAGER"]);
-    assert.equal((await api("PUT", "/property", { propertyId: P1 }, manager.token)).status, 403);
+    const bookingAdmin = await staff(h, ["BOOKING_ADMIN"]);
+    assert.equal((await api("PUT", "/property", { propertyId: P1 }, bookingAdmin.token)).status, 403);
+    assert.equal((await api<ChannexStatusDto>("PUT", "/property", { propertyId: P2 }, manager.token)).data.property?.id, P2, "a Manager can choose");
     assert.equal((await api("PUT", "/property", { propertyId: "not-a-uuid" })).error?.details?.propertyId, "INVALID_ID");
     assert.equal((await api("PUT", "/property", { propertyId: "33333333-3333-4333-8333-333333333333" })).error?.code, "CHANNEX_NOT_FOUND");
     const chosen = await api<ChannexStatusDto>("PUT", "/property", { propertyId: P1 });
     assert.deepEqual(chosen.data.property, { id: P1, title: "Phasakura Khun Wang", currency: "THB" });
-    assert.equal(h.audits("CHANNEX_PROPERTY_SET").length, 1);
+    assert.equal(h.audits("CHANNEX_PROPERTY_SET").length, 2);
 
     await api("POST", "/auto-create", {});
     assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM channex_unit_map")!.n, 5);

@@ -17,7 +17,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * Channex room type (a single unit) with one rate plan. Availability / prices (O3) and OTA bookings (O4) come later.
  *
  *  - The key is a Cloudflare Secret (CHANNEX_API_KEY); CHANNEX_ENV picks staging (default) or production.
- *  - Choosing the property is a SUPER_ADMIN decision (channels.toggle): changing it drops every unit's mapping.
+ *  - Choosing the property: SUPER_ADMIN or MANAGER (channels.edit); changing it drops every unit's mapping.
  *  - Mapping units (by hand, or "create them in Channex") is channels.edit.
  *  - Nothing here works while Channex is switched off (channel_settings.channex_enabled).
  */
@@ -80,9 +80,9 @@ export class ChannexService {
     }
   }
 
-  /** SUPER_ADMIN (channels.toggle): which Channex property this site is (null = none). A change drops the mapping. */
+  /** channels.edit (SUPER_ADMIN, MANAGER): which Channex property this site is (null = none). A change drops the mapping. */
   async selectProperty(actor: AuthContext, propertyId: string | null, meta: RequestMeta): Promise<ChannexStatusDto> {
-    await this.authz.requirePermission(actor, "channels.toggle", meta);
+    await this.authz.requirePermission(actor, "channels.edit", meta);
     const api = await this.ready();
     if (propertyId !== null && !UUID.test(propertyId)) throw new ValidationError({ propertyId: "INVALID_ID" });
     const before = await this.repo.channexSettings();
