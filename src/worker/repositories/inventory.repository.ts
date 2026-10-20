@@ -33,6 +33,8 @@ export interface NightLockRow {
   booking_code: string | null;
   booking_status: string | null;
   block_reason: string | null;
+  /** The night came from an OTA calendar (iCal, migration 0033): only that calendar frees it. */
+  ical_feed_id: string | null;
 }
 
 export interface CampingNightRow {
@@ -289,16 +291,17 @@ export class InventoryRepository {
 
   /** Night-locks (bookings + admin blocks) in [from, toExclusive), optionally for one unit. */
   async nightLocks(from: string, toExclusive: string, unitId: string | null = null): Promise<NightLockRow[]> {
-    const { results } = await this.db
+    const read = (feed: string) => this.db
       .prepare(
-        `SELECT n.unit_id, n.stay_date, n.booking_id, b.booking_code, b.booking_status, n.block_reason
+        `SELECT n.unit_id, n.stay_date, n.booking_id, b.booking_code, b.booking_status, n.block_reason, ${feed} AS ical_feed_id
            FROM booking_unit_nights n LEFT JOIN bookings b ON b.id = n.booking_id
           WHERE n.stay_date >= ?1 AND n.stay_date < ?2 AND (?3 IS NULL OR n.unit_id = ?3)
           ORDER BY n.unit_id, n.stay_date`,
       )
       .bind(from, toExclusive, unitId)
       .all<NightLockRow>();
-    return results;
+    // Before migration 0033 no night comes from an OTA calendar.
+    return (await withFallback(() => read("n.ical_feed_id"), () => read("NULL"))).results;
   }
 
   insertBlockStatement(unitId: string, date: string, reason: string, createdBy: string, now: string): D1PreparedStatementLike {
@@ -310,12 +313,12 @@ export class InventoryRepository {
       .bind(unitId, date, reason, createdBy, now);
   }
 
-  /** Removes admin blocks only — never a booking's night-lock. */
+  /** Removes staff blocks only — never a booking's night-lock, never a night an OTA calendar holds (iCal). */
   deleteBlocksStatement(unitId: string, from: string, toInclusive: string): D1PreparedStatementLike {
     return this.db
       .prepare(
         `DELETE FROM booking_unit_nights
-          WHERE unit_id = ?1 AND stay_date >= ?2 AND stay_date <= ?3 AND booking_id IS NULL`,
+          WHERE unit_id = ?1 AND stay_date >= ?2 AND stay_date <= ?3 AND booking_id IS NULL AND ical_feed_id IS NULL`,
       )
       .bind(unitId, from, toInclusive);
   }

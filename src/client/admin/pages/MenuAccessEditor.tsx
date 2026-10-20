@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { MENU_ACCESS, type AdminMenuPath } from "../../../shared/admin-menu.ts";
-import type { AdminUserDto, PermissionCode, RoleDto } from "../../../shared/auth-types.ts";
+import { SUPER_ADMIN_ONLY_PERMISSIONS, type AdminUserDto, type PermissionCode, type RoleDto } from "../../../shared/auth-types.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { ADMIN_NAV, type NavItem } from "../nav.ts";
@@ -76,7 +76,7 @@ export function MenuAccessEditor({ user, roles, overrides, onChange }: {
   const ownManage = (item: NavItem) =>
     MENU_ACCESS[item.path as AdminMenuPath].manage.filter((c) => !allItems.some((o) => o.path !== item.path && codesOf(o.path).includes(c)));
   // Credit management (migration 0027) belongs to the SUPER_ADMIN role alone: never handed out per user.
-  const grantable = (item: NavItem) => item.permission !== "credits.manage";
+  const grantable = (item: NavItem) => !SUPER_ADMIN_ONLY_PERMISSIONS.includes(item.permission);
   const groups = [
     { id: "top", label: u.topLevel, items: ADMIN_NAV.filter((g) => !g.label).flatMap((g) => g.items).filter(grantable) },
     ...ADMIN_NAV.filter((g) => g.label).map((g) => ({ id: g.id, label: g.label!(t), items: g.items.filter(grantable) })),

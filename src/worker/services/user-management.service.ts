@@ -8,6 +8,7 @@ import type {
   RoleDto,
   UserStatus,
 } from "../../shared/auth-types.ts";
+import { SUPER_ADMIN_ONLY_PERMISSIONS } from "../../shared/auth-types.ts";
 import { parseLocale } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../http/errors.ts";
@@ -227,8 +228,8 @@ export class UserManagementService {
     const unknown = codes.filter((c) => !ids.has(c));
     if (unknown.length) throw new ValidationError({ permissions: "UNKNOWN_PERMISSION" });
     // Credit management is never granted to one user (migration 0027; the database refuses it too).
-    if (overrides.some((o) => o.code === "credits.manage" && o.effect === "GRANT")) {
-      throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage belongs to SUPER_ADMIN only");
+    if (overrides.some((o) => SUPER_ADMIN_ONLY_PERMISSIONS.includes(o.code as PermissionCode) && o.effect === "GRANT")) {
+      throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage / channels.toggle belong to SUPER_ADMIN only");
     }
 
     const now = this.now();
@@ -313,7 +314,9 @@ export class UserManagementService {
     const ids = await this.rbac.permissionIdsByCode(codes);
     if (codes.some((c) => !ids.has(c))) throw new ValidationError({ permissions: "UNKNOWN_PERMISSION" });
     // Credit management stays with the SUPER_ADMIN role (migration 0027; the database refuses it too).
-    if (codes.includes("credits.manage")) throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage belongs to SUPER_ADMIN only");
+    if (codes.some((c) => SUPER_ADMIN_ONLY_PERMISSIONS.includes(c as PermissionCode))) {
+      throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage / channels.toggle belong to SUPER_ADMIN only");
+    }
 
     await this.commit([
       ...this.rbac.replaceRolePermissionsStatements(roleId, [...ids.values()]),

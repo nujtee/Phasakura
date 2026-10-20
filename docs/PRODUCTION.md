@@ -49,6 +49,16 @@ Time Travel bookmark (จุดย้อนกลับใน summary) → migra
 แก้ trigger "ต้องเหลือ SUPER_ADMIN อย่างน้อย 1" ให้นับเฉพาะบัญชีของเว็บ (ไม่นับ Center user), เพิ่มตาราง `center_sso_tickets` และ
 `site_suspension` — ไม่แตะข้อมูลเดิม ปล่อยผ่าน Release ตามปกติ (`docs/SITES.md` หัวข้อคำสั่งแก้ข้อมูลและ SSO)
 
+### เชื่อมต่อ OTA: iCal กับ Booking.com / Agoda / Airbnb / Vrbo / OTA อื่น (migration 0033, เฟส O1)
+
+ตาราง `channel_settings`, `ical_feeds`, `ical_conflicts`, คอลัมน์ `booking_unit_nights.ical_feed_id` และสิทธิ์ `channels.view` /
+`channels.edit` / `channels.toggle` (เฉพาะ SUPER_ADMIN) — ไม่แตะข้อมูลเดิม ปล่อยผ่าน Release ตามปกติ ฟีเจอร์ **ปิด** อยู่จนกว่า
+SUPER_ADMIN (หลังบ้าน → ที่พัก → เชื่อมต่อ OTA) หรือ Center (หน้าเว็บ → การ์ด "เชื่อมต่อ OTA", PLATFORM_OWNER / OPERATOR) จะเปิด
+- ส่งออก: `/api/public/ical/<ลิงก์ลับ>.ics` ต่อห้อง ต่อ OTA — วันที่ไม่ว่างทั้งหมด (ไม่รวมวันที่นำเข้าจาก OTA เดียวกัน) ไม่มีข้อมูลลูกค้า
+- นำเข้า: cron อ่านลิงก์ปฏิทินของ OTA ทุก 15 นาที → block "iCal · Booking.com" (ปลดในปฏิทินไม่ได้); คืนที่ชนกับการจองบนเว็บ =
+  จองซ้ำ แสดงบนหน้าเชื่อมต่อ OTA + security event `ICAL_DOUBLE_BOOKING` (CRITICAL) และหายเองเมื่อคืนนั้นว่างฝั่งใดฝั่งหนึ่ง
+- ปิด iCal: ลิงก์ส่งออกตอบ 404 และหยุดอ่าน แต่วันที่นำเข้าแล้วยังปิดอยู่ (ลบได้ด้วย "เลิกเชื่อม" ทีละลิงก์)
+
 ### ล็อก / ปลดล็อกวันจากปฏิทิน (migration 0032)
 
 เพิ่มคอลัมน์ `camping_night_inventory.closed` และ trigger `trg_camping_night_closed` (คืนที่ล็อกไม่รับเต็นท์เพิ่ม

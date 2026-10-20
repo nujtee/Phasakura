@@ -1,3 +1,4 @@
+import type { IcalChannel } from "../../shared/channel-types.ts";
 import { parseStays } from "../repositories/stay-sql.ts";
 import { stayActions } from "../../shared/stay.ts";
 import { balanceDue } from "../../shared/booking-rules.ts";
@@ -161,6 +162,7 @@ export class DashboardService {
       units: [...units.values()],
       nights: nights.map((n) => ({
         unitId: n.unit_id, date: n.stay_date, bookingCode: n.booking_code, blockReason: n.booking_code ? null : n.block_reason,
+        icalChannel: n.booking_code ? null : (n.ical_channel as IcalChannel | null),
       })),
       bookings: bookings.map((b) => ({
         bookingCode: b.booking_code,

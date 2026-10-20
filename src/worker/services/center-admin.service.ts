@@ -8,6 +8,8 @@ import type { CenterRequest } from "./center-access.service.ts";
 import type { PasswordLinkService } from "./password-link.service.ts";
 import { BackupService, type BackupDto } from "./backup.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
+import type { ChannelService } from "./channel.service.ts";
+import type { CenterChannelsDto } from "../../shared/channel-types.ts";
 import { CENTER_SESSION_TTL_MS, type NewSession, type SessionService } from "./session.service.ts";
 
 /** How long an SSO ticket can be used (Center posts it straight away). */
@@ -174,6 +176,18 @@ export class CenterAdminService {
       this.audit(caller.id, "CENTER_BACKUP", done.name, null, { size: done.size, tables: done.tables, rows: done.rows, sha256: done.sha256 }, req, reason, meta),
     ]);
     return done;
+  }
+
+  // ---------------------------------------------------------------- OTA channels (phase O1)
+
+  /** Switch iCal on / off (PLATFORM_OWNER / OPERATOR, reason) — the same switch as the site's SUPER_ADMIN. */
+  async setChannels(req: CenterRequest, channels: ChannelService, change: { ical: boolean }, meta: RequestMeta): Promise<CenterChannelsDto> {
+    requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
+    const reason = requireReason(req.actor);
+    const caller = centerUser(req.actor);
+    await channels.switchIcal(change.ical, caller.id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
+      { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
+    return channels.centerOverview();
   }
 
   async listBackups(): Promise<BackupDto[]> {

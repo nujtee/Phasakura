@@ -1,4 +1,5 @@
 /** Admin dashboard (spec §48) and booking calendar (spec §49) API contract. */
+import type { IcalChannel } from "./channel-types.ts";
 import type { StayActionsDto } from "./stay.ts";
 import type { BookingStatus, BookingStayBriefDto, PaymentStatus } from "./booking-types.ts";
 import type { LocaleCode } from "./i18n/locales.ts";
@@ -109,6 +110,8 @@ export interface CalendarNightDto {
   date: string;
   bookingCode: string | null;
   blockReason: string | null;
+  /** A night an OTA calendar holds (iCal): it can't be unlocked here — only the OTA frees it. */
+  icalChannel?: IcalChannel | null;
 }
 
 export interface CalendarBookingDto {

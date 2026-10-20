@@ -453,3 +453,27 @@ describe("Backups (phase C8)", () => {
     assert.equal(kept.data.items.at(-1)!.createdAt, "2026-11-01T00:00:01.000Z", "the oldest went first");
   });
 });
+
+// ------------------------------------------------------------------ phase O1: OTA channels switch
+
+describe("Center: OTA channels (phase O1)", () => {
+  it("reads the state; PLATFORM_OWNER / OPERATOR switch iCal with a reason (audited as the Center user); SUPPORT cannot", async () => {
+    const { h, signed } = await c3();
+    const read = await signed<{ ical: { enabled: boolean; feedsWithImport: number }; channex: { available: boolean } }>("GET", "/api/center/channels", SUPPORT);
+    assert.equal(read.status, 200);
+    assert.equal(read.data.ical.enabled, false);
+    assert.equal(read.data.channex.available, false);
+    assert.equal((await signed("PUT", "/api/center/channels", SUPPORT, { ical: true })).error?.code, "CENTER_ROLE_REQUIRED");
+    assert.equal((await signed("PUT", "/api/center/channels", { ...OPERATOR, reason: "" }, { ical: true })).error?.details?.reason, "CENTER_REASON_REQUIRED");
+    assert.equal((await signed("PUT", "/api/center/channels", OPERATOR, { ical: "on" })).status, 422);
+    const on = await signed<{ ical: { enabled: boolean } }>("PUT", "/api/center/channels", OPERATOR, { ical: true });
+    assert.equal(on.status, 200, JSON.stringify(on.error));
+    assert.equal(on.data.ical.enabled, true);
+    const audit = h.audits("CHANNEL_ICAL_ON");
+    assert.equal(audit.length, 1);
+    assert.equal(audit[0]!.user_id, "center_u_ops");
+    assert.match(String(audit[0]!.new_value), /ตรวจการจองที่ค้าง/);
+    assert.equal(h.db.get<{ ical_enabled: number }>("SELECT ical_enabled FROM channel_settings")!.ical_enabled, 1);
+    assert.equal((await signed<{ ical: { enabled: boolean } }>("PUT", "/api/center/channels", OWNER, { ical: false })).data.ical.enabled, false);
+  });
+});

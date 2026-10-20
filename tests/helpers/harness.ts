@@ -56,6 +56,9 @@ export class Harness {
   /** Fake OpenStreetMap tile server: every tile request the app makes, and the answer it gets. */
   readonly tileRequests: { url: string; headers: Record<string, string> }[] = [];
   tileResponse: () => Response | Promise<Response> = () => new Response(pngBytes(256, 256), { headers: { "Content-Type": "image/png" } });
+  /** Fake OTA calendars (iCal, migration 0033): url → .ics text (or a Response / an error); every read is recorded. */
+  readonly icalFiles = new Map<string, string | (() => Response | Promise<Response>)>();
+  readonly icalReads: string[] = [];
   readonly app = createApp({
     requestId: () => "req",
     serviceOptions: {
@@ -70,6 +73,12 @@ export class Harness {
       emailFetch: (input: string, init: RequestInit) =>
         (/(^|\.)zoho\.com$/.test(new URL(input).hostname) ? this.zoho.fetch(input, init) : this.resend.fetch(input, init)),
       paypalFetch: (input: string, init: RequestInit) => this.paypal.fetch(input, init),
+      channelFetch: async (input: string) => {
+        this.icalReads.push(input);
+        const file = this.icalFiles.get(input);
+        if (file === undefined) return new Response("not found", { status: 404 });
+        return typeof file === "string" ? new Response(file, { headers: { "Content-Type": "text/calendar" } }) : file();
+      },
       mapFetch: async (input: string, init?: RequestInit) => {
         this.tileRequests.push({ url: input, headers: Object.fromEntries(new Headers(init?.headers).entries()) });
         return this.tileResponse();

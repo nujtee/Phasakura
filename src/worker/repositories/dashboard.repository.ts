@@ -189,16 +189,18 @@ export class DashboardRepository {
   }
 
   async calendarNights(from: string, to: string) {
-    const { results } = await this.db
+    const read = (feed: boolean) => this.db
       .prepare(
-        `SELECT n.unit_id, n.stay_date, b.booking_code, n.block_reason
+        `SELECT n.unit_id, n.stay_date, b.booking_code, n.block_reason, ${feed ? "f.channel" : "NULL"} AS ical_channel
            FROM booking_unit_nights n LEFT JOIN bookings b ON b.id = n.booking_id
+           ${feed ? "LEFT JOIN ical_feeds f ON f.id = n.ical_feed_id" : ""}
           WHERE n.stay_date >= ?1 AND n.stay_date < ?2
           ORDER BY n.unit_id, n.stay_date`,
       )
       .bind(from, to)
-      .all<{ unit_id: string; stay_date: string; booking_code: string | null; block_reason: string | null }>();
-    return results;
+      .all<{ unit_id: string; stay_date: string; booking_code: string | null; block_reason: string | null; ical_channel: string | null }>();
+    // Before migration 0033 there are no OTA calendars.
+    return (await withFallback(() => read(true), () => read(false))).results;
   }
 
   async calendarBookings(from: string, to: string): Promise<BookingItemListRow[]> {

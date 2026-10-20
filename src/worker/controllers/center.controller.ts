@@ -64,6 +64,22 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       return jsonOk(await services(ctx).centerAdmin.setSuspension(req, body.suspended, note, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
+    /** OTA channels (phase O1): what is switched on, iCal links and problems. */
+    getChannels: (async (ctx) => {
+      await verify(ctx);
+      return jsonOk(await services(ctx).channels.centerOverview(), NO_STORE);
+    }) satisfies Handler,
+
+    /** `{ ical: boolean }` — PLATFORM_OWNER / OPERATOR, reason; audited as the Center user. */
+    setChannels: (async (ctx) => {
+      const req = await verify(ctx);
+      const body = await readJsonObject(ctx.request);
+      new Validator(body).allowOnly(["ical"]).assertValid();
+      if (typeof body.ical !== "boolean") throw new ValidationError({ ical: "REQUIRED" });
+      const s = services(ctx);
+      return jsonOk(await s.centerAdmin.setChannels(req, s.channels, { ical: body.ical }, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
     /** Backups of this site's database in its private bucket (phase C8), newest first. */
     listBackups: (async (ctx) => {
       await verify(ctx);

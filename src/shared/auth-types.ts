@@ -23,9 +23,16 @@ export const PERMISSION_CODES = [
   "roles.view", "security_events.view", "audit_logs.view", "notifications.view",
   "system.view",
   "credits.view", "credits.topup", "credits.manage",
+  "channels.view", "channels.edit", "channels.toggle",
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
+
+/**
+ * Held by the SUPER_ADMIN role alone — never by another role, never granted to one user (the database refuses
+ * it too): credit management (migration 0027) and switching OTA channel features on / off (migration 0033).
+ */
+export const SUPER_ADMIN_ONLY_PERMISSIONS: readonly PermissionCode[] = ["credits.manage", "channels.toggle"];
 
 export const ROLE_CODES = ["SUPER_ADMIN", "MANAGER", "BOOKING_ADMIN", "FINANCE_ADMIN", "CONTENT_ADMIN", "VIEWER"] as const;
 export type RoleCode = (typeof ROLE_CODES)[number];
