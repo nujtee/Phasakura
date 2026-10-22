@@ -474,7 +474,7 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
         ? alerts.map((a) => `<div class="small bad">🔴 ${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ตั้งแต่ ${esc(bkk(a.open_since))}</div>`).join("") : "";
       return `<tr><td><a href="/sites/${esc(site.slug)}"><strong>${esc(site.name)}</strong></a><br><a class="small" href="https://${esc(site.domain)}" rel="noopener noreferrer" target="_blank">${esc(site.domain)}</a></td>
 <td>${status}${alertHtml}<div class="small muted">ตรวจล่าสุด ${esc(bkk(c?.checked_at ?? null))}</div></td>
-<td><form method="post" action="/sites/${esc(site.slug)}/sso" target="_blank" class="inline">
+<td><form method="post" action="/sites/${esc(site.slug)}/sso" class="inline">
 <input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล เช่น ช่วยตั้งค่าห้องพัก" aria-label="เหตุผลที่เข้าหลังบ้าน ${esc(site.name)}">
 <button type="submit">เข้าหลังบ้าน</button></form></td></tr>`;
     }).join("");
@@ -597,7 +597,7 @@ ${canSwitch && ch.channex.available ? `<form method="post" action="/sites/${esc(
     return html(page({
       title: site.name, user: me, current: "sites", flash,
       body: `<p class="small"><a href="/">← เว็บทั้งหมด</a></p><h1>${esc(site.name)} <a class="muted small" href="https://${esc(site.domain)}" rel="noopener noreferrer" target="_blank">${esc(site.domain)}</a></h1>
-<div class="card"><h2 style="margin-top:0">หลังบ้าน</h2><form method="post" action="/sites/${esc(slug)}/sso" target="_blank" class="inline">${reasonInput("เหตุผลที่เข้าหลังบ้าน")}<button type="submit">เข้าหลังบ้าน</button></form></div>
+<div class="card"><h2 style="margin-top:0">หลังบ้าน</h2><form method="post" action="/sites/${esc(slug)}/sso" class="inline">${reasonInput("เหตุผลที่เข้าหลังบ้าน")}<button type="submit">เข้าหลังบ้าน</button></form></div>
 ${ownerHtml}
 <div class="card"><h2 style="margin-top:0">การให้บริการ</h2>${serviceHtml}</div>
 ${channelsHtml}
@@ -1279,23 +1279,22 @@ async function readForm(request: Request): Promise<URLSearchParams> {
 }
 
 /**
- * A POST must come from a Center page. Proof, in order:
- *  - Sec-Fetch-Site (set by the browser, never by a page): cross-site / same-site → refused;
- *  - Origin = this origin;
- *  - no usable Origin ("null" / missing) but Sec-Fetch-Site same-origin, or "none" — a request the person made
- *    themselves (reload / re-send of a form, a restored tab: Safari on iPad does this), which no other site can cause;
- *  - a browser without fetch metadata: a Referer on this origin (the Referrer-Policy is same-origin).
- * The session cookie is SameSite=Strict as well.
+ * A POST must come from a Center page. Proof (each header is set by the browser, never by a page):
+ *  - Origin = this origin — trusted over Sec-Fetch-Site, because Safari labels a form on a page that was itself
+ *    opened from another app or site (LINE, mail, a bookmark sync) as "cross-site" even though Center sent it;
+ *  - a Referer on this origin (the Referrer-Policy is same-origin);
+ *  - no usable Origin ("null" / missing) and Sec-Fetch-Site same-origin, or "none" — a request the person made
+ *    themselves (reload / re-send of a form, a restored tab).
+ * Anything else — a foreign Origin, or no proof at all — is refused. The session cookie is SameSite=Strict as well.
  */
 export function assertSameOrigin(request: Request, url: URL): void {
   const origin = request.headers.get("Origin");
   const site = request.headers.get("Sec-Fetch-Site");
   const noOrigin = origin === null || origin === "" || origin === "null";
   let ok = false;
-  if (site === "cross-site" || site === "same-site") ok = false;
-  else if (origin === url.origin) ok = true;
-  else if (noOrigin && (site === "same-origin" || site === "none")) ok = true;
-  else if (noOrigin && (site === null || site === "")) ok = refererIs(request, url);
+  if (!noOrigin) ok = origin === url.origin;
+  else if (refererIs(request, url)) ok = true;
+  else ok = site === "same-origin" || site === "none";
   if (ok) return;
   // Workers Observability: why a POST was refused (no cookies, no form data).
   console.warn(JSON.stringify({
