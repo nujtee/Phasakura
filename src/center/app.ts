@@ -1279,17 +1279,43 @@ async function readForm(request: Request): Promise<URLSearchParams> {
 }
 
 /**
- * A POST must come from a Center page: Origin = this origin, or — where the browser withholds the origin
- * ("Origin: null", e.g. under a strict referrer policy) — the browser's own Sec-Fetch-Site says same-origin.
- * A page on another site can set neither.
+ * A POST must come from a Center page. Proof, in order:
+ *  - Sec-Fetch-Site (set by the browser, never by a page): cross-site / same-site → refused;
+ *  - Origin = this origin;
+ *  - no usable Origin ("null" / missing) but Sec-Fetch-Site same-origin, or "none" — a request the person made
+ *    themselves (reload / re-send of a form, a restored tab: Safari on iPad does this), which no other site can cause;
+ *  - a browser without fetch metadata: a Referer on this origin (the Referrer-Policy is same-origin).
+ * The session cookie is SameSite=Strict as well.
  */
 export function assertSameOrigin(request: Request, url: URL): void {
   const origin = request.headers.get("Origin");
   const site = request.headers.get("Sec-Fetch-Site");
-  if (site !== null && site !== "same-origin") throw new HttpError(403, "คำขอนี้ไม่ได้มาจากหน้า Center");
-  if (origin === url.origin) return;
-  if ((origin === null || origin === "null") && site === "same-origin") return;
-  throw new HttpError(403, "คำขอนี้ไม่ได้มาจากหน้า Center");
+  const noOrigin = origin === null || origin === "" || origin === "null";
+  let ok = false;
+  if (site === "cross-site" || site === "same-site") ok = false;
+  else if (origin === url.origin) ok = true;
+  else if (noOrigin && (site === "same-origin" || site === "none")) ok = true;
+  else if (noOrigin && (site === null || site === "")) ok = refererIs(request, url);
+  if (ok) return;
+  // Workers Observability: why a POST was refused (no cookies, no form data).
+  console.warn(JSON.stringify({
+    level: "warn", message: "center_post_refused", path: url.pathname, origin, secFetchSite: site,
+    secFetchMode: request.headers.get("Sec-Fetch-Mode"), refererOrigin: refererOrigin(request), userAgent: request.headers.get("User-Agent")?.slice(0, 160) ?? null,
+  }));
+  throw new HttpError(403, "คำขอนี้ไม่ได้มาจากหน้า Center — เปิด center.phasakura.com ใหม่ (ไม่ใช้ปุ่มย้อนกลับหรือรีเฟรชหน้าผลลัพธ์) แล้วทำอีกครั้ง");
+}
+
+function refererOrigin(request: Request): string | null {
+  try {
+    const ref = request.headers.get("Referer");
+    return ref ? new URL(ref).origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function refererIs(request: Request, url: URL): boolean {
+  return refererOrigin(request) === url.origin;
 }
 
 function html(body: string, status = 200): Response {
