@@ -176,17 +176,76 @@ describe("payment status (spec §26)", () => {
     assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM payments")!.n, 1);
   });
 
-  it("refuses payment for expired or cancelled bookings (inventory is already released)", async () => {
+  it("past its payment time but not yet expired by the cron: recording the payment simply confirms it", async () => {
+    const h = new Harness({ seed: true });
+    const finance = await admin(h, ["payments.verify"]);
+    const late = (await book(h)).data;
+    h.advance(61 * 60_000);
+    const res = await record(h, finance, late.bookingCode);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(h.db.get<{ s: string }>("SELECT booking_status AS s FROM bookings")!.s, "CONFIRMED");
+  });
+
+  it("an expired booking paid after all: staff confirm it and it takes its nights back", async () => {
+    const h = new Harness({ seed: true });
+    const finance = await admin(h, ["payments.verify", "bookings.view"]);
+    const b = (await book(h)).data;
+    h.advance(61 * 60_000);
+    await h.app.scheduled(h.env);
+    assert.equal((await lookup(h, b.bookingCode)).data.status, "EXPIRED");
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM booking_unit_nights WHERE booking_id IS NOT NULL")!.n, 0, "expiry freed the nights");
+
+    const viewer = await admin(h, ["bookings.view"]);
+    assert.equal((await record(h, viewer, b.bookingCode)).status, 403);
+    assert.equal((await record(h, finance, b.bookingCode, { amountSatang: 100 })).error?.details?.amountSatang, "MUST_EQUAL_TOTAL");
+    const res = await record(h, finance, b.bookingCode, { paidAt: "2027-01-10T03:30:00Z" });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.data[0]!.status, "PAID");
+    const after = (await lookup(h, b.bookingCode)).data;
+    assert.equal(after.status, "CONFIRMED");
+    assert.equal(after.paymentStatus, "PAID");
+    assert.deepEqual(h.db.all<{ stay_date: string }>("SELECT stay_date FROM booking_unit_nights WHERE booking_id IS NOT NULL ORDER BY stay_date").map((r) => r.stay_date),
+      ["2027-02-01", "2027-02-02"]);
+    assert.equal(h.db.get<{ s: string }>("SELECT status AS s FROM booking_items")!.s, "ACTIVE");
+    assert.equal(h.audits("RECORD_PAYMENT_EXPIRED").length, 1);
+    // Twice is refused (now confirmed), and it never expires again.
+    assert.equal((await record(h, finance, b.bookingCode)).error?.code, "BOOKING_NOT_PAYABLE");
+    h.advance(3 * 60 * 60_000);
+    await h.app.scheduled(h.env);
+    assert.equal((await lookup(h, b.bookingCode)).data.status, "CONFIRMED");
+  });
+
+  it("an expired booking whose nights were taken meanwhile cannot come back (nothing changes)", async () => {
+    const h = new Harness({ seed: true });
+    const finance = await admin(h, ["payments.verify"]);
+    const b = (await book(h)).data;
+    h.advance(61 * 60_000);
+    await h.app.scheduled(h.env);
+    const other = await book(h, { checkIn: "2027-02-02", checkOut: "2027-02-04" });
+    assert.equal(other.status, 201, JSON.stringify(other.body));
+    const res = await record(h, finance, b.bookingCode);
+    assert.equal(res.status, 409);
+    assert.equal(res.error?.code, "UNIT_UNAVAILABLE");
+    assert.equal(h.db.get<{ s: string }>("SELECT booking_status AS s FROM bookings WHERE booking_code = ?", b.bookingCode)!.s, "EXPIRED");
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM payments")!.n, 0);
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM booking_unit_nights WHERE booking_id = (SELECT id FROM bookings WHERE booking_code = ?)", b.bookingCode)!.n, 0);
+  });
+
+  it("still refuses cancelled bookings, and an expired stay that is already over", async () => {
     const h = new Harness({ seed: true });
     const finance = await admin(h, ["payments.verify", "bookings.cancel"]);
-    const expired = (await book(h)).data;
-    h.advance(61 * 60_000);
-    assert.equal((await record(h, finance, expired.bookingCode)).error?.code, "BOOKING_NOT_PAYABLE", "past its hold, even before the cron");
     const cancelled = (await book(h)).data;
     await h.api("POST", `/api/admin/bookings/${cancelled.bookingCode}/cancel`, { token: finance, body: { reason: "guest asked" } });
     assert.equal((await record(h, finance, cancelled.bookingCode)).error?.code, "BOOKING_NOT_PAYABLE");
+    const old = (await book(h)).data;
+    h.advance(61 * 60_000);
+    await h.app.scheduled(h.env);
+    h.advance(30 * 24 * 60 * 60_000); // after its check-out
+    const later = await admin(h, ["payments.verify"]);
+    assert.equal((await record(h, later, old.bookingCode, { paidAt: "2027-01-10T03:30:00Z" })).error?.code, "STAY_ALREADY_OVER");
     assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM payments")!.n, 0);
     assert.throws(() => h.db.run(`INSERT INTO payments (id, booking_id, amount_satang, method) SELECT 'p', id, 1, 'CASH' FROM bookings WHERE booking_status = 'CANCELLED'`), /BOOKING_NOT_PAYABLE/);
+    assert.throws(() => h.db.run("UPDATE bookings SET booking_status = 'PENDING' WHERE booking_status = 'EXPIRED'"), /BOOKING_STATUS_TRANSITION/);
   });
 
   it("refund: only after cancelling, never more than paid, final and audited", async () => {

@@ -619,6 +619,120 @@ export class BookingRepository {
    * capacity_reserved > 0), so running it twice can never release twice.
    * Must follow the status change inside the same batch.
    */
+  // ================================================================ an expired booking paid after all (migration 0037)
+
+  /**
+   * EXPIRED → CONFIRMED with the payment staff recorded. Statement 1 changes the booking only while it is still
+   * EXPIRED (and RETURNs its id); every later statement runs only if that happened (marker: CONFIRMED, confirmed_at
+   * = now). The stays the expiry released (cancelled, no cancelled_at — a stay staff cancelled alone keeps its own)
+   * take their nights, tents, tarp area and meals again; a UNIQUE / CHECK failure rolls the whole batch back.
+   */
+  reinstateStatements(r: {
+    bookingId: string; now: string; nights: string[];
+    units: { itemId: string; unitId: string }[]; tents: number; tarps: number;
+  }): D1PreparedStatementLike[] {
+    const db = this.db;
+    const done = "EXISTS (SELECT 1 FROM bookings WHERE id = ?1 AND booking_status = 'CONFIRMED' AND confirmed_at = ?2)";
+    const head = [r.bookingId, r.now] as const;
+    const statements: D1PreparedStatementLike[] = [
+      db
+        .prepare(
+          `UPDATE bookings SET booking_status = 'CONFIRMED', payment_status = 'PAID', confirmed_at = ?2, expires_at = NULL, updated_at = ?2
+            WHERE id = ?1 AND booking_status = 'EXPIRED' AND payment_status IN ('UNPAID', 'REJECTED')
+            RETURNING id`,
+        )
+        .bind(...head),
+      db
+        .prepare(`UPDATE booking_items SET status = 'ACTIVE' WHERE booking_id = ?1 AND status = 'CANCELLED' AND cancelled_at IS NULL AND ${done}`)
+        .bind(...head),
+    ];
+    for (const u of r.units) {
+      for (const night of r.nights) {
+        statements.push(
+          db
+            .prepare(
+              `INSERT INTO booking_unit_nights (unit_id, stay_date, booking_id, booking_item_id, created_at)
+               SELECT ?3, ?4, ?1, ?5, ?2 WHERE ${done}`,
+            )
+            .bind(...head, u.unitId, night, u.itemId),
+        );
+      }
+    }
+    for (const night of r.nights) {
+      if (r.tents > 0) {
+        statements.push(
+          db
+            .prepare(
+              `INSERT OR IGNORE INTO camping_night_inventory (stay_date, max_tents, tents_used, is_override, updated_at)
+               SELECT ?3, max_tents_per_night, 0, 0, ?2 FROM camping_settings WHERE id = 1 AND ${done}`,
+            )
+            .bind(...head, night),
+          db.prepare(`UPDATE camping_night_inventory SET tents_used = tents_used + ?4, updated_at = ?2 WHERE stay_date = ?3 AND ${done}`)
+            .bind(...head, night, r.tents),
+        );
+      }
+      if (r.tarps > 0) {
+        statements.push(
+          db
+            .prepare(
+              `INSERT OR IGNORE INTO camping_tarp_night_inventory (stay_date, max_tarps, tarps_used, updated_at)
+               SELECT ?3, max_tarps_per_night, 0, ?2 FROM camping_settings WHERE id = 1 AND ${done}`,
+            )
+            .bind(...head, night),
+          db.prepare(`UPDATE camping_tarp_night_inventory SET tarps_used = tarps_used + ?4, updated_at = ?2 WHERE stay_date = ?3 AND ${done}`)
+            .bind(...head, night, r.tarps),
+        );
+      }
+    }
+    if (r.tarps > 0) {
+      statements.push(db.prepare(`UPDATE booking_tarps SET status = 'ACTIVE' WHERE booking_id = ?1 AND status = 'CANCELLED' AND ${done}`).bind(...head));
+    }
+    statements.push(
+      // Meals: extra food, and meals that came with a stay taken back (not those of a stay cancelled alone).
+      db
+        .prepare(
+          `UPDATE booking_food_items SET status = 'ACTIVE'
+            WHERE booking_id = ?1 AND status = 'CANCELLED' AND ${done}
+              AND (booking_item_id IS NULL OR booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?1 AND status = 'ACTIVE'))`,
+        )
+        .bind(...head),
+      // Orders with a meal again; portions taken from the kitchen's daily limit where the meal has one.
+      db
+        .prepare(
+          `UPDATE food_orders
+              SET status = 'PENDING', updated_at = ?2,
+                  capacity_reserved = CASE WHEN (SELECT default_daily_capacity FROM food_categories c WHERE c.id = food_orders.food_category_id) IS NULL THEN 0
+                    ELSE (SELECT COALESCE(SUM(f.quantity), 0) FROM booking_food_items f
+                           WHERE f.food_order_id = food_orders.id AND f.status = 'ACTIVE' AND f.included_quantity = 0) END
+            WHERE booking_id = ?1 AND status = 'CANCELLED' AND ${done}
+              AND EXISTS (SELECT 1 FROM booking_food_items f WHERE f.food_order_id = food_orders.id AND f.status = 'ACTIVE')`,
+        )
+        .bind(...head),
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO food_daily_capacity (food_category_id, service_date, max_quantity, used_quantity, updated_at)
+           SELECT o.food_category_id, o.service_date, c.default_daily_capacity, 0, ?2
+             FROM food_orders o JOIN food_categories c ON c.id = o.food_category_id
+            WHERE o.booking_id = ?1 AND o.capacity_reserved > 0 AND c.default_daily_capacity IS NOT NULL AND ${done}`,
+        )
+        .bind(...head),
+      db
+        .prepare(
+          `UPDATE food_daily_capacity
+              SET used_quantity = used_quantity + (SELECT COALESCE(SUM(o.capacity_reserved), 0) FROM food_orders o
+                                                   WHERE o.booking_id = ?1 AND o.food_category_id = food_daily_capacity.food_category_id
+                                                     AND o.service_date = food_daily_capacity.service_date),
+                  updated_at = ?2
+            WHERE ${done}
+              AND EXISTS (SELECT 1 FROM food_orders o
+                           WHERE o.booking_id = ?1 AND o.food_category_id = food_daily_capacity.food_category_id
+                             AND o.service_date = food_daily_capacity.service_date AND o.capacity_reserved > 0)`,
+        )
+        .bind(...head),
+    );
+    return statements;
+  }
+
   releaseStatements(bookingId: string, checkIn: string, checkOut: string, now: string): D1PreparedStatementLike[] {
     const ended = `EXISTS (SELECT 1 FROM bookings WHERE id = ?1 AND booking_status IN ('CANCELLED', 'EXPIRED'))`;
     return [

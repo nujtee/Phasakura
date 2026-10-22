@@ -229,6 +229,26 @@ describe("auto verification (real service, fail-safe)", () => {
     });
   }
 
+  it("slip service out of quota / plan expired: the booking waits for staff and never runs out of time", async () => {
+    const h = new Harness({ seed: true });
+    h.verifier(new FakeVerifier(async () => ({ kind: "ERROR", code: "APPLICATION_EXPIRED" })));
+    const b = await book(h);
+    const res = await h.slip<SlipResult>(b.bookingCode, PHONE, slipImage(25));
+    assert.equal(res.data.outcome, "PENDING_REVIEW");
+    assert.equal(res.data.booking.expiresAt, null);
+    h.advance(6 * 60 * 60_000); // far past the 1-hour hold
+    await h.app.scheduled(h.env);
+    const row = h.db.get<{ booking_status: string; payment_status: string }>("SELECT booking_status, payment_status FROM bookings WHERE booking_code = ?", b.bookingCode)!;
+    assert.deepEqual({ ...row }, { booking_status: "PENDING", payment_status: "PENDING_VERIFICATION" });
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM booking_unit_nights WHERE booking_id IS NOT NULL")!.n, 2, "nights still held");
+    // Staff check the slip themselves and approve it.
+    const finance = await admin(h, ["payments.verify", "slips.view"]);
+    const paymentId = h.db.get<{ id: string }>("SELECT id FROM payments")!.id;
+    const ok = await h.api("POST", `/api/admin/payments/${paymentId}/verify`, { token: finance, body: {} });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(h.db.get<{ s: string }>("SELECT booking_status AS s FROM bookings")!.s, "CONFIRMED");
+  });
+
   it("a crashing provider never breaks the upload", async () => {
     const h = new Harness({ seed: true });
     h.verifier(new FakeVerifier(async () => { throw new Error("boom"); }));

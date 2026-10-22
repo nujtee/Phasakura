@@ -17,7 +17,10 @@ export function useFailureText() {
   return (code: string | null) => {
     if (!code) return "";
     const known = (t.slip as Record<string, string>)[`f${code}`];
-    return known ?? format(t.slip.fOther, { code });
+    if (known) return known;
+    // The provider's own words for an empty quota / an expired plan (e.g. APPLICATION_EXPIRED, QUOTA_EXCEEDED).
+    if (/QUOTA|EXPIRED|CREDIT|LIMIT|PACKAGE/.test(code)) return format(t.slip.fQUOTA, { code });
+    return format(t.slip.fOther, { code });
   };
 }
 

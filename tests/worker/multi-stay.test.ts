@@ -287,3 +287,47 @@ describe("changing the dates of a booking with several stays", () => {
     assert.deepEqual(tents.map((t) => [t.stay_date, t.tents_used]), [["2027-02-11", 2], ["2027-02-12", 2]]);
   });
 });
+
+describe("an expired booking paid after all (migration 0037)", () => {
+  it("takes back exactly what the expiry released: houses, tents, tarp area and meals — not a stay staff cancelled alone", async () => {
+    const { h, admin, book, get } = await setup();
+    const current = (await h.api<Record<string, unknown>>("GET", "/api/admin/camping", { token: admin })).data;
+    await h.api("PUT", "/api/admin/camping", { token: admin, body: { ...current, depositBookings: undefined, tarpEnabled: true, tarpPricePerNightSatang: 15_000, maxTarpsPerNight: 2 } });
+    const food = [{ optionId: "dev_food_dinner_a", serviceDate: "2027-02-01", adults: 3, children: 0 }];
+    const { booking } = await book([house1, vip1, { ...camp, tarp: true }], { food });
+    const vip = (await get(booking.bookingCode)).items.find((i) => i.unitId === "dev_vip_01")!;
+    const off = await h.api<AdminBookingDto>("POST", `/api/admin/bookings/${booking.bookingCode}/stays/${vip.id}/cancel`, { token: admin, body: { reason: "VIP not needed" } });
+    assert.equal(off.status, 200, JSON.stringify(off.body));
+    const counters = () => ({
+      nights: h.db.all<{ unit_id: string }>("SELECT unit_id FROM booking_unit_nights WHERE booking_id IS NOT NULL ORDER BY unit_id, stay_date").map((r) => r.unit_id),
+      tents: h.db.all<{ n: number }>("SELECT tents_used AS n FROM camping_night_inventory ORDER BY stay_date").map((r) => r.n),
+      tarps: h.db.all<{ n: number }>("SELECT tarps_used AS n FROM camping_tarp_night_inventory ORDER BY stay_date").map((r) => r.n),
+      kitchen: h.db.all<{ n: number }>("SELECT used_quantity AS n FROM food_daily_capacity WHERE used_quantity > 0 ORDER BY food_category_id, service_date").map((r) => r.n),
+      food: h.db.all<{ s: string }>("SELECT status AS s FROM booking_food_items ORDER BY service_date, id").map((r) => r.s),
+      orders: h.db.all<{ s: string; r: number }>("SELECT status AS s, capacity_reserved AS r FROM food_orders ORDER BY service_date, food_category_id").map((r) => `${r.s}:${r.r}`),
+    });
+    const held = counters();
+    assert.deepEqual(held.nights, ["dev_house_01", "dev_house_01"], "the VIP tent was cancelled alone");
+    assert.deepEqual(held.tents, [2, 2]);
+    assert.deepEqual(held.tarps, [1, 1]);
+    assert.ok(held.kitchen.length > 0, "the dinner takes kitchen capacity");
+
+    h.advance(61 * 60_000);
+    await h.app.scheduled(h.env);
+    assert.equal((await get(booking.bookingCode)).status, "EXPIRED");
+    const released = counters();
+    assert.deepEqual([released.nights, released.tents, released.tarps, released.kitchen], [[], [0, 0], [0, 0], []]);
+
+    const total = (await get(booking.bookingCode)).totalSatang;
+    const res = await h.api("POST", `/api/admin/bookings/${booking.bookingCode}/payments`, {
+      token: admin, body: { amountSatang: total, method: "BANK_TRANSFER", paidAt: "2027-01-10T03:30:00Z" },
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const b = await get(booking.bookingCode);
+    assert.equal(b.status, "CONFIRMED");
+    assert.deepEqual(b.items.map((i) => [i.unitId, i.status]), [["dev_house_01", "ACTIVE"], ["dev_vip_01", "CANCELLED"], [null, "ACTIVE"]]);
+    assert.equal(h.db.get<{ s: string }>("SELECT status AS s FROM booking_tarps")!.s, "ACTIVE");
+    assert.deepEqual(counters(), held, "everything back as it was before the expiry");
+    assert.equal(b.totalSatang, total);
+  });
+});

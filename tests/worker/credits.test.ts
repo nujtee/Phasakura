@@ -163,6 +163,31 @@ describe("app fee on bookings", () => {
     assert.deepEqual(account(), { balance: 100, held: 0, plan: "STANDARD" });
   });
 
+  it("an expired booking paid after all takes its fee again — or stays expired when the credits are short", async () => {
+    const { h, root, book, account, hold, pay } = await setup({ credits: 40 });
+    const a = await book([house1]);
+    const b = await book([vip1]);
+    h.advance(61 * 60_000);
+    await h.app.scheduled(h.env, h.now.getTime());
+    assert.equal(hold(a.data.bookingCode)!.status, "RELEASED");
+    assert.deepEqual(account(), { balance: 40, held: 0, plan: "STANDARD" });
+    const paid = await pay(a.data.bookingCode, a.data.totalSatang);
+    assert.equal(paid.status, 200, JSON.stringify(paid.body));
+    assert.equal(hold(a.data.bookingCode)!.status, "CAPTURED");
+    assert.deepEqual(account(), { balance: 20, held: 0, plan: "STANDARD" });
+    assert.equal(h.db.all("SELECT 1 FROM credit_ledger WHERE entry_type = 'FEE_CAPTURE'").length, 1);
+    // Someone else's new booking holds the last 20 credits: b cannot come back yet.
+    const c = await book([house2], { checkIn: "2027-03-01", checkOut: "2027-03-02" });
+    assert.equal(c.status, 201, JSON.stringify(c.body));
+    const short = await pay(b.data.bookingCode, b.data.totalSatang);
+    assert.equal(short.status, 409);
+    assert.equal((short.body as { error: { code: string } }).error.code, "CREDIT_INSUFFICIENT");
+    assert.equal(hold(b.data.bookingCode)!.status, "RELEASED");
+    assert.equal(h.db.get<{ s: string }>("SELECT booking_status AS s FROM bookings WHERE booking_code = ?", b.data.bookingCode)!.s, "EXPIRED");
+    assert.deepEqual(account(), { balance: 20, held: 20, plan: "STANDARD" });
+    void root;
+  });
+
   it("not enough credit: the booking is refused (409 CREDIT_INSUFFICIENT), online booking closes at < one unit", async () => {
     const { h, quote, book, account } = await setup({ credits: 40 });
     const q = await quote([house1, house2, vip1]);

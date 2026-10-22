@@ -15,6 +15,8 @@ import type { AuthorizationService } from "./authorization.service.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
 import { dueOnline } from "./booking-money.ts";
+import { DEFAULT_TIMEZONE, stayNights, todayIn } from "../../shared/dates.ts";
+import { mapInventoryError } from "./booking.service.ts";
 import type { OutboxLike } from "./marketing.service.ts";
 
 export function toPaymentDto(p: PaymentRow): PaymentDto {
@@ -260,13 +262,16 @@ export class PaymentService {
       // A slip is waiting: verify (or reject) it instead, so the money is never counted twice.
       throw new ConflictError("A payment slip is waiting for review", "SLIP_PENDING_REVIEW");
     }
-    if (booking.booking_status !== "PENDING" || !["UNPAID", "REJECTED"].includes(booking.payment_status)) {
+    // An expired booking (the payment time ran out) can still be paid: staff confirm it and it takes its stays back.
+    const expired = booking.booking_status === "EXPIRED";
+    if (!(booking.booking_status === "PENDING" || expired) || !["UNPAID", "REJECTED"].includes(booking.payment_status)) {
       throw new ConflictError("This booking is not awaiting payment", "BOOKING_NOT_PAYABLE");
     }
     const now = this.clock();
-    if (booking.expires_at && booking.expires_at <= iso(now) && booking.payment_status === "UNPAID") {
-      throw new ConflictError("The payment time for this booking has expired", "BOOKING_NOT_PAYABLE");
+    if (expired && booking.check_out <= todayIn(DEFAULT_TIMEZONE, now)) {
+      throw new ConflictError("The stay of this booking is already over", "STAY_ALREADY_OVER");
     }
+    // A PENDING booking past its payment time but not yet expired by the cron still holds its stays: just confirm it.
     // Online-stage payment: the deposit on a deposit plan (the rest is taken at check-in), else the whole total.
     if (input.amountSatang !== dueOnline(booking)) {
       throw new ValidationError({ amountSatang: booking.deposit_satang === null ? "MUST_EQUAL_TOTAL" : "MUST_EQUAL_DEPOSIT" });
@@ -274,20 +279,41 @@ export class PaymentService {
     if (input.paidAt > iso(now)) throw new ValidationError({ paidAt: "IN_THE_FUTURE" });
     const at = iso(now);
     const paymentId = newId();
-    const results = await this.db.batch([
-      this.repo.confirmPaidStatement(booking.id, at),
+    const confirm = expired ? await this.reinstateStatements(booking, at) : [this.repo.confirmPaidStatement(booking.id, at)];
+    let results;
+    try {
+      results = await this.db.batch([
+      ...confirm,
       this.repo.insertRecordedPaymentStatement({
         id: paymentId, bookingId: booking.id, amount: input.amountSatang, method: input.method,
         reference: input.reference, note: input.note, paidAt: input.paidAt, by: actor.userId, now: at,
       }),
       // LINE (Phase 11): queued only if the confirmation above happened — same transaction.
       ...(this.outbox ? await this.outbox.bookingConfirmed(booking.id, at) : []),
-    ]);
+      ]);
+    } catch (error) {
+      // The payment insert refuses an EXPIRED booking: it changed (or was confirmed) meanwhile.
+      if (/BOOKING_NOT_PAYABLE/.test(String(error))) throw new ConflictError("The booking changed meanwhile, please reload", "BOOKING_NOT_PAYABLE");
+      if (expired) throw reinstateError(error);
+      throw error;
+    }
     if (!results[0]?.results.length) throw new ConflictError("The booking changed meanwhile, please reload", "BOOKING_NOT_PAYABLE");
-    await this.log.auditStatement(actor.userId, "RECORD_PAYMENT", "payments", paymentId,
+    await this.log.auditStatement(actor.userId, expired ? "RECORD_PAYMENT_EXPIRED" : "RECORD_PAYMENT", "payments", paymentId,
       { bookingStatus: booking.booking_status, paymentStatus: booking.payment_status },
       { bookingCode: booking.booking_code, amountSatang: input.amountSatang, method: input.method, reference: input.reference }, meta).run();
     return (await this.repo.payments(booking.id)).map(toPaymentDto);
+  }
+
+  /** What an expired booking takes back: the stays the expiry released (not those staff cancelled alone). */
+  private async reinstateStatements(booking: BookingRow, at: string) {
+    const items = (await this.bookings.items(booking.id)).filter((i) => i.status === "CANCELLED" && i.cancelled_at === null);
+    const tarp = await this.bookings.tarp(booking.id);
+    const tents = items.filter((i) => i.item_type === "OWN_TENT").reduce((a, i) => a + i.quantity, 0);
+    return this.bookings.reinstateStatements({
+      bookingId: booking.id, now: at, nights: stayNights(booking.check_in, booking.check_out),
+      units: items.filter((i) => i.unit_id !== null).map((i) => ({ itemId: i.id, unitId: i.unit_id! })),
+      tents, tarps: tents > 0 && tarp?.status === "CANCELLED" ? tarp.quantity : 0,
+    });
   }
 
   /** Refund a paid payment of a cancelled / no-show booking (amount ≤ paid). */
@@ -342,4 +368,13 @@ function accountAudit(a: ReceivingAccountRow) {
     bankName: a.bank_name, accountName: a.account_name, accountNumber: a.account_number, promptpayNumber: a.promptpay_number,
     qrAssetId: a.qr_asset_id, status: a.status, isPrimary: a.is_primary === 1,
   };
+}
+
+/** Why an expired booking could not take its stays back. */
+function reinstateError(error: unknown): unknown {
+  const mapped = mapInventoryError(error);
+  if (mapped instanceof ConflictError && mapped.code === "CREDIT_INSUFFICIENT") {
+    return new ConflictError("Not enough app credits to confirm this booking", "CREDIT_INSUFFICIENT");
+  }
+  return mapped;
 }
