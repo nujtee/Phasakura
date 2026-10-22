@@ -102,6 +102,18 @@ export class PricingRepository {
     return results;
   }
 
+  /** Every active house / VIP-tent rule overlapping [from, toInclusive] — one read for a whole availability search. */
+  async activeUnitRules(from: string, toInclusive: string): Promise<PricingRuleRow[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT ${RULE_COLUMNS} FROM pricing_settings
+          WHERE status = 'ACTIVE' AND date_from <= ?1 AND date_to >= ?2 AND target_type IN ('UNIT', 'UNIT_TYPE')`,
+      )
+      .bind(toInclusive, from)
+      .all<PricingRuleRow>();
+    return results;
+  }
+
   async listRules(filter: { targetType?: string; unitId?: string; status?: string }): Promise<PricingRuleRow[]> {
     const { results } = await this.db
       .prepare(

@@ -18,6 +18,7 @@ import { openDepositBookings } from "../repositories/deposit-bookings.ts";
 import type { InventoryRepository } from "../repositories/inventory.repository.ts";
 import type { MediaRepository } from "../repositories/media.repository.ts";
 import type { PricingRepository } from "../repositories/pricing.repository.ts";
+import { nightPrice } from "./quote.service.ts";
 import { newId } from "../security/tokens.ts";
 import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
@@ -75,7 +76,11 @@ export class AvailabilityService {
       this.campingNights(nights),
     ]);
     const lockedUnits = new Set(locks.map((l) => l.unit_id));
-    const [settings, limits] = await Promise.all([this.inventory.campingSettings(), this.pricing.bookingSettings()]);
+    const lastNight = nights[nights.length - 1]!;
+    const [settings, limits, unitRules, campingRules] = await Promise.all([
+      this.inventory.campingSettings(), this.pricing.bookingSettings(),
+      this.pricing.activeUnitRules(nights[0]!, lastNight), this.pricing.activeRules("CAMPING", nights[0]!, lastNight),
+    ]);
     const enabled = settings?.is_enabled === 1;
     const remaining = enabled && camping.length ? Math.min(...camping.map((n) => n.remaining)) : 0;
     const perTent = settings?.max_guests_per_tent ?? null;
@@ -98,11 +103,16 @@ export class AvailabilityService {
         unitType: u.unit_type,
         available: !lockedUnits.has(u.id),
         fitsGuests: input.guests === undefined || input.guests <= u.max_guests,
+        // The price of each night of this search, with the time-based rules (same as the quote).
+        nightlyPricesSatang: nights.map((date) => nightPrice(
+          unitRules.filter((r) => (r.target_type === "UNIT" && r.unit_id === u.id) || (r.target_type === "UNIT_TYPE" && r.unit_type === u.unit_type)),
+          date, u.base_price_satang)),
       })),
       camping: {
         enabled,
         remaining,
         nights: camping.map((n) => ({ date: n.date, remaining: enabled ? n.remaining : 0 })),
+        nightlyPricePerAdultSatang: nights.map((date) => nightPrice(campingRules, date, settings?.price_per_adult_night_satang ?? 0)),
         fitsTents: input.tents === undefined ? null : enabled && reason === null,
         reason,
         shortNights,

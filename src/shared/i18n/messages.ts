@@ -48,6 +48,11 @@ export interface Messages {
     camping: string;
     perNight: string;
     perAdultPerNight: string;
+    /** Total for the searched stay: "{n}" nights. */
+    stayTotal: string;
+    /** Shown under the price after a date search. */
+    forYourDates: string;
+    perAdult: string;
     childrenFree: string;
     upToGuests: string;
     amenities: string;
@@ -127,6 +132,9 @@ export const th: Messages = {
     camping: "นำเต็นท์มาเอง",
     perNight: "/ คืน",
     perAdultPerNight: "/ ผู้ใหญ่ / คืน",
+    stayTotal: "รวม {n} คืน",
+    forYourDates: "ราคาตามวันที่เลือก",
+    perAdult: "/ ผู้ใหญ่",
     childrenFree: "เด็กอายุต่ำกว่า {age} ปี พักฟรี",
     upToGuests: "รองรับสูงสุด {n} ท่าน",
     amenities: "สิ่งอำนวยความสะดวก",
@@ -216,6 +224,9 @@ export const en: Messages = {
     camping: "Bring your own tent",
     perNight: "/ night",
     perAdultPerNight: "/ adult / night",
+    stayTotal: "Total for {n} nights",
+    forYourDates: "Price for your dates",
+    perAdult: "/ adult",
     childrenFree: "Children under {age} stay free",
     upToGuests: "Up to {n} guests",
     amenities: "Amenities",
@@ -305,6 +316,9 @@ export const zhCN: Messages = {
     camping: "自带帐篷",
     perNight: "/ 晚",
     perAdultPerNight: "/ 成人 / 晚",
+    stayTotal: "{n} 晚合计",
+    forYourDates: "所选日期的价格",
+    perAdult: "/ 成人",
     childrenFree: "{age} 岁以下儿童免费",
     upToGuests: "最多 {n} 人",
     amenities: "设施",

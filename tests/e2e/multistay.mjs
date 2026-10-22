@@ -159,6 +159,25 @@ await check("paid booking: cancelling a stay shows the money to refund; staff re
   await pa.screenshot({ path: `${SHOTS}/multistay-refund.png`, fullPage: true });
 });
 
+await check("booking page: a date search shows the time-based price of those nights and the total", async () => {
+  const ci = day(60), co = day(62);
+  const rule = { targetType: "UNIT_TYPE", unitId: null, unitType: "VIP_TENT", name: "e2e peak", dateFrom: ci, dateTo: ci, daysOfWeek: "0123456", priceSatang: 590000, priority: 9, status: "ACTIVE" };
+  const made = await req.post(`${BASE}/api/admin/pricing-rules`, { headers: H, data: rule });
+  assert(made.ok(), `rule: ${made.status()} ${await made.text()}`);
+  const avail = await (await req.get(`${BASE}/api/public/availability?checkIn=${ci}&checkOut=${co}`, { headers: H })).json();
+  const vip = avail.data.units.find((u) => u.unitType === "VIP_TENT");
+  assert(vip.nightlyPricesSatang[0] === 590000 && vip.nightlyPricesSatang.length === 2, `nightly ${JSON.stringify(vip.nightlyPricesSatang)}`);
+  const base = vip.nightlyPricesSatang[1];
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
+  await pg.locator("form.stay-search button[type=submit]").click();
+  const card = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /VIP-01/ }) });
+  const price = card.locator(".unit-card__price-block");
+  await price.getByText(`${baht(Math.min(base, 590000))} – ${baht(Math.max(base, 590000))}`).waitFor();
+  await price.getByText(baht(590000 + base)).waitFor();
+  assert(/รวม 2 คืน/.test(await price.textContent()), "total for 2 nights");
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/booking-search-prices.png` });
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

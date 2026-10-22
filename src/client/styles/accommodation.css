@@ -256,6 +256,34 @@
   font-size: 0.875rem;
 }
 
+/* After a date search the price takes two lines: let the button drop below it rather than squeeze. */
+.unit-card__footer:has(.unit-card__price-block) {
+  flex-wrap: wrap;
+}
+
+.unit-card__footer .button {
+  white-space: nowrap;
+}
+
+.unit-card__price-block {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.unit-card__price span {
+  white-space: nowrap;
+}
+
+.unit-card__total {
+  margin: 2px 0 0;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.unit-card__total strong {
+  color: var(--color-heading);
+}
+
 .unit-card__badge-inline {
   margin: 8px 0;
   font-weight: 700;

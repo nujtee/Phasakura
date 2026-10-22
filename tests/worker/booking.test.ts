@@ -1,3 +1,4 @@
+import type { AvailabilityDto } from "../../src/shared/accommodation-types.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FoodCatalogueDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
@@ -129,6 +130,21 @@ describe("quote", () => {
     const res = await quote(h, { checkIn: "2027-02-04", checkOut: "2027-02-07" }); // Thu, Fri, Sat
     assert.deepEqual(res.data.item.nightly.map((n) => n.priceSatang), [350000, 450000, 450000]);
     assert.equal(res.data.accommodationSubtotalSatang, 1250000);
+  });
+
+  it("shows the price of the searched nights on the booking page (same rules as the quote)", async () => {
+    const h = new Harness({ seed: true });
+    h.db.run(`INSERT INTO pricing_settings (id, target_type, unit_type, name, date_from, date_to, days_of_week, price_satang)
+              VALUES ('weekend', 'UNIT_TYPE', 'HOUSE', 'Weekend', '2027-01-01', '2027-12-31', '56', 450000)`);
+    h.db.run(`INSERT INTO pricing_settings (id, target_type, name, date_from, date_to, days_of_week, price_satang)
+              VALUES ('nye', 'CAMPING', 'New year', '2027-02-05', '2027-02-05', '0123456', 40000)`);
+    const avail = await h.api<AvailabilityDto>("GET", "/api/public/availability?checkIn=2027-02-04&checkOut=2027-02-07");
+    assert.equal(avail.status, 200, JSON.stringify(avail.body));
+    const quoted = await quote(h, { checkIn: "2027-02-04", checkOut: "2027-02-07" });
+    const unit = avail.data.units.find((u) => u.unitId === quoted.data.item.unitId)!;
+    assert.deepEqual(unit.nightlyPricesSatang, quoted.data.item.nightly.map((n) => n.priceSatang));
+    assert.deepEqual(unit.nightlyPricesSatang, [350000, 450000, 450000]);
+    assert.deepEqual(avail.data.camping.nightlyPricePerAdultSatang, [25000, 40000, 25000]);
   });
 
   it("prices camping per adult per night; children are free", async () => {
