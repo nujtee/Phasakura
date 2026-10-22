@@ -288,6 +288,17 @@ describe("Center: health and sign-in", () => {
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "null", "Sec-Fetch-Site": "cross-site" } })).status, 403);
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "null", "Sec-Fetch-Site": "" } })).status, 403, "no proof of same origin");
+    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: CENTER, "Sec-Fetch-Site": "same-site" } })).status, 403, "a sibling subdomain");
+    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "", "Sec-Fetch-Site": "", Referer: "https://evil.example/x" } })).status, 403);
+  });
+
+  it("a POST the person re-sends themselves (reload, restored tab — Safari on iPad) or from an older browser with a Center referer is accepted", async () => {
+    const { req, ownerSession } = await setup();
+    const login = await req("POST", "/login", { form: { email: "owner@phasakura.com", password: "x" }, headers: { Origin: "null", "Sec-Fetch-Site": "none" } });
+    assert.notEqual(login.status, 403, "Sec-Fetch-Site: none = the person's own action");
+    const cookie = await ownerSession();
+    const res = await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "", "Sec-Fetch-Site": "", Referer: `${CENTER}/` } });
+    assert.notEqual(res.status, 403, "no fetch metadata, but a Center referer");
   });
 });
 
