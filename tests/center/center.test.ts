@@ -285,10 +285,11 @@ describe("Center: health and sign-in", () => {
     const cookie = await ownerSession();
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "https://evil.example" } })).status, 403);
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "", "Sec-Fetch-Site": "" } })).status, 403, "no Origin, no fetch metadata");
-    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
+    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "", "Sec-Fetch-Site": "cross-site" } })).status, 403);
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "null", "Sec-Fetch-Site": "cross-site" } })).status, 403);
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "null", "Sec-Fetch-Site": "" } })).status, 403, "no proof of same origin");
-    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: CENTER, "Sec-Fetch-Site": "same-site" } })).status, 403, "a sibling subdomain");
+    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "https://phasakura.com", "Sec-Fetch-Site": "same-site" } })).status, 403, "a sibling site");
+    assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "https://evil.example", "Sec-Fetch-Site": "same-origin", Referer: `${CENTER}/` } })).status, 403, "a foreign Origin wins over a Referer");
     assert.equal((await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "", "Sec-Fetch-Site": "", Referer: "https://evil.example/x" } })).status, 403);
   });
 
@@ -296,6 +297,11 @@ describe("Center: health and sign-in", () => {
     const { req, ownerSession } = await setup();
     const login = await req("POST", "/login", { form: { email: "owner@phasakura.com", password: "x" }, headers: { Origin: "null", "Sec-Fetch-Site": "none" } });
     assert.notEqual(login.status, 403, "Sec-Fetch-Site: none = the person's own action");
+    // Safari: the login page was opened from LINE / another site, so its own form is labelled cross-site.
+    const safari = await req("POST", "/login", { form: { email: "owner@phasakura.com", password: "x" }, headers: { Origin: CENTER, "Sec-Fetch-Site": "cross-site" } });
+    assert.notEqual(safari.status, 403, "Origin = Center wins over Sec-Fetch-Site");
+    const viaReferer = await req("POST", "/login", { form: { email: "owner@phasakura.com", password: "x" }, headers: { Origin: "null", "Sec-Fetch-Site": "cross-site", Referer: `${CENTER}/login` } });
+    assert.notEqual(viaReferer.status, 403, "a Center Referer is proof too");
     const cookie = await ownerSession();
     const res = await req("POST", "/logout", { cookie, form: {}, headers: { Origin: "", "Sec-Fetch-Site": "", Referer: `${CENTER}/` } });
     assert.notEqual(res.status, 403, "no fetch metadata, but a Center referer");
