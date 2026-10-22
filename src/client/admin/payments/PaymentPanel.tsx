@@ -43,7 +43,9 @@ export function PaymentPanel({ booking, notice = null, onChanged }: {
   const [declining, setDeclining] = useState(false);
 
   // A pending slip is approved / declined (here or on the Slips page), never answered by recording a second payment.
-  const awaiting = booking.status === "PENDING" && ["UNPAID", "REJECTED"].includes(booking.paymentStatus);
+  // An expired booking can still be paid (the guest transferred, the payment time ran out first): it takes its stays back.
+  const expired = booking.status === "EXPIRED" && ["UNPAID", "REJECTED"].includes(booking.paymentStatus);
+  const awaiting = (booking.status === "PENDING" && ["UNPAID", "REJECTED"].includes(booking.paymentStatus)) || expired;
   // …and on a confirmed deposit booking, the slip the guest sent for the rest before the stay.
   const forBalance = booking.status === "CONFIRMED";
   const pending = (booking.status === "PENDING" || forBalance) && can("payments.verify")
@@ -268,7 +270,8 @@ export function PaymentPanel({ booking, notice = null, onChanged }: {
 
       {awaiting && can("payments.verify") && (
         <form className="adm-subform" onSubmit={(e: FormEvent) => { e.preventDefault(); setConfirm("record"); }}>
-          <h3 className="adm-h3">{t.pay.record}</h3>
+          <h3 className="adm-h3">{expired ? t.pay.recordExpired : t.pay.record}</h3>
+          {expired && <Alert kind="info">{t.pay.recordExpiredHint}</Alert>}
           {deposit !== null && <p className="adm-field__hint">{format(t.pay.recordDepositHint, { amount: baht(deposit) })}</p>}
           <div className="adm-grid2">
             <Field label={t.pay.amount} required inputMode="decimal" value={form.amount} error={errors.amountSatang}
@@ -285,13 +288,13 @@ export function PaymentPanel({ booking, notice = null, onChanged }: {
               onChange={(e) => setForm({ ...form, reference: e.target.value })} />
           </div>
           <Field label={t.pay.note} maxLength={500} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-          <Button type="submit" busy={busy}>{t.pay.record}</Button>
+          <Button type="submit" busy={busy}>{expired ? t.pay.recordExpiredButton : t.pay.record}</Button>
         </form>
       )}
 
       <ConfirmDialog open={confirm !== null} danger={confirm === "refund"}
-        message={confirm === "refund" ? t.pay.refundConfirm : confirm === "approve" ? t.slip.verifyConfirm : t.pay.recordConfirm}
-        confirmLabel={confirm === "refund" ? t.pay.refund : confirm === "approve" ? t.slip.approve : t.pay.record}
+        message={confirm === "refund" ? t.pay.refundConfirm : confirm === "approve" ? t.slip.verifyConfirm : expired ? t.pay.recordExpiredConfirm : t.pay.recordConfirm}
+        confirmLabel={confirm === "refund" ? t.pay.refund : confirm === "approve" ? t.slip.approve : expired ? t.pay.recordExpiredButton : t.pay.record}
         onCancel={() => setConfirm(null)}
         onConfirm={() => void (confirm === "refund" ? doRefund() : confirm === "approve" ? doApprove() : doRecord())} />
     </div>
