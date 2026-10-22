@@ -142,11 +142,14 @@ export interface AvailabilityDto {
   checkIn: string;
   checkOut: string;
   nights: number;
-  units: { unitId: string; slug: string; unitType: UnitType; available: boolean; fitsGuests: boolean }[];
+  /** nightlyPricesSatang: one price per night of the search, time-based rules applied. */
+  units: { unitId: string; slug: string; unitType: UnitType; available: boolean; fitsGuests: boolean; nightlyPricesSatang: number[] }[];
   camping: {
     enabled: boolean;
     remaining: number;
     nights: { date: string; remaining: number }[];
+    /** Price per adult for each night of the search, time-based rules applied. */
+    nightlyPricePerAdultSatang: number[];
     /** Can the requested tents (and guests) be booked for every night? null when no tents were asked. */
     fitsTents: boolean | null;
     /** Why not: FULL (some night lacks space), TOO_FEW_TENTS (guests need more tents), TOO_MANY_TENTS (per-booking limit). */

@@ -41,7 +41,7 @@ describe("camping booking form", () => {
 
   it("books only when the tents fit and, if asked, a tarp area is free every night", () => {
     const base = {
-      enabled: true, remaining: 5, nights: [], fitsTents: true, reason: null, shortNights: [], minTents: 1, maxTentsPerBooking: 10,
+      enabled: true, remaining: 5, nights: [], nightlyPricePerAdultSatang: [], fitsTents: true, reason: null, shortNights: [], minTents: 1, maxTentsPerBooking: 10,
       tarp: { offered: true, remaining: 1, shortNights: [] },
     } satisfies AvailabilityDto["camping"];
     const a = (camping: Partial<AvailabilityDto["camping"]>) => ({ camping: { ...base, ...camping } }) as AvailabilityDto;
