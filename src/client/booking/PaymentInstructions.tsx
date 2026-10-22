@@ -5,6 +5,7 @@ import { useI18n } from "../i18n/I18nProvider.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
 import { bookingErrorText, createPaypalOrder, rememberForPaypal } from "./api.ts";
 import { QrCode, qrPngDataUrl } from "./QrCode.tsx";
+import { useSaveImage } from "../media/saveImage.ts";
 import { useDateTimeText } from "./Summary.tsx";
 import { useBookingT } from "./useBookingT.ts";
 
@@ -88,6 +89,8 @@ export function PaymentInstructions({
     }
   }
 
+  const saveQrImage = useSaveImage(current === "QR_CODE" ? payment.qrUrl : null, `qr-${bookingCode}`);
+
   function saveQr() {
     if (!payment.promptpayPayload) return;
     const url = qrPngDataUrl(payment.promptpayPayload);
@@ -166,7 +169,10 @@ export function PaymentInstructions({
 
         {current === "QR_CODE" && payment.qrUrl && (
           <div className="pay__body">
-            <img className="pay__qr" src={payment.qrUrl} alt={bt.qrAlt} width={220} height={220} decoding="async" />
+            <figure className="pay-qr">
+              <img className="pay__qr" src={payment.qrUrl} alt={bt.qrAlt} width={220} height={220} decoding="async" />
+              <button type="button" className="pay__copy pay-qr__save" onClick={saveQrImage}>{bt.pay.saveQr}</button>
+            </figure>
             <div className="pay-panel__text">
               <p className="pay-panel__how">{fill(bt.pay.qrHow, { amount })}</p>
               <dl className="pay__details">

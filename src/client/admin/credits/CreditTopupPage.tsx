@@ -6,6 +6,7 @@ import { fill } from "../../../shared/i18n/admin-credit-messages.ts";
 import { apiGet, apiUpload } from "../../api/client.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, useDateFormatter } from "../ui.tsx";
+import { useSaveImage } from "../../media/saveImage.ts";
 import { creditError, creditFieldErrors, useCreditTexts, useNumber } from "./creditUi.tsx";
 
 /** Finance → Top up credits (credits.topup): balance, where to pay, the request form, history. */
@@ -24,6 +25,7 @@ export function CreditTopupPage() {
   const [msg, setMsg] = useState<{ kind: "error" | "success" | "info"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const saveQr = useSaveImage(info?.qrUrl, "credit-topup-qr");
 
   const load = useCallback(async () => {
     try {
@@ -145,7 +147,12 @@ export function CreditTopupPage() {
           <h2 className="adm-h2">{m.topup.payTitle}</h2>
           {!configured ? <Alert kind="info">{m.topup.notSetUp}</Alert> : (
             <div className="adm-credit__pay">
-              {info.qrUrl && <img className="adm-credit__qr" src={info.qrUrl} alt={m.admin.qr} width={180} height={180} />}
+              {info.qrUrl && (
+                <figure className="adm-credit__qrbox">
+                  <img className="adm-credit__qr" src={info.qrUrl} alt={m.admin.qr} width={180} height={180} />
+                  <Button variant="secondary" onClick={saveQr}>{m.topup.saveQr}</Button>
+                </figure>
+              )}
               <dl className="adm-dl">
                 {info.bankName && (<><dt>{m.topup.bank}</dt><dd>{info.bankName}</dd></>)}
                 {info.accountName && (<><dt>{m.topup.accountName}</dt><dd>{info.accountName}</dd></>)}

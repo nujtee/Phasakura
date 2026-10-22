@@ -440,6 +440,28 @@ await check("deposit: the dashboard totals what is still due at check-in; the gu
   assert(!(await pa.locator(".adm-paymode-kept").count()), "note still shown with nothing open");
 });
 
+await check("credit top-up page: the payment QR can be saved as an image", async () => {
+  const { readFileSync } = await import("node:fs");
+  const up = await req.post(`${BASE}/api/admin/media`, {
+    headers: H, multipart: { file: { name: "logo.png", mimeType: "image/png", buffer: readFileSync(`${FIXTURES}/logo.png`) }, purpose: "PAYMENT_QR" },
+  });
+  assert(up.ok(), `QR upload ${up.status()} ${await up.text()}`);
+  const qrAssetId = (await up.json()).data.id;
+  const settings = await req.put(`${BASE}/api/admin/credit-admin/settings`, { headers: H, data: {
+    enabled: true, feePerUnit: 20, lowThreshold: 500, approvalMode: "MANUAL", standardMin: 300, premiumMin: 1000,
+    bankName: "Kasikorn", accountName: "Platform Owner", accountNumber: "111-2-33333-4", promptpayNumber: "0899999999",
+    qrAssetId, notifyEmail: null, alertTime1: "09:00", alertTime2: "17:00",
+  } });
+  assert(settings.ok(), `credit settings ${settings.status()} ${await settings.text()}`);
+  await pa.goto(`${BASE}/en/admin/credit-topup`);
+  const qr = pa.locator(".adm-credit__qrbox");
+  await qr.locator("img").waitFor();
+  await pa.waitForTimeout(300); // the picture is fetched for saving when it shows
+  const [download] = await Promise.all([pa.waitForEvent("download"), qr.getByRole("button", { name: "Save QR image" }).click()]);
+  assert(/^credit-topup-qr\.png$/.test(download.suggestedFilename()), `file name ${download.suggestedFilename()}`);
+  if (SHOTS) await qr.screenshot({ path: `${SHOTS}/credit-topup-qr-save.png` });
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
