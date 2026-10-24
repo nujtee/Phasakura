@@ -120,6 +120,20 @@ describe("app shell with page metadata (Phase 13)", () => {
     assert.deepEqual(acc.occupancy, { "@type": "QuantitativeValue", maxValue: 4 });
     assert.ok((acc.amenityFeature as unknown[]).length >= 1);
     assert.equal((acc.containedInPlace as Record<string, string>)["@id"], `${BASE}/#lodging`);
+    // Starting price per night: the price the page shows, as an Offer for this accommodation.
+    const offer = m.jsonLd.find((d) => d["@type"] === "Offer")!;
+    const base = h.db.get<{ p: number }>("SELECT base_price_satang AS p FROM accommodation_units WHERE slug = 'house-sakura'")!.p;
+    assert.deepEqual((offer.itemOffered as Record<string, string>)["@id"], `${BASE}/en/accommodation/house-sakura#accommodation`);
+    assert.equal(acc["@id"], `${BASE}/en/accommodation/house-sakura#accommodation`);
+    assert.equal(offer.price, (base / 100).toFixed(2));
+    assert.equal(offer.priceCurrency, "THB");
+    assert.equal(offer.name, `From ฿${(base / 100).toLocaleString("en-US")}/night`);
+    assert.deepEqual(offer.priceSpecification, {
+      "@type": "UnitPriceSpecification", price: (base / 100).toFixed(2), priceCurrency: "THB", unitText: "night",
+      referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: "DAY" },
+    });
+    const th = head((await page("/th/accommodation/house-sakura")).html).jsonLd.find((d) => d["@type"] === "Offer")!;
+    assert.equal(th.name, `เริ่มต้น ฿${(base / 100).toLocaleString("en-US")}/คืน`);
     const crumbs = m.jsonLd.find((d) => d["@type"] === "BreadcrumbList")!.itemListElement as { item: string }[];
     assert.deepEqual(crumbs.map((c) => c.item), [`${BASE}/en/`, `${BASE}/en/booking`, `${BASE}/en/accommodation/house-sakura`]);
 

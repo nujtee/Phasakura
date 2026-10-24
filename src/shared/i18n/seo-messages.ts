@@ -15,6 +15,8 @@ const th = {
     notFound: "ไม่พบหน้าที่คุณต้องการ",
     accommodation: "{name} ที่ {site} พักได้สูงสุด {guests} ท่าน ราคาเริ่มต้น {price} ต่อคืน",
   },
+  /** Name of the price offer of a house / VIP tent (structured data). */
+  offer: { fromPerNight: "เริ่มต้น {price}/คืน" },
 };
 
 export type SeoMessages = Widen<typeof th>;
@@ -29,6 +31,7 @@ const en: SeoMessages = {
     notFound: "This page could not be found.",
     accommodation: "{name} at {site}: up to {guests} guests, from {price} per night.",
   },
+  offer: { fromPerNight: "From {price}/night" },
 };
 
 const zhCN: SeoMessages = {
@@ -41,6 +44,7 @@ const zhCN: SeoMessages = {
     notFound: "找不到您要访问的页面。",
     accommodation: "{site} 的 {name}：最多可住 {guests} 人，每晚 {price} 起。",
   },
+  offer: { fromPerNight: "每晚 {price} 起" },
 };
 
 const DICTIONARIES = { th, en, "zh-CN": zhCN } as const;
