@@ -176,6 +176,29 @@ export class SeoService {
         amenityFeature: unit.amenities.map((a) => ({ "@type": "LocationFeatureSpecification", name: a.name, value: true })),
         containedInPlace: siteName ? { "@type": "LodgingBusiness", "@id": `${this.baseUrl}/#lodging`, name: siteName, url: homeUrl } : null,
       }));
+      // The starting price per night — the same price this page shows ("฿1,900 / คืน"); seasonal rules are not listed.
+      if (unit.priceSatang > 0) {
+        const price = (unit.priceSatang / 100).toFixed(2);
+        jsonLd.push(compact({
+          "@context": "https://schema.org",
+          "@type": "Offer",
+          "@id": `${ownUrl}#offer`,
+          name: fill(getSeoMessages(lang).offer.fromPerNight, { price: formatBaht(unit.priceSatang, lang) }),
+          url: ownUrl,
+          itemOffered: { "@id": `${ownUrl}#accommodation` },
+          price,
+          priceCurrency: "THB",
+          priceSpecification: {
+            "@type": "UnitPriceSpecification",
+            price,
+            priceCurrency: "THB",
+            unitText: "night",
+            referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: "DAY" },
+          },
+          availability: "https://schema.org/InStock",
+          offeredBy: siteName ? { "@type": "LodgingBusiness", "@id": `${this.baseUrl}/#lodging`, name: siteName, url: homeUrl } : null,
+        }));
+      }
     } else if (page === "privacy" && policy) {
       const pageTitle = policy.title ?? t.pages.privacy.title;
       title = withSite(pageTitle);
