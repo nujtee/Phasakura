@@ -75,6 +75,10 @@
   "src/worker/repositories/monitoring.repository.ts": [
     "sql"
   ],
+  "src/worker/repositories/payment.repository.ts": [
+    "qrReceiver",
+    "select"
+  ],
   "src/worker/repositories/rbac.repository.ts": [
     "planLock",
     "siteUser()"

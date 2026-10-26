@@ -308,7 +308,7 @@ const th = {
   pay: {
     accountsTitle: "บัญชีรับเงิน", accountsIntro: "การจองใหม่จะใช้บัญชีหลัก ข้อมูลบัญชีถูกบันทึกลงในการจองตอนจอง การแก้ไขภายหลังไม่กระทบการจองเดิม",
     newAccount: "เพิ่มบัญชี", bankName: "ธนาคาร", accountName: "ชื่อบัญชี", accountNumber: "เลขที่บัญชี", promptpay: "พร้อมเพย์ (เบอร์โทร / เลขประจำตัว)",
-    qr: "QR Code", uploadQr: "อัปโหลด QR", removeQr: "เอา QR ออก", primary: "บัญชีหลัก", makePrimary: "ตั้งเป็นบัญชีหลัก",
+    qr: "QR Code", uploadQr: "อัปโหลด QR", removeQr: "เอา QR ออก", qrReceiver: "เลขพร้อมเพย์ใน QR", qrReceiverHint: "เลขที่ QR นี้โอนเข้า เช่น e-Wallet ID 15 หลักของ K PLUS / K SHOP — ระบบอ่านจากรูป QR ให้ และนับว่าเป็นบัญชีนี้ตอนตรวจสลิปอัตโนมัติ", readQr: "อ่านจาก QR", readQrDone: "อ่านได้: {value} — กดบันทึก", readQrNone: "อ่านเลขพร้อมเพย์จากรูปนี้ไม่ได้ — พิมพ์เลขที่เห็นในแอปธนาคารเอง", primary: "บัญชีหลัก", makePrimary: "ตั้งเป็นบัญชีหลัก",
     active: "ใช้งาน", inactive: "ปิด", edit: "แก้ไข", delete: "ลบบัญชี", deleteConfirm: "ลบบัญชีนี้? การจองเดิมยังเห็นข้อมูลบัญชีที่บันทึกไว้", empty: "ยังไม่มีบัญชีรับเงิน — ลูกค้ายังจองออนไลน์ไม่ได้",
     paymentTitle: "การชำระเงิน", snapshot: "บัญชีที่ใช้กับการจองนี้ (บันทึกตอนจอง)", payments: "รายการชำระเงิน", noPayments: "ยังไม่มีการชำระเงิน",
     record: "บันทึกการรับเงิน", amount: "จำนวนเงิน (บาท)", method: "วิธีชำระ", paidAt: "วันเวลาที่รับเงิน", reference: "เลขอ้างอิง (ไม่บังคับ)", note: "หมายเหตุ (ไม่บังคับ)",
@@ -647,7 +647,7 @@ const en: AdminMessages = {
   pay: {
     accountsTitle: "Receiving accounts", accountsIntro: "New bookings use the primary account. Account details are copied onto each booking, so later edits never change existing bookings.",
     newAccount: "Add account", bankName: "Bank", accountName: "Account name", accountNumber: "Account number", promptpay: "PromptPay (phone / ID number)",
-    qr: "QR code", uploadQr: "Upload QR", removeQr: "Remove QR", primary: "Primary", makePrimary: "Make primary",
+    qr: "QR code", uploadQr: "Upload QR", removeQr: "Remove QR", qrReceiver: "QR PromptPay ID", qrReceiverHint: "The ID this QR pays into (e.g. a 15-digit K PLUS / K SHOP e-Wallet ID). Read from the QR picture for you, and accepted as this account by the automatic slip check.", readQr: "Read from QR", readQrDone: "Read: {value} — press Save", readQrNone: "No PromptPay ID found in this picture — type the ID your banking app shows", primary: "Primary", makePrimary: "Make primary",
     active: "Active", inactive: "Off", edit: "Edit", delete: "Delete account", deleteConfirm: "Delete this account? Existing bookings keep the details copied onto them.", empty: "No receiving account yet — guests cannot book online.",
     paymentTitle: "Payment", snapshot: "Account for this booking (copied at booking time)", payments: "Payments", noPayments: "No payments yet",
     record: "Record payment received", amount: "Amount (THB)", method: "Method", paidAt: "Received at", reference: "Reference (optional)", note: "Note (optional)",
@@ -961,7 +961,7 @@ const zhCN: AdminMessages = {
   pay: {
     accountsTitle: "收款账户", accountsIntro: "新预订使用主账户。账户信息在预订时复制到预订中，之后的修改不影响已有预订。",
     newAccount: "添加账户", bankName: "银行", accountName: "账户名", accountNumber: "账号", promptpay: "PromptPay（电话 / 证件号）",
-    qr: "二维码", uploadQr: "上传二维码", removeQr: "移除二维码", primary: "主账户", makePrimary: "设为主账户",
+    qr: "二维码", uploadQr: "上传二维码", removeQr: "移除二维码", qrReceiver: "二维码 PromptPay ID", qrReceiverHint: "此二维码的收款 ID（如 K PLUS / K SHOP 的 15 位电子钱包 ID）。系统会从二维码图片读取，自动核对凭证时视为此账户。", readQr: "从二维码读取", readQrDone: "已读取：{value}——请保存", readQrNone: "未能从图片读取 PromptPay ID，请手动输入银行应用显示的 ID", primary: "主账户", makePrimary: "设为主账户",
     active: "启用", inactive: "停用", edit: "编辑", delete: "删除账户", deleteConfirm: "删除此账户？已有预订保留复制的账户信息。", empty: "尚无收款账户 — 客人无法在线预订。",
     paymentTitle: "付款", snapshot: "本预订使用的账户（预订时复制）", payments: "付款记录", noPayments: "暂无付款",
     record: "登记已收款", amount: "金额（泰铢）", method: "付款方式", paidAt: "收款时间", reference: "参考号（可选）", note: "备注（可选）",

@@ -249,6 +249,35 @@ describe("auto verification (real service, fail-safe)", () => {
     assert.equal(h.db.get<{ s: string }>("SELECT booking_status AS s FROM bookings")!.s, "CONFIRMED");
   });
 
+  it("paid by scanning the account's shop / e-Wallet QR: the ID read from that QR counts as this account", async () => {
+    const h = new Harness({ seed: true });
+    const shopQr = goodSlip({ receiverAccountMasked: null, receiverProxyMasked: "XXXXXXXXXXX4905" });
+    h.verifier(new FakeVerifier(async () => ({ kind: "OK", slip: shopQr })));
+    const before = await book(h);
+    const refused = await h.slip<SlipResult>(before.bookingCode, PHONE, slipImage(41));
+    assert.equal(refused.data.outcome, "PENDING_REVIEW");
+    assert.equal(h.db.get<{ f: string }>("SELECT failure_code AS f FROM slip_verifications")!.f, "RECEIVER_MISMATCH", "unknown ID before");
+
+    // Staff save the QR's ID on the account (read from the QR picture in the admin).
+    const finance = await admin(h, ["receiving_accounts.edit", "receiving_accounts.view"]);
+    const accountId = h.db.get<{ id: string }>("SELECT id FROM receiving_accounts WHERE is_primary = 1")!.id;
+    const bad = await h.api("PATCH", `/api/admin/receiving-accounts/${accountId}`, { token: finance, body: { qrReceiver: "49-05" } });
+    assert.equal(bad.error?.details?.qrReceiver, "INVALID_FORMAT");
+    const saved = await h.api<{ qrReceiver: string }>("PATCH", `/api/admin/receiving-accounts/${accountId}`, { token: finance, body: { qrReceiver: "0140-0001-2344-905" } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.data.qrReceiver, "014000012344905");
+
+    const after = await book(h, "dev_house_02");
+    h.verifier(new FakeVerifier(async () => ({ kind: "OK", slip: goodSlip({ amountSatang: after.totalSatang, receiverAccountMasked: null, receiverProxyMasked: "XXXXXXXXXXX4905" }) })));
+    const ok = await h.slip<SlipResult>(after.bookingCode, PHONE, slipImage(42));
+    assert.equal(ok.data.outcome, "VERIFIED", JSON.stringify(ok.error ?? null));
+    // Another ID still does not count.
+    const other = await book(h, "dev_vip_01");
+    h.verifier(new FakeVerifier(async () => ({ kind: "OK", slip: goodSlip({ amountSatang: other.totalSatang, receiverAccountMasked: null, receiverProxyMasked: "XXXXXXXXXXX9999" }) })));
+    assert.equal((await h.slip<SlipResult>(other.bookingCode, PHONE, slipImage(43))).data.outcome, "PENDING_REVIEW");
+    assert.equal(h.db.get<{ f: string }>("SELECT failure_code AS f FROM slip_verifications ORDER BY created_at DESC LIMIT 1")!.f, "RECEIVER_MISMATCH");
+  });
+
   it("a crashing provider never breaks the upload", async () => {
     const h = new Harness({ seed: true });
     h.verifier(new FakeVerifier(async () => { throw new Error("boom"); }));

@@ -1,5 +1,6 @@
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { netPayment, PAID_SQL } from "./booking.repository.ts";
+import { withFallback } from "./schema-fallback.ts";
 
 export interface ReceivingAccountRow {
   id: string;
@@ -9,6 +10,8 @@ export interface ReceivingAccountRow {
   promptpay_number: string | null;
   qr_asset_id: string | null;
   qr_key: string | null;
+  /** The PromptPay ID the QR pays into (migration 0038); null before it. */
+  qr_receiver: string | null;
   status: "ACTIVE" | "INACTIVE" | "DELETED";
   is_primary: number;
   sort_order: number;
@@ -23,6 +26,8 @@ export interface AccountSnapshotRow {
   promptpay_number_snapshot: string | null;
   payment_qr_snapshot: string | null;
   captured_at: string;
+  /** The account's QR receiver now (migration 0038): a slip paid by scanning its QR names this ID. */
+  qr_receiver?: string | null;
 }
 
 export interface PaymentSettingsRow {
@@ -134,11 +139,14 @@ const BALANCE_OPEN = `EXISTS (SELECT 1 FROM bookings b WHERE b.id = ?2 AND b.boo
     AND b.total_satang - (SELECT COALESCE(SUM(${netPayment("q")}), 0) FROM payments q WHERE q.booking_id = b.id) = ?3
     AND NOT EXISTS (SELECT 1 FROM payments w WHERE w.booking_id = b.id AND w.status = 'PENDING_VERIFICATION'))`;
 
-const ACCOUNT_SELECT = `
+const accountSelect = (qrReceiver: string) => `
   SELECT a.id, a.bank_name, a.account_name, a.account_number, a.promptpay_number, a.qr_asset_id,
-         m.object_key AS qr_key, a.status, a.is_primary, a.sort_order, a.updated_at
+         m.object_key AS qr_key, ${qrReceiver} AS qr_receiver, a.status, a.is_primary, a.sort_order, a.updated_at
     FROM receiving_accounts a
     LEFT JOIN media_assets m ON m.id = a.qr_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'`;
+const ACCOUNT_SELECT = accountSelect("a.qr_receiver");
+/** Before migration 0038 (the code may be deployed first). */
+const ACCOUNT_SELECT_LEGACY = accountSelect("NULL");
 
 /** Receiving accounts, account snapshots and payments. Statements are composed into atomic batches by services. */
 export class PaymentRepository {
@@ -176,44 +184,46 @@ export class PaymentRepository {
   // ------------------------------------------------------------------ receiving accounts
 
   async listAccounts(): Promise<ReceivingAccountRow[]> {
-    const { results } = await this.db
-      .prepare(`${ACCOUNT_SELECT} WHERE a.status <> 'DELETED' ORDER BY a.is_primary DESC, a.sort_order, a.created_at`)
-      .all<ReceivingAccountRow>();
-    return results;
+    const read = async (select: string) => (await this.db
+      .prepare(`${select} WHERE a.status <> 'DELETED' ORDER BY a.is_primary DESC, a.sort_order, a.created_at`)
+      .all<ReceivingAccountRow>()).results;
+    return withFallback(() => read(ACCOUNT_SELECT), () => read(ACCOUNT_SELECT_LEGACY));
   }
 
   findAccount(id: string): Promise<ReceivingAccountRow | null> {
-    return this.db.prepare(`${ACCOUNT_SELECT} WHERE a.id = ?1`).bind(id).first<ReceivingAccountRow>();
+    const read = (select: string) => this.db.prepare(`${select} WHERE a.id = ?1`).bind(id).first<ReceivingAccountRow>();
+    return withFallback(() => read(ACCOUNT_SELECT), () => read(ACCOUNT_SELECT_LEGACY));
   }
 
   primaryAccount(): Promise<ReceivingAccountRow | null> {
-    return this.db.prepare(`${ACCOUNT_SELECT} WHERE a.is_primary = 1 AND a.status = 'ACTIVE'`).first<ReceivingAccountRow>();
+    const read = (select: string) => this.db.prepare(`${select} WHERE a.is_primary = 1 AND a.status = 'ACTIVE'`).first<ReceivingAccountRow>();
+    return withFallback(() => read(ACCOUNT_SELECT), () => read(ACCOUNT_SELECT_LEGACY));
   }
 
   insertAccountStatement(a: {
     id: string; bankName: string; accountName: string; accountNumber: string | null; promptpayNumber: string | null;
-    qrAssetId: string | null; status: string; sortOrder: number; createdBy: string; now: string;
+    qrAssetId: string | null; qrReceiver?: string | null; status: string; sortOrder: number; createdBy: string; now: string;
   }): D1PreparedStatementLike {
     return this.db
       .prepare(
         `INSERT INTO receiving_accounts (id, bank_name, account_name, account_number, promptpay_number, qr_asset_id, status,
-           is_primary, sort_order, created_by, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?10, ?10)`,
+           is_primary, sort_order, created_by, created_at, updated_at, qr_receiver)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?10, ?10, ?11)`,
       )
-      .bind(a.id, a.bankName, a.accountName, a.accountNumber, a.promptpayNumber, a.qrAssetId, a.status, a.sortOrder, a.createdBy, a.now);
+      .bind(a.id, a.bankName, a.accountName, a.accountNumber, a.promptpayNumber, a.qrAssetId, a.status, a.sortOrder, a.createdBy, a.now, a.qrReceiver ?? null);
   }
 
   updateAccountStatement(a: {
     id: string; bankName: string; accountName: string; accountNumber: string | null; promptpayNumber: string | null;
-    qrAssetId: string | null; status: string; sortOrder: number; now: string;
+    qrAssetId: string | null; qrReceiver?: string | null; status: string; sortOrder: number; now: string;
   }): D1PreparedStatementLike {
     return this.db
       .prepare(
         `UPDATE receiving_accounts SET bank_name = ?2, account_name = ?3, account_number = ?4, promptpay_number = ?5,
-           qr_asset_id = ?6, status = ?7, sort_order = ?8, updated_at = ?9
+           qr_asset_id = ?6, status = ?7, sort_order = ?8, updated_at = ?9, qr_receiver = ?10
          WHERE id = ?1 AND status <> 'DELETED'`,
       )
-      .bind(a.id, a.bankName, a.accountName, a.accountNumber, a.promptpayNumber, a.qrAssetId, a.status, a.sortOrder, a.now);
+      .bind(a.id, a.bankName, a.accountName, a.accountNumber, a.promptpayNumber, a.qrAssetId, a.status, a.sortOrder, a.now, a.qrReceiver ?? null);
   }
 
   /** Two statements: clear the old primary, set the new one (single-primary UNIQUE index guards the result). */
@@ -255,14 +265,16 @@ export class PaymentRepository {
   }
 
   snapshot(bookingId: string): Promise<AccountSnapshotRow | null> {
-    return this.db
+    const read = (qrReceiver: string) => this.db
       .prepare(
-        `SELECT receiving_account_id, bank_name_snapshot, account_name_snapshot, account_number_snapshot,
-                promptpay_number_snapshot, payment_qr_snapshot, captured_at
-           FROM payment_account_snapshots WHERE booking_id = ?1`,
+        `SELECT s.receiving_account_id, s.bank_name_snapshot, s.account_name_snapshot, s.account_number_snapshot,
+                s.promptpay_number_snapshot, s.payment_qr_snapshot, s.captured_at, ${qrReceiver} AS qr_receiver
+           FROM payment_account_snapshots s LEFT JOIN receiving_accounts a ON a.id = s.receiving_account_id
+          WHERE s.booking_id = ?1`,
       )
       .bind(bookingId)
       .first<AccountSnapshotRow>();
+    return withFallback(() => read("a.qr_receiver"), () => read("NULL"));
   }
 
   // ------------------------------------------------------------------ payments

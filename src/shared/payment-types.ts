@@ -46,6 +46,8 @@ export interface ReceivingAccountDto {
   promptpayNumber: string | null;
   qrAssetId: string | null;
   qrUrl: string | null;
+  /** The PromptPay ID the QR pays into (read from the QR image); accepted as this account by the slip check. */
+  qrReceiver: string | null;
   status: ReceivingAccountStatus;
   isPrimary: boolean;
   sortOrder: number;
@@ -58,6 +60,7 @@ export interface ReceivingAccountInput {
   accountNumber: string | null;
   promptpayNumber: string | null;
   qrAssetId: string | null;
+  qrReceiver?: string | null;
   status: ReceivingAccountStatus;
   sortOrder: number;
 }
