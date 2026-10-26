@@ -29,7 +29,7 @@ function money(v: Validator, value: unknown, key: string): number {
 
 /** Account fields: digits normalised (spaces/dashes in PromptPay removed); at least one of account number / PromptPay. */
 function parseAccount(body: Record<string, unknown>, partial: boolean): Partial<ReceivingAccountInput> {
-  const v = new Validator(body).allowOnly(["bankName", "accountName", "accountNumber", "promptpayNumber", "qrAssetId", "status", "sortOrder"]);
+  const v = new Validator(body).allowOnly(["bankName", "accountName", "accountNumber", "promptpayNumber", "qrAssetId", "qrReceiver", "status", "sortOrder"]);
   const out: Partial<ReceivingAccountInput> = {};
   const want = (k: string) => !partial || v.has(k) || body[k] === null;
   if (want("bankName")) out.bankName = v.string("bankName", { required: true, max: 80 });
@@ -43,6 +43,17 @@ function parseAccount(body: Record<string, unknown>, partial: boolean): Partial<
       const digits = raw.replace(/[\s-]/g, "");
       if (PROMPTPAY_PATTERN.test(digits)) out.promptpayNumber = digits;
       else v.errors.promptpayNumber = "INVALID_FORMAT";
+    }
+  }
+  if (v.has("qrReceiver") || body.qrReceiver === null) {
+    // The PromptPay ID inside the QR (10–20 digits: phone, national ID, e-Wallet, merchant / biller ID).
+    const raw = body.qrReceiver;
+    if (raw === null || raw === "") out.qrReceiver = null;
+    else if (typeof raw !== "string") v.errors.qrReceiver = "EXPECTED_STRING";
+    else {
+      const digits = raw.replace(/[\s-]/g, "");
+      if (/^\d{10,20}$/.test(digits)) out.qrReceiver = digits;
+      else v.errors.qrReceiver = "INVALID_FORMAT";
     }
   }
   if (want("qrAssetId")) out.qrAssetId = body.qrAssetId === null ? null : v.string("qrAssetId", { pattern: ID_PATTERN }) ?? null;

@@ -179,6 +179,9 @@ export class PaymentService {
       accountNumber: patch.accountNumber !== undefined ? patch.accountNumber : current.account_number,
       promptpayNumber: patch.promptpayNumber !== undefined ? patch.promptpayNumber : current.promptpay_number,
       qrAssetId: patch.qrAssetId !== undefined ? patch.qrAssetId : current.qr_asset_id,
+      // A new QR picture without its ID read: the old ID belonged to the old picture.
+      qrReceiver: patch.qrReceiver !== undefined ? patch.qrReceiver
+        : patch.qrAssetId !== undefined && patch.qrAssetId !== current.qr_asset_id ? null : current.qr_receiver,
       status: patch.status ?? (current.status === "INACTIVE" ? "INACTIVE" : "ACTIVE"),
       sortOrder: patch.sortOrder ?? current.sort_order,
     };
@@ -237,6 +240,7 @@ export class PaymentService {
       promptpayNumber: a.promptpay_number,
       qrAssetId: a.qr_asset_id,
       qrUrl: publicMediaUrl(a.qr_key, this.mediaBaseUrl),
+      qrReceiver: a.qr_receiver ?? null,
       status: a.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
       isPrimary: a.is_primary === 1,
       sortOrder: a.sort_order,
@@ -366,7 +370,7 @@ function settingsAudit(s: PaymentSettingsRow) {
 function accountAudit(a: ReceivingAccountRow) {
   return {
     bankName: a.bank_name, accountName: a.account_name, accountNumber: a.account_number, promptpayNumber: a.promptpay_number,
-    qrAssetId: a.qr_asset_id, status: a.status, isPrimary: a.is_primary === 1,
+    qrAssetId: a.qr_asset_id, qrReceiver: a.qr_receiver ?? null, status: a.status, isPrimary: a.is_primary === 1,
   };
 }
 

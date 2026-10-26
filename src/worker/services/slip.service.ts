@@ -180,6 +180,8 @@ export class SlipService {
         now,
         accountNumber: snapshot?.account_number_snapshot ?? null,
         promptpayNumber: snapshot?.promptpay_number_snapshot ?? null,
+        // The ID the account's own QR pays into (a shop / e-Wallet QR): that is this account too.
+        otherReceivers: snapshot?.qr_receiver ? [snapshot.qr_receiver] : [],
         transactionAlreadyUsed: await this.repo.transactionRefUsed(slip.transactionRef),
       });
       const record = {

@@ -490,6 +490,30 @@ await check("phone in LINE's in-app browser: 'Save QR image' shows the picture f
   await line.close();
 });
 
+await check("receiving account: uploading a shop / e-Wallet QR reads its PromptPay ID for the slip check", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const ID = "004999020805858";
+  // A real PromptPay QR (e-Wallet ID) drawn by the app's own code, photographed into a PNG.
+  const path = execFileSync("npx", ["tsx", "-e", `import { promptpayPayload } from "./src/shared/promptpay.ts"; import { encodeQr, qrSvgPath } from "./src/shared/qr.ts";
+    const m = encodeQr(promptpayPayload("${ID}", null)!, "M"); process.stdout.write(JSON.stringify({ n: m.length + 8, d: qrSvgPath(m, 4) }));`], { encoding: "utf8" });
+  const { n, d } = JSON.parse(path);
+  const shot = await (await browser.newContext()).newPage();
+  await shot.setContent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><rect width="${n}" height="${n}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`);
+  const png = await shot.locator("svg").screenshot();
+  await shot.context().close();
+
+  await pa.goto(`${BASE}/en/admin/receiving-accounts`);
+  await pa.getByRole("button", { name: "Edit" }).first().click();
+  await pa.locator("#qr-upload").setInputFiles({ name: "shop-qr.png", mimeType: "image/png", buffer: png });
+  const field = pa.getByLabel("QR PromptPay ID");
+  await field.waitFor();
+  await pa.getByText(`Read: ${ID}`).waitFor();
+  assert(await field.inputValue() === ID, `read ${await field.inputValue()}`);
+  await pa.getByRole("button", { name: "Save" }).click();
+  await pa.getByText(`QR PromptPay ID: ${ID}`).waitFor();
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/receiving-qr-receiver.png`, fullPage: true });
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

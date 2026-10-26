@@ -6,9 +6,11 @@ import { Link } from "../../router/Router.tsx";
 import { uploadImage } from "../../media/prepareImage.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, Field, fieldErrors, detailMessage } from "../ui.tsx";
+import { format } from "../../../shared/i18n/admin-messages.ts";
+import { readPromptpayFromImage } from "../credits/readQr.ts";
 
 type Draft = ReceivingAccountInput & { qrUrl: string | null };
-const EMPTY: Draft = { bankName: "", accountName: "", accountNumber: "", promptpayNumber: "", qrAssetId: null, qrUrl: null, status: "ACTIVE", sortOrder: 0 };
+const EMPTY: Draft = { bankName: "", accountName: "", accountNumber: "", promptpayNumber: "", qrAssetId: null, qrUrl: null, qrReceiver: null, status: "ACTIVE", sortOrder: 0 };
 
 /** Receiving accounts (spec §25). The Worker enforces receiving_accounts.view / .edit. */
 export function ReceivingAccountsPage() {
@@ -20,6 +22,7 @@ export function ReceivingAccountsPage() {
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [qrNote, setQrNote] = useState<{ kind: "ok" | "none"; text: string } | null>(null);
   const canEdit = can("receiving_accounts.edit");
 
   const load = () => apiGet<ReceivingAccountDto[]>("/api/admin/receiving-accounts").then(setAccounts)
@@ -38,7 +41,8 @@ export function ReceivingAccountsPage() {
     e.preventDefault();
     if (!editing) return;
     const { qrUrl: _qr, ...body } = editing.draft;
-    const payload = { ...body, accountNumber: body.accountNumber?.trim() || null, promptpayNumber: body.promptpayNumber?.trim() || null };
+    const payload = { ...body, accountNumber: body.accountNumber?.trim() || null, promptpayNumber: body.promptpayNumber?.trim() || null,
+      qrReceiver: body.qrReceiver?.replace(/[\s-]/g, "") || null };
     setBusy(true);
     setErrors({});
     setMessage(null);
@@ -55,14 +59,41 @@ export function ReceivingAccountsPage() {
     }
   }
 
+  /** The PromptPay ID inside the QR picture (read in this browser): a slip paid by scanning it names that ID. */
+  async function readReceiver(image: Blob | null): Promise<string | null> {
+    try {
+      return image ? await readPromptpayFromImage(image) : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function uploadQr(file: File) {
     if (!editing) return;
     setBusy(true);
+    setQrNote(null);
     try {
-      const asset = await uploadImage(file, "PAYMENT_QR"); // kept exactly as uploaded (scannable)
-      setEditing({ ...editing, draft: { ...editing.draft, qrAssetId: asset.id, qrUrl: asset.url } });
+      const [asset, id] = await Promise.all([uploadImage(file, "PAYMENT_QR"), readReceiver(file)]); // kept exactly as uploaded (scannable)
+      setEditing({ ...editing, draft: { ...editing.draft, qrAssetId: asset.id, qrUrl: asset.url, qrReceiver: id } });
+      setQrNote(id ? { kind: "ok", text: format(t.pay.readQrDone, { value: id }) } : { kind: "none", text: t.pay.readQrNone });
     } catch (err) {
       fail(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function readFromSavedQr() {
+    if (!editing?.draft.qrUrl) return;
+    setBusy(true);
+    setQrNote(null);
+    try {
+      const res = await fetch(editing.draft.qrUrl, { credentials: "same-origin" });
+      const id = await readReceiver(res.ok ? await res.blob() : null);
+      if (id) setEditing({ ...editing, draft: { ...editing.draft, qrReceiver: id } });
+      setQrNote(id ? { kind: "ok", text: format(t.pay.readQrDone, { value: id }) } : { kind: "none", text: t.pay.readQrNone });
+    } catch {
+      setQrNote({ kind: "none", text: t.pay.readQrNone });
     } finally {
       setBusy(false);
     }
@@ -113,10 +144,18 @@ export function ReceivingAccountsPage() {
                 <input type="file" accept="image/png,image/jpeg,image/webp" className="visually-hidden" id="qr-upload"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadQr(f); e.target.value = ""; }} />
               </label>
-              {editing.draft.qrAssetId && <Button variant="ghost" onClick={() => set({ qrAssetId: null, qrUrl: null })}>{t.pay.removeQr}</Button>}
+              {editing.draft.qrAssetId && <Button variant="ghost" onClick={() => { set({ qrAssetId: null, qrUrl: null, qrReceiver: null }); setQrNote(null); }}>{t.pay.removeQr}</Button>}
             </div>
             {errors.qrAssetId && <p className="adm-field__error">{errors.qrAssetId}</p>}
           </div>
+          {editing.draft.qrAssetId && (
+            <div className="adm-credit__qr-receiver">
+              <Field label={t.pay.qrReceiver} hint={t.pay.qrReceiverHint} inputMode="numeric" maxLength={24} value={editing.draft.qrReceiver ?? ""}
+                error={errors.qrReceiver} onChange={(e) => set({ qrReceiver: e.target.value })} />
+              <Button variant="secondary" busy={busy} onClick={() => void readFromSavedQr()}>{t.pay.readQr}</Button>
+            </div>
+          )}
+          {qrNote && <Alert kind={qrNote.kind === "ok" ? "success" : "info"}>{qrNote.text}</Alert>}
           <div className="adm-field">
             <label htmlFor="acc-status">{t.pricing.status}</label>
             <select id="acc-status" value={editing.draft.status} onChange={(e) => set({ status: e.target.value as "ACTIVE" | "INACTIVE" })}>
@@ -146,10 +185,12 @@ export function ReceivingAccountsPage() {
               <p className="adm-small">{a.accountName}</p>
               {a.accountNumber && <p className="adm-mono">{t.pay.accountNumber}: {a.accountNumber}</p>}
               {a.promptpayNumber && <p className="adm-mono">{t.pay.promptpay.split(" (")[0]}: {a.promptpayNumber}</p>}
+              {a.qrReceiver && <p className="adm-mono">{t.pay.qrReceiver}: {a.qrReceiver}</p>}
               {canEdit && (
                 <div className="adm-row adm-row--wrap">
                   <Button variant="secondary" onClick={() => {
-                    setEditing({ id: a.id, draft: { bankName: a.bankName, accountName: a.accountName, accountNumber: a.accountNumber, promptpayNumber: a.promptpayNumber, qrAssetId: a.qrAssetId, qrUrl: a.qrUrl, status: a.status, sortOrder: a.sortOrder } });
+                    setEditing({ id: a.id, draft: { bankName: a.bankName, accountName: a.accountName, accountNumber: a.accountNumber, promptpayNumber: a.promptpayNumber, qrAssetId: a.qrAssetId, qrUrl: a.qrUrl, qrReceiver: a.qrReceiver, status: a.status, sortOrder: a.sortOrder } });
+                    setQrNote(null);
                     setErrors({});
                     window.scrollTo({ top: 0 });
                   }}>{t.pay.edit}</Button>
