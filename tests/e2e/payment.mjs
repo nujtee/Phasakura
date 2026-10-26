@@ -462,6 +462,34 @@ await check("credit top-up page: the payment QR can be saved as an image", async
   if (SHOTS) await qr.screenshot({ path: `${SHOTS}/credit-topup-qr-save.png` });
 });
 
+await check("phone in LINE's in-app browser: 'Save QR image' shows the picture full screen to press and hold", async () => {
+  const line = await browser.newContext({
+    ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "th-TH",
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/14.10.0",
+  });
+  const p = await line.newPage(); watch(p);
+  await p.goto(`${BASE}/th/admin/login`);
+  await p.locator("input[autocomplete=username]").fill("admin@example.test");
+  await p.locator("input[autocomplete=current-password]").fill("correct horse battery staple");
+  await p.locator("form button[type=submit]").click();
+  await p.waitForURL(`${BASE}/th/admin`);
+  await p.goto(`${BASE}/th/admin/credit-topup`);
+  const qr = p.locator(".adm-credit__qrbox");
+  await qr.locator("img").waitFor();
+  await p.waitForTimeout(300);
+  let downloaded = false;
+  p.on("download", () => { downloaded = true; });
+  await qr.getByRole("button", { name: "บันทึกรูป QR" }).click();
+  const sheet = p.getByRole("dialog", { name: /กดค้างที่รูป/ });
+  await sheet.waitFor();
+  assert(await sheet.locator("img").getAttribute("src") === await qr.locator("img.adm-credit__qr").getAttribute("src"), "the QR picture itself");
+  assert(!downloaded, "no download in an in-app browser");
+  if (SHOTS) await p.screenshot({ path: `${SHOTS}/save-qr-inapp.png` });
+  await sheet.getByRole("button", { name: "ปิด" }).click();
+  await sheet.waitFor({ state: "detached" });
+  await line.close();
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

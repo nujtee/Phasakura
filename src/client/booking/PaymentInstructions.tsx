@@ -5,7 +5,7 @@ import { useI18n } from "../i18n/I18nProvider.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
 import { bookingErrorText, createPaypalOrder, rememberForPaypal } from "./api.ts";
 import { QrCode, qrPngDataUrl } from "./QrCode.tsx";
-import { useSaveImage } from "../media/saveImage.ts";
+import { dataUrlToBlob, useSaveImage } from "../media/SaveImage.tsx";
 import { useDateTimeText } from "./Summary.tsx";
 import { useBookingT } from "./useBookingT.ts";
 
@@ -89,17 +89,11 @@ export function PaymentInstructions({
     }
   }
 
-  const saveQrImage = useSaveImage(current === "QR_CODE" ? payment.qrUrl : null, `qr-${bookingCode}`);
-
-  function saveQr() {
-    if (!payment.promptpayPayload) return;
-    const url = qrPngDataUrl(payment.promptpayPayload);
-    if (!url) return;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `promptpay-${bookingCode}.png`;
-    a.click();
-  }
+  const saveLabels = { hint: bt.pay.saveQrHint, close: bt.pay.saveQrClose, alt: bt.qrAlt };
+  // The PromptPay QR drawn here, or the QR picture the property uploaded.
+  const promptpaySave = useSaveImage(payment.promptpayPayload ? () => dataUrlToBlob(qrPngDataUrl(payment.promptpayPayload!)) : null,
+    `promptpay-${bookingCode}`, saveLabels);
+  const imageSave = useSaveImage(current === "QR_CODE" ? payment.qrUrl : null, `qr-${bookingCode}`, saveLabels);
 
   return (
     <section className="pay" aria-labelledby={`${id}-h`}>
@@ -141,7 +135,8 @@ export function PaymentInstructions({
               <figure className="pay-qr">
                 <QrCode value={payment.promptpayPayload} label={fill(bt.pay.promptpayQrAlt, { amount })} />
                 <figcaption className="pay-qr__brand">PromptPay · {amount}</figcaption>
-                <button type="button" className="pay__copy pay-qr__save" onClick={saveQr}>{bt.pay.saveQr}</button>
+                <button type="button" className="pay__copy pay-qr__save" onClick={promptpaySave.save}>{bt.pay.saveQr}</button>
+                {promptpaySave.sheet}
               </figure>
             )}
             <div className="pay-panel__text">
@@ -171,7 +166,8 @@ export function PaymentInstructions({
           <div className="pay__body">
             <figure className="pay-qr">
               <img className="pay__qr" src={payment.qrUrl} alt={bt.qrAlt} width={220} height={220} decoding="async" />
-              <button type="button" className="pay__copy pay-qr__save" onClick={saveQrImage}>{bt.pay.saveQr}</button>
+              <button type="button" className="pay__copy pay-qr__save" onClick={imageSave.save}>{bt.pay.saveQr}</button>
+              {imageSave.sheet}
             </figure>
             <div className="pay-panel__text">
               <p className="pay-panel__how">{fill(bt.pay.qrHow, { amount })}</p>
