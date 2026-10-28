@@ -29,6 +29,8 @@ export class LandscapeService {
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
     private readonly mediaBaseUrl: string | undefined,
+    /** MAPTILER_API_KEY is set (satellite plans). */
+    private readonly satelliteReady = false,
   ) {}
 
   // ================================================================ admin
@@ -39,6 +41,7 @@ export class LandscapeService {
     const [layouts, units, campingEnabled] = await Promise.all([this.repo.layouts(), this.repo.units(), this.repo.campingEnabled()]);
     return {
       enabled: settings.enabled === 1,
+      satelliteReady: this.satelliteReady,
       canToggle: this.authz.can(actor, "landscape.toggle"),
       canEdit: this.authz.can(actor, "landscape.edit"),
       canPublish: this.authz.can(actor, "landscape.publish"),
@@ -84,6 +87,12 @@ export class LandscapeService {
     const id = newId();
     const now = iso(this.clock());
     const doc = emptyLandscape(input.backgroundKind);
+    if (input.backgroundKind === "SATELLITE") {
+      // Satellite: needs MapTiler; starts over the site's own location (Settings → Website) when it is set.
+      if (!this.satelliteReady) throw new ConflictError("Satellite imagery is not set up (MAPTILER_API_KEY)", "MAP_NOT_CONFIGURED");
+      const here = await this.repo.siteLocation();
+      if (here && doc.background.kind === "SATELLITE") doc.background = { ...doc.background, center: here };
+    }
     await this.db.batch([
       this.repo.insertLayoutStatement({ id, name: input.name, kind: input.backgroundKind, json: JSON.stringify(doc), userId: actor.userId, now }),
       this.log.auditStatement(actor.userId, "LANDSCAPE_CREATE", "landscape_layouts", id, null, { name: input.name, background: input.backgroundKind }, meta),

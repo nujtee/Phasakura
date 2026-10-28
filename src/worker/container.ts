@@ -66,6 +66,7 @@ import { CenterAccessService } from "./services/center-access.service.ts";
 import { CenterAdminService } from "./services/center-admin.service.ts";
 import { MonitoringService } from "./services/monitoring.service.ts";
 import { edgeCache, MapTileService } from "./services/map-tile.service.ts";
+import { SatelliteTileService } from "./services/satellite-tile.service.ts";
 import { EmailRepository } from "./repositories/email.repository.ts";
 import { EmailOutbox, EmailService } from "./services/email.service.ts";
 import { createPaypalApi, paypalEnvironment, type FetchLike as PaypalFetch } from "./paypal/paypal-api.ts";
@@ -144,6 +145,7 @@ export interface Services {
   channels: ChannelService;
   /** Landscape / site plan on the booking page (migration 0039). */
   landscape: LandscapeService;
+  satelliteTiles: SatelliteTileService;
 }
 
 export interface ServiceOptions {
@@ -328,7 +330,12 @@ export function createServices(env: Env, options: ServiceOptions): Services {
           inventory, pricing, today: () => availability.today(),
           maxAdvanceDays: async () => (await pricing.bookingSettings()).max_advance_days,
         })),
-    landscape: new LandscapeService(db, new LandscapeRepository(db), authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
+    landscape: new LandscapeService(db, new LandscapeRepository(db), authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL,
+      !!env.MAPTILER_API_KEY?.trim()),
+    // Satellite site plans (landscape L4): MapTiler imagery around this site's satellite plans only.
+    satelliteTiles: new SatelliteTileService(() => new LandscapeRepository(db).satelliteAreas(), {
+      apiKey: env.MAPTILER_API_KEY?.trim() || null, tileset: env.MAPTILER_TILESET, fetch: options.mapFetch, cache: edgeCache(),
+    }, () => clock().getTime(), env.DB),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
     dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock, (from, to) => ga4.dashboard(from, to)),
     cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),

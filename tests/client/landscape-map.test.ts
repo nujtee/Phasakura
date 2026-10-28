@@ -19,10 +19,10 @@ const availability = (units: [string, boolean][], campingRemaining = 5): Availab
 });
 
 describe("booking-page site map", () => {
-  it("draws blank and photo plans now; satellite plans wait for phase L4", () => {
+  it("draws blank, photo and satellite plans", () => {
     assert.equal(drawable(emptyLandscape("BLANK")), true);
     assert.equal(drawable(emptyLandscape("PHOTO")), true);
-    assert.equal(drawable(emptyLandscape("SATELLITE")), false);
+    assert.equal(drawable(emptyLandscape("SATELLITE")), true);
   });
 
   it("photo plans are drawn in the photo's pixels, by layer order", () => {

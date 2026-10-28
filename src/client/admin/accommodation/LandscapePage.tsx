@@ -196,7 +196,9 @@ export function LandscapePage() {
                 <legend className="adm-label">{m.background}</legend>
                 {LANDSCAPE_BACKGROUNDS.map((b) => (
                   <label key={b} className="adm-check">
-                    <input type="radio" name="landscape-bg" value={b} checked={kind === b} onChange={() => setKind(b)} /> {m.bg[b]}
+                    <input type="radio" name="landscape-bg" value={b} checked={kind === b} disabled={b === "SATELLITE" && !data.satelliteReady}
+                      onChange={() => setKind(b)} /> {m.bg[b]}
+                    {b === "SATELLITE" && !data.satelliteReady && <span className="adm-small adm-muted"> — {m.satelliteNotReady}</span>}
                   </label>
                 ))}
               </fieldset>

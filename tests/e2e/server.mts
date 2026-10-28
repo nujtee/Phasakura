@@ -42,6 +42,8 @@ const env = {
   // E2E_APP_ENV=production: the Phase 16 suite runs the production smoke test against this server.
   DB: db, MEDIA_PUBLIC: new MemoryBucket(), MEDIA_PRIVATE: new MemoryBucket(), APP_ENV: process.env.E2E_APP_ENV ?? "development",
   APP_BASE_URL: `https://localhost:${PORT}`,
+  // Satellite site plans (landscape L4): MapTiler is the in-process tile fake (mapFetch) below.
+  MAPTILER_API_KEY: "e2e-maptiler-key",
   // Fake LINE channel (the LINE API itself is the in-process FakeLine below).
   LINE_CHANNEL_ACCESS_TOKEN: "e2e-channel-token", LINE_CHANNEL_SECRET: "e2e-channel-secret",
   // Meta Conversions API and GA4 Data API (the APIs themselves are the in-process fakes below).

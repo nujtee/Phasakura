@@ -3,8 +3,10 @@ import type { AvailabilityDto, PublicAccommodationsDto, PublicUnitDto } from "..
 import type { PublicLandscapeDto } from "../../shared/landscape-types.ts";
 import { apiGet } from "../api/client.ts";
 import { fill } from "../accommodation/UnitCard.tsx";
-import { drawable, mapScene, mapTargets, type MapTarget, type StayStatus } from "../landscape/booking-map.ts";
-import { shapeBox, shapeCenter } from "../landscape/geometry.ts";
+import { drawable, mapScene, mapTargets, viewFor, type MapTarget, type StayStatus } from "../landscape/booking-map.ts";
+import { planUnit } from "../landscape/geometry.ts";
+import { SatelliteAttribution, SatelliteTiles } from "../landscape/SatelliteTiles.tsx";
+import { shapeBox, shapeCenter, type Box } from "../landscape/geometry.ts";
 import { ShapeView } from "../landscape/ShapeView.tsx";
 import type { Pick } from "./StayPicks.tsx";
 import { useBookingT } from "./useBookingT.ts";
@@ -72,10 +74,38 @@ export function LandscapeMap({ data, availability, picks, renderUnit, onCamping,
     el.scrollTop = middle.current[1] * el.scrollHeight - el.clientHeight / 2;
   }, [zoomIndex]);
 
+  // Satellite plans: which part is on screen and how large (only those tiles, sharp enough).
+  const satellite = layout?.document.background.kind === "SATELLITE";
+  const [onScreen, setOnScreen] = useState<{ left: number; top: number; width: number; height: number; svgWidth: number } | null>(null);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !satellite) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setOnScreen({
+        left: el.scrollLeft, top: el.scrollTop, width: el.clientWidth, height: el.clientHeight, svgWidth: el.scrollWidth,
+      }));
+    };
+    measure();
+    el.addEventListener("scroll", measure, { passive: true });
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    ro?.observe(el);
+    return () => { cancelAnimationFrame(frame); el.removeEventListener("scroll", measure); ro?.disconnect(); };
+  }, [satellite, zoomIndex, scene]);
+
   if (!layout || !scene) return null;
   const doc = layout.document;
   const { size, objects } = scene;
-  const labelSize = Math.max(size.w, size.h) / 60;
+  const unit = planUnit(doc.background, size);
+  const vb = viewFor(doc, size, objects, unit * 0.3);
+  const labelSize = doc.background.kind === "SATELLITE" ? vb.w / 70 : Math.max(size.w, size.h) / 60;
+  let tilesView: Box = vb;
+  let pxPerUnit = 1;
+  if (onScreen && onScreen.svgWidth > 0) {
+    pxPerUnit = onScreen.svgWidth / vb.w;
+    tilesView = { x: vb.x + onScreen.left / pxPerUnit, y: vb.y + onScreen.top / pxPerUnit, w: onScreen.width / pxPerUnit, h: onScreen.height / pxPerUnit };
+  }
   const current = selected ? targets.get(selected) ?? null : null;
   const statusText: Record<StayStatus, string> = { available: m.available, unavailable: m.unavailable, picked: m.picked, unknown: m.notChecked };
   const illustrative = doc.background.kind === "PHOTO" && !doc.background.measuredWidthM;
@@ -116,12 +146,18 @@ export function LandscapeMap({ data, availability, picks, renderUnit, onCamping,
           <button type="button" className="bmap__zbtn bmap__zbtn--text" disabled={zoomIndex === 0} onClick={() => { middle.current = [0.5, 0.5]; setZoomIndex(0); }}>{m.zoomFit}</button>
         </div>
         <div className="bmap__scroll" ref={scroller}>
-          <svg className="bmap__svg" viewBox={`0 0 ${size.w} ${size.h}`} style={{ width: `${ZOOMS[zoomIndex]! * 100}%` }}
+          <svg className="bmap__svg" viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} style={{ width: `${ZOOMS[zoomIndex]! * 100}%` }}
             role="group" aria-label={fill(m.label, { name: layout.name })}>
             {doc.background.kind === "BLANK" && <rect x={0} y={0} width={size.w} height={size.h} fill={doc.background.color} />}
             {doc.background.kind === "PHOTO" && (layout.backgroundUrl
               ? <image href={layout.backgroundUrl} x={0} y={0} width={size.w} height={size.h} opacity={doc.background.opacity} preserveAspectRatio="none" />
               : <rect x={0} y={0} width={size.w} height={size.h} fill="#eeeeee" />)}
+            {doc.background.kind === "SATELLITE" && (
+              <>
+                <rect x={vb.x} y={vb.y} width={vb.w} height={vb.h} fill="#dfe6dc" />
+                <SatelliteTiles bg={doc.background} view={tilesView} pxPerUnit={pxPerUnit} />
+              </>
+            )}
             {objects.map((o) => {
               const imageUrl = o.imageAssetId ? layout.imageUrls[o.imageAssetId] ?? null : null;
               const target = targets.get(o.id);
@@ -152,6 +188,7 @@ export function LandscapeMap({ data, availability, picks, renderUnit, onCamping,
             })}
           </svg>
         </div>
+        {satellite && <SatelliteAttribution className="bmap__attribution" />}
       </div>
 
       <ul className="bmap__legend" aria-label={m.title}>

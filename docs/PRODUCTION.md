@@ -96,6 +96,18 @@ SUPER_ADMIN (หลังบ้าน → ที่พัก → เชื่อ
 ลานกางเต็นท์: เลือกคืนแล้วใส่ "เต็นท์ต่อคืน" (เช่น 30 → 23) → ตั้งจำนวน, หรือ "กลับเป็นค่าปกติ"; ต่ำกว่าเต็นท์ที่จองแล้วไม่ได้
 (`BELOW_TENTS_SOLD`), คืนที่ปรับเองมีเครื่องหมาย ✎ และไม่เปลี่ยนตามค่าปกติในตั้งค่าลานกางเต็นท์
 
+### แผนผังที่พัก (Landscape, migration 0039, เฟส L1–L4)
+
+- เปิด / ปิดโดย Super Admin (หลังบ้าน → ที่พัก → แผนผังที่พัก หรือที่ Center → เว็บ → ฟังก์ชันที่ Super Admin เปิด / ปิด)
+- พื้นหลัง 3 แบบ: ผืนผ้าว่าง (เมตร), รูปถ่าย / ภาพมุมสูง, ภาพดาวเทียม (MapTiler)
+- **ภาพดาวเทียม** ต้องตั้ง Secret `MAPTILER_API_KEY` ของ Worker เว็บนั้น (ไม่ตั้ง = สร้างแผนผังดาวเทียมไม่ได้ แบบอื่นใช้ได้ปกติ)
+  - สร้างคีย์ที่ cloud.maptiler.com → API keys (แพ็กเกจฟรีมีโควตาต่อเดือน — ดูการใช้ใน MapTiler)
+  - Worker เป็นคนดึงภาพ (`/sat-tiles/…`) คีย์จึงไม่ถึงเบราว์เซอร์ **อย่าเปิดจำกัด HTTP Origin ของคีย์** (คำขอมาจาก Cloudflare ไม่ใช่เว็บ)
+  - ดึงเฉพาะภาพรอบแผนผังดาวเทียมของเว็บนั้น ไม่ใช่ proxy เปิด · cache ที่ Cloudflare ตามเวลาที่ MapTiler กำหนด (ไม่เกิน 7 วัน)
+  - ไม่บังคับ: ตัวแปร `MAPTILER_TILESET` (ค่าเริ่มต้น `satellite-v2`) ถ้า MapTiler เปลี่ยนชื่อชุดภาพ
+  - แสดงเครดิต © MapTiler © OpenStreetMap contributors บนแผนที่ทุกครั้ง (เงื่อนไขของ MapTiler)
+- **จุดอ้างอิงพิกัด** (แผนผังรูปถ่าย): ปักจุดบนรูปที่รู้พิกัดจริง ≥ 2 จุด → วัดระยะจริง และ "สร้างแผนผังดาวเทียมจากรูปนี้" ได้
+
 ### ระบบเครดิตการใช้ App (migration 0027)
 
 - **0027 เป็น DESTRUCTIVE rebuild ของตาราง `bookings`** (เพิ่มคอลัมน์ค่าธรรมเนียม) — `npm run db:backup` ก่อนเสมอ
@@ -190,6 +202,7 @@ npx wrangler secret list            # ดูได้แค่ชื่อ
 | `RESEND_API_KEY` | ไม่บังคับ: ส่งผ่าน Resend แทน (ใช้เฉพาะเมื่อยังไม่ได้ตั้ง Zoho) — ต้องยืนยันโดเมนผู้ส่งใน Resend |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | PayPal Checkout (Admin → การเงิน → ตั้งค่าการชำระเงิน) — PayPal Developer → Apps & Credentials → สร้าง REST app (Live) |
 | `PAYPAL_ENV` | ไม่บังคับ: `sandbox` เฉพาะตอนทดสอบด้วย credentials ของ sandbox (ไม่ตั้ง = PayPal จริง) |
+| `MAPTILER_API_KEY` | แผนผังที่พักแบบภาพดาวเทียม (หลังบ้าน → ที่พัก → แผนผังที่พัก) — cloud.maptiler.com → API keys |
 
 `SLIP_VERIFICATION_API_KEY` อย่างเดียว (ไม่ตั้ง `SLIP_VERIFY_PROVIDER`) = ใช้ EasySlip — **อย่าเปิด IP whitelist ใน EasySlip**
 (Cloudflare Workers ไม่มี IP ขาออกคงที่) โหมด Auto / Manual approve เลือกใน Admin → การเงิน → ตั้งค่าการชำระเงิน

@@ -413,6 +413,17 @@ export function createApp(options: AppOptions = {}) {
     }
   }
 
+  /** GET /sat-tiles/<z>/<x>/<y> — satellite imagery for satellite site plans (around this site's plans only). */
+  async function serveSatelliteTile(request: Request, env: Env, url: URL): Promise<Response> {
+    try {
+      const res = await services({ request, env, url }).satelliteTiles.serve(request, url);
+      return request.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
+    } catch (error) {
+      console.error(JSON.stringify({ level: "error", message: "satellite_tile_failed", error: String(error).slice(0, 200) }));
+      return new Response("Error", { status: 500, headers: { "Cache-Control": "no-store" } });
+    }
+  }
+
   /** GET /map-tiles/<z>/<x>/<y>.png — footer map thumbnail (OpenStreetMap tiles around the site only). */
   async function serveMapTile(request: Request, env: Env, url: URL): Promise<Response> {
     try {
@@ -513,6 +524,9 @@ export function createApp(options: AppOptions = {}) {
       }
       if (url.pathname.startsWith("/map-tiles/")) {
         return serveMapTile(request, env, url);
+      }
+      if (url.pathname.startsWith("/sat-tiles/")) {
+        return serveSatelliteTile(request, env, url);
       }
       // Everything else: robots.txt, sitemap.xml, redirects and the app shell with page metadata (Phase 13).
       const group = rateGroup(request.method, url.pathname);

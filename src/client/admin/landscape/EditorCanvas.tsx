@@ -2,13 +2,14 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import type { LandscapeObject, LandscapeObjectKind, LandscapeShape, Point } from "../../../shared/landscape-types.ts";
 import {
   angleFrom, boxCenter, handlePoints, hitTest, moveShape, objectCorners, objectsBox, resizeBox, rotatePoint, scaleShape, shapeBox,
-  shapeCenter, snap, type Box, type Size,
+  planUnit, shapeCenter, snap, type Box, type Size,
 } from "../../landscape/geometry.ts";
 import { KIND_INFO } from "../../landscape/kinds.ts";
 import { ShapeView } from "../../landscape/ShapeView.tsx";
+import { SatelliteTiles } from "../../landscape/SatelliteTiles.tsx";
 import { drawOrder, expandGroups, isEditable, moveObjects, newObjectId, type Scene } from "../../landscape/editor-state.ts";
 
-export type Tool = "select" | "hand" | LandscapeShape["type"];
+export type Tool = "select" | "hand" | "controlpoint" | LandscapeShape["type"];
 
 export interface CanvasApi {
   fit(): void;
@@ -56,6 +57,12 @@ export const EditorCanvas = forwardRef<CanvasApi, {
   /** Polygon / path points while drawing (shown, finished with Enter / double-click). */
   drafting: Point[] | null;
   setDrafting: (points: Point[] | null) => void;
+  /** Satellite plans: reloads the imagery after the plan's area was saved; first failed tile. */
+  tileVersion?: string | number;
+  onTileError?: (url: string) => void;
+  /** Control points of a photo (phase L4): where they are, numbered; the tool "controlpoint" picks a new one. */
+  markers?: { label: string; at: Point; pending?: boolean }[];
+  onPickPoint?: (p: Point) => void;
 }>(function EditorCanvas(props, ref) {
   const { scene, size, tool, selected, readOnly } = props;
   const wrap = useRef<HTMLDivElement>(null);
@@ -156,12 +163,13 @@ export const EditorCanvas = forwardRef<CanvasApi, {
     };
   }
 
-  const defaultSize = () => KIND_INFO[props.kind].size * size.w;
+  const unit = planUnit(scene.background, size);
+  const defaultSize = () => KIND_INFO[props.kind].size * unit;
 
   function finishPolygon(points: Point[]) {
     const isPath = tool === "path";
     if (points.length < (isPath ? 2 : 3)) return;
-    const shape: LandscapeShape = isPath ? { type: "path", points, width: Math.max(defaultSize(), size.w * 0.004) } : { type: "polygon", points };
+    const shape: LandscapeShape = isPath ? { type: "path", points, width: Math.max(defaultSize(), unit * 0.004) } : { type: "polygon", points };
     const o = newObject(shape);
     props.setDrafting(null);
     props.onCommit({ ...scene, objects: [...scene.objects, o] }, [o.id]);
@@ -174,6 +182,10 @@ export const EditorCanvas = forwardRef<CanvasApi, {
     const p = toWorld(e);
     if (e.button === 1 || tool === "hand" || space) {
       setDrag({ kind: "pan", sx: e.clientX, sy: e.clientY, view });
+      return;
+    }
+    if (tool === "controlpoint") {
+      if (!readOnly) props.onPickPoint?.(p);
       return;
     }
     if (readOnly) {
@@ -326,7 +338,7 @@ export const EditorCanvas = forwardRef<CanvasApi, {
 
   const vb = `${view.x} ${view.y} ${box.w / view.scale} ${box.h / view.scale}`;
   const hs = 5 / view.scale; // handle half-size
-  const labelSize = Math.max(size.w, size.h) / 70;
+  const labelSize = scene.background.kind === "SATELLITE" ? unit / 25 : Math.max(size.w, size.h) / 70;
   const bg = current.background;
   const gridOn = props.grid > 0 && props.grid * view.scale >= 8;
   const cursor = drag?.kind === "pan" || space || tool === "hand" ? "grab" : tool === "select" ? "default" : "crosshair";
@@ -350,6 +362,10 @@ export const EditorCanvas = forwardRef<CanvasApi, {
               {props.emptyPhotoText && <text x={size.w / 2} y={size.h / 2} fontSize={labelSize * 1.4} textAnchor="middle" fill="#757575">{props.emptyPhotoText}</text>}
             </g>
           ))}
+        {bg.kind === "SATELLITE" && (
+          <SatelliteTiles bg={bg} view={{ x: view.x, y: view.y, w: box.w / view.scale, h: box.h / view.scale }} pxPerUnit={view.scale}
+            version={props.tileVersion} onError={props.onTileError} />
+        )}
         {gridOn && <rect x={0} y={0} width={size.w} height={size.h} fill="url(#lse-grid)" pointerEvents="none" />}
         <rect x={0} y={0} width={size.w} height={size.h} fill="none" stroke="#9e9e9e" strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
         {ordered.map((o) => (
@@ -398,6 +414,13 @@ export const EditorCanvas = forwardRef<CanvasApi, {
             {props.drafting.map((q, i) => <circle key={i} cx={q[0]} cy={q[1]} r={hs * 0.8} fill="#1565c0" />)}
           </g>
         )}
+        {props.markers?.map((mk) => (
+          <g key={mk.label} pointerEvents="none" className="lse-marker">
+            <circle cx={mk.at[0]} cy={mk.at[1]} r={9 / view.scale} fill={mk.pending ? "#fff" : "#d32f2f"} stroke={mk.pending ? "#d32f2f" : "#fff"}
+              strokeWidth={2} vectorEffect="non-scaling-stroke" />
+            <text x={mk.at[0]} y={mk.at[1]} fontSize={11 / view.scale} textAnchor="middle" dominantBaseline="central" fill={mk.pending ? "#d32f2f" : "#fff"} fontWeight={700}>{mk.label}</text>
+          </g>
+        ))}
       </svg>
     </div>
   );

@@ -4,7 +4,8 @@
  * Coordinate reference, fixed by the background and stored with the document (never guessed):
  *  - BLANK     → "CANVAS_M": metres from the top-left corner of a canvas of widthM × heightM.
  *  - PHOTO     → "IMAGE_NORM": 0…1 across the photo's width and height (independent of its pixel size).
- *  - SATELLITE → "WGS84": [longitude, latitude] in degrees.
+ *  - SATELLITE → "WGS84": [longitude, latitude] in degrees; lengths (radius, symbol size, path width) in metres; a rect
+ *                is its north-west corner [lon, lat] and its extent east (w) and south (h) in degrees.
  * Every point of every object is in the document's own reference. Changing the background never moves an object
  * silently: it needs a transformation (georeferencing, phase L4) or the objects stay as they are.
  *
@@ -113,8 +114,23 @@ export interface LandscapeLayoutSummaryDto {
   isPublic: boolean;
 }
 
+/** Satellite imagery (phase L4): served by the Worker from MapTiler, around this site's satellite plans only. */
+export const SATELLITE_TILE_PATH = /^\/sat-tiles\/(\d{1,2})\/(\d{1,7})\/(\d{1,7})$/;
+export const SATELLITE_MAX_TILE_ZOOM = 20;
+/** Tile zooms served around a plan of zoom z: z − below … z + above. */
+export const SATELLITE_ZOOM_BELOW = 1;
+export const SATELLITE_ZOOM_ABOVE = 3;
+/** Plan zooms the editor offers (a site, not a city). */
+export const SATELLITE_PLAN_ZOOM = { min: 13, max: 19 } as const;
+
+export function satelliteTileUrl(z: number, x: number, y: number, version?: string | number): string {
+  return `/sat-tiles/${z}/${x}/${y}${version === undefined ? "" : `?v=${version}`}`;
+}
+
 export interface LandscapeOverviewDto {
   enabled: boolean;
+  /** MAPTILER_API_KEY is set: satellite plans can be made and shown. */
+  satelliteReady: boolean;
   canToggle: boolean;
   canEdit: boolean;
   canPublish: boolean;

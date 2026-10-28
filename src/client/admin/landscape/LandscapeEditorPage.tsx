@@ -10,7 +10,11 @@ import { uploadImage } from "../../media/prepareImage.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, errorMessage } from "../ui.tsx";
-import { fromWorld, mapShape, shapeBox, shapeCenter, toWorld, worldSize, type Size } from "../../landscape/geometry.ts";
+import {
+  fromWorld, mapShape, photoGeoref, photoToSatellite, planUnit, satelliteFrame, shapeBox, shapeCenter, toWorld, worldSize, type Size,
+} from "../../landscape/geometry.ts";
+import { SatelliteAttribution, tileProblem } from "../../landscape/SatelliteTiles.tsx";
+import { ControlPointsPanel, SatellitePanel } from "./GeoPanels.tsx";
 import { KIND_INFO, PALETTE } from "../../landscape/kinds.ts";
 import {
   commit, deleteObjects, duplicateObjects, expandGroups, groupObjects, initHistory, isEditable, moveObjects, newObjectId, redo, undo, ungroupObjects,
@@ -18,6 +22,7 @@ import {
 } from "../../landscape/editor-state.ts";
 import { EditorCanvas, isTyping, type CanvasApi, type Tool } from "./EditorCanvas.tsx";
 import { LayersPanel, PropertiesPanel, TemplatesPanel } from "./EditorPanels.tsx";
+import type { Point } from "../../../shared/landscape-types.ts";
 
 const AUTOSAVE_MS = 2500;
 type SaveState = { kind: "saved"; at: string } | { kind: "dirty" } | { kind: "saving" } | { kind: "error"; text: string }
@@ -72,10 +77,11 @@ export function LandscapeEditorPage({ id }: { id: string }) {
 function Editor({ layout, overview, templates: initialTemplates, reload }: {
   layout: LandscapeLayoutDto; overview: LandscapeOverviewDto; templates: LandscapeTemplateDto[]; reload: () => Promise<void>;
 }) {
-  const { t, locale, href, can } = useAdmin();
+  const { t, locale, href, can, go } = useAdmin();
   const m = getLandscapeMessages(locale.code);
   const e = m.editor;
-  const readOnly = !overview.enabled || !can("landscape.edit") || layout.backgroundKind === "SATELLITE";
+  const satelliteOff = layout.backgroundKind === "SATELLITE" && !overview.satelliteReady;
+  const readOnly = !overview.enabled || !can("landscape.edit") || satelliteOff;
   const [bgSize, setBgSize] = useState(layout.backgroundSize);
   const [bgUrl, setBgUrl] = useState(layout.backgroundUrl);
   const [imageUrls, setImageUrls] = useState(layout.imageUrls);
@@ -103,11 +109,18 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
     return JSON.stringify(local.document) !== JSON.stringify(layout.draft) ? local : null;
   });
   const canvas = useRef<CanvasApi>(null);
+  /** Satellite imagery is served around the saved area only: reload the tiles after a save that moved the plan. */
+  const [tileVersion, setTileVersion] = useState(layout.draftRevision);
+  const savedBg = useRef(JSON.stringify(layout.draft.background));
+  const tileReported = useRef(false);
+  /** A control point clicked on the photo (world units), waiting for its coordinates. */
+  const [cpPending, setCpPending] = useState<Point | null>(null);
   const lastMerge = useRef<{ key: string; at: number } | null>(null);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
 
-  const grid = scene.background.kind === "BLANK" ? scene.background.gridM : size.w / 100;
+  const unit = planUnit(scene.background, size);
+  const grid = scene.background.kind === "BLANK" ? scene.background.gridM : unit / 100;
   const doc = useCallback((s: Scene = scene, sz: Size = size): LandscapeDocument =>
     fromWorld({ version: 1, crs: layout.draft.crs, background: s.background, layers: s.layers, objects: [] }, s.objects, sz), [scene, size, layout.draft.crs]);
 
@@ -145,6 +158,8 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
         baseRevision: base, name: name.trim() || layout.name, document,
       });
       setRevision(res.draftRevision);
+      const bgNow = JSON.stringify(sent.background);
+      if (bgNow !== savedBg.current) { savedBg.current = bgNow; setTileVersion(res.draftRevision); tileReported.current = false; }
       setImageUrls((u) => ({ ...u, ...res.imageUrls }));
       // Changes made while saving are still to save.
       if (sceneRef.current === sent) {
@@ -187,7 +202,7 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
       if (readOnly) return;
       if (mod && k === "z" && !ev.shiftKey) { ev.preventDefault(); setHistory(undo); setSave({ kind: "dirty" }); return; }
       if (mod && (k === "y" || (k === "z" && ev.shiftKey))) { ev.preventDefault(); setHistory(redo); setSave({ kind: "dirty" }); return; }
-      if (mod && k === "d" && selected.length) { ev.preventDefault(); const r = duplicateObjects(scene, selected, Math.max(size.w, size.h) / 60); apply(r.scene, r.ids); return; }
+      if (mod && k === "d" && selected.length) { ev.preventDefault(); const r = duplicateObjects(scene, selected, unit / 60); apply(r.scene, r.ids); return; }
       if (mod && k === "g" && selected.length) { ev.preventDefault(); apply(ev.shiftKey ? ungroupObjects(scene, selected) : groupObjects(scene, selected), selected); return; }
       if (mod && k === "a") { ev.preventDefault(); setSelected(scene.objects.filter((o) => isEditable(scene, o)).map((o) => o.id)); return; }
       if (polyPoints) return; // the canvas handles Enter / Backspace / Escape while drawing
@@ -195,7 +210,7 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
       if (ev.key === "Escape") { setSelected([]); setTool("select"); return; }
       if (ev.key.startsWith("Arrow") && selected.length) {
         ev.preventDefault();
-        const step = (ev.shiftKey ? 10 : 1) * (snapOn ? grid : size.w / 500);
+        const step = (ev.shiftKey ? 10 : 1) * (snapOn ? grid : unit / 500);
         const dx = ev.key === "ArrowLeft" ? -step : ev.key === "ArrowRight" ? step : 0;
         const dy = ev.key === "ArrowUp" ? -step : ev.key === "ArrowDown" ? step : 0;
         apply(moveObjects(scene, selected, dx, dy), selected, `nudge:${selected.join(",")}`);
@@ -207,7 +222,7 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [readOnly, scene, selected, apply, saveNow, snapOn, grid, size, polyPoints]);
+  }, [readOnly, scene, selected, apply, saveNow, snapOn, grid, unit, polyPoints]);
 
   function pickKind(k: LandscapeObjectKind) {
     setKind(k);
@@ -271,7 +286,7 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
   }
 
   function insertTemplate(tpl: LandscapeTemplateDto) {
-    const target = KIND_INFO[tpl.object.kind].size * size.w * (tpl.object.shape.type === "symbol" ? 1 : 1.5);
+    const target = KIND_INFO[tpl.object.kind].size * unit * (tpl.object.shape.type === "symbol" ? 1 : 1.5);
     const [cx, cy] = canvas.current?.center() ?? [size.w / 2, size.h / 2];
     const shape = mapShape(tpl.object.shape, ([x, y]) => [cx + (x - 0.5) * target, cy + (y - 0.5) * target], (l) => l * target);
     const layer = scene.layers.find((l) => l.id === KIND_INFO[tpl.object.kind].layer && !l.locked && l.visible) ?? scene.layers.find((l) => !l.locked && l.visible) ?? scene.layers[0]!;
@@ -289,6 +304,70 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
         .catch((err: unknown) => setMsg({ kind: "error", text: errorMessage(t, err) })),
     });
   }
+
+  /** Satellite: a new centre / zoom; objects keep their place on the earth (re-drawn in the new frame). Saved at once. */
+  function changeSatellite(next: Extract<Scene["background"], { kind: "SATELLITE" }>) {
+    const asDoc = fromWorld({ ...doc(), background: scene.background }, scene.objects, size);
+    apply({ ...scene, background: next, objects: toWorld({ ...asDoc, background: next }, size) });
+    setMsg(null);
+  }
+
+  function viewCenterLonLat(): Point | null {
+    if (scene.background.kind !== "SATELLITE") return null;
+    const c = canvas.current?.center();
+    if (!c) return null;
+    const [lon, lat] = satelliteFrame(scene.background).toLonLat(c);
+    return [Math.round(lon * 1e7) / 1e7, Math.round(lat * 1e7) / 1e7];
+  }
+
+  function onTileError(url: string) {
+    if (tileReported.current) return;
+    tileReported.current = true;
+    void tileProblem(url).then((code) => {
+      if (code === "OK") return;
+      setMsg({ kind: "error", text: format(e.satTile, { reason: e.satReasons[code] ?? e.satReasons.other! }) });
+    });
+  }
+
+  const georef = photoGeoref(scene.background, size);
+
+  function setControlPoints(points: Extract<Scene["background"], { kind: "PHOTO" }>["controlPoints"]) {
+    if (scene.background.kind !== "PHOTO") return;
+    apply({ ...scene, background: { ...scene.background, controlPoints: points } });
+  }
+
+  function addControlPoint(geo: Point) {
+    if (scene.background.kind !== "PHOTO" || !cpPending) return;
+    const image: Point = [round6(cpPending[0] / size.w), round6(cpPending[1] / size.h)];
+    setControlPoints([...scene.background.controlPoints, { image, geo }]);
+    setCpPending(null);
+  }
+
+  async function convertToSatellite() {
+    if (!georef || scene.background.kind !== "PHOTO") return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const document = photoToSatellite(doc(), size, georef);
+      const made = await apiRequest<LandscapeLayoutDto>("POST", "/api/admin/landscape/layouts", {
+        name: format(e.toSatelliteName, { name: name.trim() || layout.name }).slice(0, 80), backgroundKind: "SATELLITE",
+      });
+      await apiRequest<LandscapeLayoutDto>("PUT", `/api/admin/landscape/layouts/${encodeURIComponent(made.id)}/draft`, { baseRevision: made.draftRevision, document });
+      go("landscape", made.id);
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : "";
+      setMsg({ kind: "error", text: m.errors[code] ?? errorMessage(t, err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const markers = scene.background.kind === "PHOTO"
+    ? [
+      ...scene.background.controlPoints.map((cp, i) => ({ label: String(i + 1), at: [cp.image[0] * size.w, cp.image[1] * size.h] as Point })),
+      ...(cpPending ? [{ label: "+", at: cpPending, pending: true }] : []),
+    ]
+    : undefined;
 
   const statusText = useMemo(() => {
     const time = (iso: string) => new Intl.DateTimeFormat(locale.code, { timeStyle: "short", timeZone: "Asia/Bangkok" }).format(new Date(iso));
@@ -320,7 +399,7 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
       </div>
 
       {!overview.enabled && <Alert kind="info">{e.off}</Alert>}
-      {layout.backgroundKind === "SATELLITE" && <Alert kind="info">{e.satelliteSoon}</Alert>}
+      {satelliteOff && <Alert kind="info">{e.satNotReady}</Alert>}
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {recovery && (
         <Alert kind="info">
@@ -373,7 +452,10 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
             emptyPhotoText={bg.kind === "PHOTO" && !bgUrl ? e.bgNone : null}
             onSelect={(ids) => setSelected(expandGroups(scene, ids))} onCommit={apply}
             onDrawn={() => { if (tool !== "symbol") setTool("select"); }}
-            drafting={polyPoints} setDrafting={setPolyPoints} />
+            drafting={polyPoints} setDrafting={setPolyPoints}
+            tileVersion={tileVersion} onTileError={onTileError}
+            markers={markers} onPickPoint={(p) => { setCpPending(p); setTool("select"); setPanel("background"); }} />
+          {bg.kind === "SATELLITE" && <SatelliteAttribution className="lse-attribution" />}
           <div className="lse-zoom">
             <Button variant="secondary" onClick={() => canvas.current?.zoom(1.25)} aria-label={e.zoomIn}>+</Button>
             <Button variant="secondary" onClick={() => canvas.current?.zoom(0.8)} aria-label={e.zoomOut}>−</Button>
@@ -422,9 +504,21 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
                 </div>
                 <NumberField label={e.bgMeasured} hint={e.bgMeasuredHint} value={bg.measuredWidthM} min={0.1} max={100000} optional disabled={readOnly}
                   onCommit={(v: number | null) => apply({ ...scene, background: { ...bg, measuredWidthM: v } })} />
+                <ControlPointsPanel e={e} bg={bg} georef={georef} readOnly={readOnly || !bgUrl} picking={tool === "controlpoint"} pending={cpPending !== null}
+                  onPick={() => { setTool("controlpoint"); setPolyPoints(null); }} onAdd={addControlPoint} onCancel={() => setCpPending(null)}
+                  onUpdate={(i, geo) => setControlPoints(bg.controlPoints.map((cp, j) => (j === i ? { ...cp, geo } : cp)))}
+                  onRemove={(i) => setControlPoints(bg.controlPoints.filter((_, j) => j !== i))} />
+                {georef && (
+                  <div className="lse-cp__convert">
+                    <Button variant="secondary" disabled={busy || !overview.satelliteReady || save.kind !== "saved"} onClick={() => void convertToSatellite()}>{e.toSatellite}</Button>
+                    <p className="adm-small adm-muted">{overview.satelliteReady ? e.toSatelliteHint : e.toSatelliteNeedsKey}</p>
+                  </div>
+                )}
               </div>
             )}
-            {panel === "background" && bg.kind === "SATELLITE" && <p className="adm-muted">{e.satelliteSoon}</p>}
+            {panel === "background" && bg.kind === "SATELLITE" && (
+              <SatellitePanel e={e} bg={bg} readOnly={readOnly} onChange={changeSatellite} viewCenter={viewCenterLonLat} />
+            )}
           </div>
         </aside>
       </div>
@@ -434,7 +528,7 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
   );
 }
 
-const TOOL_ICON: Record<Tool, string> = { select: "↖", hand: "✋", rect: "▭", circle: "◯", polygon: "⬠", path: "〰", symbol: "✿" };
+const TOOL_ICON: Record<Tool, string> = { select: "↖", hand: "✋", rect: "▭", circle: "◯", polygon: "⬠", path: "〰", symbol: "✿", controlpoint: "⌖" };
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
 function NumberField({ label, hint, value, min, max, optional, disabled, onCommit }: {
