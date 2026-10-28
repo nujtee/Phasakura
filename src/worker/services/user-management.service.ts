@@ -229,7 +229,7 @@ export class UserManagementService {
     if (unknown.length) throw new ValidationError({ permissions: "UNKNOWN_PERMISSION" });
     // Credit management is never granted to one user (migration 0027; the database refuses it too).
     if (overrides.some((o) => SUPER_ADMIN_ONLY_PERMISSIONS.includes(o.code as PermissionCode) && o.effect === "GRANT")) {
-      throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage / channels.toggle belong to SUPER_ADMIN only");
+      throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage / channels.toggle / landscape.toggle belong to SUPER_ADMIN only");
     }
 
     const now = this.now();
@@ -315,7 +315,7 @@ export class UserManagementService {
     if (codes.some((c) => !ids.has(c))) throw new ValidationError({ permissions: "UNKNOWN_PERMISSION" });
     // Credit management stays with the SUPER_ADMIN role (migration 0027; the database refuses it too).
     if (codes.some((c) => SUPER_ADMIN_ONLY_PERMISSIONS.includes(c as PermissionCode))) {
-      throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage / channels.toggle belong to SUPER_ADMIN only");
+      throw new ValidationError({ permissions: "SUPER_ADMIN_ONLY" }, "credits.manage / channels.toggle / landscape.toggle belong to SUPER_ADMIN only");
     }
 
     await this.commit([
