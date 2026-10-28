@@ -5,11 +5,11 @@ import type { HealthRepository } from "../repositories/health.repository.ts";
  * The newest migration this code expects (Phase 16). A test keeps it equal to the last file in
  * migrations/, so a deploy whose migrations were not applied shows up as `schema: "outdated"`.
  */
-export const LATEST_MIGRATION = "0038_receiving_qr_receiver.sql";
+export const LATEST_MIGRATION = "0039_landscape.sql";
 /**
  * Schema probe where D1's migration list cannot be read: what the newest migrations created or changed
  * (0020 error_events, 0021 booking_tarps, 0022 the rewritten bookings CHECK, 0023 payment settings and
- * the e-mail outbox, 0024 the admin menu, 0025 the booking deposit, 0026 several stays per booking, 0027 app-usage credits, 0028 the top-up QR receiver, 0029 the SUPER_ADMIN grant trigger, 0030 Center request nonces, 0031 Center SSO tickets and site suspension, 0032 calendar locks on camping nights, 0033 OTA channels / iCal, 0034 the Channex connection, 0035 availability / prices to Channex, 0036 OTA bookings, 0037 confirming an expired booking that was paid, 0038 the receiving account's QR receiver).
+ * the e-mail outbox, 0024 the admin menu, 0025 the booking deposit, 0026 several stays per booking, 0027 app-usage credits, 0028 the top-up QR receiver, 0029 the SUPER_ADMIN grant trigger, 0030 Center request nonces, 0031 Center SSO tickets and site suspension, 0032 calendar locks on camping nights, 0033 OTA channels / iCal, 0034 the Channex connection, 0035 availability / prices to Channex, 0036 OTA bookings, 0037 confirming an expired booking that was paid, 0038 the receiving account's QR receiver, 0039 the landscape).
  * All must be there.
  */
 const LATEST_PROBES: { table: string; contains?: string }[] = [
@@ -35,6 +35,7 @@ const LATEST_PROBES: { table: string; contains?: string }[] = [
   { table: "ota_bookings" },
   { table: "trg_bookings_credit_reinstate" },
   { table: "receiving_accounts", contains: "qr_receiver" },
+  { table: "landscape_layouts" },
 ];
 /** The cron runs every minute; 5 minutes without a finished run means it stopped. */
 export const CRON_STALE_MS = 5 * 60_000;

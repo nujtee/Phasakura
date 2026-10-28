@@ -78,6 +78,8 @@ import { BackupService } from "./services/backup.service.ts";
 import { siteSlug } from "../shared/site-name.ts";
 import { ChannelRepository } from "./repositories/channel.repository.ts";
 import { ChannelService, type ChannelFetch } from "./services/channel.service.ts";
+import { LandscapeService } from "./services/landscape.service.ts";
+import { LandscapeRepository } from "./repositories/landscape.repository.ts";
 import { ChannexApi, channexEnvironment, type ChannexFetch } from "./channex/channex-api.ts";
 import { ChannexService } from "./services/channex.service.ts";
 import { OtaBookingService } from "./services/ota-booking.service.ts";
@@ -140,6 +142,8 @@ export interface Services {
   otaBookings: OtaBookingService;
   /** OTA channels: on / off switch and iCal sync with Booking.com / Agoda / Airbnb (migration 0033). */
   channels: ChannelService;
+  /** Landscape / site plan on the booking page (migration 0039). */
+  landscape: LandscapeService;
 }
 
 export interface ServiceOptions {
@@ -324,6 +328,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
           inventory, pricing, today: () => availability.today(),
           maxAdvanceDays: async () => (await pricing.bookingSettings()).max_advance_days,
         })),
+    landscape: new LandscapeService(db, new LandscapeRepository(db), authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
     pricingRules: new PricingRuleService(db, pricing, units, authorization, log, clock),
     dashboard: new DashboardService(new DashboardRepository(db), inventory, authorization, clock, (from, to) => ga4.dashboard(from, to)),
     cms: new CmsService(db, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),

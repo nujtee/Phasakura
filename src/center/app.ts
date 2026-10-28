@@ -1,6 +1,7 @@
 import { listCreateSiteRuns, listOpenPulls, listReleaseRuns, mergePull, releaseSelection, startCreateSite, startRelease, type OpenPull, type ReleaseRun } from "./releases.ts";
 import { CloudflareZones, normalizeDomain, validDomain } from "./cloudflare.ts";
 import { CENTER_ROLES, type CenterActor, type CenterRole } from "../shared/center-protocol.ts";
+import { CENTER_FEATURES, type CenterFeaturesDto } from "../shared/channel-types.ts";
 import { hashPassword, validatePasswordPolicy, verifyPassword } from "../worker/security/password.ts";
 import { randomToken, sha256Hex } from "../worker/security/tokens.ts";
 import { parseSites, type CenterEnv, type CenterSite } from "./env.ts";
@@ -139,7 +140,7 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (sso && request.method === "POST") return startSso(ctx, me, sso[1]!);
     const detail = /^\/sites\/([a-z][a-z0-9-]{1,30})$/.exec(url.pathname);
     if (detail && request.method === "GET") return sitePage(ctx, me, detail[1]!);
-    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup|backup-download|channels)$/.exec(url.pathname);
+    const siteAction = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup|backup-download|channels|features)$/.exec(url.pathname);
     if (siteAction && request.method === "POST") {
       const slug = siteAction[1]!;
       switch (siteAction[2]) {
@@ -148,6 +149,7 @@ export function createCenterApp(options: CenterAppOptions = {}) {
         case "owner": return inviteSiteOwner(ctx, me, slug);
         case "backup": return backupSite(ctx, me, slug);
         case "channels": return changeChannels(ctx, me, slug);
+        case "features": return changeFeature(ctx, me, slug);
         default: return downloadBackup(ctx, me, slug);
       }
     }
@@ -496,7 +498,7 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
     if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
     const client = new SiteClient(ctx.env, 5000, clock);
     const actor = actorOf(me);
-    const [checks, alerts, log, suspension, users, backups, channels] = await Promise.all([
+    const [checks, alerts, log, suspension, users, backups, channels, features] = await Promise.all([
       ctx.repo.db.prepare("SELECT site, checked_at, http_status, schema_state, cron_state, errors_24h, slips_waiting, suspended, detail FROM center_site_checks WHERE site = ?1 ORDER BY checked_at DESC LIMIT 96").bind(slug).all<CheckRow>(),
       ctx.repo.db.prepare("SELECT type, open_since, detail FROM center_alert_states WHERE site = ?1 AND open_since IS NOT NULL").bind(slug).all<{ type: string; open_since: string; detail: string | null }>(),
       ctx.repo.db.prepare("SELECT type, event, message, delivery, created_at FROM center_alert_log WHERE site = ?1 ORDER BY created_at DESC LIMIT 30").bind(slug).all<{ type: string; event: string; message: string; delivery: string; created_at: string }>(),
@@ -504,6 +506,7 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
       client.call<{ items: SiteUserDto[] }>(site, "GET", "/api/center/users", actor),
       client.call<{ items: BackupDto[] }>(site, "GET", "/api/center/backups", actor),
       client.call<ChannelsDto>(site, "GET", "/api/center/channels", actor),
+      client.call<CenterFeaturesDto>(site, "GET", "/api/center/features", actor),
     ]);
     const openHtml = alerts.results.length
       ? alerts.results.map((a) => `<li class="bad">${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ${esc(a.detail ?? "")} <span class="muted small">(ตั้งแต่ ${esc(bkk(a.open_since))})</span></li>`).join("")
@@ -590,6 +593,23 @@ ${canSwitch ? `<form method="post" action="/sites/${esc(slug)}/channels" class="
 ${canSwitch && ch.channex.available ? `<form method="post" action="/sites/${esc(slug)}/channels" class="inline"><input type="hidden" name="channex" value="${ch.channex.enabled ? "off" : "on"}">${reasonInput(ch.channex.enabled ? "เหตุผลที่ปิด Channex" : "เหตุผลที่เปิด Channex")}<button type="submit"${ch.channex.enabled ? ' class="danger"' : ""}>${ch.channex.enabled ? "ปิด Channex" : "เปิด Channex"}</button></form>` : ""}
 <p class="small muted">เปิดแล้ว เจ้าของเว็บตั้งลิงก์ปฏิทินของแต่ละห้องได้ที่หลังบ้าน → ที่พัก → เชื่อมต่อ OTA · Super Admin ของเว็บเปิด / ปิดเองได้เช่นกัน</p>`}</div>`;
 
+    // ---- Other features only a SUPER_ADMIN switches: the site plan (landscape) and the app-usage credit system.
+    const ft = features.status === 200 ? features.data : undefined;
+    const featureForm = (feature: string, on: boolean, label: string, why: string) => canSwitch
+      ? `<form method="post" action="/sites/${esc(slug)}/features" class="inline"><input type="hidden" name="${feature}" value="${on ? "off" : "on"}">${reasonInput(why)}<button type="submit"${on ? ' class="danger"' : ""}>${on ? "ปิด" : "เปิด"}${label}</button></form>`
+      : "";
+    const stateHtml = (on: boolean) => (on ? '<span class="ok">เปิดอยู่</span>' : '<span class="muted">ปิดอยู่</span>');
+    const featuresHtml = `<div class="card"><h2 style="margin-top:0">ฟังก์ชันที่ Super Admin เปิด / ปิด</h2>
+${!ft ? `<p class="warn">อ่านสถานะไม่ได้: ${esc(siteError(features.status, features.error?.code))}${features.status === 404 ? " — Release เว็บนี้ก่อน" : ""}</p>` : `
+<p><strong>แผนผังที่พัก</strong> — ${ft.landscape ? stateHtml(ft.landscape.enabled) : '<span class="warn">ฐานข้อมูลยังไม่อัปเดต (Release เว็บนี้ก่อน)</span>'}
+${ft.landscape ? `<br><span class="small">แผนผัง ${ft.landscape.layouts} แผน · ${ft.landscape.publicLayout ? `หน้าจองแสดง “${esc(ft.landscape.publicLayout)}” ฉบับที่ ${ft.landscape.publicVersion ?? "-"}` : "หน้าจองยังไม่แสดงแผนผัง"}</span>` : ""}</p>
+${ft.landscape ? featureForm("landscape", ft.landscape.enabled, "แผนผังที่พัก", ft.landscape.enabled ? "เหตุผลที่ปิด" : "เหตุผลที่เปิด เช่น เจ้าของเว็บขอใช้แผนผัง") : ""}
+<p><strong>ระบบเครดิต (ค่าธรรมเนียมการใช้ App)</strong> — ${ft.credits ? stateHtml(ft.credits.enabled) : '<span class="muted">ไม่มีข้อมูล</span>'}
+${ft.credits ? `<br><span class="small">คงเหลือ ${ft.credits.balance.toLocaleString("en-US")} เครดิต · กันไว้ ${ft.credits.held.toLocaleString("en-US")} · แพ็กเกจ ${esc(ft.credits.plan ?? "-")}${ft.credits.payeeSet ? "" : ' · <span class="warn">ยังไม่ได้ตั้งบัญชีรับเงินเติมเครดิต (หลังบ้าน → จัดการเติมเครดิต → ตั้งค่า)</span>'}</span>` : ""}</p>
+${ft.credits && (ft.credits.enabled || ft.credits.payeeSet) ? featureForm("credits", ft.credits.enabled, "ระบบเครดิต", ft.credits.enabled ? "เหตุผลที่ปิด (การจองจะไม่ถูกหักเครดิต)" : "เหตุผลที่เปิด") : ""}
+${canSwitch ? "" : '<p class="muted small">เปิด / ปิดได้เฉพาะเจ้าของแพลตฟอร์มและผู้ดูแลระบบ</p>'}
+<p class="small muted">Super Admin ของเว็บเปิด / ปิดเองได้เช่นกัน (หลังบ้าน → ที่พัก → แผนผังที่พัก / การเงิน → จัดการเติมเครดิต) ทุกครั้งถูกบันทึกทั้งใน Center และในเว็บ</p>`}</div>`;
+
     const revokeHtml = me.role === "SUPPORT_READONLY" ? "" : `<div class="card"><h2 style="margin-top:0">session ของ Center ในเว็บนี้</h2>
 <p class="small muted">ออกจากหลังบ้านของเว็บนี้ทุกคนที่เข้ามาจาก Center (บัญชี "Center · …") และยกเลิกตั๋ว SSO ที่ยังไม่ได้ใช้ — admin ของเว็บเองไม่ถูกกระทบ</p>
 <form method="post" action="/sites/${esc(slug)}/revoke" class="inline">${reasonInput("เหตุผล")}<button class="danger" type="submit">ตัด session ของ Center ทั้งหมด</button></form></div>`;
@@ -601,6 +621,7 @@ ${canSwitch && ch.channex.available ? `<form method="post" action="/sites/${esc(
 ${ownerHtml}
 <div class="card"><h2 style="margin-top:0">การให้บริการ</h2>${serviceHtml}</div>
 ${channelsHtml}
+${featuresHtml}
 <div class="card"><h2 style="margin-top:0">ปัญหาที่เปิดอยู่</h2><ul>${openHtml}</ul></div>
 <div class="card scroll"><h2 style="margin-top:0">ผู้ดูแลของเว็บ</h2><table><thead><tr><th>ชื่อ</th><th>บทบาท</th><th>สถานะ</th><th>เข้าล่าสุด</th></tr></thead><tbody>${userRows}</tbody></table>
 <p class="small muted">อ่านจากเว็บโดยตรง (ไม่รวมบัญชี Center) — เพิ่ม / แก้ผู้ใช้ทำในหลังบ้านของเว็บ</p></div>
@@ -652,6 +673,31 @@ ${revokeHtml}
       return sitePage(ctx, me, slug, { kind: "error", text });
     }
     return sitePage(ctx, me, slug, { kind: "ok", text: `${on ? "เปิด" : "ปิด"} ${name} ของ ${site.name} แล้ว` });
+  }
+
+  /** Site plan / credit system on or off on one site (PLATFORM_OWNER / OPERATOR, reason; audited here and there). */
+  async function changeFeature(ctx: Ctx, me: Me, slug: string): Promise<Response> {
+    const site = ctx.sites.find((s) => s.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    if (me.role !== "PLATFORM_OWNER" && me.role !== "OPERATOR") throw new HttpError(403, "บทบาทของคุณเปิด / ปิดฟังก์ชันไม่ได้");
+    const form = await readForm(ctx.request);
+    const feature = CENTER_FEATURES.find((f) => form.get(f) !== null);
+    const op = feature ? form.get(feature) : null;
+    const reason = (form.get("reason") ?? "").trim();
+    if (!feature || (op !== "on" && op !== "off")) throw new HttpError(422, "คำสั่งไม่ถูกต้อง");
+    if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    const on = op === "on";
+    const res = await new SiteClient(ctx.env, 8000, clock).call<CenterFeaturesDto>(site, "PUT", "/api/center/features", { ...actorOf(me), reason }, { [feature]: on });
+    const ok = res.status === 200;
+    const name = feature === "landscape" ? "แผนผังที่พัก" : "ระบบเครดิต";
+    await audit(ctx, me.id, `FEATURE_${feature.toUpperCase()}_${on ? "ON" : "OFF"}`, site.slug, reason, { ok, status: res.status, error: res.error?.code ?? null }).run();
+    if (!ok) {
+      const text = res.error?.code === "CREDIT_PAYEE_NOT_SET" ? `${site.name} ยังไม่ได้ตั้งบัญชีรับเงินเติมเครดิต`
+        : res.status === 404 ? `${site.name} ยังไม่รองรับ — Release เว็บนี้ก่อน`
+          : `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}`;
+      return sitePage(ctx, me, slug, { kind: "error", text });
+    }
+    return sitePage(ctx, me, slug, { kind: "ok", text: `${on ? "เปิด" : "ปิด"}${name}ของ ${site.name} แล้ว` });
   }
 
   async function inviteSiteOwner(ctx: Ctx, me: Me, slug: string): Promise<Response> {
@@ -1195,7 +1241,7 @@ function safeNext(next: string | null): string | null {
 /** Sensitive POSTs (step-up) and the page to come back to. */
 function sensitiveReturnPath(method: string, path: string): string | null {
   if (method !== "POST") return null;
-  const site = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup-download|channels)$/.exec(path);
+  const site = /^\/sites\/([a-z][a-z0-9-]{1,30})\/(suspension|revoke|owner|backup-download|channels|features)$/.exec(path);
   if (site) return `/sites/${site[1]}`;
   if (path === "/releases" || path === "/releases/merge") return "/releases";
   if (path === "/sites/new" || path.startsWith("/sites/new/")) return "/sites/new";

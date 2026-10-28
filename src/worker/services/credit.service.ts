@@ -4,7 +4,7 @@ import {
   type CreditSettingsInput, type CreditState, type CreditSummaryDto, type CreditTopupDto, type Page, type TopupResultDto,
 } from "../../shared/credit-types.ts";
 import { DEFAULT_TIMEZONE, localDateTimeIn } from "../../shared/dates.ts";
-import type { D1DatabaseLike, R2BucketLike } from "../env.ts";
+import type { D1DatabaseLike, D1PreparedStatementLike, R2BucketLike } from "../env.ts";
 import { ConflictError, ForbiddenError, HttpError, NotFoundError, TooManyRequestsError, ValidationError } from "../http/errors.ts";
 import { sniffImage } from "../media/image-sniff.ts";
 import type { CreditAccountRow, CreditRepository, CreditSettingsRow, LedgerRow, TopupRow } from "../repositories/credit.repository.ts";
@@ -409,6 +409,33 @@ export class CreditService {
       await save(false); // before migration 0028: everything but the QR receiver
     }
     return this.settingsDto(await this.repo.settings());
+  }
+
+  /**
+   * The on / off switch alone (Center): the same rule as the settings page — it can be switched on only once it is
+   * set where top-ups are paid. Audited as the caller (a Center user).
+   */
+  async switchEnabled(enabled: boolean, userId: string | null, extraStatements: D1PreparedStatementLike[], meta: RequestMeta, audit: Record<string, unknown> = {}): Promise<void> {
+    const before = await this.repo.settings();
+    if (!before) throw new ConflictError("Run the database migrations first", "SCHEMA_OUTDATED");
+    if (enabled && !before.account_number && !before.promptpay_number && !before.qr_asset_id) {
+      throw new ConflictError("Set where top-ups are paid first (Credit management → Settings)", "CREDIT_PAYEE_NOT_SET");
+    }
+    const now = iso(this.clock());
+    await this.db.batch([
+      ...extraStatements,
+      this.repo.setEnabledStatement(enabled, userId, now),
+      this.log.auditStatement(userId, enabled ? "CREDITS_ON" : "CREDITS_OFF", "credits", "settings", { enabled: before.enabled === 1 }, { enabled, ...audit }, meta),
+    ]);
+  }
+
+  /** For Center: is it on, can it be switched on, where does the balance stand. */
+  async centerStatus(): Promise<{ enabled: boolean; payeeSet: boolean; balance: number; held: number; plan: string | null }> {
+    const [s, a] = await Promise.all([this.repo.settings().catch(() => null), this.repo.account().catch(() => null)]);
+    return {
+      enabled: s?.enabled === 1, payeeSet: !!(s?.account_number || s?.promptpay_number || s?.qr_asset_id),
+      balance: a?.balance ?? 0, held: a?.held ?? 0, plan: a?.plan ?? null,
+    };
   }
 
   async recipients(actor: AuthContext, meta: RequestMeta): Promise<CreditRecipientDto[]> {

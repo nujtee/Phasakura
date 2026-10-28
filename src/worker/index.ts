@@ -31,6 +31,7 @@ import { systemController } from "./controllers/system.controller.ts";
 import { emailController, paypalController } from "./controllers/notify.controller.ts";
 import { creditController } from "./controllers/credit.controller.ts";
 import { channelController } from "./controllers/channel.controller.ts";
+import { landscapeController } from "./controllers/landscape.controller.ts";
 import { centerController } from "./controllers/center.controller.ts";
 
 export interface AppOptions {
@@ -77,6 +78,7 @@ export function createApp(options: AppOptions = {}) {
   const paypal = paypalController(services);
   const credit = creditController(services);
   const channels = channelController(services);
+  const landscape = landscapeController(services);
   const center = centerController(services);
   const servePage = createPageHandler((request, env, url) => services({ request, env, url }));
 
@@ -95,6 +97,8 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/center/backups/download", center.downloadBackup)
     .get("/api/center/channels", center.getChannels)
     .put("/api/center/channels", center.setChannels)
+    .get("/api/center/features", center.getFeatures)
+    .put("/api/center/features", center.setFeatures)
     .post("/api/center/sso", center.issueSso)
     // Unsigned: the browser of the Center user posts the one-time ticket here (a form on center.phasakura.com).
     .post("/api/center/sso/consume", center.consumeSso)
@@ -305,6 +309,22 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/admin/credit-admin/topups/:id/reject", credit.reject)
     .post("/api/admin/credit-admin/adjustments", credit.adjust)
     .put("/api/admin/credit-admin/plan", credit.plan)
+    // Landscape / site plan (migration 0039)
+    .get("/api/admin/landscape", landscape.overview)
+    .put("/api/admin/landscape/settings", landscape.setEnabled)
+    .put("/api/admin/landscape/public", landscape.setPublic)
+    .get("/api/admin/landscape/templates", landscape.templates)
+    .post("/api/admin/landscape/templates", landscape.addTemplate)
+    .delete("/api/admin/landscape/templates/:id", landscape.deleteTemplate)
+    .post("/api/admin/landscape/layouts", landscape.create)
+    .get("/api/admin/landscape/layouts/:id", landscape.layout)
+    .put("/api/admin/landscape/layouts/:id/draft", landscape.saveDraft)
+    .post("/api/admin/landscape/layouts/:id/publish", landscape.publish)
+    .get("/api/admin/landscape/layouts/:id/versions", landscape.versions)
+    .post("/api/admin/landscape/layouts/:id/versions/:versionId/republish", landscape.republish)
+    .post("/api/admin/landscape/layouts/:id/versions/:versionId/restore", landscape.restoreToDraft)
+    .delete("/api/admin/landscape/layouts/:id", landscape.archive)
+    .get("/api/public/landscape", landscape.publicLayout)
     // OTA channels (migration 0033)
     .get("/api/admin/channels", channels.overview)
     .put("/api/admin/channels/settings", channels.setEnabled)

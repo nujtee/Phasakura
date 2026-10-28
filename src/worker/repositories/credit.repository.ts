@@ -109,6 +109,11 @@ export class CreditRepository {
     return this.db.prepare("SELECT balance, held, plan, updated_at FROM credit_account WHERE id = 1").first<CreditAccountRow>();
   }
 
+  /** Center / Super Admin switch: the credit system on or off, nothing else changed. */
+  setEnabledStatement(enabled: boolean, actorId: string | null, now: string): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE credit_settings SET enabled = ?1, updated_by = ?2, updated_at = ?3 WHERE id = 1").bind(enabled ? 1 : 0, actorId, now);
+  }
+
   /** `withQrReceiver` false = before migration 0028 (the column does not exist yet). */
   saveSettingsStatement(s: CreditSettingsInput, actorId: string, now: string, withQrReceiver = true): D1PreparedStatementLike {
     const sql = withQrReceiver

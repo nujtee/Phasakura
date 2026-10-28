@@ -7,6 +7,8 @@ import type { Handler, RequestContext } from "../router.ts";
 import { readJsonObject } from "../security/request.ts";
 import { LATEST_MIGRATION } from "../services/health.service.ts";
 import { Validator } from "../validation.ts";
+import { centerFeatures } from "../services/center-admin.service.ts";
+import { CENTER_FEATURES, type CenterFeature } from "../../shared/channel-types.ts";
 
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
@@ -90,6 +92,30 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       const change = switches(body);
       const s = services(ctx);
       return jsonOk(await s.centerAdmin.setChannels(req, s.channels, change, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
+    /** Site plan / credit system: on or off, and what is set up (super-admin switches other than the OTA channels). */
+    getFeatures: (async (ctx) => {
+      await verify(ctx);
+      const s = services(ctx);
+      return jsonOk(await centerFeatures({ landscape: s.landscape, credits: s.credits }), NO_STORE);
+    }) satisfies Handler,
+
+    /** `{ landscape?: boolean, credits?: boolean }` — PLATFORM_OWNER / OPERATOR, reason; audited as the Center user. */
+    setFeatures: (async (ctx) => {
+      const req = await verify(ctx);
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly([...CENTER_FEATURES]);
+      const change: Partial<Record<CenterFeature, boolean>> = {};
+      for (const key of CENTER_FEATURES) {
+        if (body[key] === undefined) continue;
+        if (typeof body[key] !== "boolean") v.errors[key] = "EXPECTED_BOOLEAN";
+        else change[key] = body[key] as boolean;
+      }
+      if (!Object.keys(change).length && !Object.keys(v.errors).length) v.errors.landscape = "REQUIRED";
+      v.assertValid();
+      const s = services(ctx);
+      return jsonOk(await s.centerAdmin.setFeatures(req, change, { landscape: s.landscape, credits: s.credits }, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
     /** Backups of this site's database in its private bucket (phase C8), newest first. */

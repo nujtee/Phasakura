@@ -1104,3 +1104,33 @@ describe("Center setup: break-glass two-step reset (phase C9)", () => {
     assert.equal(ctx.audits("MFA_RESET").length, 1, "an unknown e-mail changes nothing");
   });
 });
+
+describe("Center: features only a SUPER_ADMIN switches (site plan, credits)", () => {
+  it("the site page shows them; owner / operator switch them with a reason; refusals are explained; audited on both sides", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const page = await ctx.req("GET", "/sites/phasakura", { cookie: owner });
+    assert.equal(page.status, 200);
+    assert.match(page.text, /ฟังก์ชันที่ Super Admin เปิด \/ ปิด/);
+    assert.match(page.text, /แผนผังที่พัก<\/strong> — <span class="muted">ปิดอยู่/);
+    assert.match(page.text, /name="landscape" value="on"/);
+    assert.ok(!page.text.includes('name="credits"'), "no credits button until top-ups have somewhere to go");
+
+    assert.equal((await ctx.req("POST", "/sites/phasakura/features", { cookie: owner, form: { landscape: "on", reason: "" } })).text.includes("กรุณาระบุเหตุผล"), true);
+    const on = await ctx.req("POST", "/sites/phasakura/features", { cookie: owner, form: { landscape: "on", reason: "เจ้าของเว็บขอใช้แผนผัง" } });
+    assert.equal(on.status, 200, on.text.slice(0, 300));
+    assert.match(on.text, /เปิดแผนผังที่พักของ Phasakura/);
+    assert.match(on.text, /name="landscape" value="off"/);
+    assert.equal(ctx.site.db.get<{ e: number }>("SELECT enabled AS e FROM landscape_settings")!.e, 1);
+    assert.equal(ctx.site.audits("LANDSCAPE_ON").length, 1);
+    assert.deepEqual([ctx.audits("FEATURE_LANDSCAPE_ON")[0]!.site, ctx.audits("FEATURE_LANDSCAPE_ON")[0]!.reason], ["phasakura", "เจ้าของเว็บขอใช้แผนผัง"]);
+
+    const credits = await ctx.req("POST", "/sites/phasakura/features", { cookie: owner, form: { credits: "on", reason: "เริ่มเก็บค่าธรรมเนียม" } });
+    assert.match(credits.text, /ยังไม่ได้ตั้งบัญชีรับเงินเติมเครดิต/);
+    ctx.site.db.run("UPDATE credit_settings SET account_number = '111-2-33333-4', bank_name = 'Kasikorn' WHERE id = 1");
+    const ok = await ctx.req("POST", "/sites/phasakura/features", { cookie: owner, form: { credits: "on", reason: "เริ่มเก็บค่าธรรมเนียม" } });
+    assert.match(ok.text, /เปิดระบบเครดิตของ Phasakura/);
+    assert.equal(ctx.site.db.get<{ e: number }>("SELECT enabled AS e FROM credit_settings")!.e, 1);
+    assert.equal((await ctx.req("POST", "/sites/phasakura/features", { cookie: owner, form: { spaceship: "on", reason: "xxx" } })).status, 422);
+  });
+});

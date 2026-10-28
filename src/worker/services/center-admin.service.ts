@@ -9,7 +9,9 @@ import type { PasswordLinkService } from "./password-link.service.ts";
 import { BackupService, type BackupDto } from "./backup.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
 import type { ChannelService } from "./channel.service.ts";
-import type { CenterChannelsDto } from "../../shared/channel-types.ts";
+import type { CenterChannelsDto, CenterFeature, CenterFeaturesDto } from "../../shared/channel-types.ts";
+import type { LandscapeService } from "./landscape.service.ts";
+import type { CreditService } from "./credit.service.ts";
 import { CENTER_SESSION_TTL_MS, type NewSession, type SessionService } from "./session.service.ts";
 
 /** How long an SSO ticket can be used (Center posts it straight away). */
@@ -190,6 +192,20 @@ export class CenterAdminService {
     return channels.centerOverview();
   }
 
+  /** Landscape / credits on or off (PLATFORM_OWNER / OPERATOR, reason) — the same switches as the site's SUPER_ADMIN. */
+  async setFeatures(req: CenterRequest, change: Partial<Record<CenterFeature, boolean>>, targets: {
+    landscape: LandscapeService; credits: CreditService;
+  }, meta: RequestMeta): Promise<CenterFeaturesDto> {
+    requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
+    const reason = requireReason(req.actor);
+    const caller = centerUser(req.actor);
+    const audit = { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } };
+    const users = () => this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) });
+    if (change.landscape !== undefined) await targets.landscape.switchEnabled(change.landscape, caller.id, users(), meta, audit);
+    if (change.credits !== undefined) await targets.credits.switchEnabled(change.credits, caller.id, users(), meta, audit);
+    return centerFeatures(targets);
+  }
+
   async listBackups(): Promise<BackupDto[]> {
     return this.backups ? this.backups.list() : [];
   }
@@ -265,4 +281,12 @@ function requireReason(actor: CenterActor): string {
 
 function requireRole(actor: CenterActor, roles: readonly CenterRole[]): void {
   if (!roles.includes(actor.role)) throw new ForbiddenError("This Center role cannot do that", "CENTER_ROLE_REQUIRED");
+}
+
+export async function centerFeatures(targets: { landscape: LandscapeService; credits: CreditService }): Promise<CenterFeaturesDto> {
+  const [landscape, credits] = await Promise.all([
+    targets.landscape.centerStatus().catch(() => null),
+    targets.credits.centerStatus().catch(() => null),
+  ]);
+  return { landscape, credits };
 }

@@ -514,6 +514,27 @@ await check("receiving account: uploading a shop / e-Wallet QR reads its PromptP
   if (SHOTS) await pa.screenshot({ path: `${SHOTS}/receiving-qr-receiver.png`, fullPage: true });
 });
 
+await check("site plan (landscape L1): Super Admin switches it on, creates a plan, publishes it to the booking page", async () => {
+  await pa.goto(`${BASE}/en/admin/landscape`);
+  await pa.getByRole("heading", { name: "Site plan", exact: true }).waitFor();
+  await pa.getByText(/The site plan is off/).waitFor();
+  await pa.getByRole("button", { name: "Turn the site plan on" }).click();
+  await pa.getByLabel("Plan name").fill("Main plan");
+  await pa.getByLabel(/Blank canvas/).check();
+  await pa.getByRole("button", { name: "Create" }).click();
+  await pa.getByText("Plan created.").waitFor();
+  await pa.getByRole("button", { name: "Publish this draft" }).click();
+  await pa.getByRole("dialog").getByRole("button", { name: "Publish this draft" }).click();
+  await pa.getByText("Published version 1").waitFor();
+  await pa.getByRole("button", { name: "Show on the booking page" }).click();
+  await pa.getByText("On the booking page", { exact: true }).waitFor();
+  const pub = await (await req.get(`${BASE}/api/public/landscape`, { headers: H })).json();
+  assert(pub.data.enabled && pub.data.layout?.versionNo === 1, JSON.stringify(pub));
+  await pa.getByRole("button", { name: "Version history" }).click();
+  await pa.getByText(/Version 1 ·/).waitFor();
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/landscape-l1.png`, fullPage: true });
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

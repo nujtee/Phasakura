@@ -3409,3 +3409,11 @@
 .adm-channels__pick {
   margin-top: 8px;
 }
+
+/* Accommodation → Site plan (landscape, migration 0039) */
+.adm-landscape__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.adm-landscape__item { padding: 12px 0; border-bottom: 1px solid var(--color-border); }
+.adm-landscape__item:last-child { border-bottom: 0; }
+.adm-landscape__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.adm-landscape__versions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.adm-landscape__versions li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

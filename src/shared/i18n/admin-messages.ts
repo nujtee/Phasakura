@@ -69,6 +69,7 @@ const th = {
     camping: "นำเต็นท์มาเอง",
     pricing: "ราคาตามช่วงเวลา",
     channels: "เชื่อมต่อ OTA",
+    landscape: "แผนผังที่พัก",
     foodGroup: "อาหาร",
     foodMenu: "รายการอาหาร",
     foodOrders: "คำสั่งอาหาร",
@@ -500,7 +501,7 @@ const en: AdminMessages = {
   },
   nav: {
     dashboard: "Dashboard", bookingsGroup: "Bookings", bookings: "Bookings", calendar: "Calendar",
-    accommodationGroup: "Accommodation", houses: "Houses", vipTents: "VIP Tents", camping: "Camping", pricing: "Seasonal prices", channels: "OTA channels",
+    accommodationGroup: "Accommodation", houses: "Houses", vipTents: "VIP Tents", camping: "Camping", pricing: "Seasonal prices", channels: "OTA channels", landscape: "Site plan",
     foodGroup: "Food", foodMenu: "Menu", foodOrders: "Food orders", kitchen: "Kitchen report",
     financeGroup: "Finance", payments: "Payments", slips: "Slips", receivingAccounts: "Receiving accounts", paymentSettings: "Payment settings",
     reports: "Reports", websiteGroup: "Website", home: "Home", gallery: "Gallery", history: "History", seo: "SEO",
@@ -824,7 +825,7 @@ const zhCN: AdminMessages = {
   },
   nav: {
     dashboard: "仪表盘", bookingsGroup: "预订", bookings: "预订", calendar: "日历",
-    accommodationGroup: "住宿", houses: "房屋", vipTents: "VIP 帐篷", camping: "露营", pricing: "季节价格", channels: "OTA 渠道",
+    accommodationGroup: "住宿", houses: "房屋", vipTents: "VIP 帐篷", camping: "露营", pricing: "季节价格", channels: "OTA 渠道", landscape: "园区平面图",
     foodGroup: "餐饮", foodMenu: "菜单", foodOrders: "餐饮订单", kitchen: "厨房报表",
     financeGroup: "财务", payments: "付款", slips: "转账凭证", receivingAccounts: "收款账户", paymentSettings: "付款设置",
     reports: "报表", websiteGroup: "网站", home: "首页", gallery: "图库", history: "历史沿革", seo: "SEO",
