@@ -55,6 +55,16 @@ export function LandscapeMap({ data, availability, picks, renderUnit, onCamping,
     campingPicked: picks.some((p) => p.kind === "CAMPING"),
   }) : new Map<string, MapTarget>()), [scene, data, availability, pickedIds, picks]);
 
+  // After the details are on screen: keyboard users land in them; a tap only scrolls them into view.
+  const opened = useRef<"keyboard" | "pointer" | null>(null);
+  const [openCount, setOpenCount] = useState(0);
+  useEffect(() => {
+    const how = opened.current;
+    opened.current = null;
+    if (how === "keyboard") panel.current?.focus();
+    else if (how === "pointer") panel.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [openCount]);
+
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
@@ -79,11 +89,9 @@ export function LandscapeMap({ data, availability, picks, renderUnit, onCamping,
   };
 
   const open = (id: string, byKeyboard: boolean) => {
+    opened.current = byKeyboard ? "keyboard" : "pointer";
     setSelected(id);
-    requestAnimationFrame(() => {
-      if (byKeyboard) panel.current?.focus();
-      else panel.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
+    setOpenCount((n) => n + 1);
   };
 
   const name = (t: MapTarget) => (t.kind === "UNIT" ? t.unit.name : data.camping.name ?? t.object.label ?? m.campingGo);
