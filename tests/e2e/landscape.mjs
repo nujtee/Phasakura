@@ -170,6 +170,92 @@ await check("publish from the list: links checked, booking page gets the plan", 
   assert(pub.body.data.layout.document.objects.some((o) => o.link?.unitId === "dev_house_01"), "house on the booking page plan");
 });
 
+const day = (offset) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + offset * 86400000));
+const IN = day(61);
+const OUT = day(62);
+let SAKURA = "";
+let MOMIJI = "";
+
+await check("booking page map (L3): a second house is added and published; House 02 is booked on the test dates", async () => {
+  const l = await layout();
+  const doc = l.draft;
+  SAKURA = doc.objects.find((o) => o.link?.unitId === "dev_house_01").id;
+  MOMIJI = "momiji1";
+  doc.objects.push({
+    id: MOMIJI, layerId: "stays", kind: "HOUSE", shape: { type: "rect", x: 100, y: 30, w: 30, h: 20 }, rotation: 0,
+    style: { fill: "#d7b98e", stroke: "#6d4c41", opacity: 1 }, label: "Momiji", link: { type: "UNIT", unitId: "dev_house_02" },
+    groupId: null, locked: false, imageAssetId: null,
+  });
+  const saved2 = await api("PUT", `/api/admin/landscape/layouts/${LAYOUT}/draft`, { baseRevision: l.draftRevision, document: doc });
+  assert(saved2.status === 200, JSON.stringify(saved2.body));
+  const pub = await api("POST", `/api/admin/landscape/layouts/${LAYOUT}/publish`, { revision: saved2.body.data.draftRevision, makePublic: true });
+  assert(pub.status === 200, JSON.stringify(pub.body));
+  const full = { checkIn: IN, checkOut: OUT, adults: 2, children: 0, food: [], lang: "en", stays: [{ kind: "UNIT", unitId: "dev_house_02", adults: 2, children: 0 }] };
+  const q = await api("POST", "/api/public/bookings/quote", full);
+  assert(q.status === 200, JSON.stringify(q.body));
+  const b = await api("POST", "/api/public/bookings", { ...full, customer: { name: "Map guest", phone: "0867777777" }, privacyAccepted: true, expectedTotalSatang: q.body.data.totalSatang, idempotencyKey: `e2e-map-${Date.now()}` });
+  assert(b.status === 201 || b.status === 200, JSON.stringify(b.body));
+});
+
+const guest = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, locale: "en-US", isMobile: true, hasTouch: true });
+const pg = await guest.newPage(); watch(pg);
+
+await check("guest: the map shows before a search, nothing coloured yet; skip link to the list", async () => {
+  await pg.goto(`${BASE}/en/booking?checkIn=${IN}&checkOut=${OUT}&adults=2&children=0`);
+  await pg.locator(".bmap__svg").waitFor();
+  await pg.getByText("Site map", { exact: true }).waitFor();
+  const label = await pg.locator(`[data-target="${SAKURA}"]`).getAttribute("aria-label");
+  assert(/Not checked yet$/.test(label), label);
+  assert(await pg.locator(".bmap__svg text", { hasText: "Momiji" }).count() === 1, "plan labels drawn");
+  await pg.getByRole("link", { name: "Skip the map, go to the list of stays" }).click();
+  assert(await pg.evaluate(() => document.activeElement?.id) === "stay-list", "focus moved to the list");
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/landscape-booking-before.png`, fullPage: true });
+});
+
+await check("guest: after the search, free / taken show on the map; tap a house, see its price, choose it", async () => {
+  await pg.getByRole("button", { name: "Check availability" }).first().click();
+  await pg.waitForFunction((id) => /— Available$/.test(document.querySelector(`[data-target="${id}"]`)?.getAttribute("aria-label") ?? ""), SAKURA);
+  const momiji = await pg.locator(`[data-target="${MOMIJI}"]`).getAttribute("aria-label");
+  assert(/— Not available$/.test(momiji), momiji);
+  await pg.locator(`[data-target="${SAKURA}"]`).click();
+  const panel = pg.locator("#bmap-panel");
+  await panel.waitFor();
+  await panel.locator(".bmap__chip", { hasText: "Available" }).waitFor();
+  assert(/฿|THB/.test(await panel.innerText()), `price in the panel: ${await panel.innerText()}`);
+  await panel.locator(".unit-pick__btn").click();
+  await pg.locator("#picks").getByText("Sakura").first().waitFor();
+  await pg.waitForFunction((id) => /— Chosen$/.test(document.querySelector(`[data-target="${id}"]`)?.getAttribute("aria-label") ?? ""), SAKURA);
+  await panel.locator(".bmap__chip", { hasText: "Chosen" }).waitFor();
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/landscape-booking-picked.png`, fullPage: true });
+});
+
+await check("guest: keyboard — Tab to a house, Enter opens it; a taken house cannot be chosen", async () => {
+  await pg.locator(`[data-target="${MOMIJI}"]`).focus();
+  await pg.keyboard.press("Enter");
+  const panel = pg.locator("#bmap-panel");
+  await panel.locator(".bmap__chip", { hasText: "Not available" }).waitFor();
+  assert(await pg.evaluate(() => document.activeElement?.id) === "bmap-panel", "focus moved to the details");
+  assert(await panel.locator(".unit-pick__btn").count() === 0, "no choose button for a taken house");
+});
+
+await check("guest: zoom in / out / fit", async () => {
+  const w0 = (await pg.locator(".bmap__svg").boundingBox()).width;
+  await pg.getByRole("button", { name: "Zoom in" }).click();
+  const w1 = (await pg.locator(".bmap__svg").boundingBox()).width;
+  assert(w1 > w0 * 1.4, `${w0} → ${w1}`);
+  await pg.getByRole("button", { name: "Fit" }).click();
+  assert(Math.abs((await pg.locator(".bmap__svg").boundingBox()).width - w0) < 2, "back to fit");
+});
+
+await check("switched off by the Super Admin: the booking page has no map", async () => {
+  assert((await api("PUT", "/api/admin/landscape/settings", { enabled: false })).status === 200, "switch off");
+  await pg.reload();
+  await pg.locator(".unit-grid").first().waitFor();
+  await pg.waitForTimeout(500);
+  assert(await pg.locator(".bmap").count() === 0, "no map");
+  assert((await api("PUT", "/api/admin/landscape/settings", { enabled: true })).status === 200, "switch on again");
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

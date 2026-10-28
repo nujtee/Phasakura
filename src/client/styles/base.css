@@ -160,3 +160,6 @@ main:focus {
   font: inherit;
   cursor: pointer;
 }
+
+/* Labels on site plans (landscape): editor and booking-page map. */
+.landscape-label { fill: #212121; font-family: inherit; font-weight: 600; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
