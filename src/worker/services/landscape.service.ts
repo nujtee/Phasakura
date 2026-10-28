@@ -96,7 +96,7 @@ export class LandscapeService {
     const settings = await this.settingsOrThrow();
     const row = await this.layoutOr404(id);
     const draft = JSON.parse(row.draft_json) as LandscapeDocument;
-    return { ...this.summary(row, settings.public_layout_id), draft, backgroundUrl: await this.backgroundUrl(draft) };
+    return { ...this.summary(row, settings.public_layout_id), draft, ...(await this.backgroundImage(draft)) };
   }
 
   /**
@@ -210,7 +210,9 @@ export class LandscapeService {
 
   async templates(actor: AuthContext, meta: RequestMeta): Promise<LandscapeTemplateDto[]> {
     await this.authz.requirePermission(actor, "landscape.view", meta);
-    return (await this.repo.templates()).map((t) => ({ id: t.id, name: t.name, object: JSON.parse(t.object_json) as LandscapeTemplateDto["object"] }));
+    const rows = (await this.repo.templates()).map((t) => ({ id: t.id, name: t.name, object: JSON.parse(t.object_json) as LandscapeTemplateDto["object"] }));
+    const urls = await this.imageUrls(rows.map((r) => r.object.imageAssetId));
+    return rows.map((r) => ({ ...r, imageUrl: r.object.imageAssetId ? urls[r.object.imageAssetId] ?? null : null }));
   }
 
   /** Keeps an object (shape, style, picture — not its place in a plan or its booking link) for reuse. */
@@ -229,7 +231,7 @@ export class LandscapeService {
       this.repo.insertTemplateStatement({ id, name, json: JSON.stringify(stored), userId: actor.userId, now }),
       this.log.auditStatement(actor.userId, "LANDSCAPE_TEMPLATE_ADD", "landscape_templates", id, null, { name }, meta),
     ]);
-    return { id, name, object: stored };
+    return { id, name, object: stored, imageUrl: o.imageAssetId ? (await this.imageUrls([o.imageAssetId]))[o.imageAssetId] ?? null : null };
   }
 
   async deleteTemplate(actor: AuthContext, id: string, meta: RequestMeta): Promise<void> {
@@ -256,7 +258,7 @@ export class LandscapeService {
       layers: doc.layers.filter((l) => visible.has(l.id)).map((l) => ({ ...l, locked: true })),
       objects: doc.objects.filter((o) => visible.has(o.layerId)),
     };
-    return { enabled: true, layout: { name: row.name, versionNo: row.published_version_no, document, backgroundUrl: await this.backgroundUrl(document) } };
+    return { enabled: true, layout: { name: row.name, versionNo: row.published_version_no, document, ...(await this.backgroundImage(document)) } };
   }
 
   // ================================================================ helpers
@@ -308,11 +310,30 @@ export class LandscapeService {
     if (doc.crs !== CRS_OF[kind]) throw new ValidationError({ "document.crs": "MUST_MATCH_BACKGROUND" });
   }
 
-  private async backgroundUrl(doc: LandscapeDocument): Promise<string | null> {
-    if (doc.background.kind !== "PHOTO" || !doc.background.assetId) return null;
+  private async backgroundImage(doc: LandscapeDocument): Promise<{
+    backgroundUrl: string | null; backgroundSize: { width: number; height: number } | null; imageUrls: Record<string, string>;
+  }> {
+    const imageUrls = await this.imageUrls(doc.objects.map((o) => o.imageAssetId));
+    if (doc.background.kind !== "PHOTO" || !doc.background.assetId) return { backgroundUrl: null, backgroundSize: null, imageUrls };
     const image = await this.repo.publicImage(doc.background.assetId);
-    return image ? publicMediaUrl(image.object_key, this.mediaBaseUrl) : null;
+    if (!image) return { backgroundUrl: null, backgroundSize: null, imageUrls };
+    return {
+      backgroundUrl: publicMediaUrl(image.object_key, this.mediaBaseUrl),
+      backgroundSize: image.width && image.height ? { width: image.width, height: image.height } : null,
+      imageUrls,
+    };
   }
+
+  private async imageUrls(ids: (string | null)[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const id of new Set(ids.filter((x): x is string => !!x))) {
+      const image = await this.repo.publicImage(id);
+      const url = image ? publicMediaUrl(image.object_key, this.mediaBaseUrl) : null;
+      if (url) out[id] = url;
+    }
+    return out;
+  }
+
 }
 
 function prefix(errors: Record<string, string>, p: string): Record<string, string> {

@@ -7,7 +7,7 @@ import type { FontStackKey } from "./theme.ts";
  * stored exactly as uploaded (sharp edges, transparency, scannability).
  */
 export type ImageProfilePurpose =
-  | "LOGO" | "FAVICON" | "HOME_SLIDE" | "HOME_SECTION" | "GALLERY" | "HISTORY" | "ACCOMMODATION" | "FOOD" | "OG_IMAGE" | "PAYMENT_QR";
+  | "LOGO" | "FAVICON" | "HOME_SLIDE" | "HOME_SECTION" | "GALLERY" | "HISTORY" | "ACCOMMODATION" | "FOOD" | "OG_IMAGE" | "PAYMENT_QR" | "OTHER";
 
 export interface ImageProfile {
   /** false = upload the original bytes unchanged. */
@@ -32,6 +32,8 @@ export const IMAGE_PROFILES: Record<ImageProfilePurpose, ImageProfile> = {
   LOGO: { compress: false, maxWidth: 0, widths: [], format: "image/webp", quality: 1 },
   FAVICON: { compress: false, maxWidth: 0, widths: [], format: "image/webp", quality: 1 },
   PAYMENT_QR: { compress: false, maxWidth: 0, widths: [], format: "image/webp", quality: 1 },
+  // Site plan pictures (landscape): an aerial photo is drawn large and zoomed into, so it stays big.
+  OTHER: { compress: true, maxWidth: 3200, widths: [1280], format: "image/webp", quality: 0.85 },
 };
 
 /** Server limits for renditions sent with an upload. */

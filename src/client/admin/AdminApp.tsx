@@ -49,6 +49,7 @@ import { CreditTopupPage } from "./credits/CreditTopupPage.tsx";
 import { CreditAdminPage } from "./credits/CreditAdminPage.tsx";
 import { ChannelsPage } from "./accommodation/ChannelsPage.tsx";
 import { LandscapePage } from "./accommodation/LandscapePage.tsx";
+import { LandscapeEditorPage } from "./landscape/LandscapeEditorPage.tsx";
 import { MyAccountPage } from "./credits/MyAccountPage.tsx";
 import "../styles/admin.css";
 
@@ -274,7 +275,7 @@ function renderPage(segments: string[], notFound: string) {
     case "channels":
       return <ChannelsPage />;
     case "landscape":
-      return <LandscapePage />;
+      return id ? <LandscapeEditorPage key={id} id={id} /> : <LandscapePage />;
     case "my-account":
       return <MyAccountPage />;
     case "change-password":

@@ -7,6 +7,7 @@ import {
 } from "../../../shared/landscape-types.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
 import { useAdmin } from "../AdminContext.tsx";
+import { Link } from "../../router/Router.tsx";
 import { Alert, Button, ConfirmDialog, Field, errorMessage, useDateFormatter } from "../ui.tsx";
 
 type Msg = { kind: "error" | "success" | "info"; text: string } | null;
@@ -14,7 +15,7 @@ type Confirm = { message: string; label: string; danger?: boolean; run: () => Pr
 
 /** Accommodation → Site plan (landscape, migration 0039): the switch, the plans, publishing and version history. */
 export function LandscapePage() {
-  const { t, can, locale } = useAdmin();
+  const { t, can, locale, href } = useAdmin();
   const m = getLandscapeMessages(locale.code);
   const dateTime = useDateFormatter();
   const [data, setData] = useState<LandscapeOverviewDto | null>(null);
@@ -123,6 +124,7 @@ export function LandscapePage() {
                     {l.publishedVersionNo !== null ? format(m.published, { n: l.publishedVersionNo }) : m.notPublished}
                   </p>
                   <div className="adm-row adm-row--wrap">
+                    <Link className="adm-btn adm-btn--secondary" to={href("landscape", l.id)}>{m.editor.open}</Link>
                     {editable && data.canPublish && (
                       <Button disabled={busy} onClick={() => setConfirm({
                         message: m.publishConfirm, label: m.publish,
@@ -184,7 +186,6 @@ export function LandscapePage() {
                 </li>
               ))}
             </ul>
-            <p className="adm-small adm-muted">{m.editorSoon}</p>
           </div>
 
           {editable && data.canEdit && (

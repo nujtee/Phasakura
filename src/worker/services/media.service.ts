@@ -29,12 +29,14 @@ export const UPLOAD_PERMISSIONS: Partial<Record<MediaPurpose, PermissionCode>> =
   FAVICON: "settings.branding",
   OG_IMAGE: "seo.edit",
   PAYMENT_QR: "receiving_accounts.edit",
+  // Site plan (landscape, migration 0039): background photos and template pictures.
+  OTHER: "landscape.edit",
 };
 
 const FOLDER: Partial<Record<MediaPurpose, string>> = {
   ACCOMMODATION: "accommodation", FOOD: "food", GALLERY: "gallery", HOME_SLIDE: "home/slides",
   HOME_SECTION: "home/sections", HISTORY: "history", LOGO: "branding", FAVICON: "branding",
-  OG_IMAGE: "seo", PAYMENT_QR: "payment-qr",
+  OG_IMAGE: "seo", PAYMENT_QR: "payment-qr", OTHER: "landscape",
 };
 
 export interface MediaAssetDto {
