@@ -357,7 +357,7 @@ export function accommodationController(services: ServicesFor) {
 
     // ------------------------------------------------------------------ media
     /** POST /api/admin/media (multipart/form-data: file, purpose) */
-    upload: withPermission(["accommodation.edit", "food.edit", "content.gallery", "content.home", "content.history", "settings.branding", "seo.edit", "receiving_accounts.edit"], services, async (ctx, auth) => {
+    upload: withPermission(["accommodation.edit", "food.edit", "content.gallery", "content.home", "content.history", "settings.branding", "seo.edit", "receiving_accounts.edit", "landscape.edit"], services, async (ctx, auth) => {
       const type = ctx.request.headers.get("Content-Type") ?? "";
       if (!/^multipart\/form-data;/i.test(type)) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Use multipart/form-data");
       const length = Number(ctx.request.headers.get("Content-Length") ?? "0");

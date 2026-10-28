@@ -128,8 +128,11 @@ export interface LandscapeOverviewDto {
 
 export interface LandscapeLayoutDto extends LandscapeLayoutSummaryDto {
   draft: LandscapeDocument;
-  /** Background photo URL (PHOTO). */
+  /** Background photo (PHOTO): URL and pixel size (the plan's 0…1 coordinates are drawn over it). */
   backgroundUrl: string | null;
+  backgroundSize: { width: number; height: number } | null;
+  /** Pictures of objects (template images): asset id → URL. */
+  imageUrls: Record<string, string>;
 }
 
 export interface LandscapeVersionDto {
@@ -150,6 +153,8 @@ export interface PublicLandscapeDto {
     versionNo: number;
     document: LandscapeDocument;
     backgroundUrl: string | null;
+    backgroundSize: { width: number; height: number } | null;
+    imageUrls: Record<string, string>;
   } | null;
 }
 
@@ -157,6 +162,7 @@ export interface LandscapeTemplateDto {
   id: string;
   name: string;
   object: Omit<LandscapeObject, "id" | "layerId" | "groupId" | "link">;
+  imageUrl: string | null;
 }
 
 // ---------------------------------------------------------------- validation (shared: the editor shows the same errors)
