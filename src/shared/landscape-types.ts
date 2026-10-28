@@ -58,6 +58,11 @@ export interface LandscapeObject {
   locked: boolean;
   /** Image of a reusable template (media asset), drawn inside the shape. */
   imageAssetId: string | null;
+  /**
+   * The palette entry it was drawn as (a staff-made kind such as "Sala", or null / absent = the built-in `kind`).
+   * Only a name in the editor: kind and style are the object's own, so deleting a palette entry changes nothing drawn.
+   */
+  typeId?: string | null;
 }
 
 export interface LandscapeLayer {
@@ -96,7 +101,73 @@ export const LANDSCAPE_LIMITS = {
   label: 80,
   name: 80,
   json: 600_000,
+  /** Kinds staff may add to the palette. */
+  paletteKinds: 60,
+  paletteName: 40,
 } as const;
+
+// ---------------------------------------------------------------- palette (migration 0040)
+
+export const PALETTE_GROUPS = ["nature", "stays", "site"] as const;
+export type PaletteGroup = (typeof PALETTE_GROUPS)[number];
+export const PALETTE_LAYERS = ["ground", "plants", "stays", "labels"] as const;
+export type PaletteLayer = (typeof PALETTE_LAYERS)[number];
+export const SHAPE_TYPES = ["rect", "circle", "polygon", "path", "symbol"] as const;
+
+/**
+ * One row of the palette as stored: an override of a built-in kind (`builtin`, id = its code; null fields keep the
+ * built-in value) or a kind staff made (every field set).
+ */
+export interface LandscapePaletteRowDto {
+  id: string;
+  builtin: boolean;
+  kind: LandscapeObjectKind;
+  name: string | null;
+  draw: LandscapeShape["type"] | null;
+  fill: string | null;
+  stroke: string | null;
+  opacity: number | null;
+  layer: PaletteLayer | null;
+  size: number | null;
+  group: PaletteGroup | null;
+  sortOrder: number | null;
+  hidden: boolean;
+}
+
+/** What the editor sends to add or change a palette entry. */
+export interface LandscapePaletteInput {
+  kind: LandscapeObjectKind;
+  name: string | null;
+  draw: LandscapeShape["type"];
+  fill: string | null;
+  stroke: string | null;
+  opacity: number;
+  layer: PaletteLayer;
+  size: number;
+  group: PaletteGroup;
+  sortOrder: number | null;
+  hidden: boolean;
+}
+
+/** Field errors of a palette entry (`builtin`: the name may be empty = the built-in name). */
+export function validatePaletteInput(raw: unknown, builtin: boolean): Record<string, string> {
+  const e: Record<string, string> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { body: "INVALID" };
+  const r = raw as Record<string, unknown>;
+  if (!(LANDSCAPE_OBJECT_KINDS as readonly unknown[]).includes(r.kind)) e.kind = "INVALID_VALUE";
+  if (r.name === null || r.name === undefined || (typeof r.name === "string" && !r.name.trim())) {
+    if (!builtin) e.name = "REQUIRED";
+  } else if (typeof r.name !== "string" || r.name.trim().length > LANDSCAPE_LIMITS.paletteName) e.name = "TOO_LONG";
+  if (!(SHAPE_TYPES as readonly unknown[]).includes(r.draw)) e.draw = "INVALID_VALUE";
+  for (const k of ["fill", "stroke"] as const) if (r[k] !== null && (typeof r[k] !== "string" || !/^#[0-9a-fA-F]{6}$/.test(r[k] as string))) e[k] = "INVALID_COLOR";
+  if (typeof r.opacity !== "number" || !(r.opacity >= 0 && r.opacity <= 1)) e.opacity = "OUT_OF_RANGE";
+  if (!(PALETTE_LAYERS as readonly unknown[]).includes(r.layer)) e.layer = "INVALID_VALUE";
+  if (typeof r.size !== "number" || !(r.size >= 0.002 && r.size <= 0.5)) e.size = "OUT_OF_RANGE";
+  if (!(PALETTE_GROUPS as readonly unknown[]).includes(r.group)) e.group = "INVALID_VALUE";
+  if (r.sortOrder !== null && (typeof r.sortOrder !== "number" || !Number.isInteger(r.sortOrder) || Math.abs(r.sortOrder) > 100_000)) e.sortOrder = "INVALID";
+  if (typeof r.hidden !== "boolean") e.hidden = "EXPECTED_BOOLEAN";
+  return e;
+}
 
 // ---------------------------------------------------------------- API
 
@@ -279,6 +350,7 @@ export function validateLandscapeDocument(raw: unknown, ctx: {
     if (typeof o.locked !== "boolean") errors[at("locked")] = "INVALID";
     if (o.groupId !== null && (typeof o.groupId !== "string" || !ID.test(o.groupId))) errors[at("groupId")] = "INVALID";
     if (o.imageAssetId !== null && (typeof o.imageAssetId !== "string" || !ID.test(o.imageAssetId))) errors[at("imageAssetId")] = "INVALID_ID";
+    if (o.typeId !== undefined && o.typeId !== null && (typeof o.typeId !== "string" || !ID.test(o.typeId))) errors[at("typeId")] = "INVALID_ID";
     if (o.label !== null && (typeof o.label !== "string" || o.label.length > LANDSCAPE_LIMITS.label)) errors[at("label")] = "TOO_LONG";
     const st = o.style;
     if (!isObj(st) || (st.fill !== null && (typeof st.fill !== "string" || !COLOR.test(st.fill)))

@@ -36,6 +36,22 @@ export interface LandscapeVersionRow {
   published_at: string;
 }
 
+export interface LandscapePaletteRow {
+  id: string;
+  builtin: number;
+  kind: string;
+  name: string | null;
+  draw: string | null;
+  fill: string | null;
+  stroke: string | null;
+  opacity: number | null;
+  layer: string | null;
+  size: number | null;
+  palette_group: string | null;
+  sort_order: number | null;
+  hidden: number;
+}
+
 export interface LandscapeTemplateRow {
   id: string;
   name: string;
@@ -235,5 +251,56 @@ export class LandscapeRepository {
 
   deleteTemplateStatement(id: string): D1PreparedStatementLike {
     return this.db.prepare("UPDATE landscape_templates SET status = 'DELETED' WHERE id = ?1 AND status = 'ACTIVE' RETURNING id").bind(id);
+  }
+
+  // ---------------------------------------------------------------- palette (migration 0040)
+
+  async palette(): Promise<LandscapePaletteRow[]> {
+    const { results } = await this.db.prepare(
+      `SELECT id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden
+         FROM landscape_palette WHERE status = 'ACTIVE' ORDER BY builtin DESC, sort_order, name, id`,
+    ).all<LandscapePaletteRow>();
+    return results;
+  }
+
+  paletteRow(id: string): Promise<LandscapePaletteRow | null> {
+    return this.db.prepare(
+      `SELECT id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden
+         FROM landscape_palette WHERE id = ?1 AND status = 'ACTIVE'`,
+    ).bind(id).first<LandscapePaletteRow>();
+  }
+
+  async customKinds(): Promise<number> {
+    const row = await this.db.prepare("SELECT COUNT(*) AS n FROM landscape_palette WHERE builtin = 0 AND status = 'ACTIVE'").first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+
+  /** Saves a palette entry whole (an override of a built-in, or a staff kind); a deleted one with the id comes back. */
+  upsertPaletteStatement(r: Omit<LandscapePaletteRow, "builtin"> & { builtin: 0 | 1 }, userId: string, now: string): D1PreparedStatementLike {
+    return this.db.prepare(
+      `INSERT INTO landscape_palette (id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden, status, updated_by, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'ACTIVE', ?14, ?15)
+       ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, name = excluded.name, draw = excluded.draw, fill = excluded.fill,
+         stroke = excluded.stroke, opacity = excluded.opacity, layer = excluded.layer, size = excluded.size,
+         palette_group = excluded.palette_group, sort_order = excluded.sort_order, hidden = excluded.hidden, status = 'ACTIVE',
+         updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+    ).bind(r.id, r.builtin, r.kind, r.name, r.draw, r.fill, r.stroke, r.opacity, r.layer, r.size, r.palette_group, r.sort_order, r.hidden, userId, now);
+  }
+
+  /** Built-in: its override goes (back to how it ships). Staff kind: marked deleted (drawn objects keep their look). */
+  removePaletteStatement(id: string, builtin: boolean, userId: string, now: string): D1PreparedStatementLike {
+    return builtin
+      ? this.db.prepare("DELETE FROM landscape_palette WHERE id = ?1 AND builtin = 1 RETURNING id").bind(id)
+      : this.db.prepare("UPDATE landscape_palette SET status = 'DELETED', updated_by = ?2, updated_at = ?3 WHERE id = ?1 AND builtin = 0 AND status = 'ACTIVE' RETURNING id")
+        .bind(id, userId, now);
+  }
+
+  /** How many objects of active plans (drafts) were drawn as this palette entry. */
+  async paletteUsage(id: string): Promise<number> {
+    const row = await this.db.prepare(
+      `SELECT COALESCE(SUM((length(draft_json) - length(replace(draft_json, ?1, ''))) / length(?1)), 0) AS n
+         FROM landscape_layouts WHERE status = 'ACTIVE'`,
+    ).bind(`"typeId":"${id}"`).first<{ n: number }>();
+    return row?.n ?? 0;
   }
 }

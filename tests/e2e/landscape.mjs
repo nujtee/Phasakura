@@ -460,6 +460,61 @@ await check("iPad: draw a lawn by tapping its corners, then “Finish”; select
 });
 await ipadCtx.close();
 
+// ------------------------------------------------------------------ palette: kinds staff add, change, hide, delete
+await check("palette: add a kind “Sala”, draw it; rename Tree; hide Flowers", async () => {
+  await pa.goto(`${BASE}/en/admin/landscape/${LAYOUT}`);
+  await pa.locator(".lse-canvas svg [data-id]").first().waitFor();
+  await pa.getByRole("tab", { name: "Kinds" }).click();
+  await pa.getByRole("button", { name: "Add a kind" }).click();
+  await pa.getByLabel("Name", { exact: true }).fill("Sala");
+  await pa.getByLabel("Is a").selectOption("BUILDING");
+  await pa.getByRole("button", { name: "Save kind" }).click();
+  await pa.getByRole("button", { name: "Edit: Sala" }).waitFor();
+  // Draw one.
+  await pa.getByRole("toolbar").getByRole("button", { name: "Sala", exact: true }).click();
+  const [x1, y1] = await screen(130, 80);
+  const [x2, y2] = await screen(150, 95);
+  await pa.mouse.move(x1, y1);
+  await pa.mouse.down();
+  await pa.mouse.move(x2, y2, { steps: 5 });
+  await pa.mouse.up();
+  await saved();
+  const drawn = (await layout()).draft.objects.find((o) => o.typeId);
+  assert(drawn && drawn.kind === "BUILDING" && drawn.style.fill === "#e0e0e0", JSON.stringify(drawn));
+  // Rename a built-in, hide another.
+  await pa.getByRole("tab", { name: "Kinds" }).click();
+  await pa.getByRole("button", { name: "Edit: Tree" }).click();
+  await pa.getByLabel("Name", { exact: true }).fill("Mango tree");
+  await pa.getByRole("button", { name: "Save kind" }).click();
+  await pa.getByRole("toolbar").getByRole("button", { name: "Mango tree", exact: true }).waitFor();
+  await pa.getByRole("button", { name: "Hide: Flowers" }).click();
+  await pa.getByRole("button", { name: "Show: Flowers" }).waitFor();
+  assert(await pa.getByRole("toolbar").getByRole("button", { name: "Flowers", exact: true }).count() === 0, "hidden from the toolbar");
+  // Still there after a reload (stored on the server).
+  await pa.reload();
+  await pa.getByRole("toolbar").getByRole("button", { name: "Mango tree", exact: true }).waitFor();
+  if (SHOTS) {
+    await pa.getByRole("tab", { name: "Kinds" }).click();
+    await pa.screenshot({ path: `${SHOTS}/landscape-palette.png` });
+  }
+});
+
+await check("palette: deleting “Sala” says how many are drawn and leaves them; built-ins go back as they ship", async () => {
+  await pa.getByRole("tab", { name: "Kinds" }).click();
+  await pa.getByRole("button", { name: "Delete: Sala" }).click();
+  const dialog = pa.getByRole("dialog");
+  await dialog.getByText(/The 1 objects drawn as it stay/).waitFor();
+  await dialog.getByRole("button", { name: "Delete" }).click();
+  await pa.getByRole("button", { name: "Edit: Sala" }).waitFor({ state: "detached" });
+  assert((await layout()).draft.objects.some((o) => o.typeId && o.kind === "BUILDING"), "the drawn sala stays");
+  for (const name of ["Mango tree", "Flowers"]) {
+    await pa.getByRole("button", { name: `Back to default: ${name}` }).click();
+    await pa.getByRole("dialog").getByRole("button", { name: "Back to default" }).click();
+  }
+  await pa.getByRole("toolbar").getByRole("button", { name: "Tree", exact: true }).waitFor();
+  await pa.getByRole("toolbar").getByRole("button", { name: "Flowers", exact: true }).waitFor();
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

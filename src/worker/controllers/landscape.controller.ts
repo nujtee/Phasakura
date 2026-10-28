@@ -6,6 +6,8 @@ import type { Handler, RequestContext } from "../router.ts";
 import { readJsonObject } from "../security/request.ts";
 import { ID_PATTERN, Validator } from "../validation.ts";
 
+const PALETTE_FIELDS = ["kind", "name", "draw", "fill", "stroke", "opacity", "layer", "size", "group", "sortOrder", "hidden"];
+
 /** A draft is a whole plan: up to LANDSCAPE_LIMITS.json of JSON (+ the envelope). */
 const DRAFT_BYTES = LANDSCAPE_LIMITS.json + 4096;
 
@@ -117,6 +119,30 @@ export function landscapeController(services: ServicesFor) {
       await services(ctx).landscape.deleteTemplate(auth, id(ctx), requestMeta(ctx));
       return jsonOk({ deleted: true });
     }),
+
+    // Palette (migration 0040): the kinds staff draw — add, change, hide, delete (or a built-in back as it ships).
+    palette: withPermission("landscape.view", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).landscape.palette(auth, requestMeta(ctx)))),
+
+    /** `{ kind, name, draw, fill, stroke, opacity, layer, size, group, sortOrder, hidden }` — a new kind. */
+    addPaletteKind: withPermission("landscape.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request, 4096);
+      new Validator(body).allowOnly(PALETTE_FIELDS).assertValid();
+      return jsonOk(await services(ctx).landscape.savePaletteKind(auth, null, body, requestMeta(ctx)), { status: 201 });
+    }),
+
+    /** Same body: change a built-in (id = its code, e.g. TREE) or a staff kind. */
+    savePaletteKind: withPermission("landscape.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request, 4096);
+      new Validator(body).allowOnly(PALETTE_FIELDS).assertValid();
+      return jsonOk(await services(ctx).landscape.savePaletteKind(auth, id(ctx), body, requestMeta(ctx)));
+    }),
+
+    removePaletteKind: withPermission("landscape.edit", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).landscape.removePaletteKind(auth, id(ctx), requestMeta(ctx)))),
+
+    paletteUsage: withPermission("landscape.view", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).landscape.paletteUsage(auth, id(ctx), requestMeta(ctx)))),
 
     /** GET /api/public/landscape — the published plan for the booking page (no private data). */
     publicLayout: (async (ctx) => jsonOk(await services(ctx).landscape.publicLayout(), { headers: { "Cache-Control": "no-store" } })) satisfies Handler,

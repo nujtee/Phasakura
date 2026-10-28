@@ -1,11 +1,11 @@
 import {
-  CRS_OF, LANDSCAPE_BACKGROUNDS, LANDSCAPE_LIMITS, emptyLandscape, validateLandscapeDocument,
-  type LandscapeBackgroundKind, type LandscapeDocument, type LandscapeLayoutDto, type LandscapeLayoutSummaryDto,
+  CRS_OF, LANDSCAPE_BACKGROUNDS, LANDSCAPE_LIMITS, LANDSCAPE_OBJECT_KINDS, emptyLandscape, validateLandscapeDocument, validatePaletteInput,
+  type LandscapeBackgroundKind, type LandscapeObjectKind, type LandscapePaletteInput, type LandscapePaletteRowDto, type LandscapeDocument, type LandscapeLayoutDto, type LandscapeLayoutSummaryDto,
   type LandscapeObject, type LandscapeOverviewDto, type LandscapeTemplateDto, type LandscapeVersionDto, type PublicLandscapeDto,
 } from "../../shared/landscape-types.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError, HttpError, NotFoundError, ValidationError } from "../http/errors.ts";
-import type { LandscapeLayoutRow, LandscapeRepository } from "../repositories/landscape.repository.ts";
+import type { LandscapeLayoutRow, LandscapePaletteRow, LandscapeRepository } from "../repositories/landscape.repository.ts";
 import { newId } from "../security/tokens.ts";
 import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
@@ -233,7 +233,7 @@ export class LandscapeService {
     if (Object.keys(errors).length) throw new ValidationError(prefix(errors, "object"));
     const o = probe.objects[0] as LandscapeObject;
     await this.checkImages({ ...probe, objects: [o] } as LandscapeDocument);
-    const stored = { kind: o.kind, shape: o.shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId };
+    const stored = { kind: o.kind, shape: o.shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId, typeId: o.typeId ?? null };
     const id = newId();
     const now = iso(this.clock());
     await this.db.batch([
@@ -250,6 +250,68 @@ export class LandscapeService {
       this.log.auditStatement(actor.userId, "LANDSCAPE_TEMPLATE_DELETE", "landscape_templates", id, null, null, meta),
     ]);
     if (!results[0]?.results.length) throw new NotFoundError("Template not found", "LANDSCAPE_TEMPLATE_NOT_FOUND");
+  }
+
+  // ---------------------------------------------------------------- palette (migration 0040)
+
+  async palette(actor: AuthContext, meta: RequestMeta): Promise<LandscapePaletteRowDto[]> {
+    await this.authz.requirePermission(actor, "landscape.view", meta);
+    return (await this.repo.palette()).map(paletteDto);
+  }
+
+  /**
+   * Adds a kind (`id` null) or changes one: a built-in (id = its code: stored as an override) or a staff kind.
+   * Returns the whole palette, as the editor shows it.
+   */
+  async savePaletteKind(actor: AuthContext, id: string | null, input: unknown, meta: RequestMeta): Promise<LandscapePaletteRowDto[]> {
+    await this.requireEditable(actor, "landscape.edit", meta);
+    const builtin = id !== null && (LANDSCAPE_OBJECT_KINDS as readonly string[]).includes(id);
+    const errors = validatePaletteInput(input, builtin);
+    if (Object.keys(errors).length) throw new ValidationError(errors);
+    const v = input as LandscapePaletteInput;
+    let rowId: string;
+    if (builtin) {
+      if (v.kind !== id) throw new ValidationError({ kind: "BUILTIN_KIND_FIXED" });
+      rowId = id!;
+    } else if (id) {
+      const row = await this.repo.paletteRow(id);
+      if (!row || row.builtin === 1) throw new NotFoundError("Palette kind not found", "LANDSCAPE_KIND_NOT_FOUND");
+      rowId = id;
+    } else {
+      if ((await this.repo.customKinds()) >= LANDSCAPE_LIMITS.paletteKinds) throw new ConflictError("Too many kinds", "TOO_MANY_KINDS");
+      rowId = `k${newId()}`.slice(0, 64);
+    }
+    const before = await this.repo.paletteRow(rowId);
+    const now = iso(this.clock());
+    const name = typeof v.name === "string" && v.name.trim() ? v.name.trim() : null;
+    await this.db.batch([
+      this.repo.upsertPaletteStatement({
+        id: rowId, builtin: builtin ? 1 : 0, kind: v.kind, name, draw: v.draw, fill: v.fill, stroke: v.stroke, opacity: v.opacity,
+        layer: v.layer, size: v.size, palette_group: v.group, sort_order: v.sortOrder, hidden: v.hidden ? 1 : 0,
+      }, actor.userId, now),
+      this.log.auditStatement(actor.userId, before ? "LANDSCAPE_KIND_UPDATE" : "LANDSCAPE_KIND_CREATE", "landscape_palette", rowId,
+        before ? paletteDto(before) : null, { ...v, name }, meta),
+    ]);
+    return (await this.repo.palette()).map(paletteDto);
+  }
+
+  /** Deletes a staff kind, or puts a built-in back as it ships. Drawn objects never change. */
+  async removePaletteKind(actor: AuthContext, id: string, meta: RequestMeta): Promise<LandscapePaletteRowDto[]> {
+    await this.requireEditable(actor, "landscape.edit", meta);
+    const row = await this.repo.paletteRow(id);
+    if (!row) throw new NotFoundError("Palette kind not found", "LANDSCAPE_KIND_NOT_FOUND");
+    await this.db.batch([
+      this.repo.removePaletteStatement(id, row.builtin === 1, actor.userId, iso(this.clock())),
+      this.log.auditStatement(actor.userId, row.builtin === 1 ? "LANDSCAPE_KIND_RESET" : "LANDSCAPE_KIND_DELETE", "landscape_palette", id,
+        paletteDto(row), null, meta),
+    ]);
+    return (await this.repo.palette()).map(paletteDto);
+  }
+
+  /** Objects drawn as a palette entry in the plans' drafts (shown before deleting it). */
+  async paletteUsage(actor: AuthContext, id: string, meta: RequestMeta): Promise<{ objects: number }> {
+    await this.authz.requirePermission(actor, "landscape.view", meta);
+    return { objects: await this.repo.paletteUsage(id) };
   }
 
   // ================================================================ public (booking page)
@@ -347,4 +409,12 @@ export class LandscapeService {
 
 function prefix(errors: Record<string, string>, p: string): Record<string, string> {
   return Object.fromEntries(Object.entries(errors).slice(0, 50).map(([k, v]) => [k === "document" ? p : `${p}.${k}`, v]));
+}
+
+function paletteDto(r: LandscapePaletteRow): LandscapePaletteRowDto {
+  return {
+    id: r.id, builtin: r.builtin === 1, kind: r.kind as LandscapeObjectKind, name: r.name, draw: r.draw as LandscapePaletteRowDto["draw"],
+    fill: r.fill, stroke: r.stroke, opacity: r.opacity, layer: r.layer as LandscapePaletteRowDto["layer"], size: r.size,
+    group: r.palette_group as LandscapePaletteRowDto["group"], sortOrder: r.sort_order, hidden: r.hidden === 1,
+  };
 }

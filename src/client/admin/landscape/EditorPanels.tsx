@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { AdminLandscapeMessages } from "../../../shared/i18n/admin-landscape-messages.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import {
-  LANDSCAPE_LIMITS, LANDSCAPE_OBJECT_KINDS, RESERVABLE_KINDS,
+  LANDSCAPE_LIMITS, RESERVABLE_KINDS,
   type LandscapeLayer, type LandscapeObject, type LandscapeObjectKind, type LandscapeOverviewDto, type LandscapeTemplateDto,
 } from "../../../shared/landscape-types.ts";
 import { objectsBox, measuredDistance, planUnit, type Size } from "../../landscape/geometry.ts";
@@ -10,13 +10,17 @@ import {
   deleteObjects, duplicateObjects, groupObjects, moveLayer, newObjectId, removeLayer, reorderObjects, ungroupObjects, updateObjects, type Scene,
 } from "../../landscape/editor-state.ts";
 import { Button } from "../ui.tsx";
+import { entryOf, type PaletteEntry } from "../../landscape/palette.ts";
 import type { LandscapeDocument } from "../../../shared/landscape-types.ts";
 
 type E = AdminLandscapeMessages["editor"];
 
 /** Properties of the selection: kind, text, colours, rotation, layer, booking link, lock, picture, order, group. */
-export function PropertiesPanel({ e, scene, selected, units, campingEnabled, readOnly, doc, size, imageUrls, onCommit, onSelect, onUploadImage, onSaveTemplate, busy }: {
+export function PropertiesPanel({ e, scene, selected, units, campingEnabled, readOnly, doc, size, imageUrls, onCommit, onSelect, onUploadImage, onSaveTemplate, busy, palette, entryName }: {
   e: E;
+  /** The kinds an object can be (built-in and staff-made, hidden ones too: an object may already be one). */
+  palette: PaletteEntry[];
+  entryName: (p: PaletteEntry) => string;
   scene: Scene;
   selected: string[];
   units: LandscapeOverviewDto["units"];
@@ -51,14 +55,28 @@ export function PropertiesPanel({ e, scene, selected, units, campingEnabled, rea
       {objs.length > 1 && <p className="adm-small"><strong>{format(e.selectedN, { n: objs.length })}</strong></p>}
       <div className="adm-field">
         <label htmlFor="lse-kind">{e.kind}</label>
-        <select id="lse-kind" disabled={dis} value={objs.every((o) => o.kind === first.kind) ? first.kind : ""}
-          onChange={(ev) => {
-            const kind = ev.target.value as LandscapeObjectKind;
-            set((o) => ({ ...o, kind, link: RESERVABLE_KINDS.includes(kind) && o.kind === kind ? o.link : null }));
-          }}>
-          {objs.some((o) => o.kind !== first.kind) && <option value="">—</option>}
-          {LANDSCAPE_OBJECT_KINDS.map((k) => <option key={k} value={k}>{e.kinds[k]}</option>)}
-        </select>
+        {(() => {
+          const current = (o: LandscapeObject) => entryOf(palette, o)?.id ?? o.kind;
+          const same = objs.every((o) => current(o) === current(first));
+          return (
+            <select id="lse-kind" disabled={dis} value={same ? current(first) : ""}
+              onChange={(ev) => {
+                const entry = palette.find((p) => p.id === ev.target.value);
+                if (!entry) return;
+                const kind: LandscapeObjectKind = entry.kind;
+                // Another kind: its look too (what the palette says it looks like); the shape and place stay.
+                set((o) => ({
+                  ...o, kind, typeId: entry.builtin ? null : entry.id, style: { ...entry.info.style },
+                  link: RESERVABLE_KINDS.includes(kind) && o.kind === kind ? o.link : null,
+                }));
+              }}>
+              {!same && <option value="">—</option>}
+              {palette.filter((p) => !p.hidden || objs.some((o) => current(o) === p.id)).map((p) => (
+                <option key={p.id} value={p.id}>{entryName(p)}{p.builtin ? "" : ` (${e.kinds[p.kind]})`}</option>
+              ))}
+            </select>
+          );
+        })()}
       </div>
       {one && (
         <div className="adm-field">

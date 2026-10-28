@@ -1,10 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { LandscapeObject, LandscapeObjectKind, LandscapeShape, Point } from "../../../shared/landscape-types.ts";
+import type { LandscapeObject, LandscapeShape, Point } from "../../../shared/landscape-types.ts";
 import {
   angleFrom, boxCenter, handlePoints, hitTest, moveShape, objectCorners, objectsBox, resizeBox, rotatePoint, scaleShape, shapeBox,
   planUnit, shapeCenter, snap, type Box, type Size,
 } from "../../landscape/geometry.ts";
-import { KIND_INFO } from "../../landscape/kinds.ts";
+import type { PaletteEntry } from "../../landscape/palette.ts";
 import { ShapeView } from "../../landscape/ShapeView.tsx";
 import { SatelliteTiles } from "../../landscape/SatelliteTiles.tsx";
 import { drawOrder, expandGroups, isEditable, moveObjects, newObjectId, type Scene } from "../../landscape/editor-state.ts";
@@ -50,7 +50,8 @@ export const EditorCanvas = forwardRef<CanvasApi, {
   backgroundUrl: string | null;
   imageUrls: Record<string, string>;
   tool: Tool;
-  kind: LandscapeObjectKind;
+  /** The palette entry new objects are drawn as (kind, look, default layer and size). */
+  entry: PaletteEntry;
   snapOn: boolean;
   grid: number;
   selected: string[];
@@ -172,16 +173,17 @@ export const EditorCanvas = forwardRef<CanvasApi, {
   }
 
   function newObject(shape: LandscapeShape): LandscapeObject {
-    const info = KIND_INFO[props.kind];
+    const info = props.entry.info;
     const layer = scene.layers.find((l) => l.id === info.layer && l.visible && !l.locked) ?? scene.layers.slice().reverse().find((l) => l.visible && !l.locked) ?? scene.layers[0]!;
     return {
-      id: newObjectId(), layerId: layer.id, kind: props.kind, shape, rotation: 0, style: { ...info.style },
-      label: props.kind === "LABEL" ? "Text" : null, link: null, groupId: null, locked: false, imageAssetId: null,
+      id: newObjectId(), layerId: layer.id, kind: props.entry.kind, shape, rotation: 0, style: { ...info.style },
+      label: props.entry.kind === "LABEL" ? "Text" : null, link: null, groupId: null, locked: false, imageAssetId: null,
+      typeId: props.entry.builtin ? null : props.entry.id,
     };
   }
 
   const unit = planUnit(scene.background, size);
-  const defaultSize = () => KIND_INFO[props.kind].size * unit;
+  const defaultSize = () => props.entry.info.size * unit;
 
   finishRef.current = () => finishPolygon(props.drafting ?? []);
   function finishPolygon(points: Point[]) {
@@ -481,11 +483,11 @@ export const EditorCanvas = forwardRef<CanvasApi, {
           return <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="#1565c0" fillOpacity={0.08} stroke="#1565c0" strokeWidth={1} vectorEffect="non-scaling-stroke" />;
         })()}
         {drag?.kind === "draw" && (drag.shape === "rect"
-          ? (() => { const b = norm(drag.start, drag.current); return <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={KIND_INFO[props.kind].style.fill ?? "none"} fillOpacity={0.5} stroke="#1565c0" vectorEffect="non-scaling-stroke" />; })()
-          : <circle cx={drag.start[0]} cy={drag.start[1]} r={Math.hypot(drag.current[0] - drag.start[0], drag.current[1] - drag.start[1])} fill={KIND_INFO[props.kind].style.fill ?? "none"} fillOpacity={0.5} stroke="#1565c0" vectorEffect="non-scaling-stroke" />)}
+          ? (() => { const b = norm(drag.start, drag.current); return <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={props.entry.info.style.fill ?? "none"} fillOpacity={0.5} stroke="#1565c0" vectorEffect="non-scaling-stroke" />; })()
+          : <circle cx={drag.start[0]} cy={drag.start[1]} r={Math.hypot(drag.current[0] - drag.start[0], drag.current[1] - drag.start[1])} fill={props.entry.info.style.fill ?? "none"} fillOpacity={0.5} stroke="#1565c0" vectorEffect="non-scaling-stroke" />)}
         {props.drafting && props.drafting.length > 0 && (
           <g pointerEvents="none">
-            <polyline points={[...props.drafting, ...(hover ? [hover] : [])].map((q) => q.join(",")).join(" ")} fill={tool === "polygon" ? (KIND_INFO[props.kind].style.fill ?? "none") : "none"}
+            <polyline points={[...props.drafting, ...(hover ? [hover] : [])].map((q) => q.join(",")).join(" ")} fill={tool === "polygon" ? (props.entry.info.style.fill ?? "none") : "none"}
               fillOpacity={0.35} stroke="#1565c0" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeDasharray="6 4" />
             {props.drafting.map((q, i) => <circle key={i} cx={q[0]} cy={q[1]} r={hs * 0.8} fill="#1565c0" />)}
           </g>
