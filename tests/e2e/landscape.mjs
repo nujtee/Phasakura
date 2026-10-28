@@ -256,6 +256,114 @@ await check("switched off by the Super Admin: the booking page has no map", asyn
   assert((await api("PUT", "/api/admin/landscape/settings", { enabled: true })).status === 200, "switch on again");
 });
 
+// ------------------------------------------------------------------ phase L4: satellite plans, control points
+let SAT = "";
+/** A world point of the editor canvas (any plan) on the screen. */
+async function screenOf(x, y) {
+  const vb = (await pa.locator(".lse-canvas svg").getAttribute("viewBox")).split(" ").map(Number);
+  const box = await svgBox();
+  return [box.x + ((x - vb[0]) / vb[2]) * box.width, box.y + ((y - vb[1]) / vb[3]) * box.height];
+}
+
+await check("satellite plan (L4): imagery from the Worker, credit shown; a house drawn is stored as longitude / latitude", async () => {
+  const made = await api("POST", "/api/admin/landscape/layouts", { name: "Satellite", backgroundKind: "SATELLITE" });
+  assert(made.status === 201, JSON.stringify(made.body));
+  SAT = made.body.data.id;
+  const [cLon, cLat] = made.body.data.draft.background.center;
+  const tiles = pa.waitForResponse((r) => r.url().includes("/sat-tiles/") && r.status() === 200);
+  await pa.goto(`${BASE}/en/admin/landscape/${SAT}`);
+  await pa.locator(".lse-canvas svg").waitFor();
+  await tiles;
+  assert(await pa.locator('.lse-canvas svg image[href^="/sat-tiles/"]').count() > 0, "tiles drawn");
+  await pa.getByRole("link", { name: "© MapTiler" }).waitFor();
+  await pa.getByRole("button", { name: "House", exact: true }).click();
+  const [x1, y1] = await screenOf(780, 480);
+  const [x2, y2] = await screenOf(800, 495);
+  await pa.mouse.move(x1, y1);
+  await pa.mouse.down();
+  await pa.mouse.move(x2, y2, { steps: 5 });
+  await pa.mouse.up();
+  await pa.getByLabel("Booking link").selectOption("dev_vip_01").catch(() => undefined);
+  await pa.getByLabel("Name / text").fill("Sunrise");
+  await pa.getByLabel("Name / text").press("Enter");
+  await saved();
+  const doc = (await layout(SAT)).draft;
+  const house = doc.objects.find((o) => o.label === "Sunrise");
+  assert(doc.crs === "WGS84" && house, JSON.stringify(doc));
+  assert(Math.abs(house.shape.x - cLon) < 0.001 && Math.abs(house.shape.y - cLat) < 0.001, `near the centre: ${JSON.stringify(house.shape)}`);
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/landscape-satellite-editor.png` });
+});
+
+await check("satellite plan: a new centre moves the frame, the house stays on the earth; imagery for the new area after the save", async () => {
+  const before = (await layout(SAT)).draft.objects.find((o) => o.label === "Sunrise").shape;
+  await pa.getByRole("tab", { name: "Background" }).click();
+  const field = pa.getByLabel("Centre (latitude, longitude)");
+  const newTiles = pa.waitForResponse((r) => /\/sat-tiles\/\d+\/\d+\/\d+\?v=/.test(r.url()) && r.status() === 200, { timeout: 20_000 });
+  await field.fill("18.788300, 98.985300");
+  await field.press("Enter");
+  await saved();
+  await newTiles;
+  const doc = (await layout(SAT)).draft;
+  assert(JSON.stringify(doc.background.center) === JSON.stringify([98.9853, 18.7883]), JSON.stringify(doc.background));
+  assert(JSON.stringify(doc.objects.find((o) => o.label === "Sunrise").shape) === JSON.stringify(before), "the house did not move on the earth");
+  await field.fill("not a place");
+  await field.press("Enter");
+  await pa.getByText("Not a place — type it like 13.756300, 100.501800").waitFor();
+});
+
+await check("photo plan: two control points measure it; a satellite plan is made from it with everything in place", async () => {
+  await pa.goto(`${BASE}/en/admin/landscape/${PHOTO}`);
+  await pa.locator(".lse-canvas svg image").first().waitFor({ timeout: 20_000 });
+  await pa.getByRole("tab", { name: "Background" }).click();
+  // 3000 × 1500 px photo: pixel (300, 300) and (2700, 300) are 480 m apart east–west (0.2 m / px).
+  for (const [px, py, where] of [[300, 300, "13.760000, 100.500000"], [2700, 300, "13.760000, 100.504444"]]) {
+    await pa.getByRole("button", { name: "Add a control point" }).click();
+    const [sx, sy] = await screenOf(px, py);
+    await pa.mouse.click(sx, sy);
+    const field = pa.getByLabel("Real coordinates of the new point");
+    await field.fill(where);
+    await field.press("Enter");
+  }
+  await pa.getByText(/move, turn, scale \(2 points\) · 1 photo pixel ≈ 0\.20 m/).waitFor();
+  await saved();
+  const bg = (await layout(PHOTO)).draft.background;
+  assert(bg.controlPoints.length === 2 && Math.abs(bg.controlPoints[0].image[0] - 0.1) < 0.01, JSON.stringify(bg.controlPoints));
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/landscape-control-points.png` });
+  await pa.getByRole("button", { name: "Make a satellite plan from this photo" }).click();
+  await pa.waitForURL((u) => /\/en\/admin\/landscape\/[^/]+$/.test(u.pathname) && !u.pathname.endsWith(PHOTO), { timeout: 20_000 });
+  const id = pa.url().split("/").pop();
+  const made = await layout(id);
+  assert(made.name === "Aerial (satellite)" && made.draft.crs === "WGS84", JSON.stringify({ name: made.name, crs: made.draft.crs }));
+  const grass = made.draft.objects.find((o) => o.kind === "GRASS");
+  // The lawn's first corner was at 0.1 / 0.1 of the photo = pixel (300, 150): 0 m east, 30 m north of point 1.
+  assert(grass && Math.abs(grass.shape.points[0][0] - 100.5) < 0.00005 && Math.abs(grass.shape.points[0][1] - (13.76 + 30 / 111320)) < 0.00005,
+    JSON.stringify(grass?.shape.points[0]));
+  await pa.locator('.lse-canvas svg image[href^="/sat-tiles/"]').first().waitFor();
+});
+
+await check("guest: a satellite plan on the booking page, with imagery and the credit", async () => {
+  // Back over the house (the previous check moved the frame to another town).
+  const l0 = await layout(SAT);
+  const house = l0.draft.objects.find((o) => o.label === "Sunrise").shape;
+  const back = await api("PUT", `/api/admin/landscape/layouts/${SAT}/draft`, { baseRevision: l0.draftRevision, document: { ...l0.draft, background: { ...l0.draft.background, center: [house.x, house.y] } } });
+  assert(back.status === 200, JSON.stringify(back.body));
+  const pub = await api("POST", `/api/admin/landscape/layouts/${SAT}/publish`, { revision: back.body.data.draftRevision, makePublic: true });
+  assert(pub.status === 200, JSON.stringify(pub.body));
+  const tiles = pg.waitForResponse((r) => r.url().includes("/sat-tiles/") && r.status() === 200, { timeout: 10_000 }).catch(() => null);
+  await pg.goto(`${BASE}/en/booking`);
+  await pg.locator(".bmap__svg").waitFor();
+  if (!(await tiles)) {
+    if (SHOTS) await pg.screenshot({ path: `${SHOTS}/landscape-satellite-debug.png` });
+    const href = await pg.locator('.bmap__svg image[href^="/sat-tiles/"]').first().getAttribute("href");
+    const r = await req.get(`${BASE}${href}`);
+    throw new Error(`no tiles: ${href} → ${r.status()} ${await r.text()} ; plan ${JSON.stringify((await layout(SAT)).draft.background)}`);
+  }
+  await pg.locator(".bmap__attribution").getByText("© MapTiler").waitFor();
+  assert(await pg.locator(".bmap__svg text", { hasText: "Sunrise" }).count() === 1, "house label drawn");
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/landscape-satellite-booking.png`, fullPage: false });
+  assert((await req.get(`${BASE}/sat-tiles/17/0/0`)).status() === 404, "tiles elsewhere: 404");
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

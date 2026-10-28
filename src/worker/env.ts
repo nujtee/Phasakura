@@ -122,6 +122,10 @@ export interface Env {
   PAYPAL_CLIENT_SECRET?: string;
   /** "sandbox" while testing with sandbox app credentials; anything else / unset = live PayPal. */
   PAYPAL_ENV?: string;
+  /** MapTiler API key for satellite site plans (landscape, phase L4) — Cloudflare Secret only. */
+  MAPTILER_API_KEY?: string;
+  /** Optional MapTiler tileset id for satellite imagery (default satellite-v2). Plain var. */
+  MAPTILER_TILESET?: string;
   /** Channex.io API key (user-api-key) for OTA connections (phase O2) — Cloudflare Secret only. */
   CHANNEX_API_KEY?: string;
   /** "production" = app.channex.io; anything else / unset = staging.channex.io (a separate test account and key). */

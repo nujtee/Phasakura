@@ -3473,3 +3473,17 @@
   .lse-stage { height: 60vh; }
 }
 .lse-tab { font-size: 0.875rem; }
+
+/* Landscape L4: satellite credit, control points of a photo. */
+.lse-attribution {
+  position: absolute; right: 0; bottom: 0; z-index: 2; margin: 0; padding: 2px 6px;
+  background: rgb(255 255 255 / 0.85); font-size: 0.6875rem; border-top-left-radius: 4px;
+}
+.lse-attribution a { color: #333; }
+.lse-cp { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--adm-border, #e0e0e0); }
+.lse-cp__title { margin: 0 0 4px; font-size: 0.9375rem; }
+.lse-cp__list { margin: 8px 0; padding-left: 0; list-style: none; display: grid; gap: 8px; }
+.lse-cp__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: -6px; }
+.lse-cp__bad { color: #b3261e; }
+.lse-cp__new { padding: 8px; border: 1px dashed #d32f2f; border-radius: 6px; margin-bottom: 8px; }
+.lse-cp__convert { margin-top: 12px; }

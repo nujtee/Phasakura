@@ -88,6 +88,32 @@ export class LandscapeRepository {
     return results;
   }
 
+  /** Settings → Website latitude / longitude: where a new satellite plan starts. */
+  async siteLocation(): Promise<[number, number] | null> {
+    const row = await this.db.prepare("SELECT latitude, longitude FROM site_settings WHERE id = 1").first<{ latitude: number | null; longitude: number | null }>();
+    return row && row.latitude !== null && row.longitude !== null ? [row.longitude, row.latitude] : null;
+  }
+
+  /**
+   * Centre and zoom of every active satellite plan (draft and published) while the feature is on: the only places
+   * map tiles are fetched for (phase L4). Read with json_extract, not by loading whole plans.
+   */
+  async satelliteAreas(): Promise<{ lon: number; lat: number; zoom: number }[]> {
+    const { results } = await this.db.prepare(`
+      SELECT json_extract(l.draft_json, '$.background.center[0]') AS lon, json_extract(l.draft_json, '$.background.center[1]') AS lat,
+             json_extract(l.draft_json, '$.background.zoom') AS zoom
+        FROM landscape_layouts l JOIN landscape_settings s ON s.id = 1 AND s.enabled = 1
+       WHERE l.status = 'ACTIVE' AND l.background_kind = 'SATELLITE'
+      UNION ALL
+      SELECT json_extract(v.document_json, '$.background.center[0]'), json_extract(v.document_json, '$.background.center[1]'),
+             json_extract(v.document_json, '$.background.zoom')
+        FROM landscape_layouts l JOIN landscape_versions v ON v.id = l.published_version_id
+        JOIN landscape_settings s ON s.id = 1 AND s.enabled = 1
+       WHERE l.status = 'ACTIVE' AND l.background_kind = 'SATELLITE'`).all<{ lon: number | null; lat: number | null; zoom: number | null }>();
+    return results.filter((r): r is { lon: number; lat: number; zoom: number } =>
+      typeof r.lon === "number" && typeof r.lat === "number" && typeof r.zoom === "number");
+  }
+
   layout(id: string): Promise<LandscapeLayoutRow | null> {
     return this.db.prepare(`${LAYOUT_SELECT} WHERE l.id = ?1 AND l.status = 'ACTIVE'`).bind(id).first<LandscapeLayoutRow>();
   }

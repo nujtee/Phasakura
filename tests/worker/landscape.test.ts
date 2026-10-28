@@ -222,3 +222,81 @@ describe("drafts, publishing and versions", () => {
     assert.equal((await h.api<unknown[]>("GET", "/api/admin/landscape/templates", { token: root })).data.length, 0);
   });
 });
+
+describe("satellite plans (phase L4): MapTiler imagery through the Worker", () => {
+  const KEY = "maptiler-test-key-123";
+  const tile = (lon: number, lat: number, z: number) => {
+    const n = 2 ** z;
+    const x = Math.floor(((lon + 180) / 360) * n);
+    const r = (lat * Math.PI) / 180;
+    const y = Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
+    return `/sat-tiles/${z}/${x}/${y}`;
+  };
+
+  it("no key: satellite plans cannot be made; the editor is told", async () => {
+    const { h, root, on } = await setup();
+    await on();
+    const res = await h.api("POST", "/api/admin/landscape/layouts", { token: root, body: { name: "Sat", backgroundKind: "SATELLITE" } });
+    assert.equal(res.status, 409);
+    assert.equal(res.error?.code, "MAP_NOT_CONFIGURED");
+    assert.equal((await h.api<LandscapeOverviewDto>("GET", "/api/admin/landscape", { token: root })).data.satelliteReady, false);
+    assert.equal((await h.get("/sat-tiles/17/102127/60720")).status, 503);
+  });
+
+  it("with a key: a new plan starts over the site's location; tiles around it only, key never shown", async () => {
+    const { h, root, on, create, publish } = await setup();
+    h.env.MAPTILER_API_KEY = KEY;
+    h.db.run(`INSERT INTO site_settings (id, default_language, latitude, longitude) VALUES (1, 'th', 18.7883, 98.9853)
+      ON CONFLICT (id) DO UPDATE SET latitude = excluded.latitude, longitude = excluded.longitude`);
+    await on();
+    assert.equal((await h.api<LandscapeOverviewDto>("GET", "/api/admin/landscape", { token: root })).data.satelliteReady, true);
+    const sat = await create("SATELLITE");
+    assert.deepEqual(sat.draft.background, { kind: "SATELLITE", center: [98.9853, 18.7883], zoom: 17 });
+
+    const here = await h.get(tile(98.9853, 18.7883, 17));
+    assert.equal(here.status, 200);
+    assert.equal(here.headers.get("Content-Type"), "image/png");
+    assert.match(here.headers.get("Cache-Control") ?? "", /public, max-age=\d+/);
+    const sent = h.tileRequests.at(-1)!.url;
+    assert.match(sent, /^https:\/\/api\.maptiler\.com\/tiles\/satellite-v2\/17\/\d+\/\d+\?key=maptiler-test-key-123$/);
+    assert.equal((await h.get(tile(98.9853, 18.7883, 20))).status, 200, "three zoom levels in");
+    assert.equal((await h.get(tile(98.9853, 18.7883, 13))).status, 404, "too far out");
+    const before = h.tileRequests.length;
+    assert.equal((await h.get(tile(100.5018, 13.7563, 17))).status, 404, "elsewhere: not an open proxy");
+    assert.equal(h.tileRequests.length, before, "nothing fetched for it");
+    // The plan moves (editor): its new area is served right after the save, not only when the memo runs out.
+    const moved = await h.api<LandscapeLayoutDto>("PUT", `/api/admin/landscape/layouts/${sat.id}/draft`, {
+      token: root, body: { baseRevision: sat.draftRevision, document: { ...sat.draft, background: { kind: "SATELLITE", center: [100.5018, 13.7563], zoom: 17 } } },
+    });
+    assert.equal(moved.status, 200);
+    h.advance(3000);
+    assert.equal((await h.get(tile(100.5018, 13.7563, 17))).status, 200);
+    sat.draftRevision = moved.data.draftRevision;
+    sat.draft = moved.data.draft;
+
+    // MapTiler refuses the key: a short code, never the key or MapTiler's answer.
+    h.tileResponse = () => new Response(`Invalid key ${KEY}`, { status: 403 });
+    const refused = await h.get(tile(100.5018, 13.7563, 18));
+    assert.equal(refused.status, 403);
+    const text = await refused.text();
+    assert.equal(text, "MAP_KEY_REJECTED");
+    assert.ok(!text.includes(KEY));
+    h.tileResponse = () => new Response("<html>not an image</html>", { headers: { "Content-Type": "image/png" } });
+    assert.equal((await h.get(tile(100.5018, 13.7563, 19))).status, 502, "only images go through");
+
+    // A satellite plan publishes and reaches the booking page like the others.
+    const doc = { ...sat.draft, background: { kind: "SATELLITE", center: [98.9853, 18.7883], zoom: 17 },
+      objects: [obj({ kind: "HOUSE", link: { type: "UNIT", unitId: "dev_house_01" }, shape: { type: "rect", x: 98.985, y: 18.7885, w: 0.0001, h: 0.0001 } })] };
+    const saved = await h.api<LandscapeLayoutDto>("PUT", `/api/admin/landscape/layouts/${sat.id}/draft`, { token: root, body: { baseRevision: sat.draftRevision, document: doc } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal((await publish(sat.id, saved.data.draftRevision, { makePublic: true })).status, 200);
+    const pub = await h.api<PublicLandscapeDto>("GET", "/api/public/landscape");
+    assert.equal(pub.data.layout?.document.background.kind, "SATELLITE");
+
+    // Switched off: no tiles either.
+    await h.api("PUT", "/api/admin/landscape/settings", { token: root, body: { enabled: false } });
+    h.tileResponse = () => new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]), { headers: { "Content-Type": "image/png" } });
+    h.advance(60_000); // past the 30 s memo of the plan areas
+    assert.equal((await h.get(tile(98.9853, 18.7883, 17))).status, 404);
+  });
+});
