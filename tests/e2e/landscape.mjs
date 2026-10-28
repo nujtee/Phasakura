@@ -396,6 +396,70 @@ await check("acceptance 8: the editor on a tablet (iPad portrait) — canvas, to
   }
 });
 
+// ------------------------------------------------------------------ iPad: the editor with fingers
+const ipadCtx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 820, height: 1180 }, locale: "en-US", hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+const ip = await ipadCtx.newPage(); watch(ip);
+const cdp = await ipadCtx.newCDPSession(ip);
+const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points.map(([x, y], i) => ({ x, y, id: i + 1 })) });
+let IPAD = "";
+async function ipScreen(x, y) {
+  const vb = (await ip.locator(".lse-canvas svg").getAttribute("viewBox")).split(" ").map(Number);
+  const box = await ip.locator(".lse-canvas svg").boundingBox();
+  return [box.x + ((x - vb[0]) / vb[2]) * box.width, box.y + ((y - vb[1]) / vb[3]) * box.height];
+}
+const ipObjects = async () => (await (await req.fetch(`${BASE}/api/admin/landscape/layouts/${IPAD}`, { headers: H })).json()).data.draft.objects;
+const ipSaved = () => ip.locator(".lse-status--saved").waitFor({ timeout: 15_000 });
+
+await check("iPad: sign in, open a plan; finger-sized tools and the touch hint", async () => {
+  const made = await api("POST", "/api/admin/landscape/layouts", { name: "iPad plan", backgroundKind: "BLANK" });
+  IPAD = made.body.data.id;
+  await ip.goto(`${BASE}/en/admin/login`);
+  await ip.locator("input[autocomplete=username]").fill("admin@example.test");
+  await ip.locator("input[autocomplete=current-password]").fill("correct horse battery staple");
+  await ip.locator("form button[type=submit]").tap();
+  await ip.waitForURL(`${BASE}/en/admin`);
+  await ip.goto(`${BASE}/en/admin/landscape/${IPAD}`);
+  await ip.locator(".lse-canvas svg").waitFor();
+  await ip.getByText("iPad: two fingers to pan and zoom").waitFor();
+  const tool = await ip.getByRole("button", { name: "Tree", exact: true }).boundingBox();
+  assert(tool.height >= 44, `tool ${tool.height}px high`);
+});
+
+await check("iPad: tap to place trees; a pinch zooms and never leaves a stray tree", async () => {
+  await ip.getByRole("button", { name: "Tree", exact: true }).tap();
+  for (const [x, y] of [[40, 40], [60, 40]]) { const [sx, sy] = await ipScreen(x, y); await ip.touchscreen.tap(sx, sy); }
+  await ipSaved();
+  assert((await ipObjects()).filter((o) => o.kind === "TREE").length === 2, "two trees");
+  const w0 = Number((await ip.locator(".lse-canvas svg").getAttribute("viewBox")).split(" ")[2]);
+  const [cx, cy] = await ipScreen(100, 60);
+  await touch("touchStart", [[cx, cy]]);
+  await touch("touchStart", [[cx, cy], [cx + 40, cy]]);
+  for (let i = 1; i <= 6; i++) await touch("touchMove", [[cx - i * 20, cy], [cx + 40 + i * 20, cy]]);
+  await touch("touchEnd", []);
+  const w1 = Number((await ip.locator(".lse-canvas svg").getAttribute("viewBox")).split(" ")[2]);
+  assert(w1 < w0 * 0.5, `pinched in: ${w0} → ${w1}`);
+  await ip.waitForTimeout(3000);
+  assert((await ipObjects()).filter((o) => o.kind === "TREE").length === 2, "still two trees after the pinch");
+  await ip.getByRole("button", { name: "Fit" }).tap();
+});
+
+await check("iPad: draw a lawn by tapping its corners, then “Finish”; select several by tapping", async () => {
+  await ip.getByRole("button", { name: "Grass / lawn", exact: true }).tap();
+  for (const [x, y] of [[100, 70], [150, 70], [150, 110]]) { const [sx, sy] = await ipScreen(x, y); await ip.touchscreen.tap(sx, sy); }
+  await ip.getByRole("button", { name: "Finish", exact: true }).tap();
+  await ipSaved();
+  const lawn = (await ipObjects()).find((o) => o.kind === "GRASS");
+  assert(lawn && lawn.shape.type === "polygon" && lawn.shape.points.length === 3, JSON.stringify(lawn));
+  await ip.getByRole("button", { name: "Select / move (V)" }).tap();
+  await ip.getByLabel("Select several (tap each)").check();
+  for (const [x, y] of [[40, 40], [60, 40]]) { const [sx, sy] = await ipScreen(x, y); await ip.touchscreen.tap(sx, sy); }
+  await ip.getByText("3 selected").waitFor(); // the new lawn + the two trees tapped
+  const handle = await ip.locator(".lse-canvas .lse-handle").first().boundingBox().catch(() => null);
+  if (SHOTS) await ip.screenshot({ path: `${SHOTS}/landscape-ipad.png` });
+  assert(handle === null || handle.width >= 18, `handles finger-sized: ${JSON.stringify(handle)}`);
+});
+await ipadCtx.close();
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

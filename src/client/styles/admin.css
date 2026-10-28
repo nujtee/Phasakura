@@ -3487,3 +3487,18 @@
 .lse-cp__bad { color: #b3261e; }
 .lse-cp__new { padding: 8px; border: 1px dashed #d32f2f; border-radius: 6px; margin-bottom: 8px; }
 .lse-cp__convert { margin-top: 12px; }
+
+/* Landscape editor on an iPad / touch screen: finger-sized controls, the "finish drawing" bar, the touch hint. */
+.lse-drawbar {
+  position: absolute; left: 8px; bottom: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 6px; border-radius: 10px; background: rgb(255 255 255 / 0.92); box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+}
+.lse-hint-touch { display: none; }
+.lse-canvas { -webkit-user-select: none; -webkit-touch-callout: none; }
+@media (any-pointer: coarse) {
+  .lse-hint-touch { display: inline; }
+  .lse-tool, .lse-kind { min-height: 44px; }
+  .lse-tool { min-width: 44px; }
+  .lse-zoom .adm-btn, .lse-drawbar .adm-btn { min-height: 44px; min-width: 44px; }
+  .lse-tab { min-height: 44px; }
+}
