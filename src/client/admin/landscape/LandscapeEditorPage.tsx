@@ -94,6 +94,8 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
   const [tool, setTool] = useState<Tool>("select");
   const [kind, setKind] = useState<LandscapeObjectKind>("TREE");
   const [snapOn, setSnapOn] = useState(true);
+  /** iPad: taps add to the selection (what Shift+click does with a keyboard). */
+  const [multi, setMulti] = useState(false);
   const [polyPoints, setPolyPoints] = useState<[number, number][] | null>(null);
   const [panel, setPanel] = useState<"props" | "layers" | "background" | "templates">("props");
   const [name, setName] = useState(layout.name);
@@ -441,9 +443,10 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
           ))}
           <span className="lse-sep" />
           <label className="adm-check adm-small"><input type="checkbox" checked={snapOn} onChange={(ev) => setSnapOn(ev.target.checked)} /> {e.snap}</label>
+          <label className="adm-check adm-small"><input type="checkbox" checked={multi} onChange={(ev) => setMulti(ev.target.checked)} /> {e.multiSelect}</label>
         </div>
       )}
-      <p className="adm-small adm-muted lse-hint">{e.hints[tool] ?? ""}</p>
+      <p className="adm-small adm-muted lse-hint">{e.hints[tool] ?? ""}<span className="lse-hint-touch"> · {e.touchHint}</span></p>
 
       <div className="lse-body">
         <div className="lse-stage">
@@ -454,8 +457,16 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
             onDrawn={() => { if (tool !== "symbol") setTool("select"); }}
             drafting={polyPoints} setDrafting={setPolyPoints}
             tileVersion={tileVersion} onTileError={onTileError}
-            markers={markers} onPickPoint={(p) => { setCpPending(p); setTool("select"); setPanel("background"); }} />
+            multi={multi} markers={markers} onPickPoint={(p) => { setCpPending(p); setTool("select"); setPanel("background"); }} />
           {bg.kind === "SATELLITE" && <SatelliteAttribution className="lse-attribution" />}
+          {polyPoints && polyPoints.length > 0 && !readOnly && (
+            // Finishing a polygon / path without a keyboard or double-click (iPad).
+            <div className="lse-drawbar" role="group" aria-label={e.tools[tool] ?? ""}>
+              <Button onClick={() => canvas.current?.finishDrawing()} disabled={polyPoints.length < (tool === "path" ? 2 : 3)}>{e.drawFinish}</Button>
+              <Button variant="secondary" onClick={() => setPolyPoints(polyPoints.length > 1 ? polyPoints.slice(0, -1) : null)}>{e.drawUndoPoint}</Button>
+              <Button variant="ghost" onClick={() => setPolyPoints(null)}>{e.drawCancel}</Button>
+            </div>
+          )}
           <div className="lse-zoom">
             <Button variant="secondary" onClick={() => canvas.current?.zoom(1.25)} aria-label={e.zoomIn}>+</Button>
             <Button variant="secondary" onClick={() => canvas.current?.zoom(0.8)} aria-label={e.zoomOut}>−</Button>

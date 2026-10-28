@@ -5,7 +5,7 @@ import {
   LANDSCAPE_LIMITS, LANDSCAPE_OBJECT_KINDS, RESERVABLE_KINDS,
   type LandscapeLayer, type LandscapeObject, type LandscapeObjectKind, type LandscapeOverviewDto, type LandscapeTemplateDto,
 } from "../../../shared/landscape-types.ts";
-import { objectsBox, measuredDistance, type Size } from "../../landscape/geometry.ts";
+import { objectsBox, measuredDistance, planUnit, type Size } from "../../landscape/geometry.ts";
 import {
   deleteObjects, duplicateObjects, groupObjects, moveLayer, newObjectId, removeLayer, reorderObjects, ungroupObjects, updateObjects, type Scene,
 } from "../../landscape/editor-state.ts";
@@ -139,7 +139,7 @@ export function PropertiesPanel({ e, scene, selected, units, campingEnabled, rea
       )}
 
       <div className="lse-actions">
-        <Button variant="secondary" disabled={dis} onClick={() => { const r = duplicateObjects(scene, selected, Math.max(size.w, size.h) / 60); onCommit(r.scene, r.ids); }}>{e.duplicate}</Button>
+        <Button variant="secondary" disabled={dis} onClick={() => { const r = duplicateObjects(scene, selected, planUnit(scene.background, size) / 60); onCommit(r.scene, r.ids); }}>{e.duplicate}</Button>
         <Button variant="secondary" disabled={dis} onClick={() => onCommit(reorderObjects(scene, selected, "up"), selected)}>{e.forward}</Button>
         <Button variant="secondary" disabled={dis} onClick={() => onCommit(reorderObjects(scene, selected, "down"), selected)}>{e.backward}</Button>
         <Button variant="secondary" disabled={dis} onClick={() => onCommit(reorderObjects(scene, selected, "top"), selected)}>{e.toTop}</Button>

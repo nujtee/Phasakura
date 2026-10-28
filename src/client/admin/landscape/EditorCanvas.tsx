@@ -16,6 +16,8 @@ export interface CanvasApi {
   zoom(factor: number): void;
   /** Centre of what is on screen (world units): where a template is placed. */
   center(): Point;
+  /** Finishes the polygon / path being drawn (the "Finish" button: no Enter or double-click on an iPad). */
+  finishDrawing(): void;
 }
 
 interface View { x: number; y: number; scale: number }
@@ -27,7 +29,12 @@ type Drag =
   | { kind: "rotate"; base: Scene; obj: LandscapeObject; center: Point; startAngle: number }
   | { kind: "vertex"; base: Scene; obj: LandscapeObject; index: number; center: Point }
   | { kind: "marquee"; start: Point; current: Point; add: boolean }
-  | { kind: "draw"; shape: "rect" | "circle"; start: Point; current: Point };
+  | { kind: "draw"; shape: "rect" | "circle"; start: Point; current: Point }
+  /** A finger tap that places something (symbol, polygon point, control point): done when the finger lifts, so the
+   * first finger of a pinch never leaves a stray tree or point. */
+  | { kind: "tap"; at: Point; sx: number; sy: number }
+  /** Two fingers: pinch to zoom, move to pan (iPad / touch screens). */
+  | { kind: "pinch"; ids: [number, number]; startDist: number; startMid: Point; view: View };
 
 const MIN_SCALE = 1e-4;
 const MAX_SCALE = 1e4;
@@ -60,6 +67,8 @@ export const EditorCanvas = forwardRef<CanvasApi, {
   /** Satellite plans: reloads the imagery after the plan's area was saved; first failed tile. */
   tileVersion?: string | number;
   onTileError?: (url: string) => void;
+  /** Taps add to / take from the selection (Shift+click without a keyboard: iPad). */
+  multi?: boolean;
   /** Control points of a photo (phase L4): where they are, numbered; the tool "controlpoint" picks a new one. */
   markers?: { label: string; at: Point; pending?: boolean }[];
   onPickPoint?: (p: Point) => void;
@@ -72,7 +81,14 @@ export const EditorCanvas = forwardRef<CanvasApi, {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [hover, setHover] = useState<Point | null>(null);
   const [space, setSpace] = useState(false);
+  const finishRef = useRef<() => void>(() => undefined);
   const fitted = useRef(false);
+  /** Fingers / pens / mouse buttons down now (screen positions), for two-finger pinch and pan. */
+  const pointers = useRef(new Map<number, { x: number; y: number; type: string }>());
+  /** Touch or pen in use: larger handles and a larger grab distance. */
+  const [coarse, setCoarse] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(any-pointer: coarse)").matches
+    && !window.matchMedia?.("(pointer: fine)").matches);
+
 
   useLayoutEffect(() => {
     const el = wrap.current;
@@ -114,6 +130,7 @@ export const EditorCanvas = forwardRef<CanvasApi, {
     fit,
     zoom: (f) => zoomAt(f),
     center: () => [view.x + box.w / view.scale / 2, view.y + box.h / view.scale / 2],
+    finishDrawing: () => finishRef.current(),
   }), [fit, zoomAt, view, box]);
 
   // Wheel zoom (passive listeners cannot prevent the page from scrolling).
@@ -143,7 +160,7 @@ export const EditorCanvas = forwardRef<CanvasApi, {
     return [view.x + (e.clientX - r.left) / view.scale, view.y + (e.clientY - r.top) / view.scale];
   };
   const snapPoint = ([x, y]: Point): Point => (props.snapOn ? [snap(x, props.grid), snap(y, props.grid)] : [x, y]);
-  const tol = 6 / view.scale;
+  const tol = (coarse ? 14 : 6) / view.scale;
   const current = preview ?? scene;
   const ordered = drawOrder(current);
   const single = selected.length === 1 ? current.objects.find((o) => o.id === selected[0]) ?? null : null;
@@ -166,6 +183,7 @@ export const EditorCanvas = forwardRef<CanvasApi, {
   const unit = planUnit(scene.background, size);
   const defaultSize = () => KIND_INFO[props.kind].size * unit;
 
+  finishRef.current = () => finishPolygon(props.drafting ?? []);
   function finishPolygon(points: Point[]) {
     const isPath = tool === "path";
     if (points.length < (isPath ? 2 : 3)) return;
@@ -176,12 +194,38 @@ export const EditorCanvas = forwardRef<CanvasApi, {
     props.onDrawn();
   }
 
+  function startPinch(): boolean {
+    const touches = [...pointers.current.entries()].filter(([, q]) => q.type !== "mouse");
+    if (touches.length < 2) return false;
+    const [ida, a] = touches[0]!;
+    const [idb, b] = touches[1]!;
+    const r = wrap.current!.getBoundingClientRect();
+    // Whatever the first finger started is dropped: no half move, no tap.
+    setPreview(null);
+    setDrag({
+      kind: "pinch", ids: [ida, idb], startDist: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      startMid: [(a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top], view,
+    });
+    return true;
+  }
+
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (e.button === 2) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+    const isCoarse = e.pointerType === "touch" || e.pointerType === "pen";
+    if (isCoarse !== coarse) setCoarse(isCoarse);
     wrap.current?.setPointerCapture(e.pointerId);
+    if (e.pointerType === "touch" && pointers.current.size >= 2) { startPinch(); return; }
+    if (drag?.kind === "pinch") return;
+    const shift = e.shiftKey || !!props.multi;
     const p = toWorld(e);
     if (e.button === 1 || tool === "hand" || space) {
       setDrag({ kind: "pan", sx: e.clientX, sy: e.clientY, view });
+      return;
+    }
+    const placing = tool === "controlpoint" || tool === "polygon" || tool === "path" || tool === "symbol";
+    if (placing && e.pointerType === "touch" && !readOnly) {
+      setDrag({ kind: "tap", at: p, sx: e.clientX, sy: e.clientY });
       return;
     }
     if (tool === "controlpoint") {
@@ -222,23 +266,37 @@ export const EditorCanvas = forwardRef<CanvasApi, {
     }
     const hit = pick(p);
     if (!hit) {
-      setDrag({ kind: "marquee", start: p, current: p, add: e.shiftKey });
-      if (!e.shiftKey) props.onSelect([]);
+      setDrag({ kind: "marquee", start: p, current: p, add: shift });
+      if (!shift) props.onSelect([]);
       return;
     }
     const group = expandGroups(scene, [hit.id]);
     let ids = selected;
-    if (e.shiftKey) ids = group.every((id) => selected.includes(id)) ? selected.filter((id) => !group.includes(id)) : [...new Set([...selected, ...group])];
+    if (shift) ids = group.every((id) => selected.includes(id)) ? selected.filter((id) => !group.includes(id)) : [...new Set([...selected, ...group])];
     else if (!selected.includes(hit.id)) ids = group;
     props.onSelect(ids);
-    if (!e.shiftKey) setDrag({ kind: "move", start: p, ids, base: scene, moved: false });
+    if (!shift) setDrag({ kind: "move", start: p, ids, base: scene, moved: false });
   }
 
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     const p = toWorld(e);
-    if (props.drafting) setHover(snapPoint(p));
+    if (props.drafting && e.pointerType === "mouse") setHover(snapPoint(p));
     if (!drag) return;
     switch (drag.kind) {
+      case "pinch": {
+        const a = pointers.current.get(drag.ids[0]);
+        const b = pointers.current.get(drag.ids[1]);
+        if (!a || !b) return;
+        const r = wrap.current!.getBoundingClientRect();
+        const mid: Point = [(a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top];
+        const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, drag.view.scale * (Math.hypot(b.x - a.x, b.y - a.y) / drag.startDist)));
+        // The plan point under the fingers' first middle stays under their middle now.
+        const wx = drag.view.x + drag.startMid[0] / drag.view.scale;
+        const wy = drag.view.y + drag.startMid[1] / drag.view.scale;
+        setView({ scale, x: wx - mid[0] / scale, y: wy - mid[1] / scale });
+        return;
+      }
       case "pan": {
         const dx = (e.clientX - drag.sx) / drag.view.scale;
         const dy = (e.clientY - drag.sy) / drag.view.scale;
@@ -288,9 +346,27 @@ export const EditorCanvas = forwardRef<CanvasApi, {
     }
   }
 
-  function onPointerUp() {
+  function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    pointers.current.delete(e.pointerId);
+    if (drag?.kind === "pinch") {
+      // One finger still down: it pans from here; none: done.
+      const left = [...pointers.current.entries()].find(([, q]) => q.type !== "mouse");
+      setDrag(left ? { kind: "pan", sx: left[1].x, sy: left[1].y, view } : null);
+      return;
+    }
     if (!drag) return;
     const d = drag;
+    if (d.kind === "tap") {
+      setDrag(null);
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 12) return; // a swipe, not a tap
+      if (tool === "controlpoint") props.onPickPoint?.(d.at);
+      else if (tool === "symbol") {
+        const [x, y] = snapPoint(d.at);
+        const o = newObject({ type: "symbol", x, y, size: defaultSize() });
+        props.onCommit({ ...scene, objects: [...scene.objects, o] }, [o.id]);
+      } else props.setDrafting([...(props.drafting ?? []), snapPoint(d.at)]);
+      return;
+    }
     setDrag(null);
     if (d.kind === "marquee") {
       const b = norm(d.start, d.current);
@@ -337,7 +413,7 @@ export const EditorCanvas = forwardRef<CanvasApi, {
   });
 
   const vb = `${view.x} ${view.y} ${box.w / view.scale} ${box.h / view.scale}`;
-  const hs = 5 / view.scale; // handle half-size
+  const hs = (coarse ? 11 : 5) / view.scale; // handle half-size (finger-sized on touch)
   const labelSize = scene.background.kind === "SATELLITE" ? unit / 25 : Math.max(size.w, size.h) / 70;
   const bg = current.background;
   const gridOn = props.grid > 0 && props.grid * view.scale >= 8;
