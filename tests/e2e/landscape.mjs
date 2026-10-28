@@ -364,6 +364,38 @@ await check("guest: a satellite plan on the booking page, with imagery and the c
   assert((await req.get(`${BASE}/sat-tiles/17/0/0`)).status() === 404, "tiles elsewhere: 404");
 });
 
+// ------------------------------------------------------------------ phase L5: acceptance — mobile and desktop
+const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+
+await check("acceptance 8: booking map and the list on desktop and on a phone — no sideways scrolling", async () => {
+  await pa.goto(`${BASE}/en/booking`);
+  await pa.locator(".bmap__svg").waitFor();
+  await pa.locator(".unit-grid").first().waitFor();
+  assert(await overflow(pa) <= 0, `desktop overflow ${await overflow(pa)}`);
+  await pg.goto(`${BASE}/en/booking`);
+  await pg.locator(".bmap__svg").waitFor();
+  assert(await overflow(pg) <= 0, `phone overflow ${await overflow(pg)}`);
+  const box = await pg.locator(".bmap__frame").boundingBox();
+  assert(box && box.width <= 390 && box.width > 300, `map fits the phone: ${JSON.stringify(box)}`);
+});
+
+await check("acceptance 8: the editor on a tablet (iPad portrait) — canvas, tools and panels all usable", async () => {
+  await pa.setViewportSize({ width: 820, height: 1180 });
+  try {
+    await pa.goto(`${BASE}/en/admin/landscape/${LAYOUT}`);
+    await pa.locator(".lse-canvas svg [data-id]").first().waitFor();
+    assert(await overflow(pa) <= 0, `tablet overflow ${await overflow(pa)}`);
+    for (const name of ["House", "Tree", "Fit"]) await pa.getByRole("button", { name, exact: true }).first().waitFor();
+    await pa.getByRole("tab", { name: "Layers" }).click();
+    await pa.getByRole("tab", { name: "Background" }).click();
+    const canvas = await pa.locator(".lse-canvas").boundingBox();
+    assert(canvas && canvas.width > 600 && canvas.height > 300, `canvas size ${JSON.stringify(canvas)}`);
+    if (SHOTS) await pa.screenshot({ path: `${SHOTS}/landscape-editor-tablet.png` });
+  } finally {
+    await pa.setViewportSize({ width: 1440, height: 960 });
+  }
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
