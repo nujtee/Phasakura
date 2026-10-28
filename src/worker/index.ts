@@ -97,6 +97,8 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/center/backups/download", center.downloadBackup)
     .get("/api/center/channels", center.getChannels)
     .put("/api/center/channels", center.setChannels)
+    .get("/api/center/features", center.getFeatures)
+    .put("/api/center/features", center.setFeatures)
     .post("/api/center/sso", center.issueSso)
     // Unsigned: the browser of the Center user posts the one-time ticket here (a form on center.phasakura.com).
     .post("/api/center/sso/consume", center.consumeSso)

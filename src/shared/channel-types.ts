@@ -149,3 +149,15 @@ export interface CenterChannelsDto {
   channex: { enabled: boolean; available: boolean; environment: "staging" | "production"; propertyTitle: string | null; mappedUnits: number };
   updatedAt: string | null;
 }
+
+/**
+ * GET /api/center/features — the site features only a SUPER_ADMIN (or Center) switches on / off, other than the OTA
+ * channels: the site plan (landscape, migration 0039) and the app-usage credit system (migration 0027).
+ * null = the site's database is older than that feature.
+ */
+export interface CenterFeaturesDto {
+  landscape: { enabled: boolean; layouts: number; publicLayout: string | null; publicVersion: number | null } | null;
+  credits: { enabled: boolean; payeeSet: boolean; balance: number; held: number; plan: string | null } | null;
+}
+export const CENTER_FEATURES = ["landscape", "credits"] as const;
+export type CenterFeature = (typeof CENTER_FEATURES)[number];

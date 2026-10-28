@@ -488,3 +488,37 @@ describe("Center: OTA channels (phase O1)", () => {
     assert.equal(h.audits("CHANNEL_CHANNEX_ON")[0]!.user_id, "center_u_owner");
   });
 });
+
+// ------------------------------------------------------------------ site plan / credit system switches
+
+describe("Center: features only a SUPER_ADMIN switches (landscape, credits)", () => {
+  it("reads both; PLATFORM_OWNER / OPERATOR switch them with a reason, audited as the Center user; SUPPORT cannot", async () => {
+    const { h, signed } = await c3();
+    type F = { landscape: { enabled: boolean; layouts: number } | null; credits: { enabled: boolean; payeeSet: boolean } | null };
+    const read = await signed<F>("GET", "/api/center/features", SUPPORT);
+    assert.equal(read.status, 200, JSON.stringify(read.error));
+    assert.deepEqual([read.data.landscape?.enabled, read.data.landscape?.layouts, read.data.credits?.enabled], [false, 0, false]);
+    assert.equal((await signed("PUT", "/api/center/features", SUPPORT, { landscape: true })).error?.code, "CENTER_ROLE_REQUIRED");
+    assert.equal((await signed("PUT", "/api/center/features", { ...OPERATOR, reason: "" }, { landscape: true })).error?.details?.reason, "CENTER_REASON_REQUIRED");
+    assert.equal((await signed("PUT", "/api/center/features", OPERATOR, { landscape: "on" })).status, 422);
+    assert.equal((await signed("PUT", "/api/center/features", OPERATOR, { spaceship: true })).status, 422);
+    assert.equal((await signed("PUT", "/api/center/features", OPERATOR, {})).status, 422);
+
+    const on = await signed<F>("PUT", "/api/center/features", OPERATOR, { landscape: true });
+    assert.equal(on.status, 200, JSON.stringify(on.error));
+    assert.equal(on.data.landscape?.enabled, true);
+    assert.equal(h.db.get<{ e: number }>("SELECT enabled AS e FROM landscape_settings")!.e, 1);
+    const audit = h.audits("LANDSCAPE_ON");
+    assert.equal(audit[0]!.user_id, "center_u_ops");
+    assert.match(String(audit[0]!.new_value), /ตรวจการจองที่ค้าง/);
+
+    // Credits: only once it is set where top-ups are paid (the same rule as the settings page).
+    assert.equal((await signed("PUT", "/api/center/features", OWNER, { credits: true })).error?.code, "CREDIT_PAYEE_NOT_SET");
+    h.db.run("UPDATE credit_settings SET account_number = '111-2-33333-4', bank_name = 'Kasikorn' WHERE id = 1");
+    const credits = await signed<F>("PUT", "/api/center/features", OWNER, { credits: true });
+    assert.equal(credits.status, 200, JSON.stringify(credits.error));
+    assert.deepEqual([credits.data.credits?.enabled, credits.data.credits?.payeeSet], [true, true]);
+    assert.equal(h.audits("CREDITS_ON")[0]!.user_id, "center_u_owner");
+    assert.equal((await signed<F>("PUT", "/api/center/features", OWNER, { credits: false, landscape: false })).data.landscape?.enabled, false);
+  });
+});

@@ -3,7 +3,7 @@ import {
   type LandscapeBackgroundKind, type LandscapeDocument, type LandscapeLayoutDto, type LandscapeLayoutSummaryDto,
   type LandscapeObject, type LandscapeOverviewDto, type LandscapeTemplateDto, type LandscapeVersionDto, type PublicLandscapeDto,
 } from "../../shared/landscape-types.ts";
-import type { D1DatabaseLike } from "../env.ts";
+import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError, HttpError, NotFoundError, ValidationError } from "../http/errors.ts";
 import type { LandscapeLayoutRow, LandscapeRepository } from "../repositories/landscape.repository.ts";
 import { newId } from "../security/tokens.ts";
@@ -53,14 +53,29 @@ export class LandscapeService {
   /** SUPER_ADMIN (landscape.toggle). */
   async setEnabled(actor: AuthContext, enabled: boolean, meta: RequestMeta): Promise<LandscapeOverviewDto> {
     await this.authz.requirePermission(actor, "landscape.toggle", meta);
+    await this.switchEnabled(enabled, actor.userId, [], meta);
+    return this.overview(actor, meta);
+  }
+
+  /** The switch, from the site's SUPER_ADMIN or from Center (audited as the Center user, with its reason). */
+  async switchEnabled(enabled: boolean, userId: string | null, extraStatements: D1PreparedStatementLike[], meta: RequestMeta, audit: Record<string, unknown> = {}): Promise<void> {
     const before = await this.settingsOrThrow();
     const now = iso(this.clock());
     await this.db.batch([
-      this.repo.setEnabledStatement(enabled, actor.userId, now),
-      this.log.auditStatement(actor.userId, enabled ? "LANDSCAPE_ON" : "LANDSCAPE_OFF", "landscape", "settings",
-        { enabled: before.enabled === 1 }, { enabled }, meta),
+      ...extraStatements,
+      this.repo.setEnabledStatement(enabled, userId, now),
+      this.log.auditStatement(userId, enabled ? "LANDSCAPE_ON" : "LANDSCAPE_OFF", "landscape", "settings",
+        { enabled: before.enabled === 1 }, { enabled, ...audit }, meta),
     ]);
-    return this.overview(actor, meta);
+  }
+
+  /** For Center: on / off, how many plans, which one the booking page shows. null before migration 0039. */
+  async centerStatus(): Promise<{ enabled: boolean; layouts: number; publicLayout: string | null; publicVersion: number | null } | null> {
+    const settings = await this.repo.settings();
+    if (!settings) return null;
+    const layouts = await this.repo.layouts();
+    const pub = layouts.find((l) => l.id === settings.public_layout_id) ?? null;
+    return { enabled: settings.enabled === 1, layouts: layouts.length, publicLayout: pub?.name ?? null, publicVersion: pub?.published_version_no ?? null };
   }
 
   async create(actor: AuthContext, input: { name: string; backgroundKind: LandscapeBackgroundKind }, meta: RequestMeta): Promise<LandscapeLayoutDto> {
