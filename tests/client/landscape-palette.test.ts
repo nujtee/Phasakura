@@ -6,7 +6,7 @@ import { buildPalette, DEFAULT_PALETTE, entryInput, entryOf, swapOrder } from ".
 
 const row = (over: Partial<LandscapePaletteRowDto>): LandscapePaletteRowDto => ({
   id: "x", builtin: false, kind: "BUILDING", name: "Sala", draw: "rect", fill: "#aa8844", stroke: "#553311", opacity: 1,
-  layer: "stays", size: 0.05, group: "site", sortOrder: null, hidden: false, ...over,
+  layer: "stays", size: 0.05, group: "site", sortOrder: null, hidden: false, look: null, ...over,
 });
 
 describe("landscape palette (built-in + staff kinds)", () => {

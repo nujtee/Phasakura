@@ -56,6 +56,14 @@ const th = {
     zoomIn: "ซูมเข้า", zoomOut: "ซูมออก", fit: "พอดีจอ", snap: "จัดชิดเส้นตาราง",
     multiSelect: "เลือกหลายชิ้น (แตะทีละชิ้น)", drawFinish: "เสร็จ", drawUndoPoint: "ลบจุดล่าสุด", drawCancel: "ยกเลิก",
     touchHint: "iPad: สองนิ้วเลื่อนและซูม · วาดรูปหลายเหลี่ยม / เส้นทางแล้วกด “เสร็จ”",
+    look: "แบบ", lookFlat: "เรียบ 2D", quickColors: "สีด่วน",
+    looks: {
+      gable: "บ้านจั่ว", thai: "เรือนไทย", modern: "โมเดิร์น", aframe: "ทรงเอ", bungalow: "บังกะโล", cabin: "บ้านซุง",
+      bell: "เต็นท์ระฆัง", dome: "เต็นท์โดม", safari: "ซาฟารี", tipi: "ทีปี", bubble: "บับเบิล",
+      round: "พุ่มกลม", pine: "สน", palm: "มะพร้าว / ปาล์ม", rain: "จามจุรี", bamboo: "ไผ่", fruit: "ไม้ผล", cypress: "ไซเปรส",
+      hedge: "แนวรั้วต้นไม้", topiary: "ไม้ดัด",
+      bloom: "พุ่มดอกไม้", bed: "แปลงดอกไม้", tulip: "ทิวลิป", sunflower: "ทานตะวัน", pot: "กระถางดอกไม้",
+    } as Record<string, string>,
     palette: {
       title: "ประเภทชิ้น", hint: "เพิ่มประเภทของคุณเอง (เช่น ศาลา สระว่ายน้ำ) แก้ชื่อ สี รูปร่าง ซ่อน หรือลบประเภทได้ — ชิ้นที่วาดไว้แล้วไม่เปลี่ยน",
       add: "เพิ่มประเภทใหม่", edit: "แก้ไข", save: "บันทึกประเภท", cancel: "ยกเลิก",
@@ -204,6 +212,14 @@ const en: AdminLandscapeMessages = {
     zoomIn: "Zoom in", zoomOut: "Zoom out", fit: "Fit", snap: "Snap to grid",
     multiSelect: "Select several (tap each)", drawFinish: "Finish", drawUndoPoint: "Remove last point", drawCancel: "Cancel",
     touchHint: "iPad: two fingers to pan and zoom · draw a polygon / path, then tap “Finish”",
+    look: "Look", lookFlat: "Flat 2D", quickColors: "Quick colours",
+    looks: {
+      gable: "Gable house", thai: "Thai house", modern: "Modern", aframe: "A-frame", bungalow: "Bungalow", cabin: "Log cabin",
+      bell: "Bell tent", dome: "Dome tent", safari: "Safari", tipi: "Tipi", bubble: "Bubble",
+      round: "Round", pine: "Pine", palm: "Palm", rain: "Rain tree", bamboo: "Bamboo", fruit: "Fruit tree", cypress: "Cypress",
+      hedge: "Hedge", topiary: "Topiary",
+      bloom: "Flower bush", bed: "Flower bed", tulip: "Tulips", sunflower: "Sunflower", pot: "Flower pot",
+    },
     palette: {
       title: "Kinds", hint: "Add your own kinds (a sala, a pool…), rename, restyle, reshape, hide or delete kinds — objects already drawn do not change.",
       add: "Add a kind", edit: "Edit", save: "Save kind", cancel: "Cancel",
@@ -350,6 +366,14 @@ const zhCN: AdminLandscapeMessages = {
     zoomIn: "放大", zoomOut: "缩小", fit: "适合窗口", snap: "对齐网格",
     multiSelect: "多选（逐个点击）", drawFinish: "完成", drawUndoPoint: "删除上一个点", drawCancel: "取消",
     touchHint: "iPad：双指平移和缩放 · 绘制多边形 / 路径后点击“完成”",
+    look: "样式", lookFlat: "平面 2D", quickColors: "快捷颜色",
+    looks: {
+      gable: "人字顶房屋", thai: "泰式房屋", modern: "现代", aframe: "A 字形", bungalow: "平房", cabin: "木屋",
+      bell: "钟形帐篷", dome: "圆顶帐篷", safari: "狩猎帐篷", tipi: "圆锥帐篷", bubble: "泡泡屋",
+      round: "圆冠树", pine: "松树", palm: "棕榈", rain: "雨豆树", bamboo: "竹子", fruit: "果树", cypress: "柏树",
+      hedge: "绿篱", topiary: "造型树",
+      bloom: "花丛", bed: "花坛", tulip: "郁金香", sunflower: "向日葵", pot: "花盆",
+    },
     palette: {
       title: "类型", hint: "添加自己的类型（凉亭、泳池…），修改名称、颜色、形状，隐藏或删除类型 — 已绘制的对象不会改变。",
       add: "添加类型", edit: "编辑", save: "保存类型", cancel: "取消",

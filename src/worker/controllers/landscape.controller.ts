@@ -6,7 +6,7 @@ import type { Handler, RequestContext } from "../router.ts";
 import { readJsonObject } from "../security/request.ts";
 import { ID_PATTERN, Validator } from "../validation.ts";
 
-const PALETTE_FIELDS = ["kind", "name", "draw", "fill", "stroke", "opacity", "layer", "size", "group", "sortOrder", "hidden"];
+const PALETTE_FIELDS = ["kind", "name", "draw", "fill", "stroke", "opacity", "layer", "size", "group", "sortOrder", "hidden", "look"];
 
 /** A draft is a whole plan: up to LANDSCAPE_LIMITS.json of JSON (+ the envelope). */
 const DRAFT_BYTES = LANDSCAPE_LIMITS.json + 4096;

@@ -63,6 +63,24 @@ export interface LandscapeObject {
    * Only a name in the editor: kind and style are the object's own, so deleting a palette entry changes nothing drawn.
    */
   typeId?: string | null;
+  /**
+   * Illustrated "3D" look (LANDSCAPE_LOOKS of its kind: a Thai house, a bell tent, a pine…), drawn in the shape's box
+   * with its fill as the main colour. null / absent = the flat drawing (plans from before looks existed).
+   */
+  look?: string | null;
+}
+
+/** The illustrated looks each kind offers; the first is what a new object gets. */
+export const LANDSCAPE_LOOKS: Partial<Record<LandscapeObjectKind, readonly string[]>> = {
+  HOUSE: ["gable", "thai", "modern", "aframe", "bungalow", "cabin"],
+  VIP_TENT: ["bell", "dome", "safari", "tipi", "aframe", "bubble"],
+  TREE: ["round", "pine", "palm", "rain", "bamboo", "fruit", "cypress"],
+  SHRUB: ["round", "hedge", "topiary"],
+  FLOWER: ["bloom", "bed", "tulip", "sunflower", "pot"],
+};
+
+export function isLook(kind: LandscapeObjectKind, look: unknown): boolean {
+  return typeof look === "string" && (LANDSCAPE_LOOKS[kind] ?? []).includes(look);
 }
 
 export interface LandscapeLayer {
@@ -132,6 +150,8 @@ export interface LandscapePaletteRowDto {
   group: PaletteGroup | null;
   sortOrder: number | null;
   hidden: boolean;
+  /** Illustrated look new objects of this kind get (migration 0041); null = flat. */
+  look: string | null;
 }
 
 /** What the editor sends to add or change a palette entry. */
@@ -147,6 +167,7 @@ export interface LandscapePaletteInput {
   group: PaletteGroup;
   sortOrder: number | null;
   hidden: boolean;
+  look: string | null;
 }
 
 /** Field errors of a palette entry (`builtin`: the name may be empty = the built-in name). */
@@ -166,6 +187,7 @@ export function validatePaletteInput(raw: unknown, builtin: boolean): Record<str
   if (!(PALETTE_GROUPS as readonly unknown[]).includes(r.group)) e.group = "INVALID_VALUE";
   if (r.sortOrder !== null && (typeof r.sortOrder !== "number" || !Number.isInteger(r.sortOrder) || Math.abs(r.sortOrder) > 100_000)) e.sortOrder = "INVALID";
   if (typeof r.hidden !== "boolean") e.hidden = "EXPECTED_BOOLEAN";
+  if (r.look !== undefined && r.look !== null && !isLook(r.kind as LandscapeObjectKind, r.look)) e.look = "INVALID_VALUE";
   return e;
 }
 
@@ -351,6 +373,7 @@ export function validateLandscapeDocument(raw: unknown, ctx: {
     if (o.groupId !== null && (typeof o.groupId !== "string" || !ID.test(o.groupId))) errors[at("groupId")] = "INVALID";
     if (o.imageAssetId !== null && (typeof o.imageAssetId !== "string" || !ID.test(o.imageAssetId))) errors[at("imageAssetId")] = "INVALID_ID";
     if (o.typeId !== undefined && o.typeId !== null && (typeof o.typeId !== "string" || !ID.test(o.typeId))) errors[at("typeId")] = "INVALID_ID";
+    if (o.look !== undefined && o.look !== null && !isLook(o.kind as LandscapeObjectKind, o.look)) errors[at("look")] = "INVALID_VALUE";
     if (o.label !== null && (typeof o.label !== "string" || o.label.length > LANDSCAPE_LIMITS.label)) errors[at("label")] = "TOO_LONG";
     const st = o.style;
     if (!isObj(st) || (st.fill !== null && (typeof st.fill !== "string" || !COLOR.test(st.fill)))

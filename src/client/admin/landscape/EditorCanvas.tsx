@@ -52,6 +52,9 @@ export const EditorCanvas = forwardRef<CanvasApi, {
   tool: Tool;
   /** The palette entry new objects are drawn as (kind, look, default layer and size). */
   entry: PaletteEntry;
+  /** Look and main colour of the next object (toolbar choice; null colour = the kind's own). */
+  look: string | null;
+  color: string | null;
   snapOn: boolean;
   grid: number;
   selected: string[];
@@ -176,7 +179,8 @@ export const EditorCanvas = forwardRef<CanvasApi, {
     const info = props.entry.info;
     const layer = scene.layers.find((l) => l.id === info.layer && l.visible && !l.locked) ?? scene.layers.slice().reverse().find((l) => l.visible && !l.locked) ?? scene.layers[0]!;
     return {
-      id: newObjectId(), layerId: layer.id, kind: props.entry.kind, shape, rotation: 0, style: { ...info.style },
+      id: newObjectId(), layerId: layer.id, kind: props.entry.kind, shape, rotation: 0,
+      style: { ...info.style, fill: props.color ?? info.style.fill }, look: props.look,
       label: props.entry.kind === "LABEL" ? "Text" : null, link: null, groupId: null, locked: false, imageAssetId: null,
       typeId: props.entry.builtin ? null : props.entry.id,
     };

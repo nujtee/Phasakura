@@ -233,7 +233,7 @@ export class LandscapeService {
     if (Object.keys(errors).length) throw new ValidationError(prefix(errors, "object"));
     const o = probe.objects[0] as LandscapeObject;
     await this.checkImages({ ...probe, objects: [o] } as LandscapeDocument);
-    const stored = { kind: o.kind, shape: o.shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId, typeId: o.typeId ?? null };
+    const stored = { kind: o.kind, shape: o.shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId, typeId: o.typeId ?? null, look: o.look ?? null };
     const id = newId();
     const now = iso(this.clock());
     await this.db.batch([
@@ -287,7 +287,7 @@ export class LandscapeService {
     await this.db.batch([
       this.repo.upsertPaletteStatement({
         id: rowId, builtin: builtin ? 1 : 0, kind: v.kind, name, draw: v.draw, fill: v.fill, stroke: v.stroke, opacity: v.opacity,
-        layer: v.layer, size: v.size, palette_group: v.group, sort_order: v.sortOrder, hidden: v.hidden ? 1 : 0,
+        layer: v.layer, size: v.size, palette_group: v.group, sort_order: v.sortOrder, hidden: v.hidden ? 1 : 0, look: v.look ?? null,
       }, actor.userId, now),
       this.log.auditStatement(actor.userId, before ? "LANDSCAPE_KIND_UPDATE" : "LANDSCAPE_KIND_CREATE", "landscape_palette", rowId,
         before ? paletteDto(before) : null, { ...v, name }, meta),
@@ -415,6 +415,6 @@ function paletteDto(r: LandscapePaletteRow): LandscapePaletteRowDto {
   return {
     id: r.id, builtin: r.builtin === 1, kind: r.kind as LandscapeObjectKind, name: r.name, draw: r.draw as LandscapePaletteRowDto["draw"],
     fill: r.fill, stroke: r.stroke, opacity: r.opacity, layer: r.layer as LandscapePaletteRowDto["layer"], size: r.size,
-    group: r.palette_group as LandscapePaletteRowDto["group"], sortOrder: r.sort_order, hidden: r.hidden === 1,
+    group: r.palette_group as LandscapePaletteRowDto["group"], sortOrder: r.sort_order, hidden: r.hidden === 1, look: r.look ?? null,
   };
 }

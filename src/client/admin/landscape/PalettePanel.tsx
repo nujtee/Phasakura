@@ -7,8 +7,9 @@ import {
 } from "../../../shared/landscape-types.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
 import { KIND_INFO } from "../../landscape/kinds.ts";
-import { entryInput, swapOrder, type PaletteEntry } from "../../landscape/palette.ts";
+import { defaultLook, entryInput, swapOrder, type PaletteEntry } from "../../landscape/palette.ts";
 import { Button } from "../ui.tsx";
+import { LookPicker } from "./LookPicker.tsx";
 
 type E = AdminLandscapeMessages["editor"];
 
@@ -82,7 +83,7 @@ export function PalettePanel({ e, palette, entryName, readOnly, onChange, confir
   const newKind = (): LandscapePaletteInput => {
     const base: LandscapeObjectKind = "BUILDING";
     const info = KIND_INFO[base];
-    return { kind: base, name: "", draw: info.draw, fill: info.style.fill, stroke: info.style.stroke, opacity: info.style.opacity, layer: info.layer, size: info.size, group: "site", sortOrder: null, hidden: false };
+    return { kind: base, name: "", draw: info.draw, fill: info.style.fill, stroke: info.style.stroke, opacity: info.style.opacity, layer: info.layer, size: info.size, group: "site", sortOrder: null, hidden: false, look: null };
   };
 
   if (form) {
@@ -106,12 +107,14 @@ export function PalettePanel({ e, palette, entryName, readOnly, onChange, confir
           <select id="lsp-kind" disabled={form.builtin} value={v.kind} onChange={(ev) => {
             const kind = ev.target.value as LandscapeObjectKind;
             const info = KIND_INFO[kind];
-            set({ kind, draw: info.draw, layer: info.layer, size: info.size, fill: info.style.fill, stroke: info.style.stroke, opacity: info.style.opacity });
+            set({ kind, draw: info.draw, layer: info.layer, size: info.size, fill: info.style.fill, stroke: info.style.stroke, opacity: info.style.opacity, look: defaultLook(kind) });
           }}>
             {LANDSCAPE_OBJECT_KINDS.map((k) => <option key={k} value={k}>{e.kinds[k]}</option>)}
           </select>
           <p className="adm-field__hint">{RESERVABLE_KINDS.includes(v.kind) ? p.reservable : p.decorative}</p>
         </div>
+        <LookPicker kind={v.kind} value={v.look} color={v.fill} accent={v.stroke} names={e.looks} flat={e.lookFlat} label={e.look} compact
+          onPick={(look) => set({ look })} />
         <div className="adm-field">
           <label htmlFor="lsp-draw">{p.draw}</label>
           <select id="lsp-draw" value={v.draw} onChange={(ev) => set({ draw: ev.target.value as LandscapePaletteInput["draw"] })}>
