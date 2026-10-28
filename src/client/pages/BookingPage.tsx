@@ -28,6 +28,7 @@ import { Confirmation } from "../booking/Confirmation.tsx";
 import { FoodStep } from "../booking/FoodStep.tsx";
 import { BookingSummary, useDateText } from "../booking/Summary.tsx";
 import { CampingBooker } from "../booking/CampingBooker.tsx";
+import { LandscapeMap } from "../booking/LandscapeMap.tsx";
 import { guestsForNewUnit, pickKey, pickProblem, PicksBar, StayPicks, type Pick } from "../booking/StayPicks.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
 import { IMAGE_SIZES } from "../../shared/media-types.ts";
@@ -418,25 +419,23 @@ export function BookingPage() {
   const canBook = (unit: PublicUnitDto) => !!availabilityFor(unit)?.available;
   const picked = (unit: PublicUnitDto) => picks.some((p) => pickKey(p) === unit.id);
   const ready = picks.length > 0 && picks.reduce((a, p) => a + p.adults, 0) >= 1 && picks.every((p) => pickProblem(p, bt) === null);
-  const unitGrid = (units: PublicUnitDto[]) => (
-    <div className="unit-grid">
-      {units.map((u) => (
-        <div key={u.id} className={`unit-pick${picked(u) ? " is-picked" : ""}`}>
-          <UnitCard unit={u} availability={availabilityFor(u)} />
-          {canBook(u) && (picked(u) ? (
-            <button type="button" className="button button--secondary unit-pick__btn" aria-pressed="true"
-              onClick={() => setPicks((cur) => cur.filter((p) => pickKey(p) !== u.id))}>
-              {bt.picked} · {bt.pickRemove}
-            </button>
-          ) : (
-            <button type="button" className="button button--primary unit-pick__btn" aria-pressed="false" onClick={() => addUnit(u)}>
-              {picks.length ? bt.pickAddMore : bt.pickAdd}
-            </button>
-          ))}
-        </div>
+  /** One house / VIP tent with its choose / remove button: in the list, and in the site map's panel. */
+  const unitPick = (u: PublicUnitDto) => (
+    <div key={u.id} className={`unit-pick${picked(u) ? " is-picked" : ""}`}>
+      <UnitCard unit={u} availability={availabilityFor(u)} />
+      {canBook(u) && (picked(u) ? (
+        <button type="button" className="button button--secondary unit-pick__btn" aria-pressed="true"
+          onClick={() => setPicks((cur) => cur.filter((p) => pickKey(p) !== u.id))}>
+          {bt.picked} · {bt.pickRemove}
+        </button>
+      ) : (
+        <button type="button" className="button button--primary unit-pick__btn" aria-pressed="false" onClick={() => addUnit(u)}>
+          {picks.length ? bt.pickAddMore : bt.pickAdd}
+        </button>
       ))}
     </div>
   );
+  const unitGrid = (units: PublicUnitDto[]) => <div className="unit-grid">{units.map(unitPick)}</div>;
   const campingPick = picks.find((p) => p.kind === "CAMPING");
   const goToCamping = () => document.getElementById("sec-camping")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
@@ -462,6 +461,11 @@ export function BookingPage() {
       {error && <p role="alert" className="notice notice--error">{t.common.loadError}</p>}
       {!data && !error && <div className="unit-grid" aria-busy="true">{[0, 1, 2].map((i) => <div key={i} className="unit-card unit-card--skeleton" />)}</div>}
       {empty && <EmptyState message={t.accommodation.noAccommodation} />}
+
+      {data && !empty && (
+        <LandscapeMap data={data} availability={availability} picks={picks} renderUnit={unitPick} onCamping={goToCamping} listId="stay-list" />
+      )}
+      <div id="stay-list" tabIndex={-1} className="stay-list-anchor" />
 
       {data && data.houses.length > 0 && (
         <section aria-labelledby="sec-houses" className="unit-section">

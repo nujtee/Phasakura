@@ -3468,7 +3468,6 @@
 .lse-layer .lse-row { grid-column: 1 / -1; }
 .lse-layer__name { min-width: 0; }
 .lse-templates li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; }
-.landscape-label { fill: #212121; font-family: inherit; font-weight: 600; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
 @media (max-width: 960px) {
   .lse-body { grid-template-columns: 1fr; height: auto; }
   .lse-stage { height: 60vh; }

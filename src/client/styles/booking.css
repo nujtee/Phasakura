@@ -1278,3 +1278,196 @@ button.button--secondary {
 }
 
 .button--line:hover { background: #036e2f; border-color: #036e2f; color: #fff; }
+
+/* ---------- Site map on the booking page (landscape, phase L3) ---------- */
+.bmap {
+  margin: 0 0 32px;
+}
+
+.bmap__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.bmap__skip {
+  font-size: 0.875rem;
+}
+
+.bmap__hint {
+  margin: 4px 0 12px;
+  color: var(--color-muted);
+  font-size: 0.9375rem;
+}
+
+.bmap__frame {
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.bmap__scroll {
+  max-height: min(70vh, 640px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.bmap__svg {
+  display: block;
+  height: auto;
+  max-width: none;
+}
+
+.bmap__zoom {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bmap__zbtn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 1.25rem;
+  line-height: 1;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.bmap__zbtn--text {
+  font-size: 0.8125rem;
+}
+
+.bmap__zbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bmap__zbtn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.bmap__target {
+  cursor: pointer;
+}
+
+.bmap__target:focus {
+  outline: none;
+}
+
+.bmap__target:focus-visible {
+  outline: 3px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+.bmap__target:hover {
+  filter: brightness(1.06);
+}
+
+.bmap__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.bmap__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bmap__swatch {
+  width: 16px;
+  height: 12px;
+  border-radius: 3px;
+  border: 3px solid;
+}
+
+.bmap__swatch--available { border-color: #2e7d32; }
+.bmap__swatch--unavailable { border-color: #757575; background: rgb(0 0 0 / 0.35); }
+.bmap__swatch--picked { border-color: #e65100; }
+
+.bmap__note {
+  flex-basis: 100%;
+}
+
+.bmap__panel {
+  margin-top: 16px;
+  padding: 16px;
+  border: 2px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  scroll-margin-top: 88px;
+}
+
+.bmap__panel:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.bmap__panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.bmap__close {
+  margin-left: auto;
+}
+
+.bmap__chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--color-background);
+  color: var(--color-muted);
+}
+
+.bmap__chip--available { background: color-mix(in srgb, #2e7d32 14%, transparent); color: #1b5e20; }
+.bmap__chip--unavailable { background: color-mix(in srgb, #757575 18%, transparent); color: #424242; }
+.bmap__chip--picked { background: color-mix(in srgb, #e65100 14%, transparent); color: #bf360c; }
+
+.bmap__unit {
+  max-width: 420px;
+}
+
+.bmap__camping {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.bmap__camping p {
+  margin: 0;
+}
+
+.stay-list-anchor {
+  scroll-margin-top: 88px;
+}
+
+.stay-list-anchor:focus {
+  outline: none;
+}

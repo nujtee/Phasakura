@@ -16,7 +16,8 @@ export function ShapeView({ o, imageUrl, highlight, labelSize }: {
   const s = o.shape;
   const [cx, cy] = shapeCenter(s);
   const fill = o.style.fill ?? "none";
-  const stroke = highlight === "selected" ? "#1565c0" : highlight === "picked" ? "#2e7d32" : o.style.stroke ?? "none";
+  const stroke = highlight === "selected" ? "#1565c0" : highlight === "picked" ? "#e65100" : highlight === "available" ? "#2e7d32"
+    : o.style.stroke ?? "none";
   const strokeWidth = highlight ? 3 : 1.5;
   const common = {
     fill, stroke, strokeWidth, opacity: o.style.opacity, vectorEffect: "non-scaling-stroke" as const,
