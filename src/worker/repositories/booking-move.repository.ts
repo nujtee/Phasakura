@@ -5,6 +5,15 @@ import { withFallback } from "./schema-fallback.ts";
 /** Kitchen orders past this point are being cooked: the stay can no longer move. */
 export const KITCHEN_STARTED = ["PREPARING", "READY", "SERVED"] as const;
 
+export interface BookableRoomRow {
+  id: string;
+  unit_code: string;
+  unit_type: "HOUSE" | "VIP_TENT";
+  max_guests: number;
+  sort_order: number;
+  base_price_satang: number;
+}
+
 export interface MoveFoodOrderRow {
   food_category_id: string;
   service_date: string;
@@ -34,6 +43,32 @@ export class BookingMoveRepository {
       .bind(unitId, from, to, bookingId)
       .all<{ stay_date: string }>();
     return new Set(results.map((r) => r.stay_date));
+  }
+
+  /** Houses / VIP tents that can be booked (ACTIVE), of these types: where a moved stay may go. */
+  async bookableRooms(types: string[]): Promise<BookableRoomRow[]> {
+    if (!types.length) return [];
+    const { results } = await this.db
+      .prepare(
+        `SELECT id, unit_code, unit_type, max_guests, sort_order, base_price_satang FROM accommodation_units
+          WHERE status = 'ACTIVE' AND unit_type IN (SELECT value FROM json_each(?1)) ORDER BY sort_order, unit_code`,
+      )
+      .bind(JSON.stringify(types))
+      .all<BookableRoomRow>();
+    return results;
+  }
+
+  /** Nights in [from, to) of these rooms held by other bookings or blocks. */
+  async roomsTaken(unitIds: string[], bookingId: string, from: string, to: string): Promise<{ unit_id: string; stay_date: string }[]> {
+    if (!unitIds.length) return [];
+    const { results } = await this.db
+      .prepare(
+        `SELECT unit_id, stay_date FROM booking_unit_nights
+          WHERE unit_id IN (SELECT value FROM json_each(?1)) AND stay_date >= ?2 AND stay_date < ?3 AND (booking_id IS NULL OR booking_id <> ?4)`,
+      )
+      .bind(JSON.stringify(unitIds), from, to, bookingId)
+      .all<{ unit_id: string; stay_date: string }>();
+    return results;
   }
 
   async campingSettings(): Promise<{ is_enabled: number; max_tents_per_night: number; tarp_enabled: number; max_tarps_per_night: number } | null> {
@@ -93,8 +128,11 @@ export class BookingMoveRepository {
     to: { checkIn: string; checkOut: string };
     /** Days between the old and the new check-in. */
     offset: number;
-    /** The booking's houses / VIP tents (several stays move together). */
-    units: { unitId: string; itemId: string }[];
+    /**
+     * The booking's houses / VIP tents (several stays move together), each in the room it gets on the new dates;
+     * `rename` when that is another room than it has now (its name in the booking's language).
+     */
+    units: { unitId: string; itemId: string; rename?: string }[];
     tents: number;
     tarps: number;
     now: string;
@@ -118,6 +156,14 @@ export class BookingMoveRepository {
 
     if (p.units.length) {
       statements.push(db.prepare(`DELETE FROM booking_unit_nights WHERE booking_id = ?1 AND ${moved}`).bind(...head));
+      // Another room (migration 0042): the stay now names it; the trigger refuses another type or a room out of service.
+      for (const unit of p.units.filter((u) => u.rename !== undefined)) {
+        statements.push(
+          db
+            .prepare(`UPDATE booking_items SET unit_id = ?4, unit_name = ?5 WHERE id = ?6 AND booking_id = ?1 AND status = 'ACTIVE' AND ${moved}`)
+            .bind(...head, unit.unitId, unit.rename!, unit.itemId),
+        );
+      }
       for (const unit of p.units) {
         for (const night of newNights) {
           // PRIMARY KEY (unit_id, stay_date): a night already held fails the whole batch.

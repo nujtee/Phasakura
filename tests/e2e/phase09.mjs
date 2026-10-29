@@ -267,9 +267,12 @@ await check("a future stay: Check in / No-show shown but not pressable before th
   await stay.getByText(/can be pressed from the arrival day/).waitFor();
 });
 
-await check("change dates: a calendar where only green days can be picked; the move keeps nights and price and moves the meal", async () => {
+await check("change dates: green / amber / red days; red shows the nearest free days; the move keeps nights and price and moves the meal", async () => {
   const F = await book(req, { checkIn: day(10), checkOut: day(12), stay: { kind: "UNIT", unitId: "dev_house_02" }, food: [{ optionId: "dev_food_dinner_a", serviceDate: day(10), adults: 2 }] }, "0866666666");
   await book(req, { checkIn: day(14), checkOut: day(15), stay: { kind: "UNIT", unitId: "dev_house_02" } }, "0877777777"); // someone else on day 14
+  // Both houses taken on day 20: nothing fits there.
+  await book(req, { checkIn: day(20), checkOut: day(21), stay: { kind: "UNIT", unitId: "dev_house_02" } }, "0861231234");
+  await book(req, { checkIn: day(20), checkOut: day(21), stay: { kind: "UNIT", unitId: "dev_house_01" } }, "0861231235");
   await pa.goto(`${BASE}/en/admin/bookings/${F.bookingCode}`);
   await pa.getByRole("button", { name: "Change dates" }).click();
   const cal = pa.getByRole("group", { name: "Change dates" });
@@ -281,11 +284,31 @@ await check("change dates: a calendar where only green days can be picked; the m
   };
   await show(day(10));
   if ((await cell(day(10)).getAttribute("data-state")) !== "CURRENT" || !(await cell(day(10)).isDisabled())) throw new Error("current check-in day pickable");
-  await show(day(14));
-  const red = cell(day(14));
-  if ((await red.getAttribute("data-state")) !== "TAKEN" || !(await red.isDisabled())) throw new Error("taken day pickable");
-  if (!/adm-move__day--taken/.test(await red.getAttribute("class"))) throw new Error("taken day not red");
   await cal.getByText("No day picked yet").waitFor();
+  // Day 14: its house is taken, House 01 is free — amber, and House 01 is offered.
+  await show(day(14));
+  const amber = cell(day(14));
+  if ((await amber.getAttribute("data-state")) !== "OTHER_UNITS" || (await amber.isDisabled())) throw new Error(`day 14: ${await amber.getAttribute("data-state")}`);
+  if (!/adm-move__day--other/.test(await amber.getAttribute("class"))) throw new Error("other-room day not amber");
+  await amber.click();
+  await cal.getByText(/The booked room is not free that day/).waitFor();
+  const roomSelect = cal.locator("select[id^=move-room-]");
+  if ((await roomSelect.inputValue()) !== "dev_house_01") throw new Error(`suggested ${await roomSelect.inputValue()}`);
+  await pa.screenshot({ path: `${SHOTS}/g-admin-move-other-room.png`, fullPage: true });
+  // Day 20: no house free — red, and the nearest free days to pick from.
+  await show(day(19));
+  await cell(day(20)).waitFor();
+  const red = cell(day(20));
+  if ((await red.getAttribute("data-state")) !== "TAKEN") throw new Error(`day 20: ${await red.getAttribute("data-state")}`);
+  if (!/adm-move__day--taken/.test(await red.getAttribute("class"))) throw new Error("taken day not red");
+  await red.click();
+  await cal.getByText("No room is free for this stay on the day picked").waitFor();
+  await cal.getByText("Nearest free days", { exact: true }).waitFor();
+  const nearest = cal.locator(".adm-move__nearest button");
+  if ((await nearest.count()) < 1) throw new Error("no nearest days");
+  await pa.screenshot({ path: `${SHOTS}/g-admin-move-nearest.png`, fullPage: true });
+  await nearest.first().click();
+  await cal.locator("select[id^=move-room-]").waitFor();
   await show(day(16));
   const green = cell(day(16));
   if ((await green.getAttribute("data-state")) !== "OK" || (await green.isDisabled())) throw new Error("free day not pickable");
@@ -302,6 +325,18 @@ await check("change dates: a calendar where only green days can be picked; the m
   if (after.totalSatang !== F.totalSatang) throw new Error("price changed");
   if (after.food.map((f) => f.serviceDate).join() !== day(16)) throw new Error(`meal ${after.food.map((f) => f.serviceDate)}`);
   await pa.getByText("Prices as booked, for the original dates. The dates changed; the price did not.").waitFor();
+  // Day 14 again (its house taken): moved to House 01 instead — the booking names the new house, price as booked.
+  await pa.getByRole("button", { name: "Change dates" }).click();
+  await show(day(14));
+  await cell(day(14)).click();
+  await cal.locator("select[id^=move-room-]").waitFor();
+  await cal.getByRole("button", { name: "Move to these dates" }).click();
+  await pa.locator("dialog[open]").getByText(/Room change: .* → /).waitFor();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Move to these dates" }).click();
+  await pa.getByText(/^Dates changed: /).waitFor();
+  const roomMoved = (await (await req.get(`${BASE}/api/admin/bookings/${F.bookingCode}`)).json()).data;
+  if (roomMoved.checkIn !== day(14) || roomMoved.items[0].unitId !== "dev_house_01") throw new Error(`room ${roomMoved.items[0].unitId} ${roomMoved.checkIn}`);
+  if (roomMoved.totalSatang !== F.totalSatang) throw new Error("price changed with the room");
   // Its old nights are free again: another guest can book day 10.
   await book(req, { checkIn: day(10), checkOut: day(11), stay: { kind: "UNIT", unitId: "dev_house_02" } }, "0888888888");
   // Thai, on a phone: the calendar fits the screen.

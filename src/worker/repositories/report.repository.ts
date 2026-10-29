@@ -105,7 +105,7 @@ export class ReportRepository {
                 s.subtotal_satang + CASE WHEN i.item_type = 'OWN_TENT'
                   THEN (SELECT COALESCE(SUM(t.subtotal_satang), 0) FROM booking_tarps t WHERE t.booking_id = b.id AND t.status = 'ACTIVE') ELSE 0 END
                   AS stay_subtotal_satang,
-                i.item_type, i.unit_id, i.quantity, s.unit_name_snapshot, s.nightly_prices_json,
+                i.item_type, i.unit_id, i.quantity, COALESCE(i.unit_name, s.unit_name_snapshot) AS unit_name_snapshot, s.nightly_prices_json,
                 CASE WHEN i.item_type = 'OWN_TENT'
                   THEN (SELECT COALESCE(SUM(t.quantity), 0) FROM booking_tarps t WHERE t.booking_id = b.id AND t.status = 'ACTIVE') ELSE 0 END AS tarps
            FROM bookings b

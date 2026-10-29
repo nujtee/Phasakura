@@ -182,6 +182,7 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/admin/bookings/:code/cancel", book.cancel)
     .post("/api/admin/bookings/:code/stays/:itemId/cancel", book.cancelStay)
     .get("/api/admin/bookings/:code/move-options", book.moveOptions)
+    .get("/api/admin/bookings/:code/move-rooms", book.moveRooms)
     .post("/api/admin/bookings/:code/move", book.move)
     .get("/api/admin/bookings/:code/balance", book.balance)
     .post("/api/admin/bookings/:code/balance", book.payBalance)
