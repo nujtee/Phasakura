@@ -9,6 +9,9 @@ import type { CenterEnv, CenterSite } from "./env.ts";
  *   CENTER_GITHUB_TOKEN  secret: a fine-grained GitHub token for that one repository, "Actions: Read and write" only
  */
 export const RELEASE_WORKFLOW = "release.yml";
+/** The runtime's fetch, always called unbound (Workers reject it called as a method). */
+const globalFetch: FetchLike = (input, init) => fetch(input, init);
+
 const API = "https://api.github.com";
 const REPO = /^[A-Za-z0-9_.-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/;
 
@@ -47,7 +50,7 @@ function failure(status: number): string {
   return `GitHub ตอบ HTTP ${status}`;
 }
 
-export async function listReleaseRuns(env: CenterEnv, fetchFn: FetchLike = fetch, limit = 10): Promise<GithubResult<ReleaseRun[]>> {
+export async function listReleaseRuns(env: CenterEnv, fetchFn: FetchLike = globalFetch, limit = 10): Promise<GithubResult<ReleaseRun[]>> {
   const c = config(env);
   if (!c.ok) return c;
   try {
@@ -77,7 +80,7 @@ export function releaseSelection(chosen: string[], sites: CenterSite[]): string 
   return [...sites.map((s) => s.slug), "center"].filter((s) => picked.includes(s)).join(" ");
 }
 
-export async function startRelease(env: CenterEnv, sites: string, note: string, fetchFn: FetchLike = fetch): Promise<GithubResult<null>> {
+export async function startRelease(env: CenterEnv, sites: string, note: string, fetchFn: FetchLike = globalFetch): Promise<GithubResult<null>> {
   const c = config(env);
   if (!c.ok) return c;
   try {
@@ -124,7 +127,7 @@ function safeGithubUrl(u: unknown): string | null {
   return typeof u === "string" && /^https:\/\/github\.com\//.test(u) ? u : null;
 }
 
-export async function listOpenPulls(env: CenterEnv, fetchFn: FetchLike = fetch): Promise<GithubResult<OpenPull[]>> {
+export async function listOpenPulls(env: CenterEnv, fetchFn: FetchLike = globalFetch): Promise<GithubResult<OpenPull[]>> {
   const c = config(env);
   if (!c.ok) return c;
   try {
@@ -153,7 +156,7 @@ export async function listOpenPulls(env: CenterEnv, fetchFn: FetchLike = fetch):
  * Merges exactly the commit that was on screen (`sha`): if the PR changed since, GitHub refuses (409) and nothing
  * is merged. A merge commit, like the "Merge pull request" button.
  */
-export async function mergePull(env: CenterEnv, number: number, sha: string, message: string, fetchFn: FetchLike = fetch): Promise<GithubResult<{ sha: string }>> {
+export async function mergePull(env: CenterEnv, number: number, sha: string, message: string, fetchFn: FetchLike = globalFetch): Promise<GithubResult<{ sha: string }>> {
   const c = config(env);
   if (!c.ok) return c;
   if (!Number.isInteger(number) || number < 1 || !/^[0-9a-f]{40}$/.test(sha)) return { ok: false, reason: "PR ไม่ถูกต้อง" };
@@ -175,7 +178,7 @@ export async function mergePull(env: CenterEnv, number: number, sha: string, mes
 }
 
 /** Actions → Create site for a new site (D1, R2, registry PR) — its pull request then shows on the Release page. */
-export async function startCreateSite(env: CenterEnv, input: { slug: string; name: string; domain: string }, fetchFn: FetchLike = fetch): Promise<GithubResult<null>> {
+export async function startCreateSite(env: CenterEnv, input: { slug: string; name: string; domain: string }, fetchFn: FetchLike = globalFetch): Promise<GithubResult<null>> {
   const c = config(env);
   if (!c.ok) return c;
   try {
@@ -191,7 +194,7 @@ export async function startCreateSite(env: CenterEnv, input: { slug: string; nam
 }
 
 /** Latest runs of Actions → Create site (status of the step after "สร้างเว็บ"). */
-export async function listCreateSiteRuns(env: CenterEnv, fetchFn: FetchLike = fetch): Promise<GithubResult<ReleaseRun[]>> {
+export async function listCreateSiteRuns(env: CenterEnv, fetchFn: FetchLike = globalFetch): Promise<GithubResult<ReleaseRun[]>> {
   const c = config(env);
   if (!c.ok) return c;
   try {
