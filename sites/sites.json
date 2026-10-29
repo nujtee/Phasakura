@@ -42,6 +42,14 @@
       "d1": { "name": "suanpho-db", "id": "e99541d4-0158-490c-b520-11eb6bcae8f4" },
       "rateLimitBase": 5000,
       "wave": 1
+    },
+    {
+      "slug": "pk-putaberg",
+      "name": "Paikhao",
+      "domain": "paikhao.com",
+      "d1": { "name": "pk-putaberg-db", "id": "34079d4b-89bb-4315-ba31-e77326d1af8b" },
+      "rateLimitBase": 6000,
+      "wave": 1
     }
   ]
 }
