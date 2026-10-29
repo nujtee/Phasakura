@@ -1,0 +1,31 @@
+name: diag cron (temporary, read-only)
+on:
+  push:
+    branches: [diag/cron-tail]
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: schedules and deployments
+        run: |
+          for w in cherngdoi pk-putaberg suanpho; do
+            echo "== $w schedules"
+            curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$w/schedules" | jq -c '{success, result, errors}'
+            echo "== $w deployments"
+            curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$w/deployments" | jq -c '.result.deployments[0:3][]? | {created_on, source, strategy, versions}'
+          done
+      - name: tail scheduled events (only cron events, 150 s)
+        run: |
+          for w in cherngdoi pk-putaberg; do
+            (timeout 150 npx -y wrangler@4 tail $w --format json > $w.json 2>$w.err || true) &
+          done
+          wait
+          for w in cherngdoi pk-putaberg; do
+            echo "== $w: $(wc -l < $w.json) lines"
+            tail -5 $w.err
+            jq -c 'select(.event.cron != null) | {cron: .event.cron, scheduledTime: .event.scheduledTime, outcome, cpu: .cpuTime, wall: .wallTime, exceptions: [.exceptions[]? | (.name + ": " + (.message[0:200]))], logs: [.logs[]? | (.level + " " + ((.message|tostring)[0:200]))][0:15]}' $w.json || true
+            jq -r 'select(.event.request != null) | .outcome' $w.json | sort | uniq -c
+          done
