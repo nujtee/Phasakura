@@ -11,26 +11,28 @@ jobs:
     steps:
       - name: schedules and deployments
         run: |
-          exec > >(tee out1.txt) 2>&1
+          {
           for w in cherngdoi pk-putaberg suanpho; do
             echo "== $w schedules"
             curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$w/schedules" | jq -c '{success, result, errors}'
             echo "== $w deployments"
             curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$w/deployments" | jq -c '.result.deployments[0:3][]? | {created_on, source, strategy, versions}'
           done
+          } > out1.txt 2>&1; cat out1.txt
       - name: tail scheduled events (only cron events, 150 s)
         run: |
-          exec > >(tee out2.txt) 2>&1
           for w in cherngdoi pk-putaberg; do
             (timeout 150 npx -y wrangler@4 tail $w --format json > $w.json 2>$w.err || true) &
           done
           wait
+          {
           for w in cherngdoi pk-putaberg; do
             echo "== $w: $(wc -l < $w.json) lines"
             tail -5 $w.err
             jq -c 'select(.event.cron != null) | {cron: .event.cron, scheduledTime: .event.scheduledTime, outcome, cpu: .cpuTime, wall: .wallTime, exceptions: [.exceptions[]? | (.name + ": " + (.message[0:200]))], logs: [.logs[]? | (.level + " " + ((.message|tostring)[0:200]))][0:15]}' $w.json || true
             jq -r 'select(.event.request != null) | .outcome' $w.json | sort | uniq -c
           done
+          } > out2.txt 2>&1; cat out2.txt
       - name: annotate
         if: always()
         run: |
