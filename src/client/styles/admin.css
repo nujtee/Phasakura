@@ -913,7 +913,7 @@
 
 .adm-amenities {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 0 16px;
 }
 
@@ -3543,3 +3543,15 @@
 .adm-move__rooms-title { margin: 0 0 8px; font-size: 0.9375rem; }
 .adm-move__notice { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface)); }
 .adm-move__nearest { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Amenities: each item can be renamed (✎) or deleted (🗑) from the shared list. */
+.adm-amenity { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
+.adm-amenity .adm-check { flex: 1; min-width: 0; }
+.adm-amenity__actions { display: inline-flex; gap: 2px; flex: none; }
+.adm-amenity__btn {
+  min-width: 36px; min-height: 36px; padding: 0 6px; border: 1px solid transparent; border-radius: 8px;
+  background: none; color: var(--color-muted); font: inherit; cursor: pointer;
+}
+.adm-amenity__btn:hover, .adm-amenity__btn:focus-visible { border-color: var(--color-border); background: var(--color-surface); color: var(--color-heading); }
+.adm-amenity__btn--danger:hover, .adm-amenity__btn--danger:focus-visible { color: var(--color-error); }
+@media (any-pointer: coarse) { .adm-amenity__btn { min-width: 44px; min-height: 44px; } }

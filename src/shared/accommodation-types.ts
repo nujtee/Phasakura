@@ -39,6 +39,8 @@ export interface AmenityDto {
   status: "ACTIVE" | "INACTIVE";
   sortOrder: number;
   names: Partial<Record<LocaleCode, string>>;
+  /** Houses / VIP tents that list it (admin list). */
+  unitCount: number;
 }
 
 /**

@@ -300,6 +300,10 @@ export function accommodationController(services: ServicesFor) {
       return jsonOk(await services(ctx).accommodation.updateAmenity(auth, id(ctx), { icon, status, sortOrder, names }, requestMeta(ctx)));
     }),
 
+    /** DELETE /api/admin/amenities/:id — off every house / VIP tent and out of the list. */
+    removeAmenity: withPermission("accommodation.edit", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).accommodation.removeAmenity(auth, id(ctx), requestMeta(ctx)))),
+
     // ------------------------------------------------------------------ camping
     camping: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).availability.getCampingSettings(auth, requestMeta(ctx)))),
 

@@ -226,6 +226,9 @@ type Notice = { kind: "success" | "error"; text: string } | null;
 /**
  * Amenities of the unit: tick from the list and Save; or add new ones in a row — each "Add" creates
  * the amenity, ticks it, saves the unit's selection and leaves an empty form for the next one.
+ * Each item can be renamed (its three names) or deleted from the list. The list is shared by every house / VIP
+ * tent: a new name shows wherever it is ticked, and a deleted item leaves every stay (after a confirmation that
+ * says how many list it).
  * Messages appear here, next to the form (the page alert is far above on a long page).
  */
 function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
@@ -246,10 +249,18 @@ function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
   const titleId = useId();
   const openId = useId();
   const focusFirstField = () => formRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+  /** The item being renamed (its names as typed) and the one waiting for the delete confirmation. */
+  const [editing, setEditing] = useState<{ id: string; names: typeof NO_AMENITY; error: string | null } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleting, setDeleting] = useState<AmenityDto | null>(null);
+  const editRef = useRef<HTMLFormElement>(null);
+  const nameOf = (a: AmenityDto) => a.names[locale.code] ?? a.names.th ?? a.code;
 
+  // The list with how many stays tick each item (reloaded after a save: the delete question says how many).
+  const reload = useCallback(() => apiGet<AmenityDto[]>("/api/admin/amenities").then(setAll), []);
   useEffect(() => {
-    void apiGet<AmenityDto[]>("/api/admin/amenities").then(setAll).catch(onError);
-  }, [onError]);
+    void reload().catch(onError);
+  }, [onError, reload]);
   useEffect(() => {
     if (adding) formRef.current?.querySelector<HTMLInputElement>("input")?.focus();
     else if (returnFocus.current) document.getElementById(openId)?.focus();
@@ -265,6 +276,7 @@ function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
     try {
       onSaved(await saveSelection(selected));
       setNotice({ kind: "success", text: t.common.saved });
+      void reload().catch(() => undefined);
     } catch (err) {
       setNotice({ kind: "error", text: detailMessage(t, err) });
     } finally {
@@ -308,6 +320,7 @@ function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
       try {
         onSaved(await saveSelection(ids));
         setAddNotice({ kind: "success", text: format(t.acc.amenityAdded, { name: names.th }) });
+        void reload().catch(() => undefined);
       } catch {
         setAddNotice({ kind: "error", text: format(t.acc.amenityAddedNotSaved, { name: names.th }) });
       }
@@ -328,6 +341,44 @@ function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
     }
   }
 
+  useEffect(() => {
+    if (editing) editRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+  }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editing || savingEdit) return;
+    const names = Object.fromEntries(
+      Object.entries({ th: editing.names.th, en: editing.names.en, "zh-CN": editing.names["zh-CN"] }).map(([k, v]) => [k, v.trim()] as const).filter(([, v]) => v),
+    );
+    if (!names.th) { setEditing({ ...editing, error: t.errors.DEFAULT_LANGUAGE_REQUIRED }); return; }
+    setSavingEdit(true);
+    try {
+      const updated = await apiRequest<AmenityDto>("PATCH", `/api/admin/amenities/${encodeURIComponent(editing.id)}`, { names });
+      setAll((list) => list.map((a) => (a.id === updated.id ? updated : a)));
+      setEditing(null);
+      setNotice({ kind: "success", text: format(t.acc.amenityUpdated, { name: names.th }) });
+    } catch (err) {
+      setEditing({ ...editing, error: detailMessage(t, err) });
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function remove(a: AmenityDto) {
+    setDeleting(null);
+    setNotice(null);
+    try {
+      await apiRequest("DELETE", `/api/admin/amenities/${encodeURIComponent(a.id)}`);
+      setAll((list) => list.filter((x) => x.id !== a.id));
+      setSelected((ids) => ids.filter((x) => x !== a.id));
+      if (editing?.id === a.id) setEditing(null);
+      setNotice({ kind: "success", text: format(t.acc.amenityDeleted, { name: nameOf(a) }) });
+    } catch (err) {
+      setNotice({ kind: "error", text: detailMessage(t, err) });
+    }
+  }
+
   const shown = all.filter((a) => a.status === "ACTIVE" || selected.includes(a.id));
   return (
     <div className="adm-card">
@@ -335,19 +386,57 @@ function AmenitiesForm({ unit, canEdit, onSaved, onError }: {
       <fieldset className="adm-fieldset adm-amenities" disabled={!canEdit}>
         <legend className="visually-hidden">{t.acc.amenities}</legend>
         {shown.map((a) => (
-          <label key={a.id} className="adm-check">
-            <input type="checkbox" checked={selected.includes(a.id)}
-              onChange={(e) => setSelected((s) => (e.target.checked ? [...s, a.id] : s.filter((x) => x !== a.id)))} />
-            {a.names[locale.code] ?? a.names.th ?? a.code}
-          </label>
+          <div key={a.id} className="adm-amenity">
+            <label className="adm-check">
+              <input type="checkbox" checked={selected.includes(a.id)}
+                onChange={(e) => setSelected((s) => (e.target.checked ? [...s, a.id] : s.filter((x) => x !== a.id)))} />
+              {nameOf(a)}
+            </label>
+            {canEdit && a.status === "ACTIVE" && (
+              <span className="adm-amenity__actions">
+                <button type="button" className="adm-amenity__btn" aria-label={`${t.acc.amenityEdit}: ${nameOf(a)}`} title={t.acc.amenityEdit}
+                  onClick={() => { setAdding(false); setEditing({ id: a.id, names: { code: a.code, th: a.names.th ?? "", en: a.names.en ?? "", "zh-CN": a.names["zh-CN"] ?? "" }, error: null }); }}>
+                  ✎
+                </button>
+                <button type="button" className="adm-amenity__btn adm-amenity__btn--danger" aria-label={`${t.acc.amenityDelete}: ${nameOf(a)}`} title={t.acc.amenityDelete}
+                  onClick={() => setDeleting(a)}>
+                  🗑
+                </button>
+              </span>
+            )}
+          </div>
         ))}
         {shown.length === 0 && <p className="adm-muted adm-small">{t.acc.amenitiesNone}</p>}
       </fieldset>
+      {canEdit && shown.length > 0 && <p className="adm-small adm-muted">{t.acc.amenitySharedHint}</p>}
       {notice && <Alert kind={notice.kind}>{notice.text}</Alert>}
+      {canEdit && editing && (() => {
+        const item = all.find((a) => a.id === editing.id);
+        if (!item) return null;
+        return (
+          <form ref={editRef} onSubmit={saveEdit} className="adm-subform" noValidate aria-label={format(t.acc.amenityEditTitle, { name: nameOf(item) })}>
+            <h3 className="adm-h3 adm-subform__title">{format(t.acc.amenityEditTitle, { name: nameOf(item) })}</h3>
+            {editing.error && <Alert kind="error">{editing.error}</Alert>}
+            <div className="adm-grid2">
+              {LOCALES.map((l) => (
+                <Field key={l.code} label={`${t.acc.amenityName} (${l.label})`} required={l.code === "th"} lang={l.code} maxLength={80}
+                  value={editing.names[l.code]} onChange={(e) => setEditing({ ...editing, names: { ...editing.names, [l.code]: e.target.value }, error: null })} />
+              ))}
+            </div>
+            <div className="adm-row adm-row--wrap">
+              <Button type="submit" busy={savingEdit}>{t.acc.amenitySave}</Button>
+              <Button variant="ghost" onClick={() => setEditing(null)}>{t.common.cancel}</Button>
+            </div>
+          </form>
+        );
+      })()}
+      <ConfirmDialog open={deleting !== null} danger confirmLabel={t.acc.amenityDelete}
+        message={deleting ? format(t.acc.amenityDeleteConfirm, { name: nameOf(deleting), n: deleting.unitCount }) : ""}
+        onCancel={() => setDeleting(null)} onConfirm={() => { if (deleting) void remove(deleting); }} />
       {canEdit && (
         <div className="adm-row adm-row--wrap">
           <Button onClick={() => void save()} busy={busy}>{t.common.save}</Button>
-          {!adding && <Button id={openId} variant="ghost" onClick={() => setAdding(true)}>+ {t.acc.addAmenity}</Button>}
+          {!adding && <Button id={openId} variant="ghost" onClick={() => { setEditing(null); setAdding(true); }}>+ {t.acc.addAmenity}</Button>}
         </div>
       )}
       {canEdit && adding && (
