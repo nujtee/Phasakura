@@ -36,5 +36,7 @@ jobs:
       - name: annotate
         if: always()
         run: |
-          sleep 2
-          cat out1.txt out2.txt 2>/dev/null | grep -v '^\s*$' | cut -c1-900 | head -48 | while IFS= read -r l; do echo "::notice::$l"; done
+          for f in out2.txt; do
+            m=$(grep -v '^\s*$' $f | cut -c1-700 | head -60 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
+            echo "::notice title=$f::$m"
+          done
