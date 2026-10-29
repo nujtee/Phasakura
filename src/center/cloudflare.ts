@@ -30,7 +30,15 @@ export function validDomain(domain: string): boolean {
 }
 
 export class CloudflareZones {
-  constructor(private readonly env: CenterEnv, private readonly fetchFn: FetchLike = fetch) {}
+  /**
+   * Wrapped, never the bare global: Workers throw "Illegal invocation" when the runtime's fetch is called as a
+   * method of another object (this.fetchFn(...)).
+   */
+  private readonly fetchFn: FetchLike;
+
+  constructor(private readonly env: CenterEnv, fetchFn?: FetchLike) {
+    this.fetchFn = fetchFn ?? ((input, init) => fetch(input, init));
+  }
 
   get configured(): boolean {
     return !!this.env.CENTER_CF_TOKEN?.trim();

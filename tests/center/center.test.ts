@@ -1134,3 +1134,27 @@ describe("Center: features only a SUPER_ADMIN switches (site plan, credits)", ()
     assert.equal((await ctx.req("POST", "/sites/phasakura/features", { cookie: owner, form: { spaceship: "on", reason: "xxx" } })).status, 422);
   });
 });
+
+describe("Center: the runtime's fetch is never called as a method", () => {
+  it("CloudflareZones and the GitHub calls work with the global fetch (Workers: Illegal invocation)", async () => {
+    const real = globalThis.fetch;
+    const calls: string[] = [];
+    // Like Workers: the global fetch throws when `this` is some other object.
+    globalThis.fetch = function (this: unknown, input: RequestInfo | URL) {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation: function called with incorrect `this` reference");
+      calls.push(String(input));
+      return Promise.resolve(Response.json({ success: true, result: [], workflow_runs: [] }));
+    } as typeof fetch;
+    try {
+      const { CloudflareZones } = await import("../../src/center/cloudflare.ts");
+      const { listReleaseRuns } = await import("../../src/center/releases.ts");
+      const env = { CENTER_CF_TOKEN: "t", GITHUB_TOKEN: "g", GITHUB_REPO: "o/r" } as unknown as CenterEnv;
+      const found = await new CloudflareZones(env).findZone("example.com");
+      assert.deepEqual(found, { ok: true, value: null });
+      await listReleaseRuns(env);
+      assert.ok(calls.some((u) => u.startsWith("https://api.cloudflare.com/")), calls.join());
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+});
