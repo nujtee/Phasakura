@@ -433,6 +433,18 @@ export class AccommodationService {
     return toAmenityDto((await this.repo.amenities(false)).find((a) => a.id === id)!);
   }
 
+  /** Deletes an amenity: off every house / VIP tent, out of the list (kept INACTIVE for history). */
+  async removeAmenity(actor: AuthContext, id: string, meta: RequestMeta): Promise<{ removed: true; units: number }> {
+    await this.authz.requirePermission(actor, "accommodation.edit", meta);
+    const current = (await this.repo.amenities(false)).find((a) => a.id === id);
+    if (!current || current.status !== "ACTIVE") throw new NotFoundError("Amenity not found", "AMENITY_NOT_FOUND");
+    await this.commit([
+      ...this.repo.removeAmenityStatements(id),
+      this.log.auditStatement(actor.userId, "DELETE_AMENITY", MODULE, id, toAmenityDto(current), null, meta),
+    ]);
+    return { removed: true, units: current.unit_count };
+  }
+
   // ================================================================ helpers
 
   private priceHistory(unitId: string, oldPrice: number | null, newPrice: number, userId: string): D1PreparedStatementLike {
@@ -486,7 +498,7 @@ function pickUnitFields(u: AdminUnitDto) {
   };
 }
 
-function toAmenityDto(a: { id: string; code: string; icon: string | null; status: "ACTIVE" | "INACTIVE"; sort_order: number; names: string | null }): AmenityDto {
+function toAmenityDto(a: { id: string; code: string; icon: string | null; status: "ACTIVE" | "INACTIVE"; sort_order: number; names: string | null; unit_count?: number }): AmenityDto {
   const names = JSON.parse(a.names ?? "{}") as Record<string, string>;
   return {
     id: a.id,
@@ -495,6 +507,7 @@ function toAmenityDto(a: { id: string; code: string; icon: string | null; status
     status: a.status,
     sortOrder: a.sort_order,
     names: Object.fromEntries(Object.entries(names).filter(([k]) => parseLocale(k))),
+    unitCount: a.unit_count ?? 0,
   };
 }
 

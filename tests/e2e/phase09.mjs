@@ -664,6 +664,25 @@ await check("amenities: add several in a row (form stays open), saved to the hou
   for (const name of ["ที่จอดรถ", "สระว่ายน้ำ", "ไวไฟความเร็วสูง"]) {
     if (!(await card.getByRole("checkbox", { name }).isChecked())) throw new Error(`${name} saved`);
   }
+  // Rename one (✎): the new name everywhere; delete another (🗑): the question says how many stays tick it.
+  await card.getByRole("button", { name: "แก้ไข: สระว่ายน้ำ" }).click();
+  const edit = card.getByRole("form", { name: "แก้ไข “สระว่ายน้ำ”" });
+  await edit.getByLabel("ชื่อ (ไทย)").fill("สระว่ายน้ำกลางแจ้ง");
+  await edit.getByLabel("ชื่อ (English)").fill("Outdoor pool");
+  await edit.getByRole("button", { name: "บันทึกชื่อ" }).click();
+  await card.getByText("แก้ไข “สระว่ายน้ำกลางแจ้ง” แล้ว").waitFor();
+  if (!(await card.getByRole("checkbox", { name: "สระว่ายน้ำกลางแจ้ง" }).isChecked())) throw new Error("renamed, still ticked");
+  await card.getByRole("button", { name: "ลบ: ที่จอดรถ", exact: true }).click();
+  const dialog = p.locator("dialog[open]");
+  await dialog.getByText(/ลบ “ที่จอดรถ” ออกจากรายการ\? ที่พักที่เลือกรายการนี้อยู่ 1 หลัง/).waitFor();
+  if (SHOTS) await p.screenshot({ path: `${SHOTS}/amenities-delete.png` });
+  await dialog.getByRole("button", { name: "ลบ", exact: true }).click();
+  await card.getByText("ลบ “ที่จอดรถ” แล้ว").waitFor();
+  await p.reload();
+  await card.waitFor();
+  if (await card.getByRole("checkbox", { name: "ที่จอดรถ", exact: true }).count()) throw new Error("deleted item still listed");
+  if (!(await card.getByRole("checkbox", { name: "สระว่ายน้ำกลางแจ้ง" }).isChecked())) throw new Error("rename saved");
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/amenities-edit.png` });
   await p.close();
 });
 

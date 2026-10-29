@@ -50,6 +50,8 @@ export interface AmenityRow {
   status: "ACTIVE" | "INACTIVE";
   sort_order: number;
   names: string | null; // JSON {lang: name}
+  /** Houses / VIP tents (not deleted) that list it. */
+  unit_count: number;
 }
 
 const unitSelect = (paymentMode: string) => `
@@ -148,7 +150,9 @@ export class AccommodationRepository {
     const { results } = await this.db
       .prepare(
         `SELECT a.id, a.code, a.icon, a.status, a.sort_order,
-                (SELECT json_group_object(t.language_code, t.name) FROM amenity_translations t WHERE t.amenity_id = a.id) AS names
+                (SELECT json_group_object(t.language_code, t.name) FROM amenity_translations t WHERE t.amenity_id = a.id) AS names,
+                (SELECT COUNT(*) FROM accommodation_amenities ua JOIN accommodation_units u ON u.id = ua.unit_id
+                  WHERE ua.amenity_id = a.id AND u.status <> 'DELETED') AS unit_count
            FROM amenities a WHERE (?1 = 0 OR a.status = 'ACTIVE') ORDER BY a.sort_order, a.code`,
       )
       .bind(activeOnly ? 1 : 0)
@@ -245,6 +249,17 @@ export class AccommodationRepository {
 
   updateAmenityStatement(id: string, f: { icon: string | null; status: string; sortOrder: number }): D1PreparedStatementLike {
     return this.db.prepare("UPDATE amenities SET icon = ?2, status = ?3, sort_order = ?4 WHERE id = ?1").bind(id, f.icon, f.status, f.sortOrder);
+  }
+
+  /**
+   * Deletes an amenity from the list: it leaves every house / VIP tent and is no longer offered. Kept as INACTIVE
+   * (its row and names stay for history and audit; an amenity is never part of a booking).
+   */
+  removeAmenityStatements(id: string): D1PreparedStatementLike[] {
+    return [
+      this.db.prepare("DELETE FROM accommodation_amenities WHERE amenity_id = ?1").bind(id),
+      this.db.prepare("UPDATE amenities SET status = 'INACTIVE' WHERE id = ?1").bind(id),
+    ];
   }
 
   upsertAmenityNameStatement(amenityId: string, lang: string, name: string): D1PreparedStatementLike {

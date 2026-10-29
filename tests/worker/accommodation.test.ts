@@ -251,6 +251,33 @@ describe("admin: houses & VIP tents", () => {
     const noThai = await h.api("POST", "/api/admin/amenities", { token: manager, body: { code: "x_y", names: { en: "X" } } });
     assert.equal(noThai.error?.details?.names, "DEFAULT_LANGUAGE_REQUIRED");
   });
+
+  it("amenities: rename shows everywhere; delete takes it off every stay and out of the list (kept for history, audited)", async () => {
+    const made = await h.api<AmenityDto>("POST", "/api/admin/amenities", { token: manager, body: { code: "towel_2", names: { th: "ผ้าเช็ดตัว 2 ผืน", en: "2 towels" } } });
+    for (const unit of ["dev_house_01", "dev_vip_01"]) {
+      const cur = (await h.api<AdminUnitDto>("GET", `/api/admin/accommodations/${unit}`, { token: manager })).data.amenityIds;
+      await h.api("PUT", `/api/admin/accommodations/${unit}/amenities`, { token: manager, body: { amenityIds: [...cur, made.data.id] } });
+    }
+    const listed = (await h.api<AmenityDto[]>("GET", "/api/admin/amenities", { token: manager })).data.find((a) => a.id === made.data.id)!;
+    assert.equal(listed.unitCount, 2, "how many stays tick it");
+
+    const renamed = await h.api<AmenityDto>("PATCH", `/api/admin/amenities/${made.data.id}`, { token: manager, body: { names: { th: "ผ้าเช็ดตัว 3 ผืน" } } });
+    assert.equal(renamed.data.names.th, "ผ้าเช็ดตัว 3 ผืน");
+    const pub = await h.api<PublicUnitDto>("GET", "/api/public/accommodations/house-sakura?lang=th");
+    assert.ok(pub.data.amenities.some((a) => a.name === "ผ้าเช็ดตัว 3 ผืน"), "the guest page shows the new name");
+
+    const viewer = await h.login(await h.user({ id: "acc_viewer_amen", roles: ["BOOKING_ADMIN"] }));
+    assert.equal((await h.api("DELETE", `/api/admin/amenities/${made.data.id}`, { token: viewer })).status, 403);
+    const removed = await h.api<{ removed: boolean; units: number }>("DELETE", `/api/admin/amenities/${made.data.id}`, { token: manager });
+    assert.deepEqual(removed.data, { removed: true, units: 2 });
+    assert.ok(!(await h.api<PublicUnitDto>("GET", "/api/public/accommodations/house-sakura?lang=th")).data.amenities.some((a) => a.name.startsWith("ผ้าเช็ดตัว")));
+    assert.ok(!(await h.api<AdminUnitDto>("GET", "/api/admin/accommodations/dev_vip_01", { token: manager })).data.amenityIds.includes(made.data.id));
+    const after = (await h.api<AmenityDto[]>("GET", "/api/admin/amenities", { token: manager })).data.find((a) => a.id === made.data.id)!;
+    assert.equal(after.status, "INACTIVE", "kept for history");
+    assert.equal(after.unitCount, 0);
+    assert.equal(h.audits("DELETE_AMENITY").length, 1);
+    assert.equal((await h.api("DELETE", `/api/admin/amenities/${made.data.id}`, { token: manager })).status, 404, "already deleted");
+  });
 });
 
 describe("images: secure upload, storage, serving (§54, §55, §56)", () => {
