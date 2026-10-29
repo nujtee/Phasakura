@@ -232,9 +232,10 @@ export interface AdminBookingSummaryDto {
  *   TAKEN      a night is booked or blocked, or camping is full
  *   TARP_FULL  no tarp area left on a night (camping add-on)
  *   FOOD_FULL  a meal of the booking is sold out on its new day
+ *   OTHER_UNITS the booked house / VIP tent is not free, but other free rooms of the same type can take the stay
  *   PAST       before today · TOO_FAR more than two years ahead
  */
-export type MoveDayState = "OK" | "CURRENT" | "TAKEN" | "TARP_FULL" | "FOOD_FULL" | "PAST" | "TOO_FAR";
+export type MoveDayState = "OK" | "OTHER_UNITS" | "CURRENT" | "TAKEN" | "TARP_FULL" | "FOOD_FULL" | "PAST" | "TOO_FAR";
 
 export interface BookingMoveOptionsDto {
   checkIn: string;
@@ -243,6 +244,32 @@ export interface BookingMoveOptionsDto {
   /** Today in the property time zone. */
   today: string;
   days: { date: string; state: MoveDayState }[];
+}
+
+/**
+ * Admin → booking → Change dates → a day: the room each house / VIP-tent stay would have, the free rooms to choose
+ * from, and — when the stay does not fit that day — the nearest days it does.
+ */
+export interface BookingMoveRoomsDto {
+  checkIn: string;
+  checkOut: string;
+  state: MoveDayState;
+  stays: {
+    itemId: string;
+    type: "HOUSE" | "VIP_TENT";
+    /** The room it has now. */
+    unitId: string;
+    name: string;
+    guests: number;
+    /** What the booking was sold at for this stay (kept when the room changes). */
+    bookedSatang: number;
+    /** The room the system suggests on that day (its own when free); null = none free. */
+    suggested: string | null;
+    /** Rooms of the same type that fit the guests: free on every night or not; own room first. */
+    options: { unitId: string; code: string; name: string; maxGuests: number; free: boolean; own: boolean; priceSatang: number }[];
+  }[];
+  /** Nearest days the stay fits (own rooms or others), nearest first. */
+  nearest: { checkIn: string; checkOut: string; state: MoveDayState }[];
 }
 
 export interface AdminBookingDto extends PublicBookingDto {

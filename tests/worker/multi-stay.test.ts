@@ -274,7 +274,7 @@ describe("changing the dates of a booking with several stays", () => {
     const opts = await h.api<{ days: { date: string; state: string }[] }>("GET", `/api/admin/bookings/${booking.bookingCode}/move-options?from=2027-02-08&days=5`, { token: admin });
     assert.equal(opts.status, 200, JSON.stringify(opts.body));
     const state = Object.fromEntries(opts.data.days.map((d) => [d.date, d.state]));
-    assert.equal(state["2027-02-09"], "TAKEN", "House 01 is taken on the 10th");
+    assert.equal(state["2027-02-09"], "OTHER_UNITS", "House 01 is taken on the 10th — House 02 could take that stay");
     assert.equal(state["2027-02-11"], "OK");
     const moved = await h.api<AdminBookingDto>("POST", `/api/admin/bookings/${booking.bookingCode}/move`, { token: admin, body: { checkIn: "2027-02-11" } });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));

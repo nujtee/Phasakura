@@ -9,7 +9,7 @@ import type {
   QuoteDto,
   QuoteItemDto,
 } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, maskPhone, normalizePhone, type BookingMoveOptionsDto, type MoveDayState } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, maskPhone, normalizePhone, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
 import type { BookingSettingsDto, StayAction } from "../../shared/dashboard-types.ts";
 import type { BalanceDueDto, BalanceMethod, PaymentInstructionsDto } from "../../shared/payment-types.ts";
 import { parseStays } from "../repositories/stay-sql.ts";
@@ -18,7 +18,11 @@ import { depositFor, balanceDue } from "../../shared/booking-rules.ts";
 import { dueOnline, paidOf } from "./booking-money.ts";
 import { addDays, diffDays, stayNights, todayIn } from "../../shared/dates.ts";
 import { BookingMoveRepository, KITCHEN_STARTED } from "../repositories/booking-move.repository.ts";
-import { moveDayState, type MoveInputs } from "./booking-move.ts";
+import { assignRooms, moveDayState, nearestDays, roomsFor, stayDates, type MoveInputs, type RoomCandidate, type RoomStay } from "./booking-move.ts";
+import { AccommodationRepository } from "../repositories/accommodation.repository.ts";
+import { PricingRepository } from "../repositories/pricing.repository.ts";
+import { pickTranslation } from "./accommodation.service.ts";
+import { nightPrice } from "./quote.service.ts";
 import { stayActions } from "../../shared/stay.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { ConflictError, HttpError, NotFoundError, TooManyRequestsError, ValidationError } from "../http/errors.ts";
@@ -652,7 +656,10 @@ export class BookingService {
     // Every stay still on moves together (same dates for all the stays of a booking).
     const live = items.filter((i) => i.status === "ACTIVE");
     if (!live.length) throw new ConflictError("This booking has nothing to move", "BOOKING_STATUS_INVALID");
-    const units = live.filter((i) => i.unit_id).map((i) => ({ unitId: i.unit_id!, itemId: i.id }));
+    const units = live.filter((i) => i.unit_id).map((i): RoomStay & { bookedSatang: number; name: string } => ({
+      unitId: i.unit_id!, itemId: i.id, type: i.item_type as RoomStay["type"], guests: i.adults + i.children,
+      bookedSatang: i.snapshot_subtotal_satang, name: i.unit_name_snapshot,
+    }));
     const tents = live.filter((i) => !i.unit_id).reduce((acc, i) => acc + i.quantity, 0);
     return { units, tents, orders: orders.filter((o) => o.status !== "CANCELLED" && o.capacity_reserved > 0), tarps: tarp?.status === "ACTIVE" ? tarp.quantity : 0 };
   }
@@ -663,11 +670,21 @@ export class BookingService {
     const until = addDays(to, row.nights);
     const own = new Set(stayNights(row.check_in, row.check_out));
     let unitTaken: Set<string> | null = null;
+    let rooms: MoveInputs["rooms"] = null;
     let tents: MoveInputs["tents"] = null;
     let tarps: MoveInputs["tarps"] = null;
     if (plan.units.length) {
       // A night is taken when any of the booking's houses / VIP tents is held by someone else (or blocked).
       unitTaken = new Set((await Promise.all(plan.units.map((u) => this.moves.unitTaken(u.unitId, row.id, from, until)))).flatMap((t) => [...t]));
+      // Every bookable room of the same types, with the nights others hold: where the stay may go instead.
+      const all = await this.moves.bookableRooms([...new Set(plan.units.map((u) => u.type))]);
+      const taken = await this.moves.roomsTaken(all.map((r) => r.id), row.id, from, until);
+      const byUnit = new Map<string, Set<string>>();
+      for (const t of taken) (byUnit.get(t.unit_id) ?? byUnit.set(t.unit_id, new Set()).get(t.unit_id)!).add(t.stay_date);
+      rooms = {
+        stays: plan.units,
+        candidates: all.map((r, i): RoomCandidate => ({ unitId: r.id, type: r.unit_type, maxGuests: r.max_guests, rank: i, taken: byUnit.get(r.id) ?? new Set() })),
+      };
     }
     if (plan.tents > 0) {
       const [settings, nights, tarpNights] = await Promise.all([
@@ -705,7 +722,7 @@ export class BookingService {
       const max = cap ? cap.max_quantity : defaults.get(c) ?? null;
       return max === null ? Number.POSITIVE_INFINITY : max - (cap?.used_quantity ?? 0) + (ownFood.get(capKey(c, d)) ?? 0);
     };
-    return { inputs: { checkIn: row.check_in, nights: row.nights, today, unitTaken, tents, tarps, food, foodFree }, plan };
+    return { inputs: { checkIn: row.check_in, nights: row.nights, today, unitTaken, rooms, tents, tarps, food, foodFree }, plan };
   }
 
   /** The calendar: for each day in [from, from + days), could the stay start there (same nights)? */
@@ -721,11 +738,65 @@ export class BookingService {
   }
 
   /**
+   * One new check-in day: the room each house / VIP-tent stay would have (its own when free, else the smallest
+   * free room of the same type that fits), the rooms to choose from with their price for those nights, and the
+   * nearest days the stay fits when it does not fit this one (60 days either side).
+   */
+  async moveRooms(actor: AuthContext, code: string, checkIn: string, meta: RequestMeta): Promise<BookingMoveRoomsDto> {
+    await this.authz.requirePermission(actor, "bookings.edit", meta);
+    const row = await this.expireIfDue(await this.findOr404(code));
+    const today = todayIn(await this.quotes.timezone(), this.clock());
+    const span = 60;
+    const { inputs, plan } = await this.moveInputs(row, today, addDays(checkIn, -span), addDays(checkIn, span + 1));
+    const state = moveDayState(checkIn, inputs);
+    const nights = stayDates(checkIn, row.nights);
+    const assigned = inputs.rooms ? assignRooms(checkIn, row.nights, inputs.rooms.stays, inputs.rooms.candidates) : null;
+    const candidates = inputs.rooms?.candidates ?? [];
+    const accommodation = new AccommodationRepository(this.db);
+    const [names, units, rules] = await Promise.all([
+      accommodation.translations(candidates.map((c) => c.unitId)),
+      this.moves.bookableRooms([...new Set(plan.units.map((u) => u.type))]),
+      plan.units.length ? new PricingRepository(this.db).activeUnitRules(checkIn, nights.at(-1)!) : Promise.resolve([]),
+    ]);
+    const unitRow = new Map(units.map((u) => [u.id, u]));
+    const nameOf = (id: string) => {
+      const byLang = Object.fromEntries(names.filter((n) => n.unit_id === id).map((n) => [n.language_code, n.name]));
+      return pickTranslation(byLang, row.language_code) ?? unitRow.get(id)?.unit_code ?? id;
+    };
+    const priceOf = (id: string) => {
+      const u = unitRow.get(id);
+      if (!u) return 0;
+      const base = u.base_price_satang;
+      const mine = rules.filter((r) => (r.target_type === "UNIT" && r.unit_id === id) || (r.target_type === "UNIT_TYPE" && r.unit_type === u.unit_type));
+      return nights.reduce((acc, d) => acc + nightPrice(mine, d, base), 0);
+    };
+    return {
+      checkIn, checkOut: addDays(checkIn, row.nights), state,
+      stays: plan.units.map((s) => {
+        const free = new Set(roomsFor(s, candidates, nights).map((c) => c.unitId));
+        return {
+          itemId: s.itemId, type: s.type, unitId: s.unitId, name: s.name, guests: s.guests, bookedSatang: s.bookedSatang,
+          suggested: assigned?.get(s.itemId) ?? null,
+          options: candidates
+            .filter((c) => c.type === s.type && c.maxGuests >= s.guests)
+            .map((c) => ({
+              unitId: c.unitId, code: unitRow.get(c.unitId)?.unit_code ?? c.unitId, name: nameOf(c.unitId), maxGuests: c.maxGuests,
+              free: free.has(c.unitId), own: c.unitId === s.unitId, priceSatang: priceOf(c.unitId),
+            }))
+            .sort((a, b) => Number(b.own) - Number(a.own) || Number(b.free) - Number(a.free)),
+        };
+      }),
+      nearest: state === "OK" || state === "OTHER_UNITS" ? []
+        : nearestDays(checkIn, inputs, span, 6).map((d) => ({ checkIn: d.date, checkOut: addDays(d.date, row.nights), state: d.state })),
+    };
+  }
+
+  /**
    * Moves the stay to start on `checkIn` (same number of nights). One D1 batch: dates, night locks or tent / tarp
    * counters, meals and their kitchen capacity — the database refuses anything that no longer fits. The price
    * the guest booked at stays (snapshots are never re-priced).
    */
-  async moveDates(actor: AuthContext, code: string, checkIn: string, meta: RequestMeta) {
+  async moveDates(actor: AuthContext, code: string, checkIn: string, meta: RequestMeta, wanted: { itemId: string; unitId: string }[] = []) {
     await this.authz.requirePermission(actor, "bookings.edit", meta);
     const row = await this.expireIfDue(await this.findOr404(code));
     const today = todayIn(await this.quotes.timezone(), this.clock());
@@ -738,8 +809,30 @@ export class BookingService {
       TARP_FULL: [409, "TARP_FULL", "No tarp area is left on those nights"],
       FOOD_FULL: [409, "FOOD_UNAVAILABLE", "A meal of this booking is sold out on its new day"],
     };
-    const no = refused[moveDayState(checkIn, inputs)];
+    const state = moveDayState(checkIn, inputs);
+    // Rooms chosen by staff (or, when the booked ones are taken, the ones the system suggests) — checked here.
+    const pins = new Map(wanted.map((w) => [w.itemId, w.unitId]));
+    if ([...pins.keys()].some((id) => !plan.units.some((u) => u.itemId === id)) || new Set(pins.values()).size !== pins.size) {
+      throw new HttpError(422, "ROOM_NOT_FREE", "Those rooms do not suit this booking");
+    }
+    let rooms: Map<string, string> | null = null;
+    if (plan.units.length && inputs.rooms && (state === "OK" || state === "OTHER_UNITS")) {
+      rooms = assignRooms(checkIn, row.nights, inputs.rooms.stays, inputs.rooms.candidates, pins);
+      if (!rooms) throw new HttpError(409, "ROOM_NOT_FREE", "A room chosen is not free on those nights");
+    }
+    const no = refused[state];
     if (no) throw new HttpError(no[0], no[1], no[2]);
+    const changes = plan.units.filter((u) => rooms && rooms.get(u.itemId) !== u.unitId);
+    const newNames = new Map<string, string>();
+    if (changes.length) {
+      const names = await new AccommodationRepository(this.db).translations(changes.map((u) => rooms!.get(u.itemId)!));
+      const codes = new Map((await this.moves.bookableRooms([...new Set(changes.map((u) => u.type))])).map((r) => [r.id, r.unit_code]));
+      for (const u of changes) {
+        const to = rooms!.get(u.itemId)!;
+        const byLang = Object.fromEntries(names.filter((n) => n.unit_id === to).map((n) => [n.language_code, n.name]));
+        newNames.set(u.itemId, pickTranslation(byLang, row.language_code) ?? codes.get(to) ?? to);
+      }
+    }
 
     const checkOut = addDays(checkIn, row.nights);
     const now = iso(this.clock());
@@ -750,7 +843,9 @@ export class BookingService {
         from: { checkIn: row.check_in, checkOut: row.check_out },
         to: { checkIn, checkOut },
         offset: diffDays(row.check_in, checkIn),
-        units: plan.units,
+        units: plan.units.map((u) => (newNames.has(u.itemId)
+          ? { unitId: rooms!.get(u.itemId)!, itemId: u.itemId, rename: newNames.get(u.itemId)! }
+          : { unitId: u.unitId, itemId: u.itemId })),
         tents: plan.tents,
         tarps: plan.tarps,
         now,
@@ -758,6 +853,7 @@ export class BookingService {
     } catch (error) {
       // Taken between the calendar and the click: the whole batch rolled back, nothing moved.
       const text = String(error);
+      if (/BOOKING_ITEM_UNIT_CHANGE_INVALID/.test(text)) throw new ConflictError("That room can no longer take this stay", "ROOM_NOT_FREE");
       if (/booking_unit_nights|tents_used/.test(text)) throw new ConflictError("Those nights are not free", "DATES_UNAVAILABLE");
       if (/tarps_used/.test(text)) throw new ConflictError("No tarp area is left on those nights", "TARP_FULL");
       if (/used_quantity/.test(text)) throw new ConflictError("A meal of this booking is sold out on its new day", "FOOD_UNAVAILABLE");
@@ -765,7 +861,8 @@ export class BookingService {
     }
     if (!results[0]?.results.length) throw new ConflictError("The booking changed meanwhile, please reload", "BOOKING_CHANGED");
     await this.log.auditStatement(actor.userId, "MOVE_BOOKING", "bookings", row.id,
-      { checkIn: row.check_in, checkOut: row.check_out }, { checkIn, checkOut }, meta).run();
+      { checkIn: row.check_in, checkOut: row.check_out, rooms: changes.map((u) => ({ itemId: u.itemId, unitId: u.unitId, name: u.name })) },
+      { checkIn, checkOut, rooms: changes.map((u) => ({ itemId: u.itemId, unitId: rooms!.get(u.itemId), name: newNames.get(u.itemId) })) }, meta).run();
     return this.toAdmin((await this.repo.findByCode(row.booking_code))!);
   }
 

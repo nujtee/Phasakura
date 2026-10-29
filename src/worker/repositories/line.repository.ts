@@ -589,7 +589,7 @@ export class LineRepository {
         .bind(list),
       this.db
         .prepare(
-          `SELECT i.booking_id, i.item_type, i.quantity, s.unit_name_snapshot,
+          `SELECT i.booking_id, i.item_type, i.quantity, COALESCE(i.unit_name, s.unit_name_snapshot) AS unit_name_snapshot,
                   (SELECT COALESCE(SUM(t.quantity), 0) FROM booking_tarps t
                     WHERE t.booking_id = i.booking_id AND (t.status = 'ACTIVE' OR b.booking_status IN ('CANCELLED', 'EXPIRED'))) AS tarps,
                   (i.status = 'ACTIVE' OR b.booking_status IN ('CANCELLED', 'EXPIRED')) AS live

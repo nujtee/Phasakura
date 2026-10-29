@@ -2007,6 +2007,15 @@
   text-decoration: line-through;
 }
 
+/* The booked room is taken but another free room of the same type can take the stay. */
+.adm-move__day--other {
+  background: color-mix(in srgb, var(--color-warning) 18%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-warning) 60%, transparent);
+  cursor: pointer;
+}
+
+.adm-move__day--taken:not(:disabled) { cursor: pointer; }
+
 .adm-move__day--off {
   background: color-mix(in srgb, var(--color-muted) 8%, transparent);
   color: color-mix(in srgb, var(--color-muted) 70%, transparent);
@@ -3528,3 +3537,9 @@
 .lse-qc.is-active { border-color: #1565c0; }
 @media (any-pointer: coarse) { .lse-qc { padding: 9px; } }
 .lse-toolbar__looks { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+
+/* Change dates → the rooms on the day picked, or the nearest free days. */
+.adm-move__rooms { margin: 12px 0; padding: 12px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); }
+.adm-move__rooms-title { margin: 0 0 8px; font-size: 0.9375rem; }
+.adm-move__notice { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface)); }
+.adm-move__nearest { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }

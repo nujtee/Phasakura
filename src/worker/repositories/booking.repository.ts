@@ -173,7 +173,7 @@ export class BookingRepository {
   async items(bookingId: string): Promise<BookingItemRow[]> {
     const read = async (extra: string) => (await this.db
       .prepare(
-        `SELECT i.id, i.item_type, i.unit_id, i.quantity, i.status, u.slug, s.unit_name_snapshot, s.pricing_type,
+        `SELECT i.id, i.item_type, i.unit_id, i.quantity, i.status, u.slug, COALESCE(i.unit_name, s.unit_name_snapshot) AS unit_name_snapshot, s.pricing_type,
                 s.nightly_prices_json, s.subtotal_satang AS snapshot_subtotal_satang, i.adults, i.children, ${extra}
            FROM booking_items i
            JOIN booking_price_snapshots s ON s.booking_item_id = i.id
@@ -206,7 +206,7 @@ export class BookingRepository {
     const { results } = await this.db
       .prepare(
         `SELECT m.meal_name_snapshot, m.persons_per_night_snapshot, m.number_of_nights, c.code AS category_code,
-                m.booking_item_id, s.unit_name_snapshot AS stay_name, i.status AS item_status
+                m.booking_item_id, COALESCE(i.unit_name, s.unit_name_snapshot) AS stay_name, i.status AS item_status
            FROM booking_included_meals m JOIN food_categories c ON c.id = m.food_category_id
            JOIN booking_items i ON i.id = m.booking_item_id
            JOIN booking_price_snapshots s ON s.booking_item_id = m.booking_item_id

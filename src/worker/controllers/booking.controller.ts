@@ -263,13 +263,36 @@ export function bookingController(services: ServicesFor) {
       return jsonOk(await services(ctx).bookings.moveOptions(auth, codeParam(ctx), from, days, requestMeta(ctx)), { headers: NO_STORE });
     }),
 
-    /** POST /api/admin/bookings/:code/move { checkIn } — same number of nights, same price. */
+    /** GET /api/admin/bookings/:code/move-rooms?checkIn=YYYY-MM-DD — rooms on that day, or the nearest free days. */
+    moveRooms: withPermission("bookings.edit", services, async (ctx, auth) => {
+      const q = ctx.url.searchParams;
+      const v = new Validator(Object.fromEntries(q.entries())).allowOnly(["checkIn"]);
+      const checkIn = date(v, q.get("checkIn") ?? undefined, "checkIn");
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.moveRooms(auth, codeParam(ctx), checkIn, requestMeta(ctx)), { headers: NO_STORE });
+    }),
+
+    /**
+     * POST /api/admin/bookings/:code/move { checkIn, rooms? } — same number of nights, same price. `rooms`
+     * ([{ itemId, unitId }]) moves stays to other free rooms of the same type (when the booked ones are taken).
+     */
     move: withPermission("bookings.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
-      const v = new Validator(body).allowOnly(["checkIn"]);
+      const v = new Validator(body).allowOnly(["checkIn", "rooms"]);
       const checkIn = date(v, body.checkIn, "checkIn");
+      const rooms: { itemId: string; unitId: string }[] = [];
+      if (body.rooms !== undefined) {
+        if (!Array.isArray(body.rooms) || body.rooms.length > 20) v.errors.rooms = "INVALID";
+        else body.rooms.forEach((r: unknown, i: number) => {
+          const o = r as Record<string, unknown> | null;
+          if (!o || typeof o !== "object" || typeof o.itemId !== "string" || typeof o.unitId !== "string"
+            || !ID_PATTERN.test(o.itemId) || !ID_PATTERN.test(o.unitId) || Object.keys(o).some((k) => k !== "itemId" && k !== "unitId")) {
+            v.errors[`rooms.${i}`] = "INVALID";
+          } else rooms.push({ itemId: o.itemId, unitId: o.unitId });
+        });
+      }
       v.assertValid();
-      return jsonOk(await services(ctx).bookings.moveDates(auth, codeParam(ctx), checkIn, requestMeta(ctx)), { headers: NO_STORE });
+      return jsonOk(await services(ctx).bookings.moveDates(auth, codeParam(ctx), checkIn, requestMeta(ctx), rooms), { headers: NO_STORE });
     }),
 
     /** GET /api/admin/bookings/:code/balance — deposit plan: what is still due and where to pay it. */

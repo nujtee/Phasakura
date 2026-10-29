@@ -7,16 +7,17 @@ const STAYS_OF_B = `FROM booking_items i2 JOIN booking_price_snapshots s2 ON s2.
    WHERE i2.booking_id = b.id AND (i2.status = 'ACTIVE' OR b.booking_status IN ('CANCELLED', 'EXPIRED'))
    ORDER BY i2.created_at, i2.id`;
 
+/** The room a stay has now: moved to another room (migration 0042) → that one's name; else the name it was sold as. */
 /** "House 01 + VIP 02 + Camping" */
-export const STAY_NAMES_SQL = `(SELECT group_concat(name, ' + ') FROM (SELECT s2.unit_name_snapshot AS name ${STAYS_OF_B}))`;
+export const STAY_NAMES_SQL = `(SELECT group_concat(name, ' + ') FROM (SELECT COALESCE(i2.unit_name, s2.unit_name_snapshot) AS name ${STAYS_OF_B}))`;
 
 /** [{"type":"HOUSE","name":"House 01","quantity":1}, …] */
 export const STAYS_JSON_SQL = `(SELECT json_group_array(json_object('type', type, 'name', name, 'quantity', quantity))
-   FROM (SELECT i2.item_type AS type, s2.unit_name_snapshot AS name, i2.quantity AS quantity ${STAYS_OF_B}))`;
+   FROM (SELECT i2.item_type AS type, COALESCE(i2.unit_name, s2.unit_name_snapshot) AS name, i2.quantity AS quantity ${STAYS_OF_B}))`;
 
 /** Same, with each stay's price snapshot (reports split a booking's value by stay). */
 export const STAYS_MONEY_JSON_SQL = `(SELECT json_group_array(json_object('type', type, 'name', name, 'quantity', quantity, 'subtotal', subtotal))
-   FROM (SELECT i2.item_type AS type, s2.unit_name_snapshot AS name, i2.quantity AS quantity, s2.subtotal_satang AS subtotal ${STAYS_OF_B}))`;
+   FROM (SELECT i2.item_type AS type, COALESCE(i2.unit_name, s2.unit_name_snapshot) AS name, i2.quantity AS quantity, s2.subtotal_satang AS subtotal ${STAYS_OF_B}))`;
 
 export interface StayBriefRow {
   type: "HOUSE" | "VIP_TENT" | "OWN_TENT";
