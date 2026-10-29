@@ -300,3 +300,62 @@ describe("satellite plans (phase L4): MapTiler imagery through the Worker", () =
     assert.equal((await h.get(tile(98.9853, 18.7883, 17))).status, 404);
   });
 });
+
+describe("palette (migration 0040): kinds staff add, change, hide and delete", () => {
+  const sala = { kind: "BUILDING", name: "Sala", draw: "rect", fill: "#aa8844", stroke: "#553311", opacity: 1, layer: "stays", size: 0.05, group: "site", sortOrder: 125, hidden: false };
+  type Row = { id: string; builtin: boolean; name: string | null; hidden: boolean; kind: string };
+
+  it("add, rename, hide a built-in, reset it; delete a staff kind — drawn objects never change; audited", async () => {
+    const { h, root, on, create, save } = await setup();
+    await on();
+    assert.deepEqual((await h.api<Row[]>("GET", "/api/admin/landscape/palette", { token: root })).data, [], "as it ships: nothing stored");
+
+    const added = await h.api<Row[]>("POST", "/api/admin/landscape/palette", { token: root, body: sala });
+    assert.equal(added.status, 201, JSON.stringify(added.body));
+    const kind = added.data.find((r) => r.name === "Sala")!;
+    assert.ok(kind && !kind.builtin && /^k/.test(kind.id));
+
+    const renamed = await h.api<Row[]>("PUT", `/api/admin/landscape/palette/${kind.id}`, { token: root, body: { ...sala, name: "Pavilion" } });
+    assert.equal(renamed.data.find((r) => r.id === kind.id)?.name, "Pavilion");
+    const tree = await h.api<Row[]>("PUT", "/api/admin/landscape/palette/TREE", { token: root, body: { ...sala, kind: "TREE", name: null, draw: "symbol", layer: "plants", group: "nature", hidden: true } });
+    assert.equal(tree.status, 200, JSON.stringify(tree.body));
+    assert.deepEqual(tree.data.find((r) => r.id === "TREE"), { ...tree.data.find((r) => r.id === "TREE"), builtin: true, hidden: true, name: null });
+    assert.equal((await h.api("PUT", "/api/admin/landscape/palette/TREE", { token: root, body: { ...sala, kind: "HOUSE" } })).error?.details?.kind, "BUILTIN_KIND_FIXED");
+
+    // A plan with an object drawn as the staff kind.
+    const layout = await create();
+    const drawn = obj({ kind: "BUILDING", label: "Sala 1", typeId: kind.id });
+    assert.equal((await save(layout.id, 1, withObjects([drawn]))).status, 200);
+    assert.deepEqual((await h.api("GET", `/api/admin/landscape/palette/${kind.id}/usage`, { token: root })).data, { objects: 1 });
+
+    const reset = await h.api<Row[]>("DELETE", "/api/admin/landscape/palette/TREE", { token: root });
+    assert.equal(reset.data.some((r) => r.id === "TREE"), false, "back as it ships");
+    const gone = await h.api<Row[]>("DELETE", `/api/admin/landscape/palette/${kind.id}`, { token: root });
+    assert.equal(gone.data.some((r) => r.id === kind.id), false);
+    const after = (await h.api<LandscapeLayoutDto>("GET", `/api/admin/landscape/layouts/${layout.id}`, { token: root })).data.draft.objects[0];
+    assert.deepEqual(after, drawn, "the drawn object is untouched");
+    assert.equal((await h.api("DELETE", `/api/admin/landscape/palette/${kind.id}`, { token: root })).status, 404);
+    assert.deepEqual(["LANDSCAPE_KIND_CREATE", "LANDSCAPE_KIND_UPDATE", "LANDSCAPE_KIND_RESET", "LANDSCAPE_KIND_DELETE"].map((a) => h.audits(a).length > 0), [true, true, true, true]);
+  });
+
+  it("checked on the server: fields, permissions, switched off, at most 60 own kinds", async () => {
+    const { h, root, role, on } = await setup();
+    assert.equal((await h.api("POST", "/api/admin/landscape/palette", { token: root, body: sala })).error?.code, "LANDSCAPE_OFF");
+    await on();
+    const bad = await h.api("POST", "/api/admin/landscape/palette", { token: root, body: { ...sala, name: "", fill: "red", size: 2, draw: "star" } });
+    assert.equal(bad.status, 422);
+    assert.deepEqual(Object.keys(bad.error?.details ?? {}).sort(), ["draw", "fill", "name", "size"]);
+    assert.equal((await h.api("POST", "/api/admin/landscape/palette", { token: root, body: { ...sala, extra: 1 } })).status, 422, "unknown fields refused");
+    const booking = await role("BOOKING_ADMIN");
+    assert.equal((await h.api("GET", "/api/admin/landscape/palette", { token: booking })).status, 200, "may look");
+    assert.equal((await h.api("POST", "/api/admin/landscape/palette", { token: booking, body: sala })).status, 403);
+    const content = await role("CONTENT_ADMIN");
+    assert.equal((await h.api("POST", "/api/admin/landscape/palette", { token: content, body: sala })).status, 201, "content staff may add kinds");
+    assert.equal((await h.api("GET", "/api/admin/landscape/palette")).status, 401);
+    for (let i = 1; i < 60; i++) await h.api("POST", "/api/admin/landscape/palette", { token: root, body: { ...sala, name: `Kind ${i}` } });
+    assert.equal((await h.api("POST", "/api/admin/landscape/palette", { token: root, body: sala })).error?.code, "TOO_MANY_KINDS");
+    // An object's palette id is checked like any id.
+    const doc = withObjects([obj({ typeId: "bad id!" })]);
+    assert.equal(validateLandscapeDocument(doc, { backgroundKind: "BLANK" })["objects.0.typeId"], "INVALID_ID");
+  });
+});

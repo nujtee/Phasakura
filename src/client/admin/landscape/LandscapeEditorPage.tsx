@@ -3,7 +3,7 @@ import { getLandscapeMessages } from "../../../shared/i18n/admin-landscape-messa
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import {
   validateLandscapeDocument,
-  type LandscapeDocument, type LandscapeLayoutDto, type LandscapeObject, type LandscapeObjectKind, type LandscapeOverviewDto, type LandscapeTemplateDto,
+  type LandscapeDocument, type LandscapeLayoutDto, type LandscapeObject, type LandscapeOverviewDto, type LandscapePaletteRowDto, type LandscapeTemplateDto,
 } from "../../../shared/landscape-types.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
 import { uploadImage } from "../../media/prepareImage.ts";
@@ -15,7 +15,8 @@ import {
 } from "../../landscape/geometry.ts";
 import { SatelliteAttribution, tileProblem } from "../../landscape/SatelliteTiles.tsx";
 import { ControlPointsPanel, SatellitePanel } from "./GeoPanels.tsx";
-import { KIND_INFO, PALETTE } from "../../landscape/kinds.ts";
+import { buildPalette, entryOf, type PaletteEntry } from "../../landscape/palette.ts";
+import { PalettePanel, Swatch } from "./PalettePanel.tsx";
 import {
   commit, deleteObjects, duplicateObjects, expandGroups, groupObjects, initHistory, isEditable, moveObjects, newObjectId, redo, undo, ungroupObjects,
   type History, type Scene,
@@ -51,18 +52,22 @@ function writeLocal(id: string, copy: LocalCopy | null): void {
 export function LandscapeEditorPage({ id }: { id: string }) {
   const { t, locale, href } = useAdmin();
   const m = getLandscapeMessages(locale.code);
-  const [data, setData] = useState<{ layout: LandscapeLayoutDto; overview: LandscapeOverviewDto; templates: LandscapeTemplateDto[] } | null>(null);
+  const [data, setData] = useState<{
+    layout: LandscapeLayoutDto; overview: LandscapeOverviewDto; templates: LandscapeTemplateDto[]; palette: LandscapePaletteRowDto[];
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [layout, overview, templates] = await Promise.all([
+      const [layout, overview, templates, palette] = await Promise.all([
         apiGet<LandscapeLayoutDto>(`/api/admin/landscape/layouts/${encodeURIComponent(id)}`),
         apiGet<LandscapeOverviewDto>("/api/admin/landscape"),
         apiGet<LandscapeTemplateDto[]>("/api/admin/landscape/templates"),
+        // Before the palette table exists (release not finished): the built-in palette.
+        apiGet<LandscapePaletteRowDto[]>("/api/admin/landscape/palette").catch(() => [] as LandscapePaletteRowDto[]),
       ]);
-      setData({ layout, overview, templates });
+      setData({ layout, overview, templates, palette });
     } catch (err) {
       setError(errorMessage(t, err));
     }
@@ -74,8 +79,9 @@ export function LandscapeEditorPage({ id }: { id: string }) {
   return <Editor key={`${data.layout.id}:${data.layout.draftRevision}`} {...data} reload={load} />;
 }
 
-function Editor({ layout, overview, templates: initialTemplates, reload }: {
-  layout: LandscapeLayoutDto; overview: LandscapeOverviewDto; templates: LandscapeTemplateDto[]; reload: () => Promise<void>;
+function Editor({ layout, overview, templates: initialTemplates, palette: initialPalette, reload }: {
+  layout: LandscapeLayoutDto; overview: LandscapeOverviewDto; templates: LandscapeTemplateDto[]; palette: LandscapePaletteRowDto[];
+  reload: () => Promise<void>;
 }) {
   const { t, locale, href, can, go } = useAdmin();
   const m = getLandscapeMessages(locale.code);
@@ -92,12 +98,16 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
   const scene = history.present;
   const [selected, setSelected] = useState<string[]>([]);
   const [tool, setTool] = useState<Tool>("select");
-  const [kind, setKind] = useState<LandscapeObjectKind>("TREE");
+  const [paletteRows, setPaletteRows] = useState(initialPalette);
+  const palette = useMemo(() => buildPalette(paletteRows), [paletteRows]);
+  const [entryId, setEntryId] = useState("TREE");
+  const entry: PaletteEntry = palette.find((p) => p.id === entryId) ?? palette.find((p) => !p.hidden) ?? palette[0]!;
+  const entryName = useCallback((p: PaletteEntry) => p.name ?? m.editor.kinds[p.kind] ?? p.kind, [m]);
   const [snapOn, setSnapOn] = useState(true);
   /** iPad: taps add to the selection (what Shift+click does with a keyboard). */
   const [multi, setMulti] = useState(false);
   const [polyPoints, setPolyPoints] = useState<[number, number][] | null>(null);
-  const [panel, setPanel] = useState<"props" | "layers" | "background" | "templates">("props");
+  const [panel, setPanel] = useState<"props" | "layers" | "background" | "templates" | "palette">("props");
   const [name, setName] = useState(layout.name);
   const [revision, setRevision] = useState(layout.draftRevision);
   const [save, setSave] = useState<SaveState>({ kind: "saved", at: layout.draftUpdatedAt });
@@ -226,9 +236,9 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
     return () => window.removeEventListener("keydown", onKey);
   }, [readOnly, scene, selected, apply, saveNow, snapOn, grid, unit, polyPoints]);
 
-  function pickKind(k: LandscapeObjectKind) {
-    setKind(k);
-    setTool(KIND_INFO[k].draw);
+  function pickKind(p: PaletteEntry) {
+    setEntryId(p.id);
+    setTool(p.info.draw);
     setPolyPoints(null);
   }
 
@@ -274,7 +284,7 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
     const c = shapeCenter(o.shape);
     const scale = 1 / Math.max(b.w, b.h, 1e-9);
     const shape = mapShape(o.shape, ([x, y]) => [round6(0.5 + (x - c[0]) * scale), round6(0.5 + (y - c[1]) * scale)], (l) => round6(l * scale));
-    const object = { kind: o.kind, shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId };
+    const object = { kind: o.kind, shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId, typeId: o.typeId ?? null };
     setBusy(true);
     try {
       const tpl = await apiRequest<LandscapeTemplateDto>("POST", "/api/admin/landscape/templates", { name: templateName, object });
@@ -288,10 +298,11 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
   }
 
   function insertTemplate(tpl: LandscapeTemplateDto) {
-    const target = KIND_INFO[tpl.object.kind].size * unit * (tpl.object.shape.type === "symbol" ? 1 : 1.5);
+    const info = (entryOf(palette, tpl.object) ?? entry).info;
+    const target = info.size * unit * (tpl.object.shape.type === "symbol" ? 1 : 1.5);
     const [cx, cy] = canvas.current?.center() ?? [size.w / 2, size.h / 2];
     const shape = mapShape(tpl.object.shape, ([x, y]) => [cx + (x - 0.5) * target, cy + (y - 0.5) * target], (l) => l * target);
-    const layer = scene.layers.find((l) => l.id === KIND_INFO[tpl.object.kind].layer && !l.locked && l.visible) ?? scene.layers.find((l) => !l.locked && l.visible) ?? scene.layers[0]!;
+    const layer = scene.layers.find((l) => l.id === info.layer && !l.locked && l.visible) ?? scene.layers.find((l) => !l.locked && l.visible) ?? scene.layers[0]!;
     const o: LandscapeObject = { ...tpl.object, id: newObjectId(), layerId: layer.id, groupId: null, link: null, shape };
     if (tpl.imageUrl && tpl.object.imageAssetId) setImageUrls((u) => ({ ...u, [tpl.object.imageAssetId!]: tpl.imageUrl! }));
     apply({ ...scene, objects: [...scene.objects, o] }, [o.id]);
@@ -432,11 +443,11 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
               onClick={() => { setTool(tl); setPolyPoints(null); }}>{TOOL_ICON[tl]}<span className="visually-hidden">{e.tools[tl]}</span></button>
           ))}
           <span className="lse-sep" />
-          {PALETTE.map((g) => (
-            <span key={g.group} className="lse-palette" role="group" aria-label={e.groups[g.group]}>
-              {g.kinds.map((k) => (
-                <button key={k} type="button" className={`lse-kind${kind === k ? " is-active" : ""}`} aria-pressed={kind === k} onClick={() => pickKind(k)}>
-                  <span className="lse-swatch" data-kind={k} />{e.kinds[k]}
+          {(["nature", "stays", "site"] as const).map((g) => (
+            <span key={g} className="lse-palette" role="group" aria-label={e.groups[g]}>
+              {palette.filter((p) => p.group === g && !p.hidden).map((p) => (
+                <button key={p.id} type="button" className={`lse-kind${entry.id === p.id ? " is-active" : ""}`} aria-pressed={entry.id === p.id} onClick={() => pickKind(p)}>
+                  <Swatch entry={p} />{entryName(p)}
                 </button>
               ))}
             </span>
@@ -450,7 +461,7 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
 
       <div className="lse-body">
         <div className="lse-stage">
-          <EditorCanvas ref={canvas} scene={scene} size={size} backgroundUrl={bgUrl} imageUrls={imageUrls} tool={readOnly ? "select" : tool} kind={kind}
+          <EditorCanvas ref={canvas} scene={scene} size={size} backgroundUrl={bgUrl} imageUrls={imageUrls} tool={readOnly ? "select" : tool} entry={entry}
             snapOn={snapOn} grid={grid} selected={selected} readOnly={readOnly} label={format(e.canvas, { name })}
             emptyPhotoText={bg.kind === "PHOTO" && !bgUrl ? e.bgNone : null}
             onSelect={(ids) => setSelected(expandGroups(scene, ids))} onCommit={apply}
@@ -476,17 +487,21 @@ function Editor({ layout, overview, templates: initialTemplates, reload }: {
 
         <aside className="lse-side">
           <div className="lse-tabs" role="tablist">
-            {(["props", "layers", "background", "templates"] as const).map((p) => (
+            {(["props", "layers", "background", "templates", "palette"] as const).map((p) => (
               <button key={p} type="button" role="tab" aria-selected={panel === p} className={`lse-tab${panel === p ? " is-active" : ""}`} onClick={() => setPanel(p)}>{e.panels[p]}</button>
             ))}
           </div>
           <div className="lse-panel" role="tabpanel">
             {panel === "props" && (
-              <PropertiesPanel e={e} scene={scene} selected={selected} units={overview.units} campingEnabled={overview.campingEnabled} readOnly={readOnly}
+              <PropertiesPanel e={e} palette={palette} entryName={entryName} scene={scene} selected={selected} units={overview.units} campingEnabled={overview.campingEnabled} readOnly={readOnly}
                 doc={{ ...layout.draft, background: scene.background }} size={size} imageUrls={imageUrls} busy={busy}
                 onCommit={apply} onSelect={setSelected} onUploadImage={(f, ids) => void uploadObjectImage(f, ids)} onSaveTemplate={(o, n) => void saveTemplate(o, n)} />
             )}
             {panel === "layers" && <LayersPanel e={e} scene={scene} readOnly={readOnly} onCommit={(s) => apply(s)} />}
+            {panel === "palette" && (
+              <PalettePanel e={e} palette={palette} entryName={entryName} readOnly={readOnly} onChange={setPaletteRows}
+                confirm={(message, label, run) => setConfirm({ message, label, run })} />
+            )}
             {panel === "templates" && <TemplatesPanel e={e} templates={templates} readOnly={readOnly} onInsert={insertTemplate} onDelete={deleteTemplate} />}
             {panel === "background" && bg.kind === "BLANK" && (
               <div>
