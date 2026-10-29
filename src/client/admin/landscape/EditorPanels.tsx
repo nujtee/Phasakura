@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { AdminLandscapeMessages } from "../../../shared/i18n/admin-landscape-messages.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import {
-  LANDSCAPE_LIMITS, RESERVABLE_KINDS,
+  LANDSCAPE_LIMITS, LANDSCAPE_LOOKS, RESERVABLE_KINDS,
   type LandscapeLayer, type LandscapeObject, type LandscapeObjectKind, type LandscapeOverviewDto, type LandscapeTemplateDto,
 } from "../../../shared/landscape-types.ts";
 import { objectsBox, measuredDistance, planUnit, type Size } from "../../landscape/geometry.ts";
@@ -11,6 +11,7 @@ import {
 } from "../../landscape/editor-state.ts";
 import { Button } from "../ui.tsx";
 import { entryOf, type PaletteEntry } from "../../landscape/palette.ts";
+import { LookPicker, QuickColors } from "./LookPicker.tsx";
 import type { LandscapeDocument } from "../../../shared/landscape-types.ts";
 
 type E = AdminLandscapeMessages["editor"];
@@ -66,7 +67,7 @@ export function PropertiesPanel({ e, scene, selected, units, campingEnabled, rea
                 const kind: LandscapeObjectKind = entry.kind;
                 // Another kind: its look too (what the palette says it looks like); the shape and place stay.
                 set((o) => ({
-                  ...o, kind, typeId: entry.builtin ? null : entry.id, style: { ...entry.info.style },
+                  ...o, kind, typeId: entry.builtin ? null : entry.id, style: { ...entry.info.style }, look: entry.look,
                   link: RESERVABLE_KINDS.includes(kind) && o.kind === kind ? o.link : null,
                 }));
               }}>
@@ -85,6 +86,15 @@ export function PropertiesPanel({ e, scene, selected, units, campingEnabled, rea
             onBlur={() => { if ((one.label ?? "") !== label.trim()) set((o) => ({ ...o, label: label.trim() || null })); }}
             onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }} />
         </div>
+      )}
+      {LANDSCAPE_LOOKS[first.kind] && objs.every((o) => o.kind === first.kind) && (
+        <>
+          <LookPicker kind={first.kind} value={objs.every((o) => (o.look ?? null) === (first.look ?? null)) ? first.look ?? null : "—"}
+            color={first.style.fill} accent={first.style.stroke} names={e.looks} flat={e.lookFlat} label={e.look} disabled={dis} compact
+            onPick={(look) => set((o) => ({ ...o, look }))} />
+          <QuickColors kind={first.kind} value={first.style.fill} label={e.quickColors} disabled={dis}
+            onPick={(fill) => set((o) => ({ ...o, style: { ...o.style, fill } }))} />
+        </>
       )}
       <div className="lse-row">
         <ColorField id="lse-fill" label={e.fill} none={e.none} disabled={dis} value={first.style.fill} onChange={(fill) => set((o) => ({ ...o, style: { ...o.style, fill } }), "fill")} />

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { LandscapeObject } from "../../shared/landscape-types.ts";
 import { shapeBox, shapeCenter } from "./geometry.ts";
+import { lookArt } from "./art.tsx";
 
 /**
  * One plan object drawn in SVG (world units), as in the editor and on the booking page (landscape, phase L2).
@@ -23,7 +24,19 @@ export function ShapeView({ o, imageUrl, highlight, labelSize }: {
     fill, stroke, strokeWidth, opacity: o.style.opacity, vectorEffect: "non-scaling-stroke" as const,
   };
   let body: ReactNode;
-  switch (s.type) {
+  // An illustrated look (house, tent, tree…) is drawn in the shape's box; paths and polygons stay flat.
+  const art = s.type !== "path" && s.type !== "polygon" ? lookArt(o.kind, o.look, o.style.fill, o.style.stroke) : null;
+  if (art) {
+    const b = shapeBox(s);
+    body = (
+      <g transform={`translate(${b.x} ${b.y}) scale(${b.w / 100} ${b.h / 100})`} opacity={o.style.opacity}>
+        {art}
+        {highlight && highlight !== "unavailable" && (
+          <rect x={-2} y={-2} width={104} height={104} rx={6} fill="none" stroke={stroke} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+        )}
+      </g>
+    );
+  } else switch (s.type) {
     case "rect": {
       const b = shapeBox(s);
       body = <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={Math.min(b.w, b.h) * 0.04} {...common} />;

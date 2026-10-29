@@ -515,6 +515,40 @@ await check("palette: deleting “Sala” says how many are drawn and leaves the
   await pa.getByRole("toolbar").getByRole("button", { name: "Flowers", exact: true }).waitFor();
 });
 
+// ------------------------------------------------------------------ illustrated looks (3D-style)
+await check("looks: draw a Thai house and a pink pine from the toolbar; change a look and a colour in Properties", async () => {
+  await pa.goto(`${BASE}/en/admin/landscape/${LAYOUT}`);
+  await pa.locator(".lse-canvas svg [data-id]").first().waitFor();
+  await pa.getByRole("toolbar").getByRole("button", { name: "House", exact: true }).click();
+  await pa.getByRole("group", { name: "Look: House" }).getByRole("button", { name: "Thai house" }).click();
+  const [x1, y1] = await screen(160, 20);
+  const [x2, y2] = await screen(185, 40);
+  await pa.mouse.move(x1, y1);
+  await pa.mouse.down();
+  await pa.mouse.move(x2, y2, { steps: 5 });
+  await pa.mouse.up();
+  await pa.getByRole("toolbar").getByRole("button", { name: "Tree", exact: true }).click();
+  await pa.getByRole("group", { name: "Look: Tree" }).getByRole("button", { name: "Pine" }).click();
+  await pa.getByRole("group", { name: "Quick colours" }).first().getByRole("button", { name: "Quick colours #f48fb1" }).click();
+  const [tx, ty] = await screen(170, 70);
+  await pa.mouse.click(tx, ty);
+  await saved();
+  const objs = (await layout()).draft.objects;
+  const thai = objs.find((o) => o.look === "thai");
+  const pine = objs.find((o) => o.look === "pine");
+  assert(thai && thai.kind === "HOUSE", JSON.stringify(objs.map((o) => [o.kind, o.look])));
+  assert(pine && pine.style.fill === "#f48fb1", JSON.stringify(pine));
+  // Properties: the selected pine becomes a palm, then red.
+  await pa.getByRole("tab", { name: "Properties" }).click();
+  await pa.locator(".lse-panel").getByRole("button", { name: "Palm" }).click();
+  await pa.locator(".lse-panel").getByRole("button", { name: "Quick colours #c62828" }).click();
+  await saved();
+  const palm = (await layout()).draft.objects.find((o) => o.id === pine.id);
+  assert(palm.look === "palm" && palm.style.fill === "#c62828", JSON.stringify(palm));
+  assert(await pa.locator(`.lse-canvas svg [data-id="${thai.id}"] g[transform^="translate"]`).count() === 1, "drawn as a picture");
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/landscape-looks.png` });
+});
+
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));

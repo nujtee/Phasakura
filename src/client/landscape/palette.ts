@@ -1,5 +1,5 @@
 import {
-  LANDSCAPE_OBJECT_KINDS, type LandscapeObjectKind, type LandscapePaletteInput, type LandscapePaletteRowDto, type PaletteGroup,
+  LANDSCAPE_LOOKS, LANDSCAPE_OBJECT_KINDS, type LandscapeObjectKind, type LandscapePaletteInput, type LandscapePaletteRowDto, type PaletteGroup,
 } from "../../shared/landscape-types.ts";
 import { KIND_INFO, PALETTE, type KindInfo } from "./kinds.ts";
 
@@ -21,6 +21,13 @@ export interface PaletteEntry {
   hidden: boolean;
   /** A built-in that differs from how it ships. */
   changed: boolean;
+  /** Illustrated look new objects get (null = flat). Built-ins ship with their kind's first look. */
+  look: string | null;
+}
+
+/** The look a kind ships with (houses: gable, tents: bell, trees: round…); null for kinds drawn flat. */
+export function defaultLook(kind: LandscapeObjectKind): string | null {
+  return LANDSCAPE_LOOKS[kind]?.[0] ?? null;
 }
 
 /** Built-in groups and the order they ship in (10, 20, 30… so staff kinds can go in between). */
@@ -44,12 +51,13 @@ export function buildPalette(rows: LandscapePaletteRowDto[]): PaletteEntry[] {
         style: r ? { fill: r.fill, stroke: r.stroke, opacity: r.opacity ?? base.style.opacity } : base.style,
       },
       group: r?.group ?? ship.group, sortOrder: r?.sortOrder ?? ship.order, hidden: r?.hidden ?? false, changed: !!r,
+      look: r ? r.look : defaultLook(k),
     };
   });
   const custom = rows.filter((r) => !r.builtin).map((r): PaletteEntry => ({
     id: r.id, builtin: false, kind: r.kind, name: r.name,
     info: { draw: r.draw ?? KIND_INFO[r.kind].draw, layer: r.layer ?? KIND_INFO[r.kind].layer, size: r.size ?? KIND_INFO[r.kind].size, style: { fill: r.fill, stroke: r.stroke, opacity: r.opacity ?? 1 } },
-    group: r.group ?? "site", sortOrder: r.sortOrder ?? 10_000, hidden: r.hidden, changed: false,
+    group: r.group ?? "site", sortOrder: r.sortOrder ?? 10_000, hidden: r.hidden, changed: false, look: r.look,
   }));
   return [...builtins, ...custom].sort((a, b) => a.sortOrder - b.sortOrder || (a.builtin === b.builtin ? 0 : a.builtin ? -1 : 1));
 }
@@ -61,7 +69,7 @@ export const DEFAULT_PALETTE: PaletteEntry[] = buildPalette([]);
 export function entryInput(e: PaletteEntry): LandscapePaletteInput {
   return {
     kind: e.kind, name: e.name, draw: e.info.draw, fill: e.info.style.fill, stroke: e.info.style.stroke, opacity: e.info.style.opacity,
-    layer: e.info.layer, size: e.info.size, group: e.group, sortOrder: e.sortOrder, hidden: e.hidden,
+    layer: e.info.layer, size: e.info.size, group: e.group, sortOrder: e.sortOrder, hidden: e.hidden, look: e.look,
   };
 }
 

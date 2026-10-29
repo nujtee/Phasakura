@@ -50,6 +50,7 @@ export interface LandscapePaletteRow {
   palette_group: string | null;
   sort_order: number | null;
   hidden: number;
+  look: string | null;
 }
 
 export interface LandscapeTemplateRow {
@@ -257,7 +258,7 @@ export class LandscapeRepository {
 
   async palette(): Promise<LandscapePaletteRow[]> {
     const { results } = await this.db.prepare(
-      `SELECT id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden
+      `SELECT id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden, look
          FROM landscape_palette WHERE status = 'ACTIVE' ORDER BY builtin DESC, sort_order, name, id`,
     ).all<LandscapePaletteRow>();
     return results;
@@ -265,7 +266,7 @@ export class LandscapeRepository {
 
   paletteRow(id: string): Promise<LandscapePaletteRow | null> {
     return this.db.prepare(
-      `SELECT id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden
+      `SELECT id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden, look
          FROM landscape_palette WHERE id = ?1 AND status = 'ACTIVE'`,
     ).bind(id).first<LandscapePaletteRow>();
   }
@@ -278,13 +279,13 @@ export class LandscapeRepository {
   /** Saves a palette entry whole (an override of a built-in, or a staff kind); a deleted one with the id comes back. */
   upsertPaletteStatement(r: Omit<LandscapePaletteRow, "builtin"> & { builtin: 0 | 1 }, userId: string, now: string): D1PreparedStatementLike {
     return this.db.prepare(
-      `INSERT INTO landscape_palette (id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden, status, updated_by, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'ACTIVE', ?14, ?15)
+      `INSERT INTO landscape_palette (id, builtin, kind, name, draw, fill, stroke, opacity, layer, size, palette_group, sort_order, hidden, look, status, updated_by, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?16, 'ACTIVE', ?14, ?15)
        ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, name = excluded.name, draw = excluded.draw, fill = excluded.fill,
          stroke = excluded.stroke, opacity = excluded.opacity, layer = excluded.layer, size = excluded.size,
-         palette_group = excluded.palette_group, sort_order = excluded.sort_order, hidden = excluded.hidden, status = 'ACTIVE',
+         palette_group = excluded.palette_group, sort_order = excluded.sort_order, hidden = excluded.hidden, look = excluded.look, status = 'ACTIVE',
          updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
-    ).bind(r.id, r.builtin, r.kind, r.name, r.draw, r.fill, r.stroke, r.opacity, r.layer, r.size, r.palette_group, r.sort_order, r.hidden, userId, now);
+    ).bind(r.id, r.builtin, r.kind, r.name, r.draw, r.fill, r.stroke, r.opacity, r.layer, r.size, r.palette_group, r.sort_order, r.hidden, userId, now, r.look);
   }
 
   /** Built-in: its override goes (back to how it ships). Staff kind: marked deleted (drawn objects keep their look). */

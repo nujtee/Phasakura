@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getLandscapeMessages } from "../../../shared/i18n/admin-landscape-messages.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import {
-  validateLandscapeDocument,
+  LANDSCAPE_LOOKS, validateLandscapeDocument,
   type LandscapeDocument, type LandscapeLayoutDto, type LandscapeObject, type LandscapeOverviewDto, type LandscapePaletteRowDto, type LandscapeTemplateDto,
 } from "../../../shared/landscape-types.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
@@ -17,6 +17,7 @@ import { SatelliteAttribution, tileProblem } from "../../landscape/SatelliteTile
 import { ControlPointsPanel, SatellitePanel } from "./GeoPanels.tsx";
 import { buildPalette, entryOf, type PaletteEntry } from "../../landscape/palette.ts";
 import { PalettePanel, Swatch } from "./PalettePanel.tsx";
+import { LookPicker, QuickColors } from "./LookPicker.tsx";
 import {
   commit, deleteObjects, duplicateObjects, expandGroups, groupObjects, initHistory, isEditable, moveObjects, newObjectId, redo, undo, ungroupObjects,
   type History, type Scene,
@@ -102,6 +103,11 @@ function Editor({ layout, overview, templates: initialTemplates, palette: initia
   const palette = useMemo(() => buildPalette(paletteRows), [paletteRows]);
   const [entryId, setEntryId] = useState("TREE");
   const entry: PaletteEntry = palette.find((p) => p.id === entryId) ?? palette.find((p) => !p.hidden) ?? palette[0]!;
+  /** Toolbar: look and colour of the next object, per palette entry (default: the entry's own). */
+  const [drawLooks, setDrawLooks] = useState<Record<string, string | null>>({});
+  const [drawColors, setDrawColors] = useState<Record<string, string>>({});
+  const drawLook = entry.id in drawLooks ? drawLooks[entry.id]! : entry.look;
+  const drawColor = drawColors[entry.id] ?? null;
   const entryName = useCallback((p: PaletteEntry) => p.name ?? m.editor.kinds[p.kind] ?? p.kind, [m]);
   const [snapOn, setSnapOn] = useState(true);
   /** iPad: taps add to the selection (what Shift+click does with a keyboard). */
@@ -452,6 +458,15 @@ function Editor({ layout, overview, templates: initialTemplates, palette: initia
               ))}
             </span>
           ))}
+          {LANDSCAPE_LOOKS[entry.kind] && (
+            <div className="lse-toolbar__looks">
+              <LookPicker kind={entry.kind} value={drawLook} color={drawColor ?? entry.info.style.fill} accent={entry.info.style.stroke}
+                names={e.looks} flat={e.lookFlat} label={`${e.look}: ${entryName(entry)}`} compact={false}
+                onPick={(l) => setDrawLooks((cur) => ({ ...cur, [entry.id]: l }))} />
+              <QuickColors kind={entry.kind} value={drawColor ?? entry.info.style.fill} label={e.quickColors}
+                onPick={(c) => setDrawColors((cur) => ({ ...cur, [entry.id]: c }))} />
+            </div>
+          )}
           <span className="lse-sep" />
           <label className="adm-check adm-small"><input type="checkbox" checked={snapOn} onChange={(ev) => setSnapOn(ev.target.checked)} /> {e.snap}</label>
           <label className="adm-check adm-small"><input type="checkbox" checked={multi} onChange={(ev) => setMulti(ev.target.checked)} /> {e.multiSelect}</label>
@@ -461,7 +476,7 @@ function Editor({ layout, overview, templates: initialTemplates, palette: initia
 
       <div className="lse-body">
         <div className="lse-stage">
-          <EditorCanvas ref={canvas} scene={scene} size={size} backgroundUrl={bgUrl} imageUrls={imageUrls} tool={readOnly ? "select" : tool} entry={entry}
+          <EditorCanvas ref={canvas} scene={scene} size={size} backgroundUrl={bgUrl} imageUrls={imageUrls} tool={readOnly ? "select" : tool} entry={entry} look={drawLook} color={drawColor}
             snapOn={snapOn} grid={grid} selected={selected} readOnly={readOnly} label={format(e.canvas, { name })}
             emptyPhotoText={bg.kind === "PHOTO" && !bgUrl ? e.bgNone : null}
             onSelect={(ids) => setSelected(expandGroups(scene, ids))} onCommit={apply}

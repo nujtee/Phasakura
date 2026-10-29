@@ -18,7 +18,7 @@ export const KIND_INFO: Record<LandscapeObjectKind, KindInfo> = {
   TREE: { style: { fill: "#2e7d32", stroke: "#1b5e20", opacity: 0.95 }, draw: "symbol", layer: "plants", size: 0.025 },
   SHRUB: { style: { fill: "#558b2f", stroke: "#33691e", opacity: 0.95 }, draw: "symbol", layer: "plants", size: 0.015 },
   FLOWER: { style: { fill: "#f06292", stroke: "#c2185b", opacity: 0.95 }, draw: "symbol", layer: "plants", size: 0.012 },
-  HOUSE: { style: { fill: "#d7b98e", stroke: "#6d4c41", opacity: 1 }, draw: "rect", layer: "stays", size: 0.06 },
+  HOUSE: { style: { fill: "#c0623f", stroke: "#6d4c41", opacity: 1 }, draw: "rect", layer: "stays", size: 0.06 },
   VIP_TENT: { style: { fill: "#fff3e0", stroke: "#ef6c00", opacity: 1 }, draw: "circle", layer: "stays", size: 0.035 },
   CAMPING_AREA: { style: { fill: "#c5e1a5", stroke: "#558b2f", opacity: 0.7 }, draw: "polygon", layer: "stays", size: 0.15 },
   FACILITY: { style: { fill: "#e1bee7", stroke: "#6a1b9a", opacity: 1 }, draw: "rect", layer: "stays", size: 0.04 },
