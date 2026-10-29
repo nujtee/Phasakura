@@ -143,6 +143,9 @@ describe("Center config (phase C4: center/wrangler.jsonc)", () => {
     assert.match(validateRegistry({ ...registry, center: { ...registry.center!, d1: registry.sites[0]!.d1 } }).join("\n"), /center: D1/);
     const wf = readFileSync(join(ROOT, ".github", "workflows", "release.yml"), "utf8");
     assert.match(wf, /\n {2}center:\n[\s\S]*?sites\.ts run center release/);
+    // Center binds to every site's Worker: a new site (Create site → wave 1) must exist before Center deploys.
+    assert.match(wf, /\n {2}center:\n {4}needs: \[plan, verify, wave1\]\n/);
+    assert.match(wf, /\n {2}center:[\s\S]*?!cancelled\(\)[\s\S]*?needs\.verify\.result == 'success'/);
   });
 });
 
