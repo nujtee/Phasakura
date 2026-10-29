@@ -14,7 +14,10 @@ run-name: "Release ${{ inputs.sites }}${{ inputs.note && format(' — {0}', inpu
 # Optional: GitHub environment "production-wave-2" / "production-wave-3" with a wait timer or required reviewer
 # gives you time to watch wave 1 before the next wave starts.
 # Center (phase C4): "all" also releases the Center console (center.phasakura.com); "center" releases only Center.
-# It runs beside wave 1 (Center keeps no guest data; a site never depends on it).
+# It runs after wave 1 (Center keeps no guest data; a site never depends on it). After, not beside: Center has a
+# service binding to every site's Worker, and a new site (Create site puts it in wave 1) has no Worker until its
+# first wave-1 release — deploying Center before that fails with "Service binding … references Worker … not found".
+# A wave-1 failure of an existing site does not hold Center back.
 
 on:
   workflow_dispatch:
@@ -106,8 +109,11 @@ jobs:
       - run: npm run check
 
   center:
-    needs: [plan, verify]
-    if: needs.plan.outputs.center == 'true'
+    needs: [plan, verify, wave1]
+    if: >-
+      !cancelled()
+      && needs.verify.result == 'success'
+      && needs.plan.outputs.center == 'true'
     runs-on: ubuntu-latest
     environment: production
     name: center
