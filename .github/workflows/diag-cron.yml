@@ -12,21 +12,22 @@ jobs:
       - name: schedules and deployments
         run: |
           {
-          for w in cherngdoi pk-putaberg suanpho; do
+          for w in $(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts" | jq -r '.result[].id'); do
             echo "== $w schedules"
-            curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$w/schedules" | jq -c '{success, result, errors}'
-            echo "== $w deployments"
-            curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$w/deployments" | jq -c '.result.deployments[0:3][]? | {created_on, source, strategy, versions}'
+            curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$w/schedules" | jq -c '[.result.schedules[]? | .cron + " @" + .created_on[0:16]]'
           done
+          echo "== subscriptions"
+          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/account-settings" | jq -c '.result // .errors'
+          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/subscriptions" | jq -c '[.result[]? | {rate_plan: .rate_plan.id, product: .product.name, state}] , .errors'
           } > out1.txt 2>&1; cat out1.txt
       - name: tail scheduled events (only cron events, 150 s)
         run: |
-          for w in cherngdoi pk-putaberg; do
-            (timeout 150 npx -y wrangler@4 tail $w --format json > $w.json 2>$w.err || true) &
+          for w in cherngdoi suanpho; do
+            (timeout 130 npx -y wrangler@4 tail $w --format json > $w.json 2>$w.err || true) &
           done
           wait
           {
-          for w in cherngdoi pk-putaberg; do
+          for w in cherngdoi suanpho; do
             echo "== $w: $(wc -l < $w.json) lines"
             tail -5 $w.err
             jq -c 'select(.event.cron != null) | {cron: .event.cron, scheduledTime: .event.scheduledTime, outcome, cpu: .cpuTime, wall: .wallTime, exceptions: [.exceptions[]? | (.name + ": " + (.message[0:200]))], logs: [.logs[]? | (.level + " " + ((.message|tostring)[0:200]))][0:15]}' $w.json || true
@@ -36,7 +37,7 @@ jobs:
       - name: annotate
         if: always()
         run: |
-          for f in out2.txt; do
+          for f in out1.txt out2.txt; do
             m=$(grep -v '^\s*$' $f | cut -c1-700 | head -60 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
             echo "::notice title=$f::$m"
           done
