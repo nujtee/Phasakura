@@ -8,6 +8,7 @@ import type {
   IncludedMealDto,
   NightPriceDto,
   QuoteDto,
+  ExtraBedLineDto,
   QuoteItemDto,
   TarpLineDto,
 } from "../../shared/booking-types.ts";
@@ -16,6 +17,7 @@ import { depositFor, payLaterOf } from "../../shared/booking-rules.ts";
 import { DEFAULT_TIMEZONE, addDays, dayOfWeek, localDateTimeIn, todayIn } from "../../shared/dates.ts";
 import { ConflictError, HttpError, NotFoundError, ValidationError } from "../http/errors.ts";
 import type { AccommodationRepository, UnitRow } from "../repositories/accommodation.repository.ts";
+import type { ExtraBedRepository, ExtraBedSettingsRow } from "../repositories/extra-bed.repository.ts";
 import type { CampingSettingsRow, InventoryRepository } from "../repositories/inventory.repository.ts";
 import type {
   BookingSettingsRow,
@@ -35,7 +37,7 @@ import type { AppFeeTerms } from "./credit.service.ts";
 
 /** One stay of the request, with its own guests (the parser fills them in for a legacy single `stay`). */
 export type StayInput =
-  | { kind: "UNIT"; unitId: string; adults: number; children: number }
+  | { kind: "UNIT"; unitId: string; adults: number; children: number; extraBeds?: number }
   | { kind: "CAMPING"; tents: number; tarp: boolean; adults: number; children: number };
 
 export interface QuoteInput {
@@ -80,6 +82,8 @@ export interface PreparedStay {
   tents: number;
   /** Tarp area of the camping stay. */
   tarp: TarpLineDto | null;
+  /** Extra beds of a house / VIP tent (migration 0043). */
+  extraBeds: ExtraBedLineDto | null;
   /** Meals that come with this stay. */
   included: PreparedIncludedMeal[];
 }
@@ -117,7 +121,16 @@ export class QuoteService {
     private readonly mediaBaseUrl: string | undefined = undefined,
     /** App-usage fee terms (migration 0027); null / absent = no fee. */
     private readonly appFeeTerms: (() => Promise<AppFeeTerms | null>) | null = null,
+    /** Extra beds option (migration 0043); null = never offered. */
+    private readonly extraBedRepo: ExtraBedRepository | null = null,
   ) {}
+
+  /** The extra beds option as the owner set it (off when there is no repository or before migration 0043). */
+  async extraBedSettings(): Promise<ExtraBedSettingsRow | null> {
+    if (!this.extraBedRepo) return null;
+    const row = await this.extraBedRepo.settings();
+    return row.is_enabled === 1 ? row : null;
+  }
 
   /** Dish → public DTO (shared by the stay catalogue and the public menu). */
   private async optionDtos(menu: Awaited<ReturnType<QuoteService["menu"]>>): Promise<Map<string, FoodOptionDto>> {
@@ -210,6 +223,19 @@ export class QuoteService {
         const nightly = nights.map((date) => ({ date, priceSatang: nightPrice(rules, date, unit.base_price_satang) }));
         const names = Object.fromEntries((await this.units.translations([unit.id])).map((t) => [t.language_code, t.name]));
         const subtotalSatang = sum(nightly);
+        // Extra beds (migration 0043): beds × price per bed per night, part of this stay (and of its deposit).
+        let extraBeds: ExtraBedLineDto | null = null;
+        if (stay.extraBeds) {
+          const offer = await this.extraBedSettings();
+          if (!offer) throw new ConflictError("Extra beds are not offered", "EXTRA_BED_UNAVAILABLE");
+          if (stay.extraBeds > offer.max_per_unit) throw new ValidationError({ [key("extraBeds")]: "EXTRA_BEDS_TOO_MANY" });
+          extraBeds = {
+            quantity: stay.extraBeds,
+            pricePerNightSatang: offer.price_per_night_satang,
+            nights: nights.length,
+            subtotalSatang: stay.extraBeds * offer.price_per_night_satang * nights.length,
+          };
+        }
         stays.push({
           item: {
             type: unit.unit_type,
@@ -222,12 +248,14 @@ export class QuoteService {
             subtotalSatang,
             adults: stay.adults,
             children: stay.children,
-            // Deposit plan of this house / VIP tent (migration 0025): half of its stay left for check-in.
-            payLaterSatang: payLaterOf(unit.payment_mode ?? "FULL", subtotalSatang),
+            // Deposit plan of this house / VIP tent (migration 0025): half of its stay (with its extra beds) left for check-in.
+            payLaterSatang: payLaterOf(unit.payment_mode ?? "FULL", subtotalSatang + (extraBeds?.subtotalSatang ?? 0)),
+            ...(extraBeds ? { extraBeds } : {}),
           },
           unit,
           tents: 0,
           tarp: null,
+          extraBeds,
           included: [],
         });
       } else {
@@ -280,6 +308,7 @@ export class QuoteService {
           unit: null,
           tents,
           tarp,
+          extraBeds: null,
           included: [],
         });
       }
@@ -297,7 +326,8 @@ export class QuoteService {
 
     const foodLines = [...includedLines, ...extra];
     const tarp = stays.find((st) => st.tarp)?.tarp ?? null;
-    const accommodationSubtotalSatang = stays.reduce((acc, st) => acc + st.item.subtotalSatang + (st.tarp?.subtotalSatang ?? 0), 0);
+    const accommodationSubtotalSatang = stays.reduce(
+      (acc, st) => acc + st.item.subtotalSatang + (st.tarp?.subtotalSatang ?? 0) + (st.extraBeds?.subtotalSatang ?? 0), 0);
     const foodSubtotalSatang = foodLines.reduce((acc, l) => acc + l.dto.subtotalSatang, 0);
     const items = stays.map((st) => st.item);
     // App fee (migration 0027): per house / VIP tent / own tent, on the guest's bill; paid now (part of any deposit).
@@ -368,7 +398,11 @@ export class QuoteService {
           .map((o) => optionDtos.get(o.id)!),
       }))
       .filter((c) => c.options.length > 0);
-    return { checkIn, checkOut, categories };
+    const beds = await this.extraBedSettings();
+    return {
+      checkIn, checkOut, categories,
+      extraBed: beds ? { pricePerNightSatang: beds.price_per_night_satang, maxPerUnit: beds.max_per_unit } : null,
+    };
   }
 
   /** Night n is served on n + offset (breakfast the morning after). */

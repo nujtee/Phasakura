@@ -10,6 +10,7 @@ import { readJsonObject } from "../security/request.ts";
 import { MAX_UPLOAD_BYTES, UPLOAD_PERMISSIONS } from "../services/media.service.ts";
 import type { MediaPurpose } from "../repositories/media.repository.ts";
 import { ID_PATTERN, Validator } from "../validation.ts";
+import { MAX_EXTRA_BEDS_PER_UNIT } from "../../shared/booking-types.ts";
 
 const UNIT_CODE = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/;
@@ -303,6 +304,21 @@ export function accommodationController(services: ServicesFor) {
     /** DELETE /api/admin/amenities/:id — off every house / VIP tent and out of the list. */
     removeAmenity: withPermission("accommodation.edit", services, async (ctx, auth) =>
       jsonOk(await services(ctx).accommodation.removeAmenity(auth, id(ctx), requestMeta(ctx)))),
+
+    // ------------------------------------------------------------------ extra beds (migration 0043)
+    extraBeds: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).accommodation.extraBedSettings(auth, requestMeta(ctx)))),
+
+    updateExtraBeds: withPermission("accommodation.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["enabled", "pricePerNightSatang", "maxPerUnit", "updatedAt"]);
+      const input = {
+        enabled: v.boolean("enabled", false),
+        pricePerNightSatang: int(v, body, "pricePerNightSatang", 0, MAX_PRICE_SATANG, true)!,
+        maxPerUnit: int(v, body, "maxPerUnit", 1, MAX_EXTRA_BEDS_PER_UNIT, true)!,
+      };
+      v.assertValid();
+      return jsonOk(await services(ctx).accommodation.saveExtraBedSettings(auth, input, requestMeta(ctx)));
+    }),
 
     // ------------------------------------------------------------------ camping
     camping: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).availability.getCampingSettings(auth, requestMeta(ctx)))),

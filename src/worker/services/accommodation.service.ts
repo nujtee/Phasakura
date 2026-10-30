@@ -18,6 +18,8 @@ import { ConflictError, NotFoundError, ValidationError } from "../http/errors.ts
 import { openDepositBookings } from "../repositories/deposit-bookings.ts";
 import type { AccommodationRepository, UnitImageRow, UnitRow, UnitTranslationRow } from "../repositories/accommodation.repository.ts";
 import type { InventoryRepository } from "../repositories/inventory.repository.ts";
+import { ExtraBedRepository, type ExtraBedSettingsRow } from "../repositories/extra-bed.repository.ts";
+import type { ExtraBedSettingsDto } from "../../shared/booking-types.ts";
 import type { MediaRepository } from "../repositories/media.repository.ts";
 import { newId } from "../security/tokens.ts";
 import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
@@ -445,6 +447,26 @@ export class AccommodationService {
     return { removed: true, units: current.unit_count };
   }
 
+  // ================================================================ extra beds (migration 0043)
+
+  async extraBedSettings(actor: AuthContext, meta: RequestMeta): Promise<ExtraBedSettingsDto> {
+    await this.authz.requirePermission(actor, "accommodation.view", meta);
+    return toExtraBedDto(await new ExtraBedRepository(this.db).settings());
+  }
+
+  /** On / off, price per bed per night, beds per house / VIP tent. Bookings already made keep their price. */
+  async saveExtraBedSettings(actor: AuthContext, input: Omit<ExtraBedSettingsDto, "updatedAt">, meta: RequestMeta): Promise<ExtraBedSettingsDto> {
+    await this.authz.requirePermission(actor, "accommodation.edit", meta);
+    const repo = new ExtraBedRepository(this.db);
+    const before = toExtraBedDto(await repo.settings());
+    if (input.pricePerNightSatang !== before.pricePerNightSatang) await this.authz.requirePermission(actor, "pricing.edit", meta);
+    await this.commit([
+      repo.saveStatement({ ...input, userId: actor.userId, now: this.now() }),
+      this.log.auditStatement(actor.userId, "UPDATE_EXTRA_BEDS", MODULE, "extra_bed_settings", before, input, meta),
+    ]);
+    return toExtraBedDto(await repo.settings());
+  }
+
   // ================================================================ helpers
 
   private priceHistory(unitId: string, oldPrice: number | null, newPrice: number, userId: string): D1PreparedStatementLike {
@@ -518,3 +540,7 @@ function groupBy<T, K>(items: T[], key: (t: T) => K): Map<K, T[]> {
 }
 
 export type { UnitImageRow };
+
+function toExtraBedDto(r: ExtraBedSettingsRow): ExtraBedSettingsDto {
+  return { enabled: r.is_enabled === 1, pricePerNightSatang: r.price_per_night_satang, maxPerUnit: r.max_per_unit, updatedAt: r.updated_at };
+}

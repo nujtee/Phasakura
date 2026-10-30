@@ -1,3 +1,4 @@
+import { ExtraBedRepository } from "./repositories/extra-bed.repository.ts";
 import { AdminMenuRepository } from "./repositories/admin-menu.repository.ts";
 import { AdminMenuService } from "./services/admin-menu.service.ts";
 import type { Env } from "./env.ts";
@@ -246,7 +247,8 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       return !!env.LINE_CHANNEL_ACCESS_TOKEN?.trim() && s?.enabled === 1;
     },
   });
-  const quotes = new QuoteService(pricing, units, inventory, availability, clock, images, env.PUBLIC_MEDIA_BASE_URL, () => credits.feeTerms());
+  const quotes = new QuoteService(pricing, units, inventory, availability, clock, images, env.PUBLIC_MEDIA_BASE_URL, () => credits.feeTerms(),
+    new ExtraBedRepository(db));
 
   // LINE (Phase 11): outbox rows are written inside the payment / slip / cancel batches.
   const site = new SiteService(new D1SiteSettingsRepository(db), env.PUBLIC_MEDIA_BASE_URL);

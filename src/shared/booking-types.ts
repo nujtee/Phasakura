@@ -24,8 +24,11 @@ export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
  * booking's adults / children.
  */
 export type StaySelection =
-  | { kind: "UNIT"; unitId: string; adults?: number; children?: number }
+  | { kind: "UNIT"; unitId: string; adults?: number; children?: number; extraBeds?: number }
   | { kind: "CAMPING"; tents: number; tarp?: boolean; adults?: number; children?: number };
+
+/** Most extra beds one house / VIP tent can ever take (the owner's limit is at most this). */
+export const MAX_EXTRA_BEDS_PER_UNIT = 10;
 
 /** Most stays one booking can hold (houses / VIP tents + camping). */
 export const MAX_STAYS_PER_BOOKING = 10;
@@ -88,6 +91,8 @@ export interface QuoteItemDto {
   children: number;
   /** Deposit plan: the part of this stay (with its tarp area) left for check-in; 0 = paid in full now. */
   payLaterSatang: number;
+  /** Extra beds of this house / VIP tent (migration 0043); part of the stay's money and of its deposit. */
+  extraBeds?: ExtraBedLineDto | null;
   /** A booking's stay (not in a quote): its id, and whether staff cancelled it. */
   id?: string;
   status?: "ACTIVE" | "CANCELLED";
@@ -101,6 +106,23 @@ export interface TarpLineDto {
   pricePerNightSatang: number;
   nights: number;
   subtotalSatang: number;
+}
+
+/** Extra beds (ที่นอนเสริม) of one house / VIP tent: beds × price per bed per night × nights. */
+export type ExtraBedLineDto = TarpLineDto;
+
+/** What the booking page offers (null / absent = no extra beds). */
+export interface ExtraBedOfferDto {
+  pricePerNightSatang: number;
+  maxPerUnit: number;
+}
+
+/** Admin → extra beds settings (migration 0043). */
+export interface ExtraBedSettingsDto {
+  enabled: boolean;
+  pricePerNightSatang: number;
+  maxPerUnit: number;
+  updatedAt: string | null;
 }
 
 export interface IncludedMealDto {
@@ -345,6 +367,8 @@ export interface FoodCatalogueDto {
   checkIn: string;
   checkOut: string;
   categories: FoodCategoryDto[];
+  /** Extra beds for houses / VIP tents, when the owner offers them (shown on the same step). */
+  extraBed?: ExtraBedOfferDto | null;
 }
 
 // ------------------------------------------------------------------ admin pricing rules

@@ -3571,3 +3571,14 @@
 .adm-amenity__btn:hover, .adm-amenity__btn:focus-visible { border-color: var(--color-border); background: var(--color-surface); color: var(--color-heading); }
 .adm-amenity__btn--danger:hover, .adm-amenity__btn--danger:focus-visible { color: var(--color-error); }
 @media (any-pointer: coarse) { .adm-amenity__btn { min-width: 44px; min-height: 44px; } }
+
+/* Houses / VIP tents → extra beds settings (migration 0043). */
+.adm-extrabeds__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.adm-extrabeds__head .adm-h2 { margin-bottom: 4px; }
+.adm-extrabeds form { margin-top: 12px; }

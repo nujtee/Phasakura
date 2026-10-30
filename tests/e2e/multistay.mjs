@@ -179,6 +179,45 @@ await check("booking page: a date search shows the time-based price of those nig
 });
 
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
+await check("extra beds: staff switch them on (houses page), the guest adds one on the food step and the price follows", async () => {
+  await pa.goto(`${BASE}/en/admin/houses`);
+  const card = pa.locator(".adm-extrabeds");
+  await card.getByRole("heading", { name: "Extra beds" }).waitFor();
+  await card.getByText("Guests cannot add them yet").waitFor();
+  await card.getByRole("button", { name: "Settings" }).click();
+  await card.getByLabel("Let guests add extra beds when booking").check();
+  await card.getByLabel("Price per bed per night (THB)").fill("300");
+  await card.getByLabel("Most per unit (beds)").fill("2");
+  await card.getByRole("button", { name: "Save" }).click();
+  await card.getByText("Extra beds settings saved").waitFor();
+  await card.getByText(/฿300 per bed per night · up to 2 per unit/).waitFor();
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/extra-beds-admin.png` });
+
+  const ci = day(70), co = day(72);
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
+  await pg.locator("form.stay-search button[type=submit]").click();
+  const unit = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /House 02/ }) });
+  await unit.getByRole("button", { name: "เลือกหลังนี้" }).click();
+  await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "สั่งอาหารล่วงหน้า" }).waitFor();
+  const beds = pg.locator(".extra-beds");
+  await beds.getByRole("heading", { name: "ที่นอนเสริม" }).waitFor();
+  await beds.getByText(/฿300 ต่อที่นอน ต่อคืน · สูงสุด 2 ที่นอนต่อหลัง/).waitFor();
+  const summary = pg.locator(".summary");
+  const before = await summary.textContent();
+  await beds.getByRole("group", { name: "ที่นอนเสริม" }).getByRole("button", { name: /^เพิ่ม / }).click();
+  await summary.getByText("ที่นอนเสริม 1 × 2 คืน").waitFor();
+  await beds.getByText("ที่นอนเสริม 1 × 2 คืน = ฿600").waitFor();
+  assert(before !== await summary.textContent(), "the summary changed");
+  const overflow = await pg.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 1, `horizontal scroll ${overflow}px`);
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/extra-beds-guest.png`, fullPage: true });
+
+  // Off again for the other suites.
+  const r = await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2 } });
+  assert(r.ok(), `switch off: ${r.status()}`);
+});
+
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
   assert(!bad.length, bad.join("\n"));

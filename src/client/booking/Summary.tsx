@@ -42,6 +42,7 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
             <strong>{x.name}</strong>
             {x.type === "OWN_TENT" && <> · {fill(bt.tentsLine, { n: x.quantity })}</>}
             {x.type === "OWN_TENT" && quote.tarp && <> + {bt.tarpLine}</>}
+            {x.extraBeds && <> + {fill(bt.extraBedLine, { n: x.extraBeds.quantity })}</>}
           </span>
         ))}
       </p>
@@ -61,7 +62,7 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
                   {x.name}
                   <small>{fill(bt.guestsLine, { adults: x.adults, children: x.children })}</small>
                 </dt>
-                <dd>{baht(x.subtotalSatang + (x.type === "OWN_TENT" && quote.tarp ? quote.tarp.subtotalSatang : 0))}</dd>
+                <dd>{baht(x.subtotalSatang + (x.type === "OWN_TENT" && quote.tarp ? quote.tarp.subtotalSatang : 0) + (x.extraBeds?.subtotalSatang ?? 0))}</dd>
               </div>
             ),
             ...x.nightly.map((n) => (
@@ -74,6 +75,12 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
               <div key={`${k}|tarp`} className="summary__line summary__line--sub">
                 <dt>{fill(bt.tarpNights, { n: quote.tarp.nights })}</dt>
                 <dd>{baht(quote.tarp.subtotalSatang)}</dd>
+              </div>
+            ),
+            x.extraBeds && (
+              <div key={`${k}|beds`} className="summary__line summary__line--sub">
+                <dt>{fill(bt.extraBedNights, { n: x.extraBeds.quantity, nights: x.extraBeds.nights })}</dt>
+                <dd>{baht(x.extraBeds.subtotalSatang)}</dd>
               </div>
             ),
           ];

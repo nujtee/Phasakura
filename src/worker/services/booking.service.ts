@@ -1,3 +1,5 @@
+import { ExtraBedRepository, type BookingExtraBedRow } from "../repositories/extra-bed.repository.ts";
+import type { ExtraBedLineDto } from "../../shared/booking-types.ts";
 import type {
   AdminBookingDto,
   AdminBookingSummaryDto,
@@ -88,6 +90,11 @@ export class BookingService {
     /** PayPal Checkout can be offered (Cloudflare Secrets present). */
     private readonly paypalReady: boolean = false,
   ) {}
+
+  /** Extra beds snapshots (migration 0043). */
+  private get extraBeds(): ExtraBedRepository {
+    return new ExtraBedRepository(this.db);
+  }
 
   async quote(input: QuoteInput): Promise<QuoteDto> {
     await this.expireDue();
@@ -208,6 +215,13 @@ export class BookingService {
       // Inventory: the database rejects the whole batch if a night or tent is gone.
       if (stay.unit) {
         for (const night of p.nights) statements.push(repo.lockNightStatement(stay.unit.id, night, bookingId, itemId, at));
+        // Extra beds (migration 0043): price snapshot; the trigger re-checks the option is offered and the limit.
+        if (stay.extraBeds) {
+          statements.push(this.extraBeds.insertStatement({
+            id: newId(), bookingId, itemId, quantity: stay.extraBeds.quantity, pricePerNight: stay.extraBeds.pricePerNightSatang,
+            nights: stay.extraBeds.nights, subtotal: stay.extraBeds.subtotalSatang, now: at,
+          }));
+        }
       } else {
         for (const night of p.nights) statements.push(...repo.reserveTentsStatements(night, stay.tents, at));
         // Tarp area: its own nightly limit (CHECK) and a price snapshot; triggers re-check camping + option offered.
@@ -450,7 +464,9 @@ export class BookingService {
     if (row.booking_status !== "PENDING" && row.booking_status !== "CONFIRMED") {
       throw new ConflictError("Only pending or confirmed bookings can change", "BOOKING_NOT_CANCELLABLE");
     }
-    const [items, tarp, payments] = await Promise.all([this.repo.items(row.id), this.repo.tarp(row.id), this.payments.payments(row.id)]);
+    const [items, tarp, payments, beds] = await Promise.all([
+      this.repo.items(row.id), this.repo.tarp(row.id), this.payments.payments(row.id), this.extraBeds.forBooking(row.id),
+    ]);
     const target = items.find((i) => i.id === itemId);
     if (!target) throw new NotFoundError("This stay is not part of the booking", "STAY_NOT_FOUND");
     if (target.status !== "ACTIVE") throw new ConflictError("This stay is already cancelled", "STAY_ALREADY_CANCELLED");
@@ -466,7 +482,9 @@ export class BookingService {
 
     const camping = target.item_type === "OWN_TENT";
     const tarpMoney = camping && tarp?.status === "ACTIVE" ? tarp.subtotal_satang : 0;
-    const accommodation = row.accommodation_subtotal_satang - target.snapshot_subtotal_satang - tarpMoney;
+    // Its extra beds go with it (they follow the stay's status).
+    const bedMoney = beds.find((e) => e.booking_item_id === itemId)?.subtotal_satang ?? 0;
+    const accommodation = row.accommodation_subtotal_satang - target.snapshot_subtotal_satang - tarpMoney - bedMoney;
     // App fee (migration 0027): an unpaid booking stops paying for the stay's units (its credit hold shrinks with it,
     // trigger); once paid the fee was earned and stays.
     const unpaid = row.booking_status === "PENDING" && row.app_fee_units > 0;
@@ -889,6 +907,7 @@ export class BookingService {
       awaitingPayment || owing ? this.payments.settings() : Promise.resolve(null),
       this.payments.payments(row.id),
     ]);
+    const beds = new Map((await this.extraBeds.forBooking(row.id)).map((e) => [e.booking_item_id, e]));
     const rejected = payments.filter((p) => p.status === "REJECTED").at(-1);
     const paidSatang = paidOf(payments);
     const balanceSatang = balanceDue(row.total_satang, paidSatang);
@@ -927,6 +946,7 @@ export class BookingService {
       adults: i.adults,
       children: i.children,
       payLaterSatang: i.pay_later_satang,
+      ...(beds.has(i.id) ? { extraBeds: bedLine(beds.get(i.id)!) } : {}),
     }));
     const cancelledAlone = new Set(items.filter((i) => i.cancelled_at).map((i) => i.id));
     const live = stays.filter((x) => x.status === "ACTIVE");
@@ -1052,6 +1072,10 @@ export function mapInventoryError(error: unknown): unknown {
   if (/TARP_DISABLED/.test(message)) {
     return new ConflictError("The tarp area option is not offered", "TARP_UNAVAILABLE");
   }
+  // Extra beds switched off (or their limit lowered) between the price check and the booking (migration 0043).
+  if (/EXTRA_BED_UNAVAILABLE/.test(message)) {
+    return new ConflictError("Extra beds are not offered", "EXTRA_BED_UNAVAILABLE");
+  }
   if (/NOT NULL constraint failed: payment_account_snapshots/.test(message)) {
     return new ConflictError("Online booking is temporarily unavailable", "PAYMENT_NOT_CONFIGURED");
   }
@@ -1072,4 +1096,9 @@ function safeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+/** Extra beds snapshot → line (beds × price per bed per night × nights). */
+function bedLine(e: BookingExtraBedRow): ExtraBedLineDto {
+  return { quantity: e.quantity, pricePerNightSatang: e.price_per_night_satang, nights: e.number_of_nights, subtotalSatang: e.subtotal_satang };
 }
