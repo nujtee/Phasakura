@@ -101,6 +101,12 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
             <dd>{bt.stayCancelled}</dd>
           </div>
         ))}
+        {"moveCharges" in quote && (quote as { moveCharges?: { toCheckIn: string; feeSatang: number; diffSatang: number }[] }).moveCharges?.map((c, i) => (
+          <div key={`move|${i}`} className="summary__line summary__line--sub">
+            <dt>{bt.move.fee}{c.diffSatang > 0 && ` + ${bt.move.diff}`} · {dateText(c.toCheckIn)}</dt>
+            <dd>{baht(c.feeSatang + c.diffSatang)}</dd>
+          </div>
+        ))}
         <div className="summary__line">
           <dt>{bt.accommodation}</dt>
           <dd>{baht(quote.accommodationSubtotalSatang)}</dd>

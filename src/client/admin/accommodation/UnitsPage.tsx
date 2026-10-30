@@ -9,6 +9,7 @@ import { Alert, Button, detailMessage, errorMessage } from "../ui.tsx";
 import { AvailabilityGrid } from "./AvailabilityGrid.tsx";
 import { ExtraBedsCard } from "./ExtraBedsCard.tsx";
 import { PetsCard } from "./PetsCard.tsx";
+import { MoveSettingsCard } from "./MoveSettingsCard.tsx";
 
 export const TYPE_PATH: Record<UnitType, string> = { HOUSE: "houses", VIP_TENT: "vip-tents" };
 
@@ -86,6 +87,7 @@ export function UnitsPage({ type }: { type: UnitType }) {
       {error && <Alert kind="error">{error}</Alert>}
       <ExtraBedsCard />
       <PetsCard />
+      <MoveSettingsCard />
       {!units && !error && <p role="status">{t.common.loading}</p>}
       {units && units.length === 0 && <div className="adm-empty">{t.acc.empty}</div>}
       {units && units.length > 0 && (

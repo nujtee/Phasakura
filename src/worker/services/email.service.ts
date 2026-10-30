@@ -9,7 +9,7 @@ import { ConflictError, NotFoundError, TooManyRequestsError } from "../http/erro
 import { emailTexts, fillText, renderEmail, type RenderedEmail } from "../email/email-templates.ts";
 import type { EmailSender } from "../email/sender.ts";
 import {
-  guestCancelledText, guestConfirmedText, guestPaymentRejectedText, LineFormatter, balanceReceivedText, guestBalanceRejectedText, stillDue, newBookingText, paymentConfirmedText, paymentReviewText,
+  guestCancelledText, guestConfirmedText, guestPaymentRejectedText, LineFormatter, balanceReceivedText, guestBalanceRejectedText, stillDue, moveText, newBookingText, paymentConfirmedText, paymentReviewText,
   type MsgBooking,
 } from "../line/line-templates.ts";
 import type { EmailFlag, EmailLogListRow, EmailLogRow, EmailRecipientRow, EmailRepository, EmailSettingsRow } from "../repositories/email.repository.ts";
@@ -33,6 +33,7 @@ const SIMPLE_EMAIL = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{
 
 const FLAG_OF: Partial<Record<EmailType, EmailFlag>> = {
   NEW_BOOKING: "notify_booking",
+  BOOKING_MOVE: "notify_booking",
   PAYMENT_REVIEW: "notify_payment",
   PAYMENT_CONFIRMED: "notify_payment",
 };
@@ -66,6 +67,10 @@ export class EmailOutbox implements OutboxLike {
 
   async balancePaid(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]> {
     return (await this.on()) ? [this.repo.balancePaidStatement(paymentId, bookingId, now)] : [];
+  }
+
+  async moveEvent(requestId: string, bookingId: string, event: string, now: string): Promise<D1PreparedStatementLike[]> {
+    return (await this.on()) ? [this.repo.moveEventStatement(requestId, bookingId, event, now)] : [];
   }
 
   async bookingCancelled(bookingId: string, _wasConfirmed: boolean, now: string): Promise<D1PreparedStatementLike[]> {
@@ -415,6 +420,13 @@ export class EmailService {
     }
 
     switch (row.notification_type as EmailType) {
+      case "BOOKING_MOVE": {
+        const r = typeof payload.requestId === "string" ? await this.lineRepo.moveRequest(payload.requestId) : null;
+        if (!b || !r) return { skip: "NOT_RELEVANT" };
+        const event = String(payload.event ?? "REQUESTED");
+        return fromLine("BOOKING_MOVE", moveText(f, b, r, event, null),
+          { label: e.openAdmin, url: this.link(lang, (l) => (event === "SLIP" ? `/${l.path}/admin/slips` : `/${l.path}/admin/bookings/${b.code}`)) });
+      }
       case "NEW_BOOKING":
         if (!b) return { skip: "NOT_RELEVANT" };
         return fromLine("NEW_BOOKING", newBookingText(f, b, null), { label: e.openAdmin, url: this.link(lang, (l) => `/${l.path}/admin/bookings/${b.code}`) });

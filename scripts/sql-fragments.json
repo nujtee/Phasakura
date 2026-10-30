@@ -76,9 +76,13 @@
   "src/worker/repositories/monitoring.repository.ts": [
     "sql"
   ],
+  "src/worker/repositories/move-request.repository.ts": [
+    "decided"
+  ],
   "src/worker/repositories/payment.repository.ts": [
     "qrReceiver",
-    "select"
+    "select",
+    "slipPaymentSelect(move)"
   ],
   "src/worker/repositories/rbac.repository.ts": [
     "planLock",

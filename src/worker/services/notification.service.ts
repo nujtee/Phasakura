@@ -5,7 +5,7 @@ import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { createLineApi, packMessages, retryKeyFor, type FetchLike, type LineApi, type LineTextMessage } from "../line/line-api.ts";
 import {
   checkinDigestBlocks, foodOrderText, guestCancelledText, guestCheckinText, guestConfirmedText, guestPaymentRejectedText, kitchenDigestBlocks, balanceReceivedText, guestBalanceRejectedText, stillDue,
-  LineFormatter, newBookingText, paymentConfirmedText, paymentReviewText, testText, type KitchenDish,
+  LineFormatter, moveText, newBookingText, paymentConfirmedText, paymentReviewText, testText, type KitchenDish,
 } from "../line/line-templates.ts";
 import type { LineRepository, LineSettingsRow, NotificationRow, RecipientFlag } from "../repositories/line.repository.ts";
 import type { ReportRepository } from "../repositories/report.repository.ts";
@@ -31,6 +31,7 @@ const FLAG_OF: Record<string, RecipientFlag | null> = {
   PAYMENT_REVIEW: "notify_payment",
   PAYMENT_CONFIRMED: "notify_payment",
   NEW_BOOKING: "notify_booking",
+  BOOKING_MOVE: "notify_booking",
   TEST: null,
 };
 
@@ -75,6 +76,11 @@ export class Outbox {
   /** A slip was turned down → the guest (if linked) hears the reason. */
   async paymentRejected(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]> {
     return (await this.on()) ? [this.repo.guestPaymentRejectedStatement(paymentId, bookingId, now)] : [];
+  }
+
+  /** A guest's move of the stay → staff chats that want booking news. */
+  async moveEvent(requestId: string, bookingId: string, event: string, now: string): Promise<D1PreparedStatementLike[]> {
+    return (await this.on()) ? [this.repo.moveEventStatement(requestId, bookingId, event, now)] : [];
   }
 
   /** Deposit plan: the rest came in → staff chats that want payment news. */
@@ -346,6 +352,14 @@ class RenderContext {
         const b = await one();
         if (!b) return { skip: "NOT_RELEVANT" };
         return text(newBookingText(f, b, this.link(lang, (l) => `/${l.path}/admin/bookings/${b.code}`)));
+      }
+      case "BOOKING_MOVE": {
+        const b = await one();
+        const r = typeof p.requestId === "string" ? await this.repo.moveRequest(p.requestId) : null;
+        if (!b || !r) return { skip: "NOT_RELEVANT" };
+        const event = String(p.event ?? "REQUESTED");
+        const link = this.link(lang, (l) => (event === "SLIP" ? `/${l.path}/admin/slips` : `/${l.path}/admin/bookings/${b.code}`));
+        return text(moveText(f, b, r, event, link));
       }
       case "GUEST_PAYMENT_REJECTED": {
         const pay = typeof p.paymentId === "string" ? await this.repo.payment(p.paymentId) : null;

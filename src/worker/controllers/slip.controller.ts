@@ -47,6 +47,35 @@ export function slipController(services: ServicesFor) {
       return jsonOk(result, { status: 201, headers: { "Cache-Control": "no-store" } });
     }) satisfies Handler,
 
+    /** POST /api/public/bookings/move/slip — the slip for moving the stay (multipart: bookingCode, phone, file, channel). */
+    submitMove: (async (ctx) => {
+      const type = ctx.request.headers.get("Content-Type") ?? "";
+      if (!/^multipart\/form-data;/i.test(type)) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Use multipart/form-data");
+      if (Number(ctx.request.headers.get("Content-Length") ?? "0") > SLIP_LIMITS.maxBytes + 64 * 1024) throw new PayloadTooLargeError();
+      let form: FormData;
+      try {
+        form = await ctx.request.formData();
+      } catch {
+        throw new ValidationError({ body: "INVALID_MULTIPART" });
+      }
+      const unknown = [...form.keys()].filter((k) => !["bookingCode", "phone", "file", "channel"].includes(k));
+      if (unknown.length) throw new ValidationError(Object.fromEntries(unknown.map((k) => [k, "UNKNOWN_FIELD"])));
+      const code = form.get("bookingCode");
+      const phone = form.get("phone");
+      const file = form.get("file");
+      const channel = form.get("channel");
+      const errors: Record<string, string> = {};
+      if (channel !== null && (typeof channel !== "string" || !(SLIP_CHANNELS as readonly string[]).includes(channel))) errors.channel = "INVALID_VALUE";
+      if (typeof code !== "string" || code.length > 20) errors.bookingCode = "REQUIRED";
+      if (typeof phone !== "string" || phone.length > 24) errors.phone = "REQUIRED";
+      if (!(file instanceof File)) errors.file = "REQUIRED";
+      if (Object.keys(errors).length) throw new ValidationError(errors);
+      const s = services(ctx);
+      const meta = requestMeta(ctx);
+      const result = await s.slips.submitMoveSlip(code as string, phone as string, file as File, meta, typeof channel === "string" ? (channel as SlipChannel) : undefined);
+      return jsonOk({ outcome: result.outcome, move: await s.bookings.guestMoveStart(code as string, phone as string, meta) }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    }) satisfies Handler,
+
     queue: withPermission("slips.view", services, async (ctx, auth) => {
       const q = ctx.url.searchParams;
       const v = new Validator(Object.fromEntries(q.entries())).allowOnly(["status", "before", "limit"]);

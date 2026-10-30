@@ -8,6 +8,7 @@ export type EmailProviderName = "ZOHO" | "RESEND";
 
 export const EMAIL_TYPES = [
   "NEW_BOOKING", // staff: a guest booked
+  "BOOKING_MOVE", // staff: a guest moves the stay (asked / slip sent / moved / turned down / failed)
   "PAYMENT_REVIEW", // staff: a payment waits for review (manual mode, or the automatic check did not pass)
   "PAYMENT_CONFIRMED", // staff: a booking is paid and confirmed
   "GUEST_BOOKING_CREATED", // guest: booking received + how and until when to pay

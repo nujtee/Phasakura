@@ -26,6 +26,7 @@ import {
 } from "../booking/api.ts";
 import { Confirmation } from "../booking/Confirmation.tsx";
 import { FoodStep } from "../booking/FoodStep.tsx";
+import { MoveStayLauncher } from "../booking/MoveStay.tsx";
 import { BookingSummary, useDateText } from "../booking/Summary.tsx";
 import { CampingBooker } from "../booking/CampingBooker.tsx";
 import { LandscapeMap } from "../booking/LandscapeMap.tsx";
@@ -467,8 +468,13 @@ export function BookingPage() {
 
   return (
     <div className={`page container${picks.length ? " has-picks-bar" : ""}`}>
-      <h1 className="page__title" tabIndex={-1} ref={headingRef}>{t.pages.booking.title}</h1>
-      <p className="page__lead">{t.accommodation.chooseDates}</p>
+      <div className="booking-head">
+        <div className="booking-head__text">
+          <h1 className="page__title" tabIndex={-1} ref={headingRef}>{t.pages.booking.title}</h1>
+          <p className="page__lead">{t.accommodation.chooseDates}</p>
+        </div>
+        <MoveStayLauncher />
+      </div>
       {onlineOpen === false && <p className="notice notice--error" role="alert">{bt.onlineClosed}</p>}
 
       <StaySearch initial={query} busy={busy} error={searchError} childAge={data?.camping.childFreeUnderAge} showTents={false}
