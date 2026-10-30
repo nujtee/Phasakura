@@ -19,7 +19,8 @@ import { openDepositBookings } from "../repositories/deposit-bookings.ts";
 import type { AccommodationRepository, UnitImageRow, UnitRow, UnitTranslationRow } from "../repositories/accommodation.repository.ts";
 import type { InventoryRepository } from "../repositories/inventory.repository.ts";
 import { ExtraBedRepository, type ExtraBedSettingsRow } from "../repositories/extra-bed.repository.ts";
-import type { ExtraBedSettingsDto } from "../../shared/booking-types.ts";
+import type { ExtraBedSettingsDto, PetSettingsDto } from "../../shared/booking-types.ts";
+import { PetRepository, type PetSettingsRow } from "../repositories/pet.repository.ts";
 import type { MediaRepository } from "../repositories/media.repository.ts";
 import { newId } from "../security/tokens.ts";
 import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
@@ -467,6 +468,28 @@ export class AccommodationService {
     return toExtraBedDto(await repo.settings());
   }
 
+  // ================================================================ pets (migration 0044)
+
+  async petSettings(actor: AuthContext, meta: RequestMeta): Promise<PetSettingsDto> {
+    await this.authz.requirePermission(actor, "accommodation.view", meta);
+    return toPetDto(await new PetRepository(this.db).settings());
+  }
+
+  /** On / off, price (per pet per night or per stay), heaviest pet, pets per house / VIP tent. Bookings keep their price. */
+  async savePetSettings(actor: AuthContext, input: Omit<PetSettingsDto, "updatedAt">, meta: RequestMeta): Promise<PetSettingsDto> {
+    await this.authz.requirePermission(actor, "accommodation.edit", meta);
+    const repo = new PetRepository(this.db);
+    const before = toPetDto(await repo.settings());
+    if (input.priceSatang !== before.priceSatang || input.chargePer !== before.chargePer) {
+      await this.authz.requirePermission(actor, "pricing.edit", meta);
+    }
+    await this.commit([
+      repo.saveStatement({ ...input, userId: actor.userId, now: this.now() }),
+      this.log.auditStatement(actor.userId, "UPDATE_PETS", MODULE, "pet_settings", before, input, meta),
+    ]);
+    return toPetDto(await repo.settings());
+  }
+
   // ================================================================ helpers
 
   private priceHistory(unitId: string, oldPrice: number | null, newPrice: number, userId: string): D1PreparedStatementLike {
@@ -543,4 +566,11 @@ export type { UnitImageRow };
 
 function toExtraBedDto(r: ExtraBedSettingsRow): ExtraBedSettingsDto {
   return { enabled: r.is_enabled === 1, pricePerNightSatang: r.price_per_night_satang, maxPerUnit: r.max_per_unit, updatedAt: r.updated_at };
+}
+
+function toPetDto(r: PetSettingsRow): PetSettingsDto {
+  return {
+    enabled: r.is_enabled === 1, priceSatang: r.price_satang, chargePer: r.charge_per, maxWeightKg: r.max_weight_kg,
+    maxPerUnit: r.max_per_unit, updatedAt: r.updated_at,
+  };
 }

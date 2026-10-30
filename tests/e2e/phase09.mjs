@@ -749,7 +749,7 @@ await check("camping: owner offers a tarp area; a guest books dates, 2 adults + 
   if (SHOTS) await form.screenshot({ path: `${SHOTS}/camping-form-phone.png` });
   await form.getByRole("button", { name: "จองลานกางเต็นท์" }).click();
 
-  await g.getByRole("heading", { name: "สั่งอาหารล่วงหน้า" }).waitFor();
+  await g.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
   await g.locator(".flow-stay").getByText("1 เต็นท์ + พื้นที่กางทาร์ป").waitFor();
   const summary = g.locator(".summary").first();
   await summary.getByText("พื้นที่กางทาร์ป × 2 คืน").waitFor();

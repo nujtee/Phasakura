@@ -59,6 +59,10 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
       name: live.length > 1 ? `${m.extraBed} · ${x.name}` : m.extraBed,
       qty: `${x.extraBeds.quantity} × ${fillText(m.nights, { n: x.extraBeds.nights })}`,
       amount: x.extraBeds.subtotalSatang === 0 ? bt.free : baht(x.extraBeds.subtotalSatang),
+    }] : []), ...(x.pets ? [{
+      name: `${live.length > 1 ? `${m.pet} · ${x.name}` : m.pet} (${fillText(bt.petWeight, { kg: x.pets.maxWeightKg })})`,
+      qty: x.pets.chargePer === "STAY" ? String(x.pets.quantity) : `${x.pets.quantity} × ${fillText(m.nights, { n: x.pets.chargedUnits })}`,
+      amount: x.pets.subtotalSatang === 0 ? bt.free : baht(x.pets.subtotalSatang),
     }] : [])]),
     ...(b.tarp ? [{ name: m.tarp, qty: fillText(m.nights, { n: b.tarp.nights }), amount: baht(b.tarp.subtotalSatang) }] : []),
     ...b.includedMeals.map((x) => ({ name: x.name, qty: `${x.personsPerNight} × ${fillText(m.nights, { n: x.nights })}`, amount: bt.included })),

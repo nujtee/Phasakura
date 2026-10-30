@@ -99,10 +99,15 @@ export class ReportRepository {
 
   /** Sold stays overlapping [from, toExclusive). */
   async soldStays(from: string, toExclusive: string): Promise<StayRow[]> {
-    // Extra beds (migration 0043) are part of the stay's money; before that migration there are none.
+    // Extra beds (0043) and pets (0044) are part of the stay's money; before those migrations there are none.
     return withFallback(
-      () => this.soldStaysWith(from, toExclusive, "(SELECT COALESCE(SUM(e.subtotal_satang), 0) FROM booking_extra_beds e WHERE e.booking_item_id = i.id)"),
-      () => this.soldStaysWith(from, toExclusive, "0"),
+      () => this.soldStaysWith(from, toExclusive, `(SELECT COALESCE(SUM(e.subtotal_satang), 0) FROM booking_extra_beds e WHERE e.booking_item_id = i.id)
+                                                   + (SELECT COALESCE(SUM(p.subtotal_satang), 0) FROM booking_pets p WHERE p.booking_item_id = i.id)`),
+      // Before migration 0044 (pets) / 0043 (extra beds).
+      () => withFallback(
+        () => this.soldStaysWith(from, toExclusive, "(SELECT COALESCE(SUM(e.subtotal_satang), 0) FROM booking_extra_beds e WHERE e.booking_item_id = i.id)"),
+        () => this.soldStaysWith(from, toExclusive, "0"),
+      ),
     );
   }
 

@@ -1,5 +1,5 @@
 import type { BookingStatus, FoodSelection, PaymentStatus, PricingRuleInput } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_PETS_PER_UNIT, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
 import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
 import { BALANCE_METHODS, type BalanceMethod } from "../../shared/payment-types.ts";
 import { isIsoDate } from "../../shared/dates.ts";
@@ -69,13 +69,14 @@ function parseStay(raw: unknown, v: Validator, key: string, withGuests: boolean)
     adults: withGuests ? int(v, s.adults, `${key}.adults`, 0, MAX_GUESTS_PER_BOOKING) : 0,
     children: withGuests ? (s.children === undefined ? 0 : int(v, s.children, `${key}.children`, 0, MAX_GUESTS_PER_BOOKING)) : 0,
   });
-  if (s.kind === "UNIT" && Object.keys(s).every((k) => ["kind", "unitId", "extraBeds", ...guestKeys].includes(k))) {
+  if (s.kind === "UNIT" && Object.keys(s).every((k) => ["kind", "unitId", "extraBeds", "pets", ...guestKeys].includes(k))) {
     if (typeof s.unitId !== "string" || !ID_PATTERN.test(s.unitId)) {
       v.errors[`${key}.unitId`] = "INVALID_ID";
       return null;
     }
     const extraBeds = s.extraBeds === undefined ? 0 : int(v, s.extraBeds, `${key}.extraBeds`, 0, MAX_EXTRA_BEDS_PER_UNIT);
-    return { kind: "UNIT", unitId: s.unitId, ...guests(), ...(extraBeds ? { extraBeds } : {}) };
+    const pets = s.pets === undefined ? 0 : int(v, s.pets, `${key}.pets`, 0, MAX_PETS_PER_UNIT);
+    return { kind: "UNIT", unitId: s.unitId, ...guests(), ...(extraBeds ? { extraBeds } : {}), ...(pets ? { pets } : {}) };
   }
   if (s.kind === "CAMPING" && Object.keys(s).every((k) => ["kind", "tents", "tarp", ...guestKeys].includes(k))) {
     if (s.tarp !== undefined && typeof s.tarp !== "boolean") v.errors[`${key}.tarp`] = "INVALID_VALUE";

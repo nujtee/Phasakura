@@ -76,7 +76,7 @@ await check("guest (mobile, TH) picks two houses, a VIP tent and camping in one 
   await pg.screenshot({ path: `${SHOTS}/multistay-bar.png` });
 
   await picks.getByRole("button", { name: /ถัดไป/ }).click();
-  await pg.getByRole("heading", { name: "สั่งอาหารล่วงหน้า" }).waitFor();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
   const stay = pg.locator(".flow-stay");
   for (const name of ["House 01", "House 02", "VIP-01", "1 เต็นท์"]) await stay.getByText(name, { exact: false }).first().waitFor();
   const summary = pg.locator(".summary").first();
@@ -181,7 +181,7 @@ await check("booking page: a date search shows the time-based price of those nig
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("extra beds: staff switch them on (houses page), the guest adds one on the food step and the price follows", async () => {
   await pa.goto(`${BASE}/en/admin/houses`);
-  const card = pa.locator(".adm-extrabeds");
+  const card = pa.locator(".adm-extrabeds:not(.adm-pets)");
   await card.getByRole("heading", { name: "Extra beds" }).waitFor();
   await card.getByText("Guests cannot add them yet").waitFor();
   await card.getByRole("button", { name: "Settings" }).click();
@@ -199,7 +199,7 @@ await check("extra beds: staff switch them on (houses page), the guest adds one 
   const unit = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /House 02/ }) });
   await unit.getByRole("button", { name: "เลือกหลังนี้" }).click();
   await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
-  await pg.getByRole("heading", { name: "สั่งอาหารล่วงหน้า" }).waitFor();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
   const beds = pg.locator(".extra-beds");
   await beds.getByRole("heading", { name: "ที่นอนเสริม" }).waitFor();
   await beds.getByText(/฿300 ต่อที่นอน ต่อคืน · สูงสุด 2 ที่นอนต่อหลัง/).waitFor();
@@ -215,6 +215,44 @@ await check("extra beds: staff switch them on (houses page), the guest adds one 
 
   // Off again for the other suites.
   const r = await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2 } });
+  assert(r.ok(), `switch off: ${r.status()}`);
+});
+
+await check("pets: a separate switch next to extra beds; the guest adds a pet, sees the weight limit and the price", async () => {
+  await pa.goto(`${BASE}/en/admin/houses`);
+  const card = pa.locator(".adm-pets");
+  await card.getByRole("heading", { name: "Pet fee" }).waitFor();
+  await card.getByText("Pets not allowed (guests cannot add them)").waitFor();
+  await card.getByRole("button", { name: "Settings" }).click();
+  await card.getByLabel("Allow pets (guests add them when booking)").check();
+  await card.getByLabel("Price per pet (THB)").fill("200");
+  await card.getByLabel("Charged").selectOption("NIGHT");
+  await card.getByLabel("Heaviest pet (kg each)").fill("15");
+  await card.getByLabel("Most per unit (pets)").fill("2");
+  await card.getByRole("button", { name: "Save" }).click();
+  await card.getByText("Pet settings saved").waitFor();
+  await card.getByText(/฿200 per pet per night · up to 15 kg · up to 2 per unit/).waitFor();
+  // Extra beds keep their own switch (off).
+  await pa.locator(".adm-extrabeds:not(.adm-pets)").getByText("Guests cannot add them yet").waitFor();
+  if (SHOTS) await pa.locator(".adm-pets").screenshot({ path: `${SHOTS}/pets-admin.png` });
+
+  const ci = day(80), co = day(82);
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
+  await pg.locator("form.stay-search button[type=submit]").click();
+  const unit = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /House 02/ }) });
+  await unit.getByRole("button", { name: "เลือกหลังนี้" }).click();
+  await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  await pg.getByText("เลือกรายการเพิ่ม").first().waitFor();
+  const pets = pg.locator(".pets");
+  await pets.getByText(/฿200 ต่อตัว ต่อคืน · น้ำหนักไม่เกิน 15 กก\. ต่อตัว · สูงสุด 2 ตัวต่อหลัง/).waitFor();
+  await pets.getByRole("group", { name: "สัตว์เลี้ยง" }).getByRole("button", { name: /^เพิ่ม / }).click();
+  const summary = pg.locator(".summary");
+  await summary.getByText("สัตว์เลี้ยง 1 × 2 คืน").waitFor();
+  await summary.getByText("น้ำหนักไม่เกิน 15 กก. ต่อตัว").waitFor();
+  await pets.getByText("สัตว์เลี้ยง 1 × 2 คืน = ฿400").waitFor();
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/pets-guest.png`, fullPage: true });
+  const r = await req.put(`${BASE}/api/admin/pets`, { headers: H, data: { enabled: false, priceSatang: 20000, chargePer: "NIGHT", maxWeightKg: 15, maxPerUnit: 2 } });
   assert(r.ok(), `switch off: ${r.status()}`);
 });
 

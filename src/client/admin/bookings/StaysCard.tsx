@@ -40,6 +40,7 @@ export function StaysCard({ booking: b, onChanged }: { booking: AdminBookingDto;
                 {item.type === "OWN_TENT" && ` · ${format(t.bk.tents, { n: item.quantity })}`}
                 {tarp && ` + ${t.bk.tarp}`}
                 {item.extraBeds && ` + ${format(t.bk.extraBeds, { n: item.extraBeds.quantity })}`}
+                {item.pets && ` + ${format(t.bk.pets, { n: item.pets.quantity })}`}
               </h3>
               {several && <span className="adm-muted adm-small">{format(t.bk.guests, { adults: item.adults, children: item.children })}</span>}
               {cancelled && <span className="adm-badge adm-badge--muted">{t.bk.stayCancelled}</span>}
@@ -70,6 +71,15 @@ export function StaysCard({ booking: b, onChanged }: { booking: AdminBookingDto;
                     <tr>
                       <td>{format(t.bk.extraBedsNights, { n: item.extraBeds.quantity, nights: item.extraBeds.nights })}</td>
                       <td className="adm-num">{baht(item.extraBeds.subtotalSatang)} ({baht(item.extraBeds.pricePerNightSatang)} {t.bk.perNight})</td>
+                    </tr>
+                  )}
+                  {item.pets && (
+                    <tr>
+                      <td>
+                        {item.pets.chargePer === "STAY" ? format(t.bk.petsStay, { n: item.pets.quantity }) : format(t.bk.petsNights, { n: item.pets.quantity, nights: item.pets.chargedUnits })}
+                        <span className="adm-muted adm-small"> · {format(t.bk.petsWeight, { kg: item.pets.maxWeightKg })}</span>
+                      </td>
+                      <td className="adm-num">{baht(item.pets.subtotalSatang)} ({baht(item.pets.priceSatang)})</td>
                     </tr>
                   )}
                   {several && (

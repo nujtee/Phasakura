@@ -24,7 +24,7 @@ export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
  * booking's adults / children.
  */
 export type StaySelection =
-  | { kind: "UNIT"; unitId: string; adults?: number; children?: number; extraBeds?: number }
+  | { kind: "UNIT"; unitId: string; adults?: number; children?: number; extraBeds?: number; pets?: number }
   | { kind: "CAMPING"; tents: number; tarp?: boolean; adults?: number; children?: number };
 
 /** Most extra beds one house / VIP tent can ever take (the owner's limit is at most this). */
@@ -93,6 +93,8 @@ export interface QuoteItemDto {
   payLaterSatang: number;
   /** Extra beds of this house / VIP tent (migration 0043); part of the stay's money and of its deposit. */
   extraBeds?: ExtraBedLineDto | null;
+  /** Pets brought to this house / VIP tent (migration 0044); part of the stay's money and of its deposit. */
+  pets?: PetLineDto | null;
   /** A booking's stay (not in a quote): its id, and whether staff cancelled it. */
   id?: string;
   status?: "ACTIVE" | "CANCELLED";
@@ -115,6 +117,41 @@ export type ExtraBedLineDto = TarpLineDto;
 export interface ExtraBedOfferDto {
   pricePerNightSatang: number;
   maxPerUnit: number;
+}
+
+/** Pet fee: per pet per night, or per pet per stay. */
+export type PetChargePer = "NIGHT" | "STAY";
+export const PET_CHARGE_PER: readonly PetChargePer[] = ["NIGHT", "STAY"];
+export const MAX_PETS_PER_UNIT = 10;
+export const MAX_PET_WEIGHT_KG = 200;
+
+/** Pets of one house / VIP tent: pets × price × (nights, or 1 per stay); each no heavier than maxWeightKg. */
+export interface PetLineDto {
+  quantity: number;
+  priceSatang: number;
+  chargePer: PetChargePer;
+  /** Nights (per night) or 1 (per stay). */
+  chargedUnits: number;
+  maxWeightKg: number;
+  subtotalSatang: number;
+}
+
+/** What the booking page offers for pets (null / absent = no pets). */
+export interface PetOfferDto {
+  priceSatang: number;
+  chargePer: PetChargePer;
+  maxWeightKg: number;
+  maxPerUnit: number;
+}
+
+/** Admin → pets settings (migration 0044). */
+export interface PetSettingsDto {
+  enabled: boolean;
+  priceSatang: number;
+  chargePer: PetChargePer;
+  maxWeightKg: number;
+  maxPerUnit: number;
+  updatedAt: string | null;
 }
 
 /** Admin → extra beds settings (migration 0043). */
@@ -369,6 +406,8 @@ export interface FoodCatalogueDto {
   categories: FoodCategoryDto[];
   /** Extra beds for houses / VIP tents, when the owner offers them (shown on the same step). */
   extraBed?: ExtraBedOfferDto | null;
+  /** Pets allowed in houses / VIP tents, when the owner allows them. */
+  pet?: PetOfferDto | null;
 }
 
 // ------------------------------------------------------------------ admin pricing rules

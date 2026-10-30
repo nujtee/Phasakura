@@ -32,6 +32,8 @@ export interface MsgBooking {
   tarps?: number;
   /** Extra beds of the houses / VIP tents (migration 0043). */
   extraBeds?: number;
+  /** Pets brought to the houses / VIP tents (migration 0044). */
+  pets?: number;
   adults: number;
   children: number;
   bookingStatus: string;
@@ -76,6 +78,7 @@ const th = {
   tents: "{n} เต็นท์",
   tarp: "พื้นที่กางทาร์ป",
   extraBeds: "ที่นอนเสริม {n}",
+  pets: "สัตว์เลี้ยง {n}",
   guests: "ผู้เข้าพัก",
   guestsValue: "ผู้ใหญ่ {a} · เด็ก {c}",
   food: "อาหาร",
@@ -169,6 +172,7 @@ const en: Texts = {
   tents: "{n} tent(s)",
   tarp: "tarp area",
   extraBeds: "{n} extra bed(s)",
+  pets: "{n} pet(s)",
   guests: "Guests",
   guestsValue: "{a} adult(s) · {c} child(ren)",
   food: "Food",
@@ -260,6 +264,7 @@ const zh: Texts = {
   tents: "{n} 顶帐篷",
   tarp: "天幕区",
   extraBeds: "加床 {n}",
+  pets: "宠物 {n}",
   guests: "入住人数",
   guestsValue: "成人 {a} · 儿童 {c}",
   food: "餐饮",
@@ -412,9 +417,9 @@ export class LineFormatter {
       : `${this.t.houseVip}: ${b.itemName}${this.beds(b)}`;
   }
 
-  /** " + ที่นอนเสริม 2" when the guest asked for extra beds. */
+  /** " + ที่นอนเสริม 2 + สัตว์เลี้ยง 1" when the guest asked for extra beds / brings pets. */
   private beds(b: MsgBooking): string {
-    return b.extraBeds ? ` + ${fill(this.t.extraBeds, { n: b.extraBeds })}` : "";
+    return (b.extraBeds ? ` + ${fill(this.t.extraBeds, { n: b.extraBeds })}` : "") + (b.pets ? ` + ${fill(this.t.pets, { n: b.pets })}` : "");
   }
 
   /** The booking fields of spec §47, one per line; `contact` adds the guest's half-hidden phone / e-mail (staff). */
