@@ -50,6 +50,14 @@
       "d1": { "name": "pk-putaberg-db", "id": "34079d4b-89bb-4315-ba31-e77326d1af8b" },
       "rateLimitBase": 6000,
       "wave": 1
+    },
+    {
+      "slug": "phatopview",
+      "name": "Phatopview",
+      "domain": "phatopview.com",
+      "d1": { "name": "phatopview-db", "id": "a322b83f-5ab7-4e37-b8b2-d3eda839e29a" },
+      "rateLimitBase": 7000,
+      "wave": 1
     }
   ]
 }
