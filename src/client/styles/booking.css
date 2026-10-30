@@ -430,6 +430,26 @@ button.button--secondary {
   padding-left: 1.2em;
 }
 
+/* Extra beds (migration 0043): one row per house / VIP tent, above the meals. */
+.extra-beds {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.extra-beds h3 {
+  font-size: 1.05rem;
+  margin-bottom: 4px;
+}
+
+.extra-beds__intro {
+  margin: 0 0 8px;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
 .food-cat {
   margin-bottom: 12px;
   background: var(--color-surface);

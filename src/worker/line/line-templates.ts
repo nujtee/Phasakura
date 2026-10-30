@@ -30,6 +30,8 @@ export interface MsgBooking {
   stays?: { type: "HOUSE" | "VIP_TENT" | "OWN_TENT"; name: string; quantity: number }[];
   /** Tarp areas booked with the tents (camping add-on). */
   tarps?: number;
+  /** Extra beds of the houses / VIP tents (migration 0043). */
+  extraBeds?: number;
   adults: number;
   children: number;
   bookingStatus: string;
@@ -73,6 +75,7 @@ const th = {
   camping: "ลานกางเต็นท์",
   tents: "{n} เต็นท์",
   tarp: "พื้นที่กางทาร์ป",
+  extraBeds: "ที่นอนเสริม {n}",
   guests: "ผู้เข้าพัก",
   guestsValue: "ผู้ใหญ่ {a} · เด็ก {c}",
   food: "อาหาร",
@@ -165,6 +168,7 @@ const en: Texts = {
   camping: "Camping",
   tents: "{n} tent(s)",
   tarp: "tarp area",
+  extraBeds: "{n} extra bed(s)",
   guests: "Guests",
   guestsValue: "{a} adult(s) · {c} child(ren)",
   food: "Food",
@@ -255,6 +259,7 @@ const zh: Texts = {
   camping: "露营",
   tents: "{n} 顶帐篷",
   tarp: "天幕区",
+  extraBeds: "加床 {n}",
   guests: "入住人数",
   guestsValue: "成人 {a} · 儿童 {c}",
   food: "餐饮",
@@ -398,13 +403,18 @@ export class LineFormatter {
       const units = b.stays.filter((s) => s.type !== "OWN_TENT").map((s) => s.name);
       const camp = b.stays.find((s) => s.type === "OWN_TENT");
       return [
-        ...(units.length ? [`${this.t.houseVip}: ${units.join(", ")}`] : []),
+        ...(units.length ? [`${this.t.houseVip}: ${units.join(", ")}${this.beds(b)}`] : []),
         ...(camp ? [`${this.t.camping}: ${fill(this.t.tents, { n: camp.quantity })}${b.tarps ? ` + ${this.t.tarp}` : ""}`] : []),
       ].join("\n");
     }
     return b.itemType === "OWN_TENT"
       ? `${this.t.camping}: ${fill(this.t.tents, { n: b.tents })}${b.tarps ? ` + ${this.t.tarp}` : ""}`
-      : `${this.t.houseVip}: ${b.itemName}`;
+      : `${this.t.houseVip}: ${b.itemName}${this.beds(b)}`;
+  }
+
+  /** " + ที่นอนเสริม 2" when the guest asked for extra beds. */
+  private beds(b: MsgBooking): string {
+    return b.extraBeds ? ` + ${fill(this.t.extraBeds, { n: b.extraBeds })}` : "";
   }
 
   /** The booking fields of spec §47, one per line; `contact` adds the guest's half-hidden phone / e-mail (staff). */

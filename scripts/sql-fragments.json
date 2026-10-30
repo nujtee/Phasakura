@@ -83,6 +83,9 @@
     "planLock",
     "siteUser()"
   ],
+  "src/worker/repositories/report.repository.ts": [
+    "beds"
+  ],
   "src/worker/repositories/search.repository.ts": [
     "Math.max(1, Math.min(1000, Math.floor(limit)))",
     "conditions"

@@ -148,7 +148,7 @@ export function BookingPage() {
     children: chosen.reduce((acc, p) => acc + p.children, 0),
     // Every stay with its own guests, on the same dates.
     stays: chosen.map((p) => (p.kind === "UNIT"
-      ? { kind: "UNIT", unitId: p.unit.id, adults: p.adults, children: p.children }
+      ? { kind: "UNIT", unitId: p.unit.id, adults: p.adults, children: p.children, ...(p.extraBeds ? { extraBeds: p.extraBeds } : {}) }
       : { kind: "CAMPING", tents: p.tents, ...(p.tarp ? { tarp: true } : {}), adults: p.adults, children: p.children })),
     food: cartToSelections(foodCart, (id) => catalogue?.categories.some((cat) => cat.options.some((o) => o.id === id && o.pricingType === "PER_PERSON")) ?? false),
     lang: locale.code,
@@ -162,7 +162,12 @@ export function BookingPage() {
       setQuoting(true);
       fetchQuote(request(searched, picks, cart), controller.signal)
         .then((q) => { setQuote(q); setNotice(null); })
-        .catch((err: unknown) => { if (!controller.signal.aborted) setNotice(bookingErrorText(bt, err)); })
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return;
+          setNotice(bookingErrorText(bt, err));
+          // Extra beds switched off meanwhile: take them off (the price comes back without them) and stop offering them.
+          if (err instanceof ApiError && err.code === "EXTRA_BED_UNAVAILABLE") dropExtraBeds();
+        })
         .finally(() => { if (!controller.signal.aborted) setQuoting(false); });
     }, 250);
     return () => { controller.abort(); clearTimeout(timer); };
@@ -171,6 +176,12 @@ export function BookingPage() {
   useEffect(() => {
     if (step !== "choose") headingRef.current?.focus();
   }, [step]);
+
+  /** No extra beds any more (the property switched them off): off every stay and off the page. */
+  function dropExtraBeds() {
+    setPicks((cur) => (cur.some((p) => p.kind === "UNIT" && p.extraBeds) ? cur.map((p) => (p.kind === "UNIT" ? { ...p, extraBeds: 0 } : p)) : cur));
+    setCatalogue((c) => (c ? { ...c, extraBed: null } : c));
+  }
 
   const trackItem = (p: Pick) => (p.kind === "UNIT" ? unitItem(p.unit) : campingItem(data?.camping ?? null, t.accommodation.camping, p.tents));
 
@@ -247,6 +258,11 @@ export function BookingPage() {
         setNotice(bt.priceChanged);
         setQuote(await fetchQuote(request(searched, picks, cart)).catch(() => quote));
         setIdemKey(newIdempotencyKey());
+      } else if (err instanceof ApiError && err.code === "EXTRA_BED_UNAVAILABLE") {
+        dropExtraBeds();
+        setNotice(text);
+        setStep("food");
+        window.scrollTo({ top: 0 });
       } else if (err instanceof ApiError && ["UNIT_UNAVAILABLE", "CAMPING_FULL", "ACCOMMODATION_NOT_FOUND", "CAMPING_UNAVAILABLE", "TARP_FULL", "TARP_UNAVAILABLE"].includes(err.code)) {
         // Back to the stays: the one just taken goes (the others stay picked).
         setStep("choose");
@@ -344,7 +360,8 @@ export function BookingPage() {
         <div className="flow-layout">
           <div className="flow-main">
             {step === "food" && (
-              catalogue ? <FoodStep catalogue={catalogue} quote={quote} cart={cart}
+              catalogue ? <FoodStep catalogue={catalogue} quote={quote} cart={cart} picks={picks}
+                onExtraBeds={(unitId, n) => setPicks((cur) => cur.map((p) => (p.kind === "UNIT" && p.unit.id === unitId ? { ...p, extraBeds: n } : p)))}
                 onChange={(next) => { foodChangeEvents(cart, next, catalogue); setCart(next); }} />
                 : <p role="status">{t.common.loading}</p>
             )}

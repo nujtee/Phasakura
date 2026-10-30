@@ -50,12 +50,16 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
   const live = (b.items?.length ? b.items : [b.item]).filter((x) => x.status !== "CANCELLED");
   const extra = b.food.filter((f) => f.includedQuantity === 0);
   const rows: { name: string; qty: string; amount: string }[] = [
-    ...live.map((x) => ({
+    ...live.flatMap((x) => [{
       name: x.name,
       qty: [fillText(m.nights, { n: b.nights }), x.type === "OWN_TENT" ? fillText(bt.tentsLine, { n: x.quantity }) : null,
         x.pricingType === "PER_ADULT_NIGHT" ? fillText(m.perAdult, { n: x.adults }) : null].filter(Boolean).join(" · "),
       amount: baht(x.subtotalSatang),
-    })),
+    }, ...(x.extraBeds ? [{
+      name: live.length > 1 ? `${m.extraBed} · ${x.name}` : m.extraBed,
+      qty: `${x.extraBeds.quantity} × ${fillText(m.nights, { n: x.extraBeds.nights })}`,
+      amount: x.extraBeds.subtotalSatang === 0 ? bt.free : baht(x.extraBeds.subtotalSatang),
+    }] : [])]),
     ...(b.tarp ? [{ name: m.tarp, qty: fillText(m.nights, { n: b.tarp.nights }), amount: baht(b.tarp.subtotalSatang) }] : []),
     ...b.includedMeals.map((x) => ({ name: x.name, qty: `${x.personsPerNight} × ${fillText(m.nights, { n: x.nights })}`, amount: bt.included })),
     ...extra.map((f) => ({ name: `${f.name} · ${date(f.serviceDate)}`, qty: String(f.quantity), amount: f.subtotalSatang === 0 ? bt.free : baht(f.subtotalSatang) })),

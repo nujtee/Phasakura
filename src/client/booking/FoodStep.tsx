@@ -5,6 +5,7 @@ import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
 import type { FoodCart } from "./api.ts";
+import type { Pick } from "./StayPicks.tsx";
 import { useDateText } from "./Summary.tsx";
 import { useBookingT } from "./useBookingT.ts";
 
@@ -43,11 +44,16 @@ export function FoodStep({
   quote,
   cart,
   onChange,
+  picks = [],
+  onExtraBeds,
 }: {
   catalogue: FoodCatalogueDto;
   quote: QuoteDto | null;
   cart: FoodCart;
   onChange: (cart: FoodCart) => void;
+  /** The stays chosen: extra beds are asked per house / VIP tent. */
+  picks?: Pick[];
+  onExtraBeds?: (unitId: string, n: number) => void;
 }) {
   const { locale } = useI18n();
   const bt = useBookingT();
@@ -61,8 +67,35 @@ export function FoodStep({
     onChange({ ...cart, [key]: { ...current, ...patch } });
   };
 
+  const offer = catalogue.extraBed ?? null;
+  const units = picks.filter((p): p is Extract<Pick, { kind: "UNIT" }> => p.kind === "UNIT");
+
   return (
     <div className="food-step">
+      {offer && onExtraBeds && units.length > 0 && (
+        <section className="extra-beds" aria-labelledby="extra-beds-h">
+          <h3 id="extra-beds-h">{bt.extraBedTitle}</h3>
+          <p className="extra-beds__intro">
+            {offer.pricePerNightSatang > 0
+              ? fill(bt.extraBedIntro, { price: baht(offer.pricePerNightSatang), max: offer.maxPerUnit })
+              : fill(bt.extraBedFree, { max: offer.maxPerUnit })}
+          </p>
+          {units.map((p) => (
+            <div key={p.unit.id} className="food-option extra-beds__row">
+              <div className="food-option__info">
+                <strong>{p.unit.name}</strong>
+                {(p.extraBeds ?? 0) > 0 && offer.pricePerNightSatang > 0 && quote && (
+                  <span className="food-option__price">
+                    {fill(bt.extraBedNights, { n: p.extraBeds ?? 0, nights: quote.nights })} = {baht((p.extraBeds ?? 0) * offer.pricePerNightSatang * quote.nights)}
+                  </span>
+                )}
+              </div>
+              <Stepper label={units.length > 1 ? `${bt.extraBedCount} · ${p.unit.name}` : bt.extraBedCount} value={p.extraBeds ?? 0} min={0}
+                max={offer.maxPerUnit} onChange={(n) => onExtraBeds(p.unit.id, n)} />
+            </div>
+          ))}
+        </section>
+      )}
       {quote && quote.includedMeals.length > 0 && (
         <section className="food-included" aria-labelledby="incl-h">
           <h3 id="incl-h">{bt.includedTitle}</h3>
