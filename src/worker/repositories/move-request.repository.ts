@@ -74,7 +74,7 @@ export class MoveRequestRepository {
   forBooking(bookingId: string): Promise<MoveRequestRow[]> {
     return withFallback(
       async () => (await this.db
-        .prepare(`SELECT ${COLUMNS} FROM booking_move_requests WHERE booking_id = ?1 ORDER BY created_at DESC, id DESC`)
+        .prepare(`SELECT ${COLUMNS} FROM booking_move_requests WHERE booking_id = ?1 ORDER BY created_at DESC, rowid DESC`)
         .bind(bookingId)
         .all<MoveRequestRow>()).results,
       async () => [],
