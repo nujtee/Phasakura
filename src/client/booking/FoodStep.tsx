@@ -46,6 +46,7 @@ export function FoodStep({
   onChange,
   picks = [],
   onExtraBeds,
+  onPets,
 }: {
   catalogue: FoodCatalogueDto;
   quote: QuoteDto | null;
@@ -54,6 +55,7 @@ export function FoodStep({
   /** The stays chosen: extra beds are asked per house / VIP tent. */
   picks?: Pick[];
   onExtraBeds?: (unitId: string, n: number) => void;
+  onPets?: (unitId: string, n: number) => void;
 }) {
   const { locale } = useI18n();
   const bt = useBookingT();
@@ -68,6 +70,7 @@ export function FoodStep({
   };
 
   const offer = catalogue.extraBed ?? null;
+  const pet = catalogue.pet ?? null;
   const units = picks.filter((p): p is Extract<Pick, { kind: "UNIT" }> => p.kind === "UNIT");
 
   return (
@@ -107,6 +110,37 @@ export function FoodStep({
         </section>
       )}
 
+      {pet && onPets && units.length > 0 && (
+        <section className="extra-beds pets" aria-labelledby="pets-h">
+          <h3 id="pets-h">{bt.petTitle}</h3>
+          <p className="extra-beds__intro">
+            {fill(pet.priceSatang === 0 ? bt.petIntroFree : pet.chargePer === "STAY" ? bt.petIntroStay : bt.petIntroNight,
+              { price: baht(pet.priceSatang), kg: pet.maxWeightKg, max: pet.maxPerUnit })}
+          </p>
+          {units.map((p) => {
+            const n = p.pets ?? 0;
+            const times = pet.chargePer === "STAY" ? 1 : quote?.nights ?? 1;
+            return (
+              <div key={p.unit.id} className="food-option extra-beds__row">
+                <div className="food-option__info">
+                  <strong>{p.unit.name}</strong>
+                  {n > 0 && pet.priceSatang > 0 && quote && (
+                    <span className="food-option__price">
+                      {pet.chargePer === "STAY" ? fill(bt.petStay, { n }) : fill(bt.petNights, { n, nights: quote.nights })} = {baht(n * pet.priceSatang * times)}
+                    </span>
+                  )}
+                </div>
+                <Stepper label={units.length > 1 ? `${bt.petCount} · ${p.unit.name}` : bt.petCount} value={n} min={0}
+                  max={pet.maxPerUnit} onChange={(v) => onPets(p.unit.id, v)} />
+              </div>
+            );
+          })}
+        </section>
+      )}
+
+      {((offer && onExtraBeds) || (pet && onPets)) && units.length > 0 && catalogue.categories.length > 0 && (
+        <h3 className="food-step__section">{bt.foodSection}</h3>
+      )}
       <p className="food-step__intro">{bt.foodIntro}</p>
       {catalogue.categories.length === 0 && <p className="notice">{bt.noFood}</p>}
 

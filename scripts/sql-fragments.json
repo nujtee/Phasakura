@@ -67,7 +67,8 @@
     "flag",
     "guard",
     "netPayment(\"p\")",
-    "redeemedHere"
+    "redeemedHere",
+    "table"
   ],
   "src/worker/repositories/media.repository.ts": [
     "root"

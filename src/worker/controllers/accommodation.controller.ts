@@ -10,7 +10,7 @@ import { readJsonObject } from "../security/request.ts";
 import { MAX_UPLOAD_BYTES, UPLOAD_PERMISSIONS } from "../services/media.service.ts";
 import type { MediaPurpose } from "../repositories/media.repository.ts";
 import { ID_PATTERN, Validator } from "../validation.ts";
-import { MAX_EXTRA_BEDS_PER_UNIT } from "../../shared/booking-types.ts";
+import { MAX_EXTRA_BEDS_PER_UNIT, MAX_PET_WEIGHT_KG, MAX_PETS_PER_UNIT, PET_CHARGE_PER, type PetChargePer } from "../../shared/booking-types.ts";
 
 const UNIT_CODE = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/;
@@ -318,6 +318,23 @@ export function accommodationController(services: ServicesFor) {
       };
       v.assertValid();
       return jsonOk(await services(ctx).accommodation.saveExtraBedSettings(auth, input, requestMeta(ctx)));
+    }),
+
+    // ------------------------------------------------------------------ pets (migration 0044)
+    pets: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).accommodation.petSettings(auth, requestMeta(ctx)))),
+
+    updatePets: withPermission("accommodation.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["enabled", "priceSatang", "chargePer", "maxWeightKg", "maxPerUnit", "updatedAt"]);
+      const input = {
+        enabled: v.boolean("enabled", false),
+        priceSatang: int(v, body, "priceSatang", 0, MAX_PRICE_SATANG, true)!,
+        chargePer: (v.oneOf("chargePer", PET_CHARGE_PER, { required: true }) ?? "NIGHT") as PetChargePer,
+        maxWeightKg: int(v, body, "maxWeightKg", 1, MAX_PET_WEIGHT_KG, true)!,
+        maxPerUnit: int(v, body, "maxPerUnit", 1, MAX_PETS_PER_UNIT, true)!,
+      };
+      v.assertValid();
+      return jsonOk(await services(ctx).accommodation.savePetSettings(auth, input, requestMeta(ctx)));
     }),
 
     // ------------------------------------------------------------------ camping

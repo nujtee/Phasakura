@@ -1,5 +1,6 @@
 import { ExtraBedRepository, type BookingExtraBedRow } from "../repositories/extra-bed.repository.ts";
-import type { ExtraBedLineDto } from "../../shared/booking-types.ts";
+import type { ExtraBedLineDto, PetLineDto } from "../../shared/booking-types.ts";
+import { PetRepository, type BookingPetRow } from "../repositories/pet.repository.ts";
 import type {
   AdminBookingDto,
   AdminBookingSummaryDto,
@@ -94,6 +95,11 @@ export class BookingService {
   /** Extra beds snapshots (migration 0043). */
   private get extraBeds(): ExtraBedRepository {
     return new ExtraBedRepository(this.db);
+  }
+
+  /** Pets snapshots (migration 0044). */
+  private get petRepo(): PetRepository {
+    return new PetRepository(this.db);
   }
 
   async quote(input: QuoteInput): Promise<QuoteDto> {
@@ -220,6 +226,13 @@ export class BookingService {
           statements.push(this.extraBeds.insertStatement({
             id: newId(), bookingId, itemId, quantity: stay.extraBeds.quantity, pricePerNight: stay.extraBeds.pricePerNightSatang,
             nights: stay.extraBeds.nights, subtotal: stay.extraBeds.subtotalSatang, now: at,
+          }));
+        }
+        // Pets (migration 0044): price snapshot; the trigger re-checks the option is on and the limit.
+        if (stay.pets) {
+          statements.push(this.petRepo.insertStatement({
+            id: newId(), bookingId, itemId, quantity: stay.pets.quantity, priceSatang: stay.pets.priceSatang, chargePer: stay.pets.chargePer,
+            chargedUnits: stay.pets.chargedUnits, maxWeightKg: stay.pets.maxWeightKg, subtotal: stay.pets.subtotalSatang, now: at,
           }));
         }
       } else {
@@ -464,8 +477,8 @@ export class BookingService {
     if (row.booking_status !== "PENDING" && row.booking_status !== "CONFIRMED") {
       throw new ConflictError("Only pending or confirmed bookings can change", "BOOKING_NOT_CANCELLABLE");
     }
-    const [items, tarp, payments, beds] = await Promise.all([
-      this.repo.items(row.id), this.repo.tarp(row.id), this.payments.payments(row.id), this.extraBeds.forBooking(row.id),
+    const [items, tarp, payments, beds, pets] = await Promise.all([
+      this.repo.items(row.id), this.repo.tarp(row.id), this.payments.payments(row.id), this.extraBeds.forBooking(row.id), this.petRepo.forBooking(row.id),
     ]);
     const target = items.find((i) => i.id === itemId);
     if (!target) throw new NotFoundError("This stay is not part of the booking", "STAY_NOT_FOUND");
@@ -484,7 +497,8 @@ export class BookingService {
     const tarpMoney = camping && tarp?.status === "ACTIVE" ? tarp.subtotal_satang : 0;
     // Its extra beds go with it (they follow the stay's status).
     const bedMoney = beds.find((e) => e.booking_item_id === itemId)?.subtotal_satang ?? 0;
-    const accommodation = row.accommodation_subtotal_satang - target.snapshot_subtotal_satang - tarpMoney - bedMoney;
+    const petMoney = pets.find((e) => e.booking_item_id === itemId)?.subtotal_satang ?? 0;
+    const accommodation = row.accommodation_subtotal_satang - target.snapshot_subtotal_satang - tarpMoney - bedMoney - petMoney;
     // App fee (migration 0027): an unpaid booking stops paying for the stay's units (its credit hold shrinks with it,
     // trigger); once paid the fee was earned and stays.
     const unpaid = row.booking_status === "PENDING" && row.app_fee_units > 0;
@@ -907,7 +921,9 @@ export class BookingService {
       awaitingPayment || owing ? this.payments.settings() : Promise.resolve(null),
       this.payments.payments(row.id),
     ]);
-    const beds = new Map((await this.extraBeds.forBooking(row.id)).map((e) => [e.booking_item_id, e]));
+    const [bedRows, petRows] = await Promise.all([this.extraBeds.forBooking(row.id), this.petRepo.forBooking(row.id)]);
+    const beds = new Map(bedRows.map((e) => [e.booking_item_id, e]));
+    const pets = new Map(petRows.map((e) => [e.booking_item_id, e]));
     const rejected = payments.filter((p) => p.status === "REJECTED").at(-1);
     const paidSatang = paidOf(payments);
     const balanceSatang = balanceDue(row.total_satang, paidSatang);
@@ -947,6 +963,7 @@ export class BookingService {
       children: i.children,
       payLaterSatang: i.pay_later_satang,
       ...(beds.has(i.id) ? { extraBeds: bedLine(beds.get(i.id)!) } : {}),
+      ...(pets.has(i.id) ? { pets: petLine(pets.get(i.id)!) } : {}),
     }));
     const cancelledAlone = new Set(items.filter((i) => i.cancelled_at).map((i) => i.id));
     const live = stays.filter((x) => x.status === "ACTIVE");
@@ -1076,6 +1093,9 @@ export function mapInventoryError(error: unknown): unknown {
   if (/EXTRA_BED_UNAVAILABLE/.test(message)) {
     return new ConflictError("Extra beds are not offered", "EXTRA_BED_UNAVAILABLE");
   }
+  if (/PET_UNAVAILABLE/.test(message)) {
+    return new ConflictError("Pets are not allowed", "PET_UNAVAILABLE");
+  }
   if (/NOT NULL constraint failed: payment_account_snapshots/.test(message)) {
     return new ConflictError("Online booking is temporarily unavailable", "PAYMENT_NOT_CONFIGURED");
   }
@@ -1101,4 +1121,12 @@ function safeEqual(a: string, b: string): boolean {
 /** Extra beds snapshot → line (beds × price per bed per night × nights). */
 function bedLine(e: BookingExtraBedRow): ExtraBedLineDto {
   return { quantity: e.quantity, pricePerNightSatang: e.price_per_night_satang, nights: e.number_of_nights, subtotalSatang: e.subtotal_satang };
+}
+
+/** Pets snapshot → line. */
+function petLine(p: BookingPetRow): PetLineDto {
+  return {
+    quantity: p.quantity, priceSatang: p.price_satang, chargePer: p.charge_per, chargedUnits: p.charged_units,
+    maxWeightKg: p.max_weight_kg, subtotalSatang: p.subtotal_satang,
+  };
 }

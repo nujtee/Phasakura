@@ -6,7 +6,7 @@ import { useBookingT } from "./useBookingT.ts";
 
 /** One stay the guest picked, with its own guests (several stays share the booking's dates). */
 export type Pick =
-  | { kind: "UNIT"; unit: PublicUnitDto; adults: number; children: number; extraBeds?: number }
+  | { kind: "UNIT"; unit: PublicUnitDto; adults: number; children: number; extraBeds?: number; pets?: number }
   | { kind: "CAMPING"; tents: number; tarp: boolean; adults: number; children: number };
 
 export const pickKey = (p: Pick) => (p.kind === "UNIT" ? p.unit.id : "camping");

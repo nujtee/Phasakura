@@ -444,6 +444,11 @@ button.button--secondary {
   margin-bottom: 4px;
 }
 
+.food-step__section {
+  font-size: 1.05rem;
+  margin: 4px 0 4px;
+}
+
 .extra-beds__intro {
   margin: 0 0 8px;
   color: var(--color-muted);

@@ -573,23 +573,25 @@ export class LineRepository {
   async messageBookings(ids: string[], lang: string): Promise<MsgBooking[]> {
     if (!ids.length) return [];
     // The cron sends these: before migration 0025 every booking reads as "no deposit".
-    const [list, beds] = await Promise.all([
+    const [list, beds, pets] = await Promise.all([
       withFallback(() => this.messageBookingsWith(ids, lang, "deposit_satang"), () => this.messageBookingsWith(ids, lang, "NULL")),
-      this.extraBedsOf(ids),
+      this.addOnsOf(ids, "booking_extra_beds"),
+      this.addOnsOf(ids, "booking_pets"),
     ]);
     return list.map((m) => {
       const n = beds.get(m.code) ?? 0;
-      return n ? { ...m, extraBeds: n } : m;
+      const p = pets.get(m.code) ?? 0;
+      return { ...m, ...(n ? { extraBeds: n } : {}), ...(p ? { pets: p } : {}) };
     });
   }
 
-  /** Extra beds per booking code (houses / VIP tents still in the booking; none before migration 0043). */
-  private extraBedsOf(ids: string[]): Promise<Map<string, number>> {
+  /** Extra beds / pets per booking code (houses / VIP tents still in the booking; none before migration 0043 / 0044). */
+  private addOnsOf(ids: string[], table: "booking_extra_beds" | "booking_pets"): Promise<Map<string, number>> {
     return withFallback(async () => {
       const { results } = await this.db
         .prepare(
           `SELECT b.booking_code, SUM(e.quantity) AS beds
-             FROM booking_extra_beds e JOIN booking_items i ON i.id = e.booking_item_id JOIN bookings b ON b.id = e.booking_id
+             FROM ${table} e JOIN booking_items i ON i.id = e.booking_item_id JOIN bookings b ON b.id = e.booking_id
             WHERE e.booking_id IN (SELECT value FROM json_each(?1))
               AND (i.status = 'ACTIVE' OR b.booking_status IN ('CANCELLED', 'EXPIRED'))
             GROUP BY b.booking_code`,
