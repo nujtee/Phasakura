@@ -65,6 +65,9 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
       amount: x.pets.subtotalSatang === 0 ? bt.free : baht(x.pets.subtotalSatang),
     }] : [])]),
     ...(b.tarp ? [{ name: m.tarp, qty: fillText(m.nights, { n: b.tarp.nights }), amount: baht(b.tarp.subtotalSatang) }] : []),
+    ...(b.moveCharges ?? []).map((c) => ({
+      name: c.diffSatang > 0 ? `${bt.move.fee} + ${bt.move.diff}` : bt.move.fee, qty: date(c.toCheckIn), amount: baht(c.feeSatang + c.diffSatang),
+    })),
     ...b.includedMeals.map((x) => ({ name: x.name, qty: `${x.personsPerNight} × ${fillText(m.nights, { n: x.nights })}`, amount: bt.included })),
     ...extra.map((f) => ({ name: `${f.name} · ${date(f.serviceDate)}`, qty: String(f.quantity), amount: f.subtotalSatang === 0 ? bt.free : baht(f.subtotalSatang) })),
     ...(b.appFee && b.appFee.totalSatang > 0

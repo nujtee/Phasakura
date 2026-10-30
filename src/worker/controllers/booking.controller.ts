@@ -86,6 +86,24 @@ function parseStay(raw: unknown, v: Validator, key: string, withGuests: boolean)
   return null;
 }
 
+/** Rooms asked for when moving a stay: [{ itemId, unitId }] (staff or the guest). */
+function parseRooms(raw: unknown, v: Validator): { itemId: string; unitId: string }[] {
+  const rooms: { itemId: string; unitId: string }[] = [];
+  if (raw === undefined) return rooms;
+  if (!Array.isArray(raw) || raw.length > 20) {
+    v.errors.rooms = "INVALID";
+    return rooms;
+  }
+  raw.forEach((r: unknown, i: number) => {
+    const o = r as Record<string, unknown> | null;
+    if (!o || typeof o !== "object" || typeof o.itemId !== "string" || typeof o.unitId !== "string"
+      || !ID_PATTERN.test(o.itemId) || !ID_PATTERN.test(o.unitId) || Object.keys(o).some((k) => k !== "itemId" && k !== "unitId")) {
+      v.errors[`rooms.${i}`] = "INVALID";
+    } else rooms.push({ itemId: o.itemId, unitId: o.unitId });
+  });
+  return rooms;
+}
+
 /** Parses the stay/guests/food part shared by quote and create. Strict: unknown fields are rejected. */
 function parseQuote(body: Record<string, unknown>, v: Validator): QuoteInput {
   const checkIn = date(v, body.checkIn, "checkIn");
@@ -233,6 +251,77 @@ export function bookingController(services: ServicesFor) {
       return jsonOk(await services(ctx).bookings.lookup(bookingCode, phone, requestMeta(ctx)), { headers: NO_STORE });
     }) satisfies Handler,
 
+    // ------------------------------------------------------------------ guest moves the stay (migration 0045)
+    /** POST /api/public/bookings/move/start — { bookingCode, phone }: may this booking move, what it costs, the open request. */
+    moveStart: (async (ctx) => {
+      const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
+      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const phone = v.string("phone", { required: true, max: 24 });
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.guestMoveStart(bookingCode!, phone!, requestMeta(ctx)), { headers: NO_STORE });
+    }) satisfies Handler,
+
+    /** POST /api/public/bookings/move/calendar — { bookingCode, phone, from, days }: which new check-in days work. */
+    moveCalendar: (async (ctx) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["bookingCode", "phone", "from", "days"]);
+      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const phone = v.string("phone", { required: true, max: 24 });
+      const from = date(v, body.from, "from");
+      const days = int(v, body.days ?? 42, "days", 1, 62);
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.guestMoveCalendar(bookingCode!, phone!, from, days, requestMeta(ctx)), { headers: NO_STORE });
+    }) satisfies Handler,
+
+    /** POST /api/public/bookings/move/rooms — { bookingCode, phone, checkIn }: the rooms on that day (free ones to choose from). */
+    moveRoomsGuest: (async (ctx) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["bookingCode", "phone", "checkIn"]);
+      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const phone = v.string("phone", { required: true, max: 24 });
+      const checkIn = date(v, body.checkIn, "checkIn");
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.guestMoveRooms(bookingCode!, phone!, checkIn, requestMeta(ctx)), { headers: NO_STORE });
+    }) satisfies Handler,
+
+    /** POST /api/public/bookings/move — { bookingCode, phone, checkIn, rooms? }: asks to move; holds the new nights. */
+    moveRequest: (async (ctx) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["bookingCode", "phone", "checkIn", "rooms"]);
+      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const phone = v.string("phone", { required: true, max: 24 });
+      const checkIn = date(v, body.checkIn, "checkIn");
+      const rooms = parseRooms(body.rooms, v);
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.guestMoveRequest(bookingCode!, phone!, checkIn, rooms, requestMeta(ctx)), { status: 201, headers: NO_STORE });
+    }) satisfies Handler,
+
+    /** POST /api/public/bookings/move/cancel — { bookingCode, phone }: gives up the move still waiting for the transfer. */
+    moveCancel: (async (ctx) => {
+      const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
+      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const phone = v.string("phone", { required: true, max: 24 });
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.guestMoveCancel(bookingCode!, phone!, requestMeta(ctx)), { headers: NO_STORE });
+    }) satisfies Handler,
+
+    moveSettings: withPermission("bookings.view", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).bookings.getMoveSettings(auth, requestMeta(ctx)))),
+
+    saveMoveSettings: withPermission("bookings.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["enabled", "feeSatang", "minDaysBefore", "maxMoves", "payMinutes", "updatedAt"]);
+      const input = {
+        enabled: v.boolean("enabled", false),
+        feeSatang: int(v, body.feeSatang, "feeSatang", 0, 10_000_000),
+        minDaysBefore: int(v, body.minDaysBefore, "minDaysBefore", 0, 365),
+        maxMoves: int(v, body.maxMoves, "maxMoves", 1, 10),
+        payMinutes: int(v, body.payMinutes, "payMinutes", 15, 1440),
+      };
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.saveMoveSettings(auth, input, requestMeta(ctx)));
+    }),
+
     // ------------------------------------------------------------------ admin bookings
     list: withPermission("bookings.view", services, async (ctx, auth) => {
       const q = ctx.url.searchParams;
@@ -282,17 +371,7 @@ export function bookingController(services: ServicesFor) {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["checkIn", "rooms"]);
       const checkIn = date(v, body.checkIn, "checkIn");
-      const rooms: { itemId: string; unitId: string }[] = [];
-      if (body.rooms !== undefined) {
-        if (!Array.isArray(body.rooms) || body.rooms.length > 20) v.errors.rooms = "INVALID";
-        else body.rooms.forEach((r: unknown, i: number) => {
-          const o = r as Record<string, unknown> | null;
-          if (!o || typeof o !== "object" || typeof o.itemId !== "string" || typeof o.unitId !== "string"
-            || !ID_PATTERN.test(o.itemId) || !ID_PATTERN.test(o.unitId) || Object.keys(o).some((k) => k !== "itemId" && k !== "unitId")) {
-            v.errors[`rooms.${i}`] = "INVALID";
-          } else rooms.push({ itemId: o.itemId, unitId: o.unitId });
-        });
-      }
+      const rooms = parseRooms(body.rooms, v);
       v.assertValid();
       return jsonOk(await services(ctx).bookings.moveDates(auth, codeParam(ctx), checkIn, requestMeta(ctx), rooms), { headers: NO_STORE });
     }),

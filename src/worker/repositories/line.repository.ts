@@ -1,3 +1,4 @@
+import type { MoveRequestRow } from "./move-request.repository.ts";
 import { maskEmailHalf, maskPhoneHalf } from "../../shared/booking-types.ts";
 import { netPayment } from "./booking.repository.ts";
 import { withFallback } from "./schema-fallback.ts";
@@ -388,6 +389,17 @@ export class LineRepository {
     return this.staffOutbox("FOOD_CANCELLED", "notify_food", `FOOD_CANCELLED:${bookingId}:staff:`, bookingId, null, now, now,
       "EXISTS (SELECT 1 FROM bookings b WHERE b.id = ?3 AND b.booking_status = 'CANCELLED' AND b.cancelled_at = ?7) AND EXISTS (SELECT 1 FROM booking_food_items f WHERE f.booking_id = ?3)",
       [now]);
+  }
+
+  /** A guest's move of the stay (migration 0045): staff who want booking news hear each step. */
+  moveEventStatement(requestId: string, bookingId: string, event: string, now: string): D1PreparedStatementLike {
+    return this.staffOutbox("BOOKING_MOVE", "notify_booking", `BOOKING_MOVE:${requestId}:${event}:staff:`, bookingId, { requestId, event }, now, now,
+      "EXISTS (SELECT 1 FROM booking_move_requests WHERE id = ?7)", [requestId]);
+  }
+
+  /** A move request, for message texts. */
+  moveRequest(id: string): Promise<MoveRequestRow | null> {
+    return withFallback(() => this.db.prepare("SELECT * FROM booking_move_requests WHERE id = ?1").bind(id).first<MoveRequestRow>(), async () => null);
   }
 
   /** A guest booked (same batch as the booking insert; marker: created_at = now). */

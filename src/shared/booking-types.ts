@@ -244,6 +244,8 @@ export interface PublicBookingDto extends QuoteDto {
   paymentRejectedReason: string | null;
   /** Why staff cancelled the booking. */
   cancelReason: string | null;
+  /** Moves the guest paid for (migration 0045): fee + higher price, part of the accommodation total. */
+  moveCharges?: { toCheckIn: string; feeSatang: number; diffSatang: number }[];
 }
 
 /** A stay in admin lists: what it is and, for camping, how many tents. */
@@ -347,6 +349,8 @@ export interface AdminBookingDto extends PublicBookingDto {
   payments: PaymentDto[];
   /** Check-in / check-out / no-show today (see shared/stay.ts). */
   stayActions: StayActionsDto;
+  /** Moves the guest asked for (migration 0045), newest first. */
+  moveRequests?: MoveRequestDto[];
   /**
    * Booked with a deposit, but the house / camping now takes full payment: this booking keeps the deposit plan
    * agreed at booking time (the rest is still taken at check-in).
@@ -475,4 +479,73 @@ export function normalizePhone(input: string): string | null {
   const count = digits.replace("+", "").length;
   if (count < 6 || count > 15) return null;
   return digits;
+}
+
+// ------------------------------------------------------------------ guest moves the stay (migration 0045)
+
+export type MoveRequestStatus = "AWAITING_PAYMENT" | "REVIEWING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED" | "FAILED";
+
+/** Admin → move settings: on / off, fee, how close to the check-in, how many moves, how long the new nights are held. */
+export interface MoveSettingsDto {
+  enabled: boolean;
+  feeSatang: number;
+  minDaysBefore: number;
+  maxMoves: number;
+  payMinutes: number;
+  updatedAt: string | null;
+}
+
+/** One house / VIP tent of a move: its room before and after (the same room when it did not change). */
+export interface MoveRoomDto {
+  itemId: string;
+  fromUnitId: string;
+  fromName: string;
+  toUnitId: string;
+  toName: string;
+}
+
+export interface MoveRequestDto {
+  id: string;
+  status: MoveRequestStatus;
+  fromCheckIn: string;
+  fromCheckOut: string;
+  toCheckIn: string;
+  toCheckOut: string;
+  rooms: MoveRoomDto[];
+  feeSatang: number;
+  /** Higher price of the new nights (0 when the same or cheaper). */
+  diffSatang: number;
+  amountSatang: number;
+  /** AWAITING_PAYMENT: transfer and send the slip before this time (the new nights are held until then). */
+  expiresAt: string;
+  /** Why staff turned the slip down / why it failed. */
+  reason: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+/** Booking page → "เลื่อนวันเข้าพัก": what the guest may do with this booking. */
+export interface GuestMoveStartDto {
+  bookingCode: string;
+  customerName: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  /** The houses / VIP tents of the booking. */
+  stays: { itemId: string; name: string }[];
+  feeSatang: number;
+  minDaysBefore: number;
+  /** Moves still allowed. */
+  movesLeft: number;
+  /** Earliest new check-in the guest may pick. */
+  earliest: string;
+  /** null = may move; otherwise why not (MOVE_NOT_OFFERED, MOVE_NOT_CONFIRMED, MOVE_TOO_LATE, MOVE_LIMIT, MOVE_CAMPING). */
+  blocked: string | null;
+  /** The open request (waiting for the transfer / being checked), or the last one that ended. */
+  request: GuestMoveRequestDto | null;
+}
+
+export interface GuestMoveRequestDto extends MoveRequestDto {
+  /** While AWAITING_PAYMENT: where and how much to transfer. */
+  paymentInstructions: PaymentInstructionsDto | null;
 }

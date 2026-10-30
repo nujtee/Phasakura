@@ -180,6 +180,8 @@ export interface SlipQueueItemDto {
   balance: boolean;
   rejectedReason: string | null;
   verifications: SlipVerificationDto[];
+  /** The slip pays for moving the stay (migration 0045): verify = the stay moves; reject = it keeps its dates. */
+  move?: boolean;
 }
 
 export interface SlipQueueDto {

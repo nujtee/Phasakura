@@ -68,6 +68,62 @@ export class SlipService {
 
   // ================================================================ guest upload
 
+  /** Checks a slip image (size, type, dimensions, not sent before); returns its bytes. */
+  private async slipImage_(file: File, bookingCode: string, meta: RequestMeta) {
+    if (file.size <= 0) throw new ValidationError({ file: "REQUIRED" });
+    if (file.size > SLIP_LIMITS.maxBytes) throw new HttpError(413, "FILE_TOO_LARGE", "Slip image must be 10 MB or smaller");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const image = sniffImage(bytes);
+    if (!image || !SLIP_MIMES.has(image.mime)) {
+      await this.log.event("UPLOAD_REJECTED", "WARNING", meta, { identifier: bookingCode, details: { reason: "slip_not_an_image", size: file.size } });
+      throw new ValidationError({ file: "UNSUPPORTED_IMAGE" }, "Only JPEG, PNG or WebP images are allowed");
+    }
+    if (image.width > SLIP_LIMITS.maxDimension || image.height > SLIP_LIMITS.maxDimension) throw new ValidationError({ file: "IMAGE_TOO_LARGE_DIMENSIONS" });
+    const sha256 = await sha256Hex(bytes);
+    if (await this.repo.liveSlipExists(sha256)) {
+      await this.log.event("DUPLICATE_SLIP", "WARNING", meta, { identifier: bookingCode });
+      throw new ConflictError("This slip has already been submitted", "DUPLICATE_SLIP");
+    }
+    return { bytes, image, sha256 };
+  }
+
+  /**
+   * The slip for moving the stay (migration 0045): the request goes under review in the same batch; then the
+   * automatic check (when set up) verifies it — which moves the stay — or staff decide in Slips.
+   */
+  async submitMoveSlip(code: string, phone: string, file: File, meta: RequestMeta, channel: SlipChannel = "BANK_TRANSFER"): Promise<{ requestId: string; outcome: SlipUploadResultDto["outcome"] }> {
+    const booking = await this.bookings.guestBooking(code, phone, meta);
+    const request = await this.bookings.openMoveRequest(booking.id);
+    if (!request || request.status !== "AWAITING_PAYMENT" || request.amount_satang === 0) throw new ConflictError("No move is waiting for a transfer", "MOVE_REQUEST_NOT_OPEN");
+    const now = this.clock();
+    const at = iso(now);
+    if (request.expires_at <= at) throw new ConflictError("The time to transfer for this move has passed", "MOVE_REQUEST_EXPIRED");
+    if (meta.ip && (await this.log.countRecent(["SLIP_UPLOADED"], 60 * 60_000, { ip: meta.ip })) >= SLIP_LIMITS.perIpPerHour) {
+      throw new TooManyRequestsError(15 * 60);
+    }
+    const { bytes, image, sha256 } = await this.slipImage_(file, booking.booking_code, meta);
+    const assetId = newId();
+    const paymentId = newId();
+    const key = `slips/${at.slice(0, 4)}/${at.slice(5, 7)}/${assetId}.${image.extension}`;
+    await this.bucket.put(key, bytes, { httpMetadata: { contentType: image.mime, cacheControl: "private, no-store" } });
+    try {
+      const results = await this.db.batch([
+        this.bookings.moveReviewingStatement(request.id, at),
+        this.repo.insertMoveSlipAssetStatement({ id: assetId, requestId: request.id, key, mime: image.mime, size: bytes.length, width: image.width, height: image.height, sha256, now: at }),
+        this.repo.insertMovePaymentStatement({ id: paymentId, bookingId: booking.id, requestId: request.id, amount: request.amount_satang, assetId, sha256, channel, now: at }),
+        this.log.eventStatement("SLIP_UPLOADED", "INFO", meta, { identifier: booking.booking_code }),
+        ...(await this.bookings.moveEventStatements(request.id, booking.id, "SLIP", at)),
+      ]);
+      if (!results[0]?.results.length) throw new ConflictError("No move is waiting for a transfer", "MOVE_REQUEST_NOT_OPEN");
+    } catch (error) {
+      await this.bucket.delete(key).catch(() => undefined);
+      if (/UNIQUE constraint failed: payments\.slip_sha256/.test(String(error))) throw new ConflictError("This slip has already been submitted", "DUPLICATE_SLIP");
+      throw error;
+    }
+    const outcome = this.verifier ? await this.autoVerify(paymentId, bytes, image.mime) : "PENDING_REVIEW";
+    return { requestId: request.id, outcome };
+  }
+
   async submit(code: string, phone: string, file: File, meta: RequestMeta, channel: SlipChannel = "BANK_TRANSFER"): Promise<{ booking: PublicBookingDto } & SlipUploadResultDto> {
     const booking = await this.bookings.guestBooking(code, phone, meta);
     // Deposit plan: once confirmed, the guest may transfer the rest before the stay (the booking stays CONFIRMED).
@@ -209,6 +265,7 @@ export class SlipService {
           this.repo.markVerifiedStatement(paymentId, slip.transferredAt, null, now),
           ...(await this.settledStatements(payment, now)),
         ]);
+        if (payment.move_request_id) await this.bookings.moveSettleCheck(payment.move_request_id, null);
         return "VERIFIED";
       } catch (error) {
         if (/UNIQUE constraint failed: slip_verifications\.transaction_ref/.test(String(error))) {
@@ -280,9 +337,10 @@ export class SlipService {
           transferredAt: null, senderBank: null, receiverBank: null, receiverMasked: null, transactionRef: own ? null : input.transactionRef,
           redacted: null, verifiedBy: actor.userId, now,
         }),
-        ...(await this.settledStatements(payment, now)),
+        ...(await this.settledStatements(payment, now, actor.userId)),
       ]);
       if (!results[0]?.results.length) throw new ConflictError("This slip was already handled", "SLIP_ALREADY_HANDLED");
+      if (payment.move_request_id) await this.bookings.moveSettleCheck(payment.move_request_id, actor.userId);
     } catch (error) {
       if (/UNIQUE constraint failed: slip_verifications\.transaction_ref/.test(String(error))) {
         throw new ConflictError("This bank transaction was already used for another payment", "DUPLICATE_TRANSACTION");
@@ -302,6 +360,24 @@ export class SlipService {
     await this.authz.requirePermission(actor, "payments.verify", meta);
     if (input.cancelBooking) await this.authz.requirePermission(actor, "bookings.cancel", meta);
     const payment = await this.pending(paymentId);
+    // A move's fee (migration 0045): the move is turned down, the booking stays as it was.
+    if (payment.move_request_id) {
+      if (input.cancelBooking) throw new ConflictError("This slip is for moving the stay; cancel the booking from its page", "BOOKING_ALREADY_CONFIRMED");
+      const at = iso(this.clock());
+      const results = await this.db.batch([
+        this.repo.markRejectedStatement(paymentId, input.reason, actor.userId, at),
+        this.repo.insertVerificationStatement({
+          id: newId(), paymentId, method: "MANUAL", provider: null, result: "FAILED", failureCode: "REJECTED_BY_STAFF", amount: null,
+          transferredAt: null, senderBank: null, receiverBank: null, receiverMasked: null, transactionRef: null, redacted: null,
+          verifiedBy: actor.userId, now: at,
+        }),
+        ...(await this.bookings.moveRejectStatements(payment.move_request_id, input.reason, actor.userId, at)),
+      ]);
+      if (!results[0]?.results.length) throw new ConflictError("This slip was already handled", "SLIP_ALREADY_HANDLED");
+      await this.log.auditStatement(actor.userId, "REJECT_MOVE_SLIP", "payments", paymentId, { status: "PENDING_VERIFICATION" },
+        { status: "REJECTED", bookingCode: payment.booking_code, reason: input.reason }, meta).run();
+      return this.item(paymentId);
+    }
     // The rest of a deposit: the booking is already confirmed and stays so (the guest pays at check-in instead).
     if (input.cancelBooking && (payment.is_balance === 1 || payment.booking_status === "CONFIRMED")) {
       throw new ConflictError("This booking is already confirmed; cancel it from the booking page", "BOOKING_ALREADY_CONFIRMED");
@@ -338,7 +414,9 @@ export class SlipService {
    * After a payment was marked verified (same batch): a waiting booking is confirmed (+ its notices); for the rest of
    * a deposit the booking is already confirmed, so staff only hear that the rest came in.
    */
-  private async settledStatements(payment: SlipPaymentRow, now: string) {
+  private async settledStatements(payment: SlipPaymentRow, now: string, decidedBy: string | null = null) {
+    // A move's fee (migration 0045): the stay moves in this batch (or the request is closed as failed).
+    if (payment.move_request_id) return this.bookings.moveSettleStatements(payment.move_request_id, decidedBy, now);
     if (payment.is_balance === 1) {
       return this.outbox?.balancePaid ? await this.outbox.balancePaid(payment.id, payment.booking_id, now) : [];
     }
@@ -379,6 +457,7 @@ function toQueueItem(r: SlipPaymentRow, checks: VerificationRow[]): SlipQueueIte
     reference: r.reference,
     balance: r.is_balance === 1,
     rejectedReason: r.rejected_reason,
+    ...(r.move_request_id ? { move: true } : {}),
     verifications: checks.map(toVerificationDto),
   };
 }

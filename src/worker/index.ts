@@ -181,6 +181,14 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/public/bookings/quote", book.quote)
     .post("/api/public/bookings", book.create)
     .post("/api/public/bookings/lookup", book.lookup)
+    .post("/api/public/bookings/move/start", book.moveStart)
+    .post("/api/public/bookings/move/calendar", book.moveCalendar)
+    .post("/api/public/bookings/move/rooms", book.moveRoomsGuest)
+    .post("/api/public/bookings/move/cancel", book.moveCancel)
+    .post("/api/public/bookings/move/slip", slip.submitMove)
+    .post("/api/public/bookings/move", book.moveRequest)
+    .get("/api/admin/move-settings", book.moveSettings)
+    .put("/api/admin/move-settings", book.saveMoveSettings)
     // Booking (admin)
     .get("/api/admin/bookings", book.list)
     .get("/api/admin/bookings/:code", book.get)
@@ -474,6 +482,9 @@ export function createApp(options: AppOptions = {}) {
 
       const expired = (await task("bookings_expire", () => s.bookings.expireDue(200))) ?? 0;
       if (expired) console.log(JSON.stringify({ level: "info", message: "bookings_expired", count: expired }));
+      // Guests' moves not paid in time / on bookings no longer confirmed release their held nights (migration 0045).
+      const moves = await task("move_requests_expire", () => s.bookings.expireMoveRequests());
+      if (moves) console.log(JSON.stringify({ level: "info", message: "move_requests_ended", count: moves }));
       if (minute === null || minute % 15 === 0) {
         const drift = await task("camping_drift", () => s.availability.detectCampingDrift());
         if (drift) console.error(JSON.stringify({ level: "error", message: "camping_inventory_drift", nights: drift }));
