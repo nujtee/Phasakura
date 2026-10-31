@@ -1,3 +1,5 @@
+import type { FocalPoint } from "../../shared/focal-point.ts";
+import { loadFocals } from "../media/image-resolver.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 
 export type MediaPurpose =
@@ -150,6 +152,18 @@ export class MediaRepository {
          DO UPDATE SET alt_text = excluded.alt_text, title = excluded.title, caption = excluded.caption`,
       )
       .bind(t.mediaAssetId, t.languageCode, t.altText, t.title, t.caption);
+  }
+
+  /** Focal point of an image (migration 0046); the guard keeps it to active public originals. */
+  setFocalStatement(id: string, focal: FocalPoint | null): D1PreparedStatementLike {
+    return this.db
+      .prepare("UPDATE media_assets SET focal_x = ?2, focal_y = ?3 WHERE id = ?1 AND bucket = 'PUBLIC' AND status = 'ACTIVE' AND parent_asset_id IS NULL")
+      .bind(id, focal?.x ?? null, focal?.y ?? null);
+  }
+
+  /** Focal points of images (none before migration 0046). */
+  focals(ids: (string | null | undefined)[]): Promise<Map<string, FocalPoint>> {
+    return loadFocals(this.db, ids);
   }
 
   async translationsFor(ids: string[]): Promise<MediaTranslationRow[]> {

@@ -6,6 +6,7 @@ import { normalizeSlug } from "../../../shared/cms-schema.ts";
 import { ApiError, apiGet, apiRequest } from "../../api/client.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { uploadImage } from "../../media/prepareImage.ts";
+import { FocalPicker } from "../cms/FocalPicker.tsx";
 import { Link } from "../../router/Router.tsx";
 import type { PaymentMode } from "../../../shared/booking-rules.ts";
 import { PaymentModeField } from "./PaymentModeField.tsx";
@@ -538,8 +539,12 @@ function ImagesManager({ unit, canEdit, onSaved, onError }: {
               </div>
             )}
             {editing === img.id && (
-              <ImageTexts assetId={img.mediaAssetId} texts={img.texts}
-                onDone={async () => { setEditing(null); onSaved(await apiGet<AdminUnitDto>(base)); }} onError={onError} />
+              <>
+                <FocalPicker assetId={img.mediaAssetId} url={img.url} focal={img.focal ?? null}
+                  onChange={(focal) => onSaved({ ...unit, images: unit.images.map((x) => (x.id === img.id ? { ...x, focal } : x)) })} />
+                <ImageTexts assetId={img.mediaAssetId} texts={img.texts}
+                  onDone={async () => { setEditing(null); onSaved(await apiGet<AdminUnitDto>(base)); }} onError={onError} />
+              </>
             )}
           </li>
         ))}

@@ -1,3 +1,4 @@
+import type { FocalPoint } from "./focal-point.ts";
 /** Accommodation / camping / availability API contract (Worker ↔ UI). */
 import type { LocaleCode } from "./i18n/locales.ts";
 import type { PaymentMode } from "./booking-rules.ts";
@@ -29,6 +30,8 @@ export interface AdminUnitImageDto {
   sortOrder: number;
   status: ImageStatus;
   isCover: boolean;
+  /** Where to keep the photo when the site crops it (percent; migration 0046); null = centre. */
+  focal?: FocalPoint | null;
   texts: Partial<Record<LocaleCode, MediaTextDto>>;
 }
 
@@ -88,6 +91,8 @@ export interface PublicImageDto {
   height: number | null;
   /** Responsive renditions "url 480w, …" (Phase 12); null when only the original exists. */
   srcset?: string | null;
+  /** Where to keep the picture when it is cropped to fill a frame (percent; migration 0046). Absent = centre. */
+  focal?: FocalPoint | null;
 }
 
 export interface PublicUnitDto {

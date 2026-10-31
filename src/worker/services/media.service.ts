@@ -3,6 +3,8 @@ import type { D1DatabaseLike, D1PreparedStatementLike, R2BucketLike } from "../e
 import { HttpError, ValidationError } from "../http/errors.ts";
 import { sniffFont, sniffImage, type SniffedImage } from "../media/image-sniff.ts";
 import { IMAGE_PROFILES, MAX_FONT_BYTES, MAX_VARIANTS, type ImageProfile } from "../../shared/media-types.ts";
+import type { FocalPoint } from "../../shared/focal-point.ts";
+import { isMissingSchema } from "../repositories/inventory.repository.ts";
 import type { MediaPurpose, MediaRepository, MediaTranslationRow } from "../repositories/media.repository.ts";
 import { newId } from "../security/tokens.ts";
 import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
@@ -47,6 +49,8 @@ export interface MediaAssetDto {
   width: number | null;
   height: number | null;
   purpose: MediaPurpose;
+  /** Where to keep the picture when it is cropped (migration 0046); null = centre. */
+  focal?: FocalPoint | null;
   /** Responsive renditions stored with it (Phase 12). */
   variants: { url: string; width: number; height: number; sizeBytes: number; mimeType: string }[];
 }
@@ -89,7 +93,7 @@ export class MediaService {
    * (Phase 12): each is checked from its bytes like the original and must be the same
    * picture at a smaller width. Everything is stored in one batch, or nothing is.
    */
-  async upload(actor: AuthContext, file: File, purpose: MediaPurpose, meta: RequestMeta, variants: File[] = []): Promise<MediaAssetDto> {
+  async upload(actor: AuthContext, file: File, purpose: MediaPurpose, meta: RequestMeta, variants: File[] = [], focal: FocalPoint | null = null): Promise<MediaAssetDto> {
     const permission = UPLOAD_PERMISSIONS[purpose];
     if (!permission) throw new ValidationError({ purpose: "INVALID_VALUE" });
     await this.authz.requirePermission(actor, permission, meta);
@@ -155,9 +159,19 @@ export class MediaService {
       for (const key of stored) await this.bucket.delete(key).catch(() => undefined); // compensate: no orphan objects
       throw error;
     }
+    // Found by the admin's browser; stored on its own so an upload still works before migration 0046.
+    let savedFocal: FocalPoint | null = null;
+    if (focal) {
+      try {
+        await this.repo.setFocalStatement(id, focal).run();
+        savedFocal = focal;
+      } catch (error) {
+        if (!isMissingSchema(error)) throw error;
+      }
+    }
     return {
       id, url: this.url(items[0]!.key), mimeType: main.image.mime, sizeBytes: main.bytes.length, width: main.image.width,
-      height: main.image.height, purpose,
+      height: main.image.height, purpose, focal: savedFocal,
       variants: items.slice(1).map((it) => ({ url: this.url(it.key), width: it.image.width, height: it.image.height, sizeBytes: it.bytes.length, mimeType: it.image.mime })),
     };
   }
@@ -209,6 +223,21 @@ export class MediaService {
       this.log.auditStatement(actor.userId, "UPDATE_TEXT", "media", assetId, before, texts, meta),
     ]);
     return groupTexts(await this.repo.translationsFor([assetId]))[assetId] ?? {};
+  }
+
+  /** Moves (or clears) the focal point of a public image; same permission as uploading it for its purpose. */
+  async setFocal(actor: AuthContext, assetId: string, focal: FocalPoint | null, meta: RequestMeta): Promise<{ focal: FocalPoint | null }> {
+    const asset = await this.repo.findById(assetId);
+    if (!asset || asset.status !== "ACTIVE" || asset.bucket !== "PUBLIC" || asset.parent_asset_id) throw new HttpError(404, "MEDIA_NOT_FOUND", "Image not found");
+    const permission = UPLOAD_PERMISSIONS[asset.purpose];
+    if (!permission) throw new HttpError(404, "MEDIA_NOT_FOUND", "Image not found");
+    await this.authz.requirePermission(actor, permission, meta);
+    const before = (await this.repo.focals([assetId])).get(assetId) ?? null;
+    await this.db.batch([
+      this.repo.setFocalStatement(assetId, focal),
+      this.log.auditStatement(actor.userId, "UPDATE_FOCAL", "media", assetId, { focal: before }, { focal }, meta),
+    ]);
+    return { focal };
   }
 
   /**

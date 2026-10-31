@@ -1,3 +1,4 @@
+import { isFocalPoint, type FocalPoint } from "../../shared/focal-point.ts";
 import type { ImageStatus, UnitStatus, UnitTranslationDto, UnitType } from "../../shared/accommodation-types.ts";
 import { MAX_PRICE_SATANG, PAYMENT_MODES, type PaymentMode } from "../../shared/booking-rules.ts";
 import { CALENDAR_LOCK_MAX } from "../../shared/dashboard-types.ts";
@@ -405,7 +406,7 @@ export function accommodationController(services: ServicesFor) {
       } catch {
         throw new ValidationError({ body: "INVALID_MULTIPART" });
       }
-      const unknown = [...form.keys()].filter((k) => k !== "file" && k !== "purpose" && k !== "variant");
+      const unknown = [...form.keys()].filter((k) => !["file", "purpose", "variant", "focalX", "focalY"].includes(k));
       if (unknown.length) throw new ValidationError(Object.fromEntries(unknown.map((k) => [k, "UNKNOWN_FIELD"])));
       const file = form.get("file");
       const purpose = form.get("purpose");
@@ -414,7 +415,27 @@ export function accommodationController(services: ServicesFor) {
       // Responsive renditions made in the admin's browser (Phase 12).
       const variants = form.getAll("variant");
       if (!variants.every((v): v is File => v instanceof File)) throw new ValidationError({ variant: "EXPECTED_FILE" });
-      return jsonOk(await services(ctx).media.upload(auth, file, purpose as MediaPurpose, requestMeta(ctx), variants), { status: 201 });
+      // Focal point found by the admin's browser (percent, both or neither).
+      const fx = form.get("focalX");
+      const fy = form.get("focalY");
+      let focal: FocalPoint | null = null;
+      if (fx !== null || fy !== null) {
+        const point = { x: Number(fx), y: Number(fy) };
+        if (typeof fx !== "string" || typeof fy !== "string" || !/^\d{1,3}$/.test(fx) || !/^\d{1,3}$/.test(fy) || !isFocalPoint(point)) {
+          throw new ValidationError({ focal: "INVALID_VALUE" });
+        }
+        focal = point;
+      }
+      return jsonOk(await services(ctx).media.upload(auth, file, purpose as MediaPurpose, requestMeta(ctx), variants, focal), { status: 201 });
+    }),
+
+    /** PUT /api/admin/media/:id/focal { focal: { x, y } | null } — where the picture is kept when cropped (percent). */
+    setMediaFocal: withPermission(["accommodation.edit", "food.edit", "content.gallery", "content.home", "content.history", "settings.branding", "seo.edit", "receiving_accounts.edit", "landscape.edit"], services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request);
+      new Validator(body).allowOnly(["focal"]).assertValid();
+      if (body.focal !== null && !isFocalPoint(body.focal)) throw new ValidationError({ focal: "INVALID_VALUE" });
+      const focal = body.focal === null ? null : { x: (body.focal as FocalPoint).x, y: (body.focal as FocalPoint).y };
+      return jsonOk(await services(ctx).media.setFocal(auth, id(ctx), focal, requestMeta(ctx)));
     }),
 
     /** PUT /api/admin/media/:id/texts { texts: { th: {altText,title,caption}, … } } */

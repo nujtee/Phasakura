@@ -1,3 +1,5 @@
+import type { FocalPoint } from "../../shared/focal-point.ts";
+import { loadFocals } from "../media/image-resolver.ts";
 import type { CmsEntityName, CmsRecord, EntityDef, FieldDef } from "../../shared/cms-schema.ts";
 import { CMS_TEXT, ENTITIES, isSafeLink, isSafePath, normalizeCode, normalizeSlug } from "../../shared/cms-schema.ts";
 import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
@@ -291,11 +293,13 @@ export class CmsService {
     }
     const now = iso(this.clock());
     const assets = def.fields.filter((f) => f.kind === "asset");
+    const focals = assets.length ? await loadFocals(this.db, rows.flatMap((r) => assets.map((f) => r[column(f.key)] as string | null))) : new Map<string, FocalPoint>();
     return rows.map((r) => {
       const rec: CmsRecord = {
         id: r.id as string,
         translations: trans.get(r.id as string) ?? {},
         urls: Object.fromEntries(assets.map((f, i) => [f.key, publicMediaUrl(r[`__m${i}`] as string | null, this.mediaBaseUrl) ?? null])),
+        focals: Object.fromEntries(assets.map((f) => [f.key, focals.get(r[column(f.key)] as string) ?? null])),
         updatedAt: (r.updated_at as string | undefined) ?? null,
       };
       for (const f of def.fields) rec[f.key] = fromDb(f, r[column(f.key)]);

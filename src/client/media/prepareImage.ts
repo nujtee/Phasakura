@@ -1,4 +1,5 @@
 import { IMAGE_PROFILES, type ImageProfilePurpose } from "../../shared/media-types.ts";
+import { findFocalPoint, type FocalPoint } from "../../shared/focal-point.ts";
 import { apiUpload } from "../api/client.ts";
 
 /**
@@ -17,6 +18,8 @@ export interface PreparedImage {
   variants: File[];
   /** false = original uploaded unchanged (logo, QR code, or the browser could not decode it). */
   processed: boolean;
+  /** Spot to keep in view when the picture is cropped (found from a small copy); null = not found. */
+  focal: FocalPoint | null;
 }
 
 let webpSupport: Promise<boolean> | null = null;
@@ -64,6 +67,26 @@ async function encode(bitmap: ImageBitmap, width: number, height: number, type: 
   return blob && blob.type === type ? blob : null;
 }
 
+/** Purposes whose pictures the public site crops to fill a frame (object-fit: cover). */
+export const CROPPED = new Set<ImageProfilePurpose>(["HOME_SLIDE", "HOME_SECTION", "GALLERY", "HISTORY", "ACCOMMODATION", "FOOD"]);
+
+/** Focal point of a decoded picture, from a copy ≈100 px wide (fast; never throws). */
+export function detectFocal(source: CanvasImageSource, width: number, height: number): FocalPoint | null {
+  try {
+    if (!width || !height) return null;
+    const scale = Math.min(1, 100 / Math.max(width, height));
+    const w = Math.max(2, Math.round(width * scale));
+    const h = Math.max(2, Math.round(height * scale));
+    const c = canvas(w, h);
+    const ctx = c.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (!ctx) return null;
+    ctx.drawImage(source, 0, 0, w, h);
+    return findFocalPoint(ctx.getImageData(0, 0, w, h).data, w, h);
+  } catch {
+    return null; // e.g. a picture from another site the browser will not let us read
+  }
+}
+
 function baseName(name: string): string {
   const stem = name.replace(/\.[^.]*$/, "").replace(/[^\w.-]+/g, "-").slice(0, 60);
   return stem || "image";
@@ -71,7 +94,7 @@ function baseName(name: string): string {
 
 export async function prepareImage(file: File, purpose: ImageProfilePurpose): Promise<PreparedImage> {
   const profile = IMAGE_PROFILES[purpose];
-  const unchanged: PreparedImage = { file, variants: [], processed: false };
+  const unchanged: PreparedImage = { file, variants: [], processed: false, focal: null };
   if (!profile?.compress || typeof createImageBitmap !== "function") return unchanged;
   let bitmap: ImageBitmap;
   try {
@@ -85,8 +108,9 @@ export async function prepareImage(file: File, purpose: ImageProfilePurpose): Pr
     const height = Math.max(1, Math.round(bitmap.height * scale));
     const type = profile.format === "image/webp" && (await canEncodeWebp()) ? "image/webp" : "image/jpeg";
     const ext = type === "image/webp" ? "webp" : "jpg";
+    const focal = CROPPED.has(purpose) ? detectFocal(bitmap, bitmap.width, bitmap.height) : null;
     const main = await encode(bitmap, width, height, type, profile.quality);
-    if (!main) return unchanged;
+    if (!main) return { ...unchanged, focal };
     const name = baseName(file.name);
     const variants: File[] = [];
     for (const w of profile.widths) {
@@ -94,7 +118,7 @@ export async function prepareImage(file: File, purpose: ImageProfilePurpose): Pr
       const blob = await encode(bitmap, w, Math.max(1, Math.round((height * w) / width)), type, profile.quality);
       if (blob) variants.push(new File([blob], `${name}-${w}.${ext}`, { type }));
     }
-    return { file: new File([main], `${name}.${ext}`, { type }), variants, processed: true };
+    return { file: new File([main], `${name}.${ext}`, { type }), variants, processed: true, focal };
   } catch {
     return unchanged;
   } finally {
@@ -110,14 +134,19 @@ export interface UploadedImage {
   sizeBytes: number;
   mimeType: string;
   variants: { url: string; width: number }[];
+  focal?: FocalPoint | null;
 }
 
-/** Prepares (compresses + renditions) and uploads one image for a purpose. */
+/** Prepares (compresses + renditions + focal point) and uploads one image for a purpose. */
 export async function uploadImage(file: File, purpose: ImageProfilePurpose): Promise<UploadedImage> {
   const prepared = await prepareImage(file, purpose);
   const form = new FormData();
   form.set("file", prepared.file);
   form.set("purpose", purpose);
   for (const v of prepared.variants) form.append("variant", v);
+  if (prepared.focal) {
+    form.set("focalX", String(prepared.focal.x));
+    form.set("focalY", String(prepared.focal.y));
+  }
   return apiUpload<UploadedImage>("/api/admin/media", form);
 }
