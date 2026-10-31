@@ -1,5 +1,5 @@
-import type { BookingStatus, FoodSelection, PaymentStatus, PricingRuleInput } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_PETS_PER_UNIT, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
+import type { BookingStatus, FoodSelection, MassageSelection, PaymentStatus, PricingRuleInput } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_MASSAGE_LINES, MAX_MASSAGE_QUANTITY, MAX_PETS_PER_UNIT, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
 import { MAX_PRICE_SATANG, PAY_NOW_PERCENTS } from "../../shared/booking-rules.ts";
 import { BALANCE_METHODS, type BalanceMethod } from "../../shared/payment-types.ts";
 import { isIsoDate } from "../../shared/dates.ts";
@@ -52,7 +52,7 @@ function obj(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-const QUOTE_FIELDS = ["checkIn", "checkOut", "adults", "children", "stay", "stays", "food", "lang"] as const;
+const QUOTE_FIELDS = ["checkIn", "checkOut", "adults", "children", "stay", "stays", "food", "massages", "lang"] as const;
 
 /**
  * One stay: a house / VIP tent, or own-tent camping. `withGuests`: an entry of `stays`, which carries its own
@@ -159,7 +159,28 @@ function parseQuote(body: Record<string, unknown>, v: Validator): QuoteInput {
       });
     }
   }
-  return { checkIn, checkOut, adults, children, stays, legacy, food, lang: langOf(body.lang).code };
+  // Health massage (migration 0050): [{ optionId, quantity }].
+  const massages: MassageSelection[] = [];
+  if (body.massages !== undefined) {
+    if (!Array.isArray(body.massages)) v.errors.massages = "EXPECTED_ARRAY";
+    else if (body.massages.length > MAX_MASSAGE_LINES) v.errors.massages = "TOO_MANY";
+    else {
+      body.massages.forEach((raw, i) => {
+        const m = obj(raw);
+        const key = `massages.${i}`;
+        if (!m || !Object.keys(m).every((k) => k === "optionId" || k === "quantity")) {
+          v.errors[key] = "INVALID_VALUE";
+          return;
+        }
+        if (typeof m.optionId !== "string" || !ID_PATTERN.test(m.optionId)) {
+          v.errors[`${key}.optionId`] = "INVALID_ID";
+          return;
+        }
+        massages.push({ optionId: m.optionId, quantity: int(v, m.quantity, `${key}.quantity`, 1, MAX_MASSAGE_QUANTITY) });
+      });
+    }
+  }
+  return { checkIn, checkOut, adults, children, stays, legacy, food, ...(massages.length ? { massages } : {}), lang: langOf(body.lang).code };
 }
 
 function parseRule(body: Record<string, unknown>, partial: boolean): Partial<PricingRuleInput> {

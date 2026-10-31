@@ -35,6 +35,8 @@ export interface MsgBooking {
   extraBeds?: number;
   /** Pets brought to the houses / VIP tents (migration 0044). */
   pets?: number;
+  /** Health massage lines (migration 0050). */
+  massages?: { name: string; minutes: number; quantity: number }[];
   adults: number;
   children: number;
   bookingStatus: string;
@@ -80,6 +82,7 @@ const th = {
   tarp: "พื้นที่กางทาร์ป",
   extraBeds: "ที่นอนเสริม {n}",
   pets: "สัตว์เลี้ยง {n}",
+  massage: "นวดเพื่อสุขภาพ", massageLine: "• {name} {min} นาที ×{n}",
   guests: "ผู้เข้าพัก",
   guestsValue: "ผู้ใหญ่ {a} · เด็ก {c}",
   food: "อาหาร",
@@ -188,6 +191,7 @@ const en: Texts = {
   tarp: "tarp area",
   extraBeds: "{n} extra bed(s)",
   pets: "{n} pet(s)",
+  massage: "Health massage", massageLine: "• {name} {min} min ×{n}",
   guests: "Guests",
   guestsValue: "{a} adult(s) · {c} child(ren)",
   food: "Food",
@@ -294,6 +298,7 @@ const zh: Texts = {
   tarp: "天幕区",
   extraBeds: "加床 {n}",
   pets: "宠物 {n}",
+  massage: "保健按摩", massageLine: "• {name} {min} 分钟 ×{n}",
   guests: "入住人数",
   guestsValue: "成人 {a} · 儿童 {c}",
   food: "餐饮",
@@ -478,6 +483,7 @@ export class LineFormatter {
       this.stayLine(b),
       `${t.guests}: ${fill(t.guestsValue, { a: b.adults, c: b.children })}`,
       b.food.length ? `${t.food}:\n${this.foodLines(b.food).join("\n")}` : `${t.food}: ${t.none}`,
+      ...(b.massages?.length ? [`${t.massage}:\n${b.massages.map((m) => fill(t.massageLine, { name: m.name, min: m.minutes, n: m.quantity })).join("\n")}`] : []),
       `${t.payment}: ${this.payment(b)}`,
     ];
     return lines.join("\n");

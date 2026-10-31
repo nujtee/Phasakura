@@ -20,7 +20,8 @@ import { openDepositBookings } from "../repositories/deposit-bookings.ts";
 import type { AccommodationRepository, UnitImageRow, UnitRow, UnitTranslationRow } from "../repositories/accommodation.repository.ts";
 import type { InventoryRepository } from "../repositories/inventory.repository.ts";
 import { ExtraBedRepository, type ExtraBedSettingsRow } from "../repositories/extra-bed.repository.ts";
-import type { ExtraBedSettingsDto, PetSettingsDto } from "../../shared/booking-types.ts";
+import type { ExtraBedSettingsDto, MassageAdminItemDto, MassageSettingsDto, PetSettingsDto } from "../../shared/booking-types.ts";
+import { MassageRepository } from "../repositories/massage.repository.ts";
 import { PetRepository, type PetSettingsRow } from "../repositories/pet.repository.ts";
 import type { MediaRepository } from "../repositories/media.repository.ts";
 import { newId } from "../security/tokens.ts";
@@ -485,6 +486,34 @@ export class AccommodationService {
       this.log.auditStatement(actor.userId, "UPDATE_EXTRA_BEDS", MODULE, "extra_bed_settings", before, { ...settings, offUnitIds: offUnitIds ?? before.offUnitIds }, meta),
     ]);
     return toExtraBedDto(await repo.settings(), await repo.offUnits());
+  }
+
+  // ================================================================ health massage (migration 0050)
+
+  async massageSettings(actor: AuthContext, meta: RequestMeta): Promise<MassageSettingsDto> {
+    await this.authz.requirePermission(actor, "accommodation.view", meta);
+    const repo = new MassageRepository(this.db);
+    const [s, items] = await Promise.all([repo.settings(), repo.menu()]);
+    return { enabled: s.is_enabled === 1, items, updatedAt: s.updated_at };
+  }
+
+  /** On / off and the whole menu (treatments, lengths, prices). Changing a price needs pricing.edit. Bookings keep theirs. */
+  async saveMassageSettings(actor: AuthContext, input: { enabled: boolean; items: MassageAdminItemDto[] }, meta: RequestMeta): Promise<MassageSettingsDto> {
+    await this.authz.requirePermission(actor, "accommodation.edit", meta);
+    const repo = new MassageRepository(this.db);
+    const before = await repo.menu();
+    const priceOf = (items: MassageAdminItemDto[]) => new Map(items.flatMap((i) => i.options.map((o) => [`${i.id}:${o.minutes}`, o.priceSatang] as const)));
+    const was = priceOf(before);
+    const now = priceOf(input.items);
+    const pricesChanged = was.size !== now.size || [...now].some(([k, p]) => was.get(k) !== p);
+    if (pricesChanged) await this.authz.requirePermission(actor, "pricing.edit", meta);
+    if (input.enabled && !input.items.some((i) => i.active && i.options.length)) throw new ValidationError({ items: "EMPTY_MENU" });
+    const at = this.now();
+    await this.commit([
+      ...repo.saveStatements(input.enabled, input.items, actor.userId, at),
+      this.log.auditStatement(actor.userId, "UPDATE_MASSAGE", MODULE, "massage_settings", { items: before }, input, meta),
+    ]);
+    return this.massageSettings(actor, meta);
   }
 
   // ================================================================ pets (migration 0044)

@@ -130,6 +130,18 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
             <dd>{baht(quote.foodSubtotalSatang)}</dd>
           </div>
         )}
+        {(quote.massages ?? []).map((l) => (
+          <div key={l.optionId} className="summary__line summary__line--sub">
+            <dt>{fill(bt.massageLine, { name: l.name, min: l.minutes, n: l.quantity })}</dt>
+            <dd>{l.subtotalSatang === 0 ? bt.free : baht(l.subtotalSatang)}</dd>
+          </div>
+        ))}
+        {(quote.massages?.length ?? 0) > 0 && (
+          <div className="summary__line">
+            <dt>{bt.massageTitle}</dt>
+            <dd>{baht(quote.massageSubtotalSatang ?? 0)}</dd>
+          </div>
+        )}
         {quote.appFee && quote.appFee.totalSatang > 0 && (
           <div className="summary__line">
             <dt>

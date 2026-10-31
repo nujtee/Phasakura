@@ -444,6 +444,95 @@ button.button--secondary {
   margin-bottom: 4px;
 }
 
+/* Health massage (migration 0050): folded; the guest opens it to choose. */
+.massage > summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.massage > summary::-webkit-details-marker {
+  display: none;
+}
+
+.massage__head {
+  display: grid;
+  gap: 2px;
+}
+
+.massage__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.massage__toggle {
+  flex: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.massage__toggle::after {
+  content: " ▾";
+}
+
+.massage[open] .massage__toggle::after {
+  content: " ▴";
+}
+
+.massage__list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+}
+
+.massage__item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.massage__name {
+  display: grid;
+  min-width: 12em;
+}
+
+.massage__sub {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+.massage__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.massage__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.massage__price {
+  white-space: nowrap;
+  min-width: 9.5em;
+  font-variant-numeric: tabular-nums;
+}
+
+.massage__note {
+  margin: 8px 0 0;
+}
+
 .food-step__section {
   font-size: 1.05rem;
   margin: 4px 0 4px;

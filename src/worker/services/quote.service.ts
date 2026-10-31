@@ -5,6 +5,9 @@ import type {
   FoodMenuDto,
   FoodOptionDto,
   FoodSelection,
+  MassageAdminItemDto,
+  MassageLineDto,
+  MassageSelection,
   IncludedMealDto,
   NightPriceDto,
   QuoteDto,
@@ -31,6 +34,7 @@ import type {
   PricingRuleRow,
 } from "../repositories/pricing.repository.ts";
 import type { Clock } from "./auth-context.ts";
+import { massageName, type MassageRepository } from "../repositories/massage.repository.ts";
 import type { ImageResolver } from "../media/image-resolver.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import { pickTranslation } from "./accommodation.service.ts";
@@ -53,6 +57,7 @@ export interface QuoteInput {
   /** The request used the single `stay` field (older pages): errors keep their old keys (guests, tents …). */
   legacy?: boolean;
   food: FoodSelection[];
+  massages?: MassageSelection[];
   lang: string;
 }
 
@@ -129,7 +134,37 @@ export class QuoteService {
     private readonly extraBedRepo: ExtraBedRepository | null = null,
     /** Pets option (migration 0044); null = never offered. */
     private readonly petRepo: PetRepository | null = null,
+    /** Health massage (migration 0050); null = never offered. */
+    private readonly massageRepo: MassageRepository | null = null,
   ) {}
+
+  /** The massage menu while offered (active treatments with at least one length); null = not offered. */
+  async massageMenu(): Promise<MassageAdminItemDto[] | null> {
+    if (!this.massageRepo) return null;
+    const s = await this.massageRepo.settings();
+    if (s.is_enabled !== 1) return null;
+    const items = (await this.massageRepo.menu()).filter((i) => i.active && i.options.length > 0);
+    return items.length ? items : null;
+  }
+
+  /** Massage lines of a request, priced from D1 (refused when massage is off or a length is not on the menu). */
+  private async massageLines(selection: MassageSelection[] | undefined, lang: string): Promise<MassageLineDto[]> {
+    if (!selection?.length) return [];
+    const menu = await this.massageMenu();
+    if (!menu) throw new ConflictError("Massage is not offered", "MASSAGE_UNAVAILABLE");
+    const lines: MassageLineDto[] = [];
+    for (const [i, sel] of selection.entries()) {
+      const item = menu.find((m) => m.options.some((o) => o.id === sel.optionId));
+      const option = item?.options.find((o) => o.id === sel.optionId);
+      if (!item || !option) throw new ValidationError({ [`massages.${i}.optionId`]: "UNKNOWN_OPTION" });
+      if (lines.some((l) => l.optionId === option.id)) throw new ValidationError({ [`massages.${i}.optionId`]: "DUPLICATE" });
+      lines.push({
+        optionId: option.id, name: massageName(item, lang), minutes: option.minutes, priceSatang: option.priceSatang,
+        quantity: sel.quantity, subtotalSatang: option.priceSatang * sel.quantity,
+      });
+    }
+    return lines;
+  }
 
   /** The pets option as the owner set it (off when there is no repository or before migration 0044). */
   async petSettings(): Promise<PetSettingsRow | null> {
@@ -359,12 +394,15 @@ export class QuoteService {
     const accommodationSubtotalSatang = stays.reduce(
       (acc, st) => acc + st.item.subtotalSatang + (st.tarp?.subtotalSatang ?? 0) + (st.extraBeds?.subtotalSatang ?? 0) + (st.pets?.subtotalSatang ?? 0), 0);
     const foodSubtotalSatang = foodLines.reduce((acc, l) => acc + l.dto.subtotalSatang, 0);
+    // Health massage (migration 0050): paid in full now, like food.
+    const massages = await this.massageLines(input.massages, input.lang);
+    const massageSubtotalSatang = massages.reduce((acc, l) => acc + l.subtotalSatang, 0);
     const items = stays.map((st) => st.item);
     // App fee (migration 0027): per house / VIP tent / own tent, on the guest's bill; paid now (part of any deposit).
     const terms = this.appFeeTerms ? await this.appFeeTerms().catch(() => null) : null;
     const feeUnits = items.reduce((acc, it) => acc + it.quantity, 0);
     const appFee = terms && feeUnits > 0 ? { units: feeUnits, perUnitSatang: terms.perUnitSatang, totalSatang: feeUnits * terms.perUnitSatang } : null;
-    const totalSatang = accommodationSubtotalSatang + foodSubtotalSatang + (appFee?.totalSatang ?? 0);
+    const totalSatang = accommodationSubtotalSatang + foodSubtotalSatang + massageSubtotalSatang + (appFee?.totalSatang ?? 0);
     return {
       quote: {
         checkIn: input.checkIn,
@@ -377,6 +415,7 @@ export class QuoteService {
         tarp,
         includedMeals: stays.flatMap((st) => st.included.map((m) => m.dto)),
         food: foodLines.map((l) => l.dto),
+        ...(massages.length ? { massages, massageSubtotalSatang } : {}),
         accommodationSubtotalSatang,
         foodSubtotalSatang,
         discountSatang: 0,
@@ -428,9 +467,16 @@ export class QuoteService {
           .map((o) => optionDtos.get(o.id)!),
       }))
       .filter((c) => c.options.length > 0);
-    const [beds, pet, bedsOff] = await Promise.all([this.extraBedSettings(), this.petSettings(), this.extraBedRepo?.offUnits() ?? []]);
+    const [beds, pet, bedsOff, massage] = await Promise.all([this.extraBedSettings(), this.petSettings(), this.extraBedRepo?.offUnits() ?? [], this.massageMenu()]);
     return {
       checkIn, checkOut, categories,
+      massage: massage ? {
+        items: massage.map((m) => {
+          const name = massageName(m, lang);
+          const sub = lang === "th" ? m.nameEn : m.nameTh;
+          return { id: m.id, name, subName: sub && sub !== name ? sub : null, options: m.options };
+        }),
+      } : null,
       extraBed: beds ? { pricePerNightSatang: beds.price_per_night_satang, maxPerUnit: beds.max_per_unit, ...(bedsOff.length ? { offUnitIds: bedsOff } : {}) } : null,
       pet: pet ? { priceSatang: pet.price_satang, chargePer: pet.charge_per, maxWeightKg: pet.max_weight_kg, maxPerUnit: pet.max_per_unit } : null,
     };

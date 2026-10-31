@@ -585,16 +585,34 @@ export class LineRepository {
   async messageBookings(ids: string[], lang: string): Promise<MsgBooking[]> {
     if (!ids.length) return [];
     // The cron sends these: before migration 0025 every booking reads as "no deposit".
-    const [list, beds, pets] = await Promise.all([
+    const [list, beds, pets, massages] = await Promise.all([
       withFallback(() => this.messageBookingsWith(ids, lang, "deposit_satang"), () => this.messageBookingsWith(ids, lang, "NULL")),
       this.addOnsOf(ids, "booking_extra_beds"),
       this.addOnsOf(ids, "booking_pets"),
+      this.massagesOf(ids),
     ]);
     return list.map((m) => {
       const n = beds.get(m.code) ?? 0;
       const p = pets.get(m.code) ?? 0;
-      return { ...m, ...(n ? { extraBeds: n } : {}), ...(p ? { pets: p } : {}) };
+      const ms = massages.get(m.code);
+      return { ...m, ...(n ? { extraBeds: n } : {}), ...(p ? { pets: p } : {}), ...(ms ? { massages: ms } : {}) };
     });
+  }
+
+  /** Health massage lines per booking code (none before migration 0050). */
+  private massagesOf(ids: string[]): Promise<Map<string, { name: string; minutes: number; quantity: number }[]>> {
+    return withFallback(async () => {
+      const { results } = await this.db
+        .prepare(
+          `SELECT b.booking_code, m.name, m.minutes, m.quantity FROM booking_massages m JOIN bookings b ON b.id = m.booking_id
+            WHERE m.booking_id IN (SELECT value FROM json_each(?1)) ORDER BY m.rowid`,
+        )
+        .bind(JSON.stringify(ids))
+        .all<{ booking_code: string; name: string; minutes: number; quantity: number }>();
+      const map = new Map<string, { name: string; minutes: number; quantity: number }[]>();
+      for (const r of results) map.set(r.booking_code, [...(map.get(r.booking_code) ?? []), { name: r.name, minutes: r.minutes, quantity: r.quantity }]);
+      return map;
+    }, async () => new Map());
   }
 
   /** Extra beds / pets per booking code (houses / VIP tents still in the booking; none before migration 0043 / 0044). */

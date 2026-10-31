@@ -43,6 +43,59 @@ export interface FoodSelection {
   quantity?: number;
 }
 
+/** Health massage (migration 0050): one treatment length the guest picked, for how many people. */
+export interface MassageSelection {
+  optionId: string;
+  quantity: number;
+}
+
+/** Most people per massage line / most lines per booking. */
+export const MAX_MASSAGE_QUANTITY = 20;
+export const MAX_MASSAGE_LINES = 30;
+/** Most treatments on the owner's menu. */
+export const MAX_MASSAGE_ITEMS = 40;
+
+export interface MassageOptionDto {
+  id: string;
+  minutes: number;
+  priceSatang: number;
+}
+
+/** A treatment as the booking page shows it (name in the page's language). */
+export interface MassageItemDto {
+  id: string;
+  name: string;
+  /** The Thai / English name under it when the page shows another language. */
+  subName: string | null;
+  options: MassageOptionDto[];
+}
+
+/** One massage line of a quote / booking (snapshot once booked). */
+export interface MassageLineDto {
+  optionId: string;
+  name: string;
+  minutes: number;
+  priceSatang: number;
+  quantity: number;
+  subtotalSatang: number;
+}
+
+/** Admin → massage menu (migration 0050). */
+export interface MassageAdminItemDto {
+  id: string;
+  nameTh: string;
+  nameEn: string | null;
+  nameZh: string | null;
+  active: boolean;
+  options: MassageOptionDto[];
+}
+
+export interface MassageSettingsDto {
+  enabled: boolean;
+  items: MassageAdminItemDto[];
+  updatedAt: string | null;
+}
+
 export interface QuoteRequest {
   checkIn: string;
   checkOut: string;
@@ -54,6 +107,8 @@ export interface QuoteRequest {
   /** Several stays on the same dates, each with its own guests (same check-in / check-out for all). */
   stays?: StaySelection[];
   food: FoodSelection[];
+  /** Health massage (migration 0050), paid in full at booking like food. */
+  massages?: MassageSelection[];
   lang?: string;
 }
 
@@ -203,6 +258,9 @@ export interface QuoteDto {
   tarp: TarpLineDto | null;
   includedMeals: IncludedMealDto[];
   food: FoodLineDto[];
+  /** Health massage lines (migration 0050); absent = none. Paid in full now, part of totalSatang. */
+  massages?: MassageLineDto[];
+  massageSubtotalSatang?: number;
   accommodationSubtotalSatang: number;
   foodSubtotalSatang: number;
   discountSatang: number;
@@ -414,6 +472,8 @@ export interface FoodCatalogueDto {
   categories: FoodCategoryDto[];
   /** Extra beds for houses / VIP tents, when the owner offers them (shown on the same step). */
   extraBed?: ExtraBedOfferDto | null;
+  /** Health massage menu (migration 0050); null / absent = not offered. */
+  massage?: { items: MassageItemDto[] } | null;
   /** Pets allowed in houses / VIP tents, when the owner allows them. */
   pet?: PetOfferDto | null;
 }

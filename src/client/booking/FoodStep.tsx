@@ -1,4 +1,4 @@
-import type { FoodCatalogueDto, FoodOptionDto, QuoteDto } from "../../shared/booking-types.ts";
+import { MAX_MASSAGE_QUANTITY, type FoodCatalogueDto, type FoodOptionDto, type QuoteDto } from "../../shared/booking-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
 import { IMAGE_SIZES } from "../../shared/media-types.ts";
 import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
@@ -47,6 +47,8 @@ export function FoodStep({
   picks = [],
   onExtraBeds,
   onPets,
+  massages = {},
+  onMassage,
 }: {
   catalogue: FoodCatalogueDto;
   quote: QuoteDto | null;
@@ -56,6 +58,9 @@ export function FoodStep({
   picks?: Pick[];
   onExtraBeds?: (unitId: string, n: number) => void;
   onPets?: (unitId: string, n: number) => void;
+  /** Health massage (migration 0050): treatment length id → people. */
+  massages?: Record<string, number>;
+  onMassage?: (optionId: string, n: number) => void;
 }) {
   const { locale } = useI18n();
   const bt = useBookingT();
@@ -70,6 +75,10 @@ export function FoodStep({
   };
 
   const offer = catalogue.extraBed ?? null;
+  const massage = catalogue.massage ?? null;
+  const massageOptions = new Map((massage?.items ?? []).flatMap((i) => i.options.map((o) => [o.id, o] as const)));
+  const massageCount = Object.entries(massages).filter(([id, n]) => n > 0 && massageOptions.has(id)).reduce((acc, [, n]) => acc + n, 0);
+  const massageTotal = Object.entries(massages).reduce((acc, [id, n]) => acc + (massageOptions.get(id)?.priceSatang ?? 0) * n, 0);
   const pet = catalogue.pet ?? null;
   const units = picks.filter((p): p is Extract<Pick, { kind: "UNIT" }> => p.kind === "UNIT");
   // Extra beds only for houses where the owner left them on (migration 0047).
@@ -140,7 +149,43 @@ export function FoodStep({
         </section>
       )}
 
-      {((offer && onExtraBeds) || (pet && onPets)) && units.length > 0 && catalogue.categories.length > 0 && (
+      {massage && onMassage && (
+        <details className="extra-beds massage" open={massageCount > 0 || undefined}>
+          <summary className="massage__summary">
+            <span className="massage__head">
+              <strong className="massage__title">{bt.massageTitle}</strong>
+              <span className="extra-beds__intro">
+                {massageCount > 0
+                  ? fill(bt.massageChosen, { n: massageCount, price: baht(massageTotal) })
+                  : fill(bt.massageIntro, { n: massage.items.length })}
+              </span>
+            </span>
+            <span className="massage__toggle" aria-hidden="true">{bt.massageShow}</span>
+          </summary>
+          <ul className="massage__list">
+            {massage.items.map((item) => (
+              <li key={item.id} className="massage__item">
+                <div className="massage__name">
+                  <strong>{item.name}</strong>
+                  {item.subName && <span className="massage__sub">{item.subName}</span>}
+                </div>
+                <div className="massage__options">
+                  {item.options.map((o) => (
+                    <div key={o.id} className="massage__option">
+                      <span className="massage__price">{fill(bt.massageMinutes, { n: o.minutes })} · {baht(o.priceSatang)}</span>
+                      <Stepper label={`${item.name} ${fill(bt.massageMinutes, { n: o.minutes })} · ${bt.massagePeople}`} caption={bt.massagePeople}
+                        value={massages[o.id] ?? 0} min={0} max={MAX_MASSAGE_QUANTITY} onChange={(n) => onMassage(o.id, n)} />
+                    </div>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="extra-beds__intro massage__note">{bt.massageNote}</p>
+        </details>
+      )}
+
+      {((offer && onExtraBeds) || (pet && onPets) || (massage && onMassage)) && catalogue.categories.length > 0 && (
         <h3 className="food-step__section">{bt.foodSection}</h3>
       )}
       <p className="food-step__intro">{bt.foodIntro}</p>
