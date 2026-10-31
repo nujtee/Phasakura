@@ -1,3 +1,4 @@
+import type { FocalPoint } from "../../shared/focal-point.ts";
 import type { ImageResolver, Rendition } from "../media/image-resolver.ts";
 import type {
   AdminUnitDto,
@@ -74,6 +75,7 @@ export class AccommodationService {
     const ct = pickTranslation(campingTexts, locale.code);
     const coverUrl = camping?.cover_key ? publicMediaUrl(camping.cover_key, this.mediaBaseUrl) : null;
     const coverRenditions = this.images && camping?.cover_asset_id ? await this.images.renditions([camping.cover_asset_id]) : null;
+    const coverFocal = this.images && camping?.cover_asset_id ? (await this.images.focals([camping.cover_asset_id])).get(camping.cover_asset_id) ?? null : null;
     const coverSrcset = coverRenditions && camping?.cover_asset_id
       ? this.images!.srcset(coverRenditions.get(camping.cover_asset_id), { key: camping.cover_key, width: camping.cover_width }) : null;
     return {
@@ -88,7 +90,7 @@ export class AccommodationService {
         childFreeUnderAge: camping?.child_free_under_age ?? 12,
         maxGuestsPerTent: camping?.max_guests_per_tent ?? null,
         maxTentsPerNight: camping?.max_tents_per_night ?? 0,
-        cover: coverUrl ? { url: coverUrl, alt: ct?.name ?? "", caption: null, width: camping?.cover_width ?? null, height: camping?.cover_height ?? null, srcset: coverSrcset } : null,
+        cover: coverUrl ? { url: coverUrl, alt: ct?.name ?? "", caption: null, width: camping?.cover_width ?? null, height: camping?.cover_height ?? null, srcset: coverSrcset, ...(coverFocal ? { focal: coverFocal } : {}) } : null,
         tarp: camping?.tarp_enabled === 1 && camping.max_tarps_per_night > 0 ? { pricePerNightSatang: camping.tarp_price_per_night_satang } : null,
       },
     };
@@ -108,9 +110,10 @@ export class AccommodationService {
       this.repo.translations(ids), this.repo.images(ids, true), this.repo.unitAmenities(ids), this.repo.amenities(true),
     ]);
     const texts = groupTexts(await this.media.translationsFor(images.map((i) => i.media_asset_id)));
-    const renditions = this.images
-      ? await this.images.renditions([...images.map((i) => i.media_asset_id), ...units.map((u) => u.cover_asset_id)])
-      : new Map<string, Rendition[]>();
+    const assetIds = [...images.map((i) => i.media_asset_id), ...units.map((u) => u.cover_asset_id)];
+    const [renditions, focals] = this.images
+      ? await Promise.all([this.images.renditions(assetIds), this.images.focals(assetIds)])
+      : [new Map<string, Rendition[]>(), new Map<string, FocalPoint>()];
     const tByUnit = groupBy(translations, (t) => t.unit_id);
     const amenityById = new Map(amenities.map((a) => [a.id, a]));
 
@@ -122,6 +125,7 @@ export class AccommodationService {
         return {
           url: publicMediaUrl(key, this.mediaBaseUrl) ?? "", alt: mt?.altText ?? t.name, caption: mt?.caption ?? null, width: w, height: h,
           srcset: this.images?.srcset(renditions.get(assetId), { key, width: w }) ?? null,
+          ...(focals.has(assetId) ? { focal: focals.get(assetId)! } : {}),
         };
       };
       const unitImages = images.filter((i) => i.unit_id === u.id);
@@ -179,6 +183,7 @@ export class AccommodationService {
       this.repo.translations(ids), this.repo.images(ids, false), this.repo.unitAmenities(ids),
     ]);
     const texts = groupTexts(await this.media.translationsFor(images.map((i) => i.media_asset_id)));
+    const focals = await this.media.focals(images.map((i) => i.media_asset_id));
     return units.map((u) => ({
       id: u.id,
       unitCode: u.unit_code,
@@ -206,6 +211,7 @@ export class AccommodationService {
         sortOrder: i.sort_order,
         status: i.status,
         isCover: i.media_asset_id === u.cover_asset_id,
+        focal: focals.get(i.media_asset_id) ?? null,
         texts: texts[i.media_asset_id] ?? {},
       })),
       createdAt: u.created_at,

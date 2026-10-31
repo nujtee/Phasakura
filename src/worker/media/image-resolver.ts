@@ -1,6 +1,27 @@
+import type { FocalPoint } from "../../shared/focal-point.ts";
 import { DEFAULT_LOCALE_CODE } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike } from "../env.ts";
+import { withFallback } from "../repositories/schema-fallback.ts";
 import { publicMediaUrl } from "../services/media-url.ts";
+
+/** Focal points of images, by asset id (one query; none before migration 0046). */
+export async function loadFocals(db: D1DatabaseLike, assetIds: (string | null | undefined)[]): Promise<Map<string, FocalPoint>> {
+  const ids = [...new Set(assetIds.filter((x): x is string => !!x))];
+  const map = new Map<string, FocalPoint>();
+  if (!ids.length) return map;
+  const rows = await withFallback(
+    async () => (await db
+      .prepare(
+        `SELECT id, focal_x, focal_y FROM media_assets
+          WHERE id IN (SELECT value FROM json_each(?1)) AND focal_x IS NOT NULL AND focal_y IS NOT NULL`,
+      )
+      .bind(JSON.stringify(ids))
+      .all<{ id: string; focal_x: number; focal_y: number }>()).results,
+    async () => [],
+  );
+  for (const r of rows) map.set(r.id, { x: r.focal_x, y: r.focal_y });
+  return map;
+}
 
 export interface Rendition {
   key: string;
@@ -16,6 +37,10 @@ export class ImageResolver {
     private readonly db: D1DatabaseLike,
     private readonly mediaBaseUrl: string | undefined,
   ) {}
+
+  focals(ids: (string | null | undefined)[]): Promise<Map<string, FocalPoint>> {
+    return loadFocals(this.db, ids);
+  }
 
   async renditions(originalIds: (string | null | undefined)[]): Promise<Map<string, Rendition[]>> {
     const ids = [...new Set(originalIds.filter((x): x is string => !!x))];

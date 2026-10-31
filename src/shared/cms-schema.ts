@@ -6,6 +6,7 @@
  * admin forms (src/client/admin/cms), so the two can never disagree.
  * Table and column names live only in the Worker.
  */
+import type { FocalPoint } from "./focal-point.ts";
 import type { LocaleCode } from "./i18n/locales.ts";
 
 export type MediaPurposeCode =
@@ -286,6 +287,8 @@ export interface CmsRecord {
   translations: Partial<Record<LocaleCode, Record<string, string | null>>>;
   /** Public URL for every `asset` field (key → url). */
   urls: Record<string, string | null>;
+  /** Focal point per image field (migration 0046); missing = centre. */
+  focals?: Record<string, FocalPoint | null>;
   updatedAt?: string | null;
   [field: string]: unknown;
 }

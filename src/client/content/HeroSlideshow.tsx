@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { PublicSlideDto } from "../../shared/content-types.ts";
+import { objectPosition } from "../../shared/focal-point.ts";
 import { IMAGE_SIZES } from "../../shared/media-types.ts";
 import { fill } from "../accommodation/UnitCard.tsx";
 import { useContentT } from "./useContentT.ts";
@@ -74,12 +75,17 @@ export function HeroSlideshow({ slides, title }: { slides: PublicSlideDto[]; tit
           const overlay = s.overlay.enabled
             ? ({ "--hero-overlay": s.overlay.color, "--hero-overlay-opacity": String(s.overlay.opacity / 100) } as CSSProperties)
             : undefined;
+          // Focal points: the photo is cropped to the screen's shape around what matters (phone photo when there is one).
+          const focal = {
+            ...(s.desktop.focal ? { "--hero-focal": objectPosition(s.desktop.focal) } : {}),
+            ...(s.mobile ? (s.mobile.focal ? { "--hero-focal-m": objectPosition(s.mobile.focal) } : { "--hero-focal-m": "50% 50%" }) : {}),
+          } as CSSProperties;
           return (
             <div key={s.id} className={`hero__slide${active ? " is-active" : ""}${s.overlay.enabled ? " hero__slide--overlay" : ""}`}
               role="group" aria-roledescription="slide" aria-label={fill(ct.slideshow.position, { n: i + 1, total: count })}
               aria-hidden={active ? undefined : true} style={overlay}>
               {loaded.has(i) && (
-                <picture className="hero__media">
+                <picture className="hero__media" style={focal}>
                   {s.mobile && <source media="(max-width: 767px)" srcSet={s.mobile.srcset ?? s.mobile.url} sizes={IMAGE_SIZES.hero} />}
                   <img src={s.desktop.url} srcSet={s.desktop.srcset ?? undefined} sizes={s.desktop.srcset ? IMAGE_SIZES.hero : undefined}
                     alt={s.desktop.alt} width={s.desktop.width ?? undefined} height={s.desktop.height ?? undefined}

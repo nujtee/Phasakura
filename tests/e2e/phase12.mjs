@@ -126,6 +126,15 @@ await check("home slide: upload in the CMS editor (compressed), save, publish", 
   const form = pa.locator("form").filter({ has: pa.getByText("Desktop image") }).first();
   await form.locator("input[type=file]").first().setInputFiles(file("hero-a.png"));
   await until(async () => (await form.locator(".adm-imagefield__preview img").count()) > 0, 30000);
+  // Focal point (migration 0046): found by the browser on upload; staff click the photo to move it.
+  const focal = form.locator(".adm-focal").first();
+  await focal.waitFor();
+  const pick = focal.locator(".adm-focal__pick");
+  const box = await pick.boundingBox();
+  await pick.click({ position: { x: box.width * 0.25, y: box.height * 0.8 } });
+  await focal.getByText("Focal point saved").waitFor();
+  const shown = await focal.locator(".adm-focal__value").textContent();
+  assert(/^2[45]% · 8[01]%$/.test(shown), `focal shown ${shown}`);
   await form.getByLabel("Title", { exact: true }).first().fill("ตื่นมากับสายหมอก");
   await form.getByLabel("Subtitle", { exact: true }).first().fill("บ้านพักกลางหุบเขา");
   await form.getByRole("button", { name: "Save" }).click();
@@ -144,6 +153,8 @@ await check("home slide: upload in the CMS editor (compressed), save, publish", 
   assert(home.slides.length === 2, `slides ${home.slides.length}`);
   const first = home.slides[0];
   assert(/\.webp$/.test(first.desktop.url) && first.desktop.width === 2400, `compressed slide ${first.desktop.url} ${first.desktop.width}`);
+  assert(first.desktop.focal && Math.abs(first.desktop.focal.x - 25) <= 1 && Math.abs(first.desktop.focal.y - 80) <= 1, `focal ${JSON.stringify(first.desktop.focal)}`);
+  assert(home.slides[1].desktop.focal === undefined, "uploaded without a point (API) → centre");
   assert(/-w640\.webp 640w, .*-w1024\.webp 1024w, .*-w1600\.webp 1600w, .*2400w$/.test(first.desktop.srcset), first.desktop.srcset);
 });
 
@@ -200,6 +211,8 @@ await check("home: hero slideshow (hidden h1 = site name, eager first image, src
   assert((await img.getAttribute("loading")) === "eager", "first slide eager");
   assert((await img.getAttribute("fetchpriority")) === "high", "fetchpriority");
   assert(/640w/.test(await img.getAttribute("srcset")), "srcset");
+  const position = await img.evaluate((el) => getComputedStyle(el).objectPosition);
+  assert(/^2[45](\.\d+)?% 8[01](\.\d+)?%$/.test(position), `hero crop keeps the focal point: ${position}`);
   const chosen = await img.evaluate((el) => el.currentSrc);
   assert(/-w1600\.webp|\.webp$/.test(chosen), `currentSrc ${chosen}`);
   await pv.locator(".hero__slide.is-active .hero__title", { hasText: "ตื่นมากับสายหมอก" }).waitFor();

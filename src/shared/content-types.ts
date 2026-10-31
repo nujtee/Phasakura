@@ -1,4 +1,5 @@
 /** Public content API (spec §59): home, gallery, history. Only published, in-window records. */
+import type { FocalPoint } from "./focal-point.ts";
 import type { LocaleCode } from "./i18n/locales.ts";
 
 export interface PublicImageDto {
@@ -8,6 +9,8 @@ export interface PublicImageDto {
   alt: string;
   /** Responsive renditions "url 480w, …" (Phase 12); null when only the original exists. */
   srcset?: string | null;
+  /** Where to keep the picture when it is cropped to fill a frame (percent; migration 0046). Absent = centre. */
+  focal?: FocalPoint | null;
 }
 
 export interface PublicSlideDto {

@@ -176,6 +176,7 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/admin/camping/recalculate", acc.recalculateCamping)
     .post("/api/admin/media", acc.upload)
     .put("/api/admin/media/:id/texts", acc.setMediaTexts)
+    .put("/api/admin/media/:id/focal", acc.setMediaFocal)
     // Booking (public)
     .get("/api/public/food-options", book.foodOptions)
     .post("/api/public/bookings/quote", book.quote)

@@ -1,3 +1,4 @@
+import type { FocalPoint } from "../../shared/focal-point.ts";
 import type {
   PublicGalleryDto, PublicHistoryDto, PublicHomeDto, PublicImageDto, PublicSectionDto, PublicSlideDto,
 } from "../../shared/content-types.ts";
@@ -23,11 +24,13 @@ export class PublicContentService {
   ) {}
 
   private renditions = new Map<string, Rendition[]>();
+  private focals = new Map<string, FocalPoint>();
 
   /** Loads renditions for every image id found in the rows (one query). */
   private async loadRenditions(rows: Row[], idColumns: string[]): Promise<void> {
     if (!this.images) return;
-    this.renditions = await this.images.renditions(rows.flatMap((r) => idColumns.map((c) => r[c] as string | null)));
+    const ids = rows.flatMap((r) => idColumns.map((c) => r[c] as string | null));
+    [this.renditions, this.focals] = await Promise.all([this.images.renditions(ids), this.images.focals(ids)]);
   }
 
   async home(lang: LocaleCode): Promise<PublicHomeDto> {
@@ -175,7 +178,8 @@ export class PublicContentService {
     if (!url) return null;
     const width = (w as number | null) ?? null;
     const srcset = this.images && typeof id === "string" ? this.images.srcset(this.renditions.get(id), { key: key as string, width }) : null;
-    return { url, width, height: (h as number | null) ?? null, alt, srcset };
+    const focal = typeof id === "string" ? this.focals.get(id) ?? null : null;
+    return { url, width, height: (h as number | null) ?? null, alt, srcset, ...(focal ? { focal } : {}) };
   }
 }
 

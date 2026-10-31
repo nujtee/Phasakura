@@ -6,7 +6,9 @@ import { format } from "../../../shared/i18n/admin-messages.ts";
 import type { AdminCmsMessages } from "../../../shared/i18n/admin-cms-messages.ts";
 import { LOCALES, type LocaleCode } from "../../../shared/i18n/locales.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
-import { uploadImage } from "../../media/prepareImage.ts";
+import { CROPPED, uploadImage } from "../../media/prepareImage.ts";
+import type { FocalPoint } from "../../../shared/focal-point.ts";
+import { FocalPicker } from "./FocalPicker.tsx";
 import type { ImageProfilePurpose } from "../../../shared/media-types.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, fieldErrors } from "../ui.tsx";
@@ -108,15 +110,19 @@ export function LangTabs({ value, onChange, filled }: { value: LocaleCode; onCha
 
 /** Upload a public image for one purpose (byte-checked by the Worker) and show it. */
 export function ImageField({
-  label, purpose, url, onChange, hint, error, disabled,
+  label, purpose, url, onChange, hint, error, disabled, assetId, focal, onFocalChange,
 }: {
   label: string;
   purpose: string;
   url: string | null;
-  onChange: (asset: { id: string; url: string } | null) => void;
+  onChange: (asset: { id: string; url: string; focal?: FocalPoint | null } | null) => void;
   hint?: string;
   error?: string;
   disabled?: boolean;
+  /** With these, a photo the site crops gets a focal point picker (migration 0046). */
+  assetId?: string | null;
+  focal?: FocalPoint | null;
+  onFocalChange?: (focal: FocalPoint | null) => void;
 }) {
   const { t, c } = useAdmin();
   const id = useId();
@@ -153,6 +159,9 @@ export function ImageField({
       </div>
       {hint && <p className="adm-field__hint">{hint}</p>}
       {(error || uploadError) && <p className="adm-field__error" role="alert">{error ?? uploadError}</p>}
+      {url && assetId && onFocalChange && CROPPED.has(purpose as ImageProfilePurpose) && (
+        <FocalPicker key={assetId} assetId={assetId} url={url} focal={focal ?? null} onChange={onFocalChange} disabled={disabled} />
+      )}
     </div>
   );
 }
@@ -207,6 +216,7 @@ export function CmsForm({
     ...(record ? {} : presets),
   }));
   const [urls, setUrls] = useState<Record<string, string | null>>(record?.urls ?? {});
+  const [focals, setFocals] = useState<Record<string, FocalPoint | null>>(record?.focals ?? {});
   const [texts, setTexts] = useState<Partial<Record<LocaleCode, Record<string, string>>>>(() =>
     Object.fromEntries(LOCALES.map((l) => [l.code, Object.fromEntries(def.translations.map((f) => [f.key, record?.translations[l.code]?.[f.key] ?? ""]))])));
   const [lang, setLang] = useState<LocaleCode>("th");
@@ -255,7 +265,13 @@ export function CmsForm({
     if (f.kind === "asset") {
       return (
         <ImageField key={f.key} label={label(f.key)} purpose={f.purpose!} url={urls[f.key] ?? null} error={err} disabled={!editable}
-          onChange={(asset) => { set(f.key, asset?.id ?? ""); setUrls((u) => ({ ...u, [f.key]: asset?.url ?? null })); }} />
+          onChange={(asset) => {
+            set(f.key, asset?.id ?? "");
+            setUrls((u) => ({ ...u, [f.key]: asset?.url ?? null }));
+            setFocals((m) => ({ ...m, [f.key]: asset?.focal ?? null }));
+          }}
+          assetId={values[f.key] || null} focal={focals[f.key] ?? null}
+          onFocalChange={(focal) => setFocals((m) => ({ ...m, [f.key]: focal }))} />
       );
     }
     if (f.kind === "bool") {
