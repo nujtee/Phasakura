@@ -2,16 +2,18 @@ name: diag cron (temporary, read-only)
 on:
   push:
     branches: [diag/cron-tail]
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 jobs:
   diag:
     runs-on: ubuntu-latest
     steps:
-      - name: zoho token endpoints (no credentials sent)
+      - name: secret NAMES only (never values)
         run: |
-          for h in accounts.zoho.com accounts.zoho.eu accounts.zoho.in accounts.zoho.com.au accounts.zoho.jp accounts.zohocloud.ca accounts.zoho.sa; do
-            r=$(curl -s -o b.txt -w "%{http_code}" -X POST "https://$h/oauth/v2/token" -d grant_type=refresh_token -d client_id=x -d client_secret=x -d refresh_token=x -D h.txt)
-            srv=$(grep -i '^server:' h.txt | tr -d '\r')
-            echo "$h $r $srv $(head -c 120 b.txt)" >> out.txt
+          for w in cherngdoi phatopview lungtaihomestay; do
+            n=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$w/secrets" | jq -r '[.result[]?.name | select(test("ZOHO|RESEND"))] | join(",")')
+            echo "$w: $n" >> out.txt
           done
       - name: annotate
         if: always()
