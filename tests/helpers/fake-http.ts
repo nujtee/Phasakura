@@ -70,7 +70,7 @@ export const fakeResend = () => {
  */
 export class FakeZoho extends FakeHttp {
   readonly mailbox = { accountId: "2560636000000008002", primary: "booking@phasakura.test", aliases: ["info@phasakura.test"] };
-  tokenMode: "OK" | "INVALID_CLIENT" | "RATE_LIMITED" = "OK";
+  tokenMode: "OK" | "INVALID_CLIENT" | "RATE_LIMITED" | "EDGE_530" = "OK";
   /** Zoho answers every message with this instead of sending it (e.g. an hourly-limit error). */
   messageError: { status: number; errorCode: string } | null = null;
   readonly valid = new Set<string>();
@@ -102,6 +102,8 @@ export class FakeZoho extends FakeHttp {
     const url = new URL(req.url);
     if (url.hostname === "accounts.zoho.com" && url.pathname === "/oauth/v2/token" && req.method === "POST") {
       const form = new URLSearchParams(req.body);
+      // Cloudflare could not reach the accounts server from this location (error 530 page, not JSON).
+      if (this.tokenMode === "EDGE_530") return new Response("<html>error code: 1016</html>", { status: 530, headers: { "Content-Type": "text/html" } });
       if (this.tokenMode === "RATE_LIMITED") {
         return jsonResponse({ error_description: "You have made too many requests continuously. Please try again after some time.", error: "Access Denied", status: "failure" }, 400);
       }

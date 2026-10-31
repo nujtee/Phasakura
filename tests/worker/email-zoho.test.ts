@@ -137,6 +137,19 @@ describe("e-mail through Zoho Mail", () => {
     assert.equal(row(h).status, "SENT");
   });
 
+  it("a test that cannot reach Zoho at first (530 at the edge) is not failed: the cron sends it a minute later", async () => {
+    const { h, test } = await setup({ guests: false });
+    h.zoho.tokenMode = "EDGE_530";
+    const first = await test();
+    assert.equal(first.data.status, "PENDING");
+    assert.equal(first.data.lastError, "ZOHO_TOKEN_530");
+    h.zoho.tokenMode = "OK";
+    h.advance(2 * 60_000);
+    await h.app.scheduled(h.env, Date.parse("2027-01-10T03:02:00Z"));
+    assert.equal(row(h).status, "SENT");
+    assert.equal(h.zoho.sent.length, 1);
+  });
+
   it("Zoho's sending limit waits an hour; a dropped connection is retried; other refusals fail", async () => {
     const { h } = await setup({ guests: false });
     h.zoho.messageError = { status: 400, errorCode: "MAIL_SENDING_LIMIT_EXCEEDED" };
