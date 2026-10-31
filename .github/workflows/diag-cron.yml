@@ -2,20 +2,38 @@ name: diag cron (temporary, read-only)
 on:
   push:
     branches: [diag/cron-tail]
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 jobs:
   diag:
     runs-on: ubuntu-latest
     steps:
-      - name: DNS of Zoho through Cloudflare's resolver
+      - name: fetch Zoho from Cloudflare's edge (wrangler dev --remote, dummy credentials, nothing deployed)
         run: |
-          for h in accounts.zoho.com mail.zoho.com; do
-            for t in A CNAME; do
-              echo "$h $t: $(curl -s -H 'accept: application/dns-json' "https://cloudflare-dns.com/dns-query?name=$h&type=$t" | jq -c '{Status, Answer: [.Answer[]? | .data]}')" >> out.txt
-            done
-            echo "$h google: $(curl -s "https://dns.google/resolve?name=$h&type=A" | jq -c '{Status, Answer: [.Answer[]? | .data]}')" >> out.txt
-          done
+          mkdir z && cd z
+          cat > w.js <<'JS'
+          export default {
+            async fetch() {
+              const out = [];
+              for (const u of ["https://accounts.zoho.com/oauth/v2/token", "https://mail.zoho.com/api/accounts", "https://accounts.zoho.in/oauth/v2/token"]) {
+                try {
+                  const r = await fetch(u, { method: u.includes("token") ? "POST" : "GET", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: u.includes("token") ? "grant_type=refresh_token&client_id=x&client_secret=x&refresh_token=x" : undefined });
+                  const t = await r.text();
+                  out.push(`${u} ${r.status} server=${r.headers.get("server")} ${t.replace(/\s+/g, " ").slice(0, 300)}`);
+                } catch (e) { out.push(`${u} THREW ${e}`); }
+              }
+              return new Response(out.join("\n"));
+            },
+          };
+          JS
+          printf '{"name":"diag-zoho-probe","main":"w.js","compatibility_date":"2025-01-01"}' > wrangler.json
+          (npx -y wrangler@4 dev --remote --port 8799 > dev.log 2>&1 &) 
+          for i in $(seq 1 60); do curl -s localhost:8799 > ../out.txt && [ -s ../out.txt ] && break; sleep 3; done
+          tail -5 dev.log >> ../out.txt
       - name: annotate
         if: always()
         run: |
-          m=$(cat out.txt | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
+          m=$(cut -c1-400 out.txt | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
           echo "::notice title=out::$m"
