@@ -12,7 +12,12 @@
 export interface FocalPoint {
   x: number;
   y: number;
+  /** Zoom in the frame, percent (100 = the photo just fills it; up to 300), around the point. Absent = 100. */
+  zoom?: number;
 }
+
+export const ZOOM_MIN = 100;
+export const ZOOM_MAX = 300;
 
 export const CENTER: FocalPoint = { x: 50, y: 50 };
 
@@ -27,8 +32,14 @@ const SATURATION_WEIGHT = 0.3;
 
 export function isFocalPoint(v: unknown): v is FocalPoint {
   if (typeof v !== "object" || v === null) return false;
-  const { x, y } = v as Record<string, unknown>;
-  return Number.isInteger(x) && Number.isInteger(y) && (x as number) >= 0 && (x as number) <= 100 && (y as number) >= 0 && (y as number) <= 100;
+  const { x, y, zoom } = v as Record<string, unknown>;
+  const zoomOk = zoom === undefined || (Number.isInteger(zoom) && (zoom as number) >= ZOOM_MIN && (zoom as number) <= ZOOM_MAX);
+  return zoomOk && Number.isInteger(x) && Number.isInteger(y) && (x as number) >= 0 && (x as number) <= 100 && (y as number) >= 0 && (y as number) <= 100;
+}
+
+/** CSS scale for the zoom (1 when none). Draw with transform-origin = the point, inside a frame that clips. */
+export function zoomScale(focal: FocalPoint | null | undefined): number {
+  return focal?.zoom && focal.zoom > ZOOM_MIN ? focal.zoom / 100 : 1;
 }
 
 /** "x% y%" for CSS object-position; undefined (browser default = centre) without a point. */

@@ -133,8 +133,16 @@ await check("home slide: upload in the CMS editor (compressed), save, publish", 
   const box = await pick.boundingBox();
   await pick.click({ position: { x: box.width * 0.25, y: box.height * 0.8 } });
   await focal.getByText("Focal point saved").waitFor();
-  const shown = await focal.locator(".adm-focal__value").textContent();
+  const shown = await focal.locator(".adm-focal__head .adm-focal__value").textContent();
   assert(/^2[45]% · 8[01]%$/.test(shown), `focal shown ${shown}`);
+  // Zoom in twice (+10 % each), saved after a short pause; the previews scale.
+  const zoomSaved = pa.waitForResponse((r) => r.url().includes("/focal") && r.request().method() === "PUT" && /"zoom"/.test(r.request().postData() ?? ""));
+  await focal.getByRole("button", { name: "Zoom in" }).click();
+  await focal.getByRole("button", { name: "Zoom in" }).click();
+  const zr = await zoomSaved;
+  assert(zr.status() === 200, `zoom save ${zr.status()} ${await zr.text()} ${zr.request().postData()}`);
+  await until(async () => /Zoom 120%$/.test(await focal.locator(".adm-focal__head .adm-focal__value").textContent()), 5000);
+  await until(async () => (await focal.locator(".adm-focal__frame--wide img").evaluate((el) => el.style.transform)) === "scale(1.2)", 5000);
   await form.getByLabel("Title", { exact: true }).first().fill("ตื่นมากับสายหมอก");
   await form.getByLabel("Subtitle", { exact: true }).first().fill("บ้านพักกลางหุบเขา");
   await form.getByRole("button", { name: "Save" }).click();
@@ -154,6 +162,7 @@ await check("home slide: upload in the CMS editor (compressed), save, publish", 
   const first = home.slides[0];
   assert(/\.webp$/.test(first.desktop.url) && first.desktop.width === 2400, `compressed slide ${first.desktop.url} ${first.desktop.width}`);
   assert(first.desktop.focal && Math.abs(first.desktop.focal.x - 25) <= 1 && Math.abs(first.desktop.focal.y - 80) <= 1, `focal ${JSON.stringify(first.desktop.focal)}`);
+  assert(first.desktop.focal.zoom === 120, `zoom ${JSON.stringify(first.desktop.focal)}`);
   assert(home.slides[1].desktop.focal === undefined, "uploaded without a point (API) → centre");
   assert(/-w640\.webp 640w, .*-w1024\.webp 1024w, .*-w1600\.webp 1600w, .*2400w$/.test(first.desktop.srcset), first.desktop.srcset);
 });
@@ -213,6 +222,8 @@ await check("home: hero slideshow (hidden h1 = site name, eager first image, src
   assert(/640w/.test(await img.getAttribute("srcset")), "srcset");
   const position = await img.evaluate((el) => getComputedStyle(el).objectPosition);
   assert(/^2[45](\.\d+)?% 8[01](\.\d+)?%$/.test(position), `hero crop keeps the focal point: ${position}`);
+  const transform = await img.evaluate((el) => getComputedStyle(el).transform);
+  assert(/^matrix\(1\.2, 0, 0, 1\.2,/.test(transform), `hero zoom ${transform}`);
   const chosen = await img.evaluate((el) => el.currentSrc);
   assert(/-w1600\.webp|\.webp$/.test(chosen), `currentSrc ${chosen}`);
   await pv.locator(".hero__slide.is-active .hero__title", { hasText: "ตื่นมากับสายหมอก" }).waitFor();

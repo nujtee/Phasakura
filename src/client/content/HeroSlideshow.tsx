@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { PublicSlideDto } from "../../shared/content-types.ts";
-import { objectPosition } from "../../shared/focal-point.ts";
+import { objectPosition, zoomScale } from "../../shared/focal-point.ts";
 import { IMAGE_SIZES } from "../../shared/media-types.ts";
 import { fill } from "../accommodation/UnitCard.tsx";
 import { useContentT } from "./useContentT.ts";
@@ -77,8 +77,10 @@ export function HeroSlideshow({ slides, title }: { slides: PublicSlideDto[]; tit
             : undefined;
           // Focal points: the photo is cropped to the screen's shape around what matters (phone photo when there is one).
           const focal = {
-            ...(s.desktop.focal ? { "--hero-focal": objectPosition(s.desktop.focal) } : {}),
-            ...(s.mobile ? (s.mobile.focal ? { "--hero-focal-m": objectPosition(s.mobile.focal) } : { "--hero-focal-m": "50% 50%" }) : {}),
+            ...(s.desktop.focal ? { "--hero-focal": objectPosition(s.desktop.focal), "--hero-zoom": String(zoomScale(s.desktop.focal)) } : {}),
+            ...(s.mobile
+              ? { "--hero-focal-m": objectPosition(s.mobile.focal) ?? "50% 50%", "--hero-zoom-m": String(zoomScale(s.mobile.focal)) }
+              : {}),
           } as CSSProperties;
           return (
             <div key={s.id} className={`hero__slide${active ? " is-active" : ""}${s.overlay.enabled ? " hero__slide--overlay" : ""}`}

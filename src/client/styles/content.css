@@ -87,11 +87,16 @@
 /* Focal point of the photo (set when it was uploaded): the crop keeps it in view. */
 .hero__media img {
   object-position: var(--hero-focal, 50% 50%);
+  /* Zoom set in admin: scaled around the focal point (the slide clips it). */
+  transform: scale(var(--hero-zoom, 1));
+  transform-origin: var(--hero-focal, 50% 50%);
 }
 
 @media (max-width: 767px) {
   .hero__media img {
     object-position: var(--hero-focal-m, var(--hero-focal, 50% 50%));
+    transform: scale(var(--hero-zoom-m, var(--hero-zoom, 1)));
+    transform-origin: var(--hero-focal-m, var(--hero-focal, 50% 50%));
   }
 }
 
