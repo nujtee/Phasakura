@@ -260,6 +260,60 @@ await check("mobile 390 px: search fills the screen, results readable, no horizo
   await ctx.close();
 });
 
+await check("prerender: without JavaScript the page content is there; with it, visitors never see it (the app replaces it)", async () => {
+  // A crawler that does not run scripts.
+  const nojs = await browser.newContext({ ignoreHTTPSErrors: true, javaScriptEnabled: false, viewport: { width: 1366, height: 860 } });
+  const p = await nojs.newPage();
+  await p.goto(`${BASE}/th/`);
+  const h1 = await p.locator(".prerender h1").textContent();
+  assert(h1 && h1.length > 0, "home h1");
+  assert(await p.locator(".prerender h1").isVisible(), "visible without JavaScript");
+  assert((await p.locator('.prerender a[href*="/th/accommodation/"]').count()) >= 1, "houses linked");
+  await p.goto(`${BASE}/en/accommodation/house-sakura`);
+  assert(/\S/.test(await p.locator(".prerender main h1").textContent()), "house h1");
+  if (SHOTS) await p.screenshot({ path: `${SHOTS}/prerender-nojs.png`, fullPage: true });
+  await nojs.close();
+
+  // A visitor: the prerendered block is hidden from the first paint, then gone; the app is there.
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1366, height: 860 } });
+  const v = await ctx.newPage(); watch(v);
+  await v.goto(`${BASE}/th/`);
+  await v.locator(".site-header").waitFor();
+  await v.locator(".home-section__title, .booking-band__title").first().waitFor();
+  // The site's stylesheet hides prerendered content wherever scripts run (it is never painted for visitors).
+  const hidden = await v.evaluate(() => {
+    const el = document.createElement("div");
+    el.className = "prerender";
+    el.textContent = "x";
+    document.body.append(el);
+    const vis = getComputedStyle(el).visibility;
+    el.remove();
+    return { scripting: matchMedia("(scripting: enabled)").matches, vis };
+  });
+  assert(hidden.scripting && hidden.vis === "hidden", `prerender for visitors: ${JSON.stringify(hidden)}`);
+  assert((await v.locator(".prerender").count()) === 0, "replaced by the app");
+  assert((await v.locator("h1").count()) === 1, "one h1 after the app starts");
+
+  // Core Web Vitals on the home page (local, no throttling): LCP and CLS within Google's "good".
+  const vitals = await v.evaluate(() => new Promise((resolve) => {
+    let lcp = 0; let cls = 0;
+    new PerformanceObserver((l) => { for (const e of l.getEntries()) lcp = e.startTime; }).observe({ type: "largest-contentful-paint", buffered: true });
+    const shifts = [];
+    new PerformanceObserver((l) => {
+      for (const e of l.getEntries()) {
+        if (e.hadRecentInput) continue;
+        cls += e.value;
+        shifts.push(`${e.startTime.toFixed(0)}ms ${e.value.toFixed(3)} ${(e.sources ?? []).map((s) => s.node?.className || s.node?.nodeName).join(",")}`);
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+    setTimeout(() => resolve({ lcp, cls, shifts }), 1500);
+  }));
+  assert(vitals.lcp > 0 && vitals.lcp < 2500, `LCP ${vitals.lcp}`);
+  assert(vitals.cls < 0.1, `CLS ${vitals.cls} ${vitals.shifts.join(" | ")}`);
+  console.log("home vitals", JSON.stringify(vitals));
+  await ctx.close();
+});
+
 await check("no console or CSP errors", async () => {
   assert(consoleErrors.length === 0, consoleErrors.join("\n"));
 });

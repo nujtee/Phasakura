@@ -1,3 +1,4 @@
+import { startWebVitals } from "../analytics/webVitals.ts";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { PublicPage, SitePage } from "../../shared/routes.ts";
 import { FloatingBookingCta } from "./FloatingBookingCta.tsx";
@@ -19,6 +20,29 @@ export function contactMethod(href: string): "phone" | "email" | "line" | "map" 
   if (/^https:\/\/(line\.me|lin\.ee|page\.line\.me)\//.test(h)) return "line";
   if (/^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+)/.test(h)) return "map";
   return null;
+}
+
+/** The booking page (any language), not the Booking ID lookup. */
+const BOOKING_PATH = /^\/[a-z-]+\/booking\/?$/;
+
+/** A link that starts a booking: to the booking page (with or without dates), from another page. */
+export function isBookingLink(href: string): boolean {
+  try {
+    const u = new URL(href, "https://site.invalid");
+    return u.origin === "https://site.invalid" && BOOKING_PATH.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** Where on the page a contact link was clicked (GA4 link_location): floating button, header, footer or page. */
+export function contactPlace(a: Element): string {
+  if (a.closest(".line-fab")) return "line_button";
+  if (a.closest(".cta")) return "floating_button";
+  if (a.closest(".hero")) return "hero";
+  if (a.closest("header")) return "header";
+  if (a.closest("footer")) return "footer";
+  return "page";
 }
 
 export function Layout({
@@ -50,12 +74,18 @@ export function Layout({
     track({ name: "page_view", location: window.location.href, title, language: locale.code });
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps -- once per page, not when the title loads
 
+  // Core Web Vitals of the page the visitor opened (sent to GA4 when they leave, with consent).
+  useEffect(() => { startWebVitals(); }, []);
+
   // Phone / e-mail / LINE / map links anywhere on the public site count as "Contact".
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       const a = (e.target as Element | null)?.closest?.("a[href]");
       const method = a ? contactMethod(a.getAttribute("href") ?? "") : null;
-      if (method) track({ name: "contact", method });
+      if (method && a) track({ name: "contact", method, place: contactPlace(a) });
+      else if (a && isBookingLink(a.getAttribute("href") ?? "") && !window.location.pathname.match(BOOKING_PATH)) {
+        track({ name: "click_book", place: contactPlace(a) });
+      }
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
