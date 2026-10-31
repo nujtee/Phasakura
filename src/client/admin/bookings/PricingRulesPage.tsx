@@ -34,8 +34,10 @@ export function PricingRulesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const nameOf = (id: string) => { const u = units.find((x) => x.id === id); return u ? unitName(u, locale.code, u.unitCode) : id; };
   const targetLabel = (r: PricingRuleInput) =>
-    r.targetType === "UNIT" ? (units.find((u) => u.id === r.unitId) ? unitName(units.find((u) => u.id === r.unitId)!, locale.code, "") : r.unitId)
+    r.targetType === "UNITS" ? (r.unitIds ?? []).map(nameOf).join(", ")
+      : r.targetType === "UNIT" ? (units.find((u) => u.id === r.unitId) ? unitName(units.find((u) => u.id === r.unitId)!, locale.code, "") : r.unitId)
       : r.targetType === "UNIT_TYPE" ? `${t.pricing.targetUNIT_TYPE}: ${r.unitType === "HOUSE" ? t.nav.houses : t.nav.vipTents}`
         : t.pricing.targetCAMPING;
 
@@ -93,7 +95,9 @@ export function PricingRulesPage() {
               <label htmlFor="pr-target">{t.pricing.target}</label>
               <select id="pr-target" value={editing.input.targetType}
                 onChange={(e) => set({ targetType: e.target.value as PricingTargetType })}>
-                {(["UNIT", "UNIT_TYPE", "CAMPING"] as const).map((x) => <option key={x} value={x}>{t.pricing[`target${x}`]}</option>)}
+                {/* A group stays a group; a single rule stays single (a new group rule is made instead). */}
+                {(editing.id ? (editing.input.targetType === "UNITS" ? ["UNITS"] as const : ["UNIT", "UNIT_TYPE", "CAMPING"] as const)
+                  : ["UNIT", "UNITS", "UNIT_TYPE", "CAMPING"] as const).map((x) => <option key={x} value={x}>{t.pricing[`target${x}`]}</option>)}
               </select>
             </div>
             {editing.input.targetType === "UNIT" && (
@@ -117,6 +121,30 @@ export function PricingRulesPage() {
               </div>
             )}
           </div>
+          {editing.input.targetType === "UNITS" && (
+            <fieldset className="adm-fieldset adm-ruleunits" aria-invalid={errors.unitIds ? true : undefined}>
+              <legend className="adm-label">{t.pricing.units}</legend>
+              <div className="adm-row">
+                <Button variant="ghost" onClick={() => set({ unitIds: units.filter((u) => u.status !== "DELETED").map((u) => u.id) })}>{t.pricing.allUnits}</Button>
+                <Button variant="ghost" onClick={() => set({ unitIds: [] })}>{t.pricing.noUnits}</Button>
+              </div>
+              <ul className="adm-extrabeds__unitlist">
+                {units.filter((u) => u.status !== "DELETED").map((u) => {
+                  const chosen = editing.input.unitIds ?? [];
+                  return (
+                    <li key={u.id}>
+                      <label className="adm-check">
+                        <input type="checkbox" checked={chosen.includes(u.id)}
+                          onChange={(e) => set({ unitIds: e.target.checked ? [...chosen, u.id] : chosen.filter((x) => x !== u.id) })} />
+                        {u.unitCode} · {unitName(u, locale.code, "")}
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+              {errors.unitIds && <p className="adm-field__error">{errors.unitIds}</p>}
+            </fieldset>
+          )}
           <Field label={t.pricing.name} required maxLength={80} value={editing.input.name} error={errors.name}
             onChange={(e) => set({ name: e.target.value })} />
           <div className="adm-grid2">

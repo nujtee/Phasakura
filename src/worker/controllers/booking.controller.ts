@@ -1,5 +1,5 @@
 import type { BookingStatus, FoodSelection, MassageSelection, PaymentStatus, PricingRuleInput } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_MASSAGE_LINES, MAX_MASSAGE_QUANTITY, MAX_PETS_PER_UNIT, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_MASSAGE_LINES, MAX_MASSAGE_QUANTITY, MAX_PETS_PER_UNIT, MAX_RULE_UNITS, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
 import { MAX_PRICE_SATANG, PAY_NOW_PERCENTS } from "../../shared/booking-rules.ts";
 import { BALANCE_METHODS, type BalanceMethod } from "../../shared/payment-types.ts";
 import { isIsoDate } from "../../shared/dates.ts";
@@ -19,7 +19,7 @@ import type { RequestMeta } from "../services/auth-context.ts";
 const NO_STORE = { "Cache-Control": "no-store" };
 const BOOKING_STATUSES = ["PENDING", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "CANCELLED", "EXPIRED", "NO_SHOW"] as const;
 const PAYMENT_STATUSES = ["UNPAID", "PENDING_VERIFICATION", "VERIFIED", "PAID", "REJECTED", "REFUNDED"] as const;
-const TARGET_TYPES = ["UNIT", "UNIT_TYPE", "CAMPING"] as const;
+const TARGET_TYPES = ["UNIT", "UNIT_TYPE", "CAMPING", "UNITS"] as const;
 const UNIT_TYPES = ["HOUSE", "VIP_TENT"] as const;
 const RULE_STATUSES = ["ACTIVE", "INACTIVE"] as const;
 const DAYS = /^[0-6]{1,7}$/;
@@ -184,7 +184,7 @@ function parseQuote(body: Record<string, unknown>, v: Validator): QuoteInput {
 }
 
 function parseRule(body: Record<string, unknown>, partial: boolean): Partial<PricingRuleInput> {
-  const v = new Validator(body).allowOnly(["targetType", "unitId", "unitType", "name", "dateFrom", "dateTo", "daysOfWeek", "priceSatang", "priority", "status", "payNowPercent"]);
+  const v = new Validator(body).allowOnly(["targetType", "unitId", "unitType", "name", "dateFrom", "dateTo", "daysOfWeek", "priceSatang", "priority", "status", "payNowPercent", "unitIds"]);
   const out: Partial<PricingRuleInput> = {};
   const want = (k: string) => !partial || v.has(k);
   if (want("targetType")) out.targetType = v.oneOf("targetType", TARGET_TYPES, { required: true });
@@ -203,8 +203,15 @@ function parseRule(body: Record<string, unknown>, partial: boolean): Partial<Pri
     if (p !== null && !(PAY_NOW_PERCENTS as readonly unknown[]).includes(p)) v.errors.payNowPercent = "INVALID_VALUE";
     else out.payNowPercent = p as number | null;
   }
+  // Several chosen houses / VIP tents (migration 0051).
+  if (v.has("unitIds")) {
+    const ids = body.unitIds;
+    if (!Array.isArray(ids) || ids.length > MAX_RULE_UNITS || !ids.every((x) => typeof x === "string" && ID_PATTERN.test(x))) v.errors.unitIds = "INVALID_VALUE";
+    else out.unitIds = [...new Set(ids as string[])];
+  }
   v.assertValid();
   if (!partial) {
+    if (out.targetType === "UNITS" && !out.unitIds?.length) throw new ValidationError({ unitIds: "REQUIRED" });
     if (out.targetType === "UNIT" && !out.unitId) throw new ValidationError({ unitId: "REQUIRED" });
     if (out.targetType === "UNIT_TYPE" && !out.unitType) throw new ValidationError({ unitType: "REQUIRED" });
     if (out.dateTo! < out.dateFrom!) throw new ValidationError({ dateTo: "BEFORE_START" });
