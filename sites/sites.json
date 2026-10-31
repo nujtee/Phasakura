@@ -58,6 +58,14 @@
       "d1": { "name": "phatopview-db", "id": "a322b83f-5ab7-4e37-b8b2-d3eda839e29a" },
       "rateLimitBase": 7000,
       "wave": 1
+    },
+    {
+      "slug": "lungtaihomestay",
+      "name": "Lungtaihomestay",
+      "domain": "lungtaihomestay.com",
+      "d1": { "name": "lungtaihomestay-db", "id": "0c29ee9d-380a-4387-9789-733d13a40323" },
+      "rateLimitBase": 8000,
+      "wave": 1
     }
   ]
 }
