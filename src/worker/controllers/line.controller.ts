@@ -39,7 +39,7 @@ export function lineController(services: ServicesFor) {
     /** POST /api/public/bookings/line-link { bookingCode, phone } — Booking ID + phone prove the booking is theirs. */
     guestLink: (async (ctx) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       v.assertValid();
       return jsonOk(await services(ctx).line.guestLink(bookingCode, phone, requestMeta(ctx)), { headers: NO_STORE });
@@ -47,7 +47,7 @@ export function lineController(services: ServicesFor) {
 
     guestUnlink: (async (ctx) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       v.assertValid();
       return jsonOk(await services(ctx).line.guestUnlink(bookingCode, phone, requestMeta(ctx)), { headers: NO_STORE });
