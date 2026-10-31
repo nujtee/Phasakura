@@ -311,11 +311,16 @@ export function accommodationController(services: ServicesFor) {
 
     updateExtraBeds: withPermission("accommodation.edit", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
-      const v = new Validator(body).allowOnly(["enabled", "pricePerNightSatang", "maxPerUnit", "updatedAt"]);
+      const v = new Validator(body).allowOnly(["enabled", "pricePerNightSatang", "maxPerUnit", "offUnitIds", "updatedAt"]);
+      const off = body.offUnitIds;
+      if (off !== undefined && !(Array.isArray(off) && off.length <= 500 && off.every((x) => typeof x === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(x)))) {
+        v.errors.offUnitIds = "INVALID_VALUE";
+      }
       const input = {
         enabled: v.boolean("enabled", false),
         pricePerNightSatang: int(v, body, "pricePerNightSatang", 0, MAX_PRICE_SATANG, true)!,
         maxPerUnit: int(v, body, "maxPerUnit", 1, MAX_EXTRA_BEDS_PER_UNIT, true)!,
+        ...(Array.isArray(off) ? { offUnitIds: off as string[] } : {}),
       };
       v.assertValid();
       return jsonOk(await services(ctx).accommodation.saveExtraBedSettings(auth, input, requestMeta(ctx)));

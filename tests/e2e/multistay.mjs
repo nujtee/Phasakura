@@ -189,9 +189,19 @@ await check("extra beds: staff switch them on (houses page), the guest adds one 
   await card.getByLabel("Let guests add extra beds when booking").check();
   await card.getByLabel("Price per bed per night (THB)").fill("300");
   await card.getByLabel("Most per unit (beds)").fill("2");
+  // Per house (migration 0047): all off, all on, then House 01 off on its own.
+  const boxes = card.locator(".adm-extrabeds__unitlist input[type=checkbox]");
+  const total = await boxes.count();
+  assert(total >= 3, `house switches ${total}`);
+  await card.getByRole("button", { name: "All off" }).click();
+  assert((await card.locator(".adm-extrabeds__unitlist input:checked").count()) === 0, "all off");
+  await card.getByRole("button", { name: "All on" }).click();
+  assert((await card.locator(".adm-extrabeds__unitlist input:checked").count()) === total, "all on");
+  await card.getByRole("checkbox", { name: /House 01/ }).uncheck();
   await card.getByRole("button", { name: "Save" }).click();
   await card.getByText("Extra beds settings saved").waitFor();
   await card.getByText(/฿300 per bed per night · up to 2 per unit/).waitFor();
+  await card.getByText(`on for ${total - 1} of ${total} units`).waitFor();
   if (SHOTS) await card.screenshot({ path: `${SHOTS}/extra-beds-admin.png` });
 
   const ci = day(70), co = day(72);
@@ -214,8 +224,16 @@ await check("extra beds: staff switch them on (houses page), the guest adds one 
   assert(overflow <= 1, `horizontal scroll ${overflow}px`);
   if (SHOTS) await pg.screenshot({ path: `${SHOTS}/extra-beds-guest.png`, fullPage: true });
 
+  // House 02 switched off too: the food step no longer offers beds for it.
+  const house2 = (await (await req.get(`${BASE}/api/admin/accommodations?type=HOUSE`)).json()).data.find((u) => Object.values(u.translations ?? {}).some((x) => /House 02/.test(x?.name ?? "")));
+  const settingsNow = (await (await req.get(`${BASE}/api/admin/extra-beds`)).json()).data;
+  const put = await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: true, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [...settingsNow.offUnitIds, house2.id] } });
+  assert(put.ok(), `house 02 off: ${put.status()}`);
+  const catalogue = (await (await pg.request.get(`${BASE}/api/public/food-options?checkIn=${ci}&checkOut=${co}&lang=th`)).json()).data;
+  assert(catalogue.extraBed.offUnitIds.includes(house2.id), "booking page told which houses are off");
+
   // Off again for the other suites.
-  const r = await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2 } });
+  const r = await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
   assert(r.ok(), `switch off: ${r.status()}`);
 });
 

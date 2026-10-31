@@ -44,6 +44,24 @@ export class ExtraBedRepository {
       .bind(s.enabled ? 1 : 0, s.pricePerNightSatang, s.maxPerUnit, s.userId, s.now);
   }
 
+  /** Houses / VIP tents where extra beds are switched off (migration 0047; none before it). */
+  offUnits(): Promise<string[]> {
+    return withFallback(
+      async () => (await this.db.prepare("SELECT unit_id FROM extra_bed_unit_off ORDER BY unit_id").all<{ unit_id: string }>()).results.map((r) => r.unit_id),
+      async () => [],
+    );
+  }
+
+  /** Replaces the list of houses where extra beds are off (same batch as the settings). */
+  saveOffUnitsStatements(unitIds: string[], userId: string, now: string): D1PreparedStatementLike[] {
+    return [
+      this.db.prepare("DELETE FROM extra_bed_unit_off"),
+      ...unitIds.map((id) => this.db
+        .prepare("INSERT INTO extra_bed_unit_off (unit_id, updated_by, updated_at) VALUES (?1, ?2, ?3)")
+        .bind(id, userId, now)),
+    ];
+  }
+
   /** Extra beds of a booking, per stay (none before migration 0043). */
   forBooking(bookingId: string): Promise<BookingExtraBedRow[]> {
     return withFallback(

@@ -36,14 +36,14 @@ describe("extra beds — settings", () => {
   it("off until the owner switches it on; staff set price and beds per unit; audited; the booking page is told", async () => {
     const { h, admin, settings } = await setup();
     const first = await h.api<ExtraBedSettingsDto>("GET", "/api/admin/extra-beds", { token: admin });
-    assert.deepEqual({ ...first.data, updatedAt: null }, { enabled: false, pricePerNightSatang: 0, maxPerUnit: 1, updatedAt: null });
+    assert.deepEqual({ ...first.data, updatedAt: null }, { enabled: false, pricePerNightSatang: 0, maxPerUnit: 1, offUnitIds: [], updatedAt: null });
     const menu = () => h.api<FoodCatalogueDto>("GET", "/api/public/food-options?checkIn=2027-02-01&checkOut=2027-02-03&lang=th");
     assert.equal((await menu()).data.extraBed, null);
 
     const saved = await settings({});
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
     assert.deepEqual([saved.data.enabled, saved.data.pricePerNightSatang, saved.data.maxPerUnit], [true, 30_000, 2]);
-    assert.deepEqual((await menu()).data.extraBed, { pricePerNightSatang: 30_000, maxPerUnit: 2 });
+    assert.deepEqual((await menu()).data.extraBed, { pricePerNightSatang: 30_000, maxPerUnit: 2 }, "every house: no off list");
     assert.equal(h.audits("UPDATE_EXTRA_BEDS").length, 1);
 
     // Validation; a desk without accommodation.edit cannot change it; changing the price needs pricing.edit.
@@ -147,5 +147,43 @@ describe("extra beds — price and booking", () => {
     assert.equal(h.db.all("SELECT 1 FROM bookings").length, 0);
     // …and when the database trigger is what refuses it (option switched off inside the gap), the guest gets the same code.
     assert.equal((mapInventoryError(new Error("D1_ERROR: EXTRA_BED_UNAVAILABLE")) as { code: string }).code, "EXTRA_BED_UNAVAILABLE");
+  });
+});
+
+describe("extra beds — on / off per house (migration 0047)", () => {
+  it("houses switched off are refused (quote, booking, database), listed to the booking page; all on / all off; kept when omitted", async () => {
+    const { h, admin, settings, quote, book } = await setup();
+    const saved = await settings({ offUnitIds: ["dev_house_02"] });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual(saved.data.offUnitIds, ["dev_house_02"]);
+    const menu = await h.api<FoodCatalogueDto>("GET", "/api/public/food-options?checkIn=2027-02-01&checkOut=2027-02-03&lang=th");
+    assert.deepEqual(menu.data.extraBed?.offUnitIds, ["dev_house_02"]);
+
+    assert.equal((await quote([house1(1)])).status, 200, "house 01 still takes beds");
+    const refused = await quote([house1(1), house2(1)]);
+    assert.equal(refused.status, 409);
+    assert.equal(refused.error?.code, "EXTRA_BED_UNAVAILABLE");
+    assert.equal((await quote([house2()])).status, 200, "house 02 without beds is fine");
+
+    // A later save without offUnitIds keeps the list.
+    assert.deepEqual((await settings({ pricePerNightSatang: 30_000 })).data.offUnitIds, ["dev_house_02"]);
+    // All off, then all on again (audited each time); unknown houses refused.
+    const all = (await h.api<{ id: string; unitType: string }[]>("GET", "/api/admin/accommodations", { token: admin })).data
+      .filter((u) => u.unitType !== "OWN_TENT").map((u) => u.id);
+    assert.deepEqual((await settings({ offUnitIds: all })).data.offUnitIds, [...all].sort());
+    assert.equal((await quote([house1(1)])).error?.code, "EXTRA_BED_UNAVAILABLE");
+    assert.deepEqual((await settings({ offUnitIds: [] })).data.offUnitIds, []);
+    assert.equal((await quote([house1(1)])).status, 200);
+    assert.equal((await settings({ offUnitIds: ["no_such_house"] })).error?.details?.offUnitIds, "UNKNOWN_UNIT");
+    assert.equal((await settings({ offUnitIds: "dev_house_01" as unknown as string[] })).error?.details?.offUnitIds, "INVALID_VALUE");
+    assert.ok(h.audits("UPDATE_EXTRA_BEDS").length >= 4);
+    // The database refuses a bed in a house that is off, even if the request got past the checks.
+    await settings({ offUnitIds: ["dev_house_02"] });
+    const b = await book([house1(1), house2()]);
+    const item2 = h.db.get<{ id: string }>("SELECT id FROM booking_items WHERE booking_id = (SELECT id FROM bookings WHERE booking_code = ?) AND unit_id = 'dev_house_02'", b.bookingCode)!;
+    const bookingId = h.db.get<{ id: string }>("SELECT id FROM bookings WHERE booking_code = ?", b.bookingCode)!.id;
+    assert.throws(() => h.db.run(`INSERT INTO booking_extra_beds (id, booking_id, booking_item_id, quantity, price_per_night_satang, number_of_nights, subtotal_satang)
+      VALUES ('x', ?, ?, 1, 30000, 2, 60000)`, bookingId, item2.id), /EXTRA_BED_UNAVAILABLE/);
+
   });
 });

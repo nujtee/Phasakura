@@ -101,7 +101,7 @@ describe("migrations", () => {
   });
 
   /** Migrations that only replace triggers (DROP TRIGGER x; CREATE TRIGGER x …) — no data is touched. */
-  const TRIGGER_REPLACEMENTS = ["0031_center_sso_suspension.sql", "0037_reinstate_expired.sql"];
+  const TRIGGER_REPLACEMENTS = ["0031_center_sso_suspension.sql", "0037_reinstate_expired.sql", "0047_extra_bed_units.sql"];
 
   it("trigger replacements re-create every trigger they drop, right after dropping it", () => {
     for (const file of TRIGGER_REPLACEMENTS) {
