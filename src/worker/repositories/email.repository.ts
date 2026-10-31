@@ -198,11 +198,12 @@ export class EmailRepository {
       "b.booking_status = 'CANCELLED' AND b.cancelled_at = ?6", [now]);
   }
 
+  /** A test may be retried twice by the cron (a passing network fault on the first try does not fail it). */
   insertTestStatement(id: string, recipientId: string, language: string, now: string): D1PreparedStatementLike {
     return this.db
       .prepare(
         `INSERT INTO email_logs (id, notification_type, idempotency_key, language_code, recipient, max_attempts, scheduled_for, created_at, updated_at)
-         VALUES (?1, 'TEST', 'TEST:' || ?1, ?3, 'staff:' || ?2, 1, ?4, ?4, ?4)`,
+         VALUES (?1, 'TEST', 'TEST:' || ?1, ?3, 'staff:' || ?2, 3, ?4, ?4, ?4)`,
       )
       .bind(id, recipientId, language, now);
   }

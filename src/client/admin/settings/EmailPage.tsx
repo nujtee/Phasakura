@@ -178,7 +178,11 @@ function Recipients() {
     setMsg(null);
     try {
       const log = await apiRequest<EmailLogDto>("POST", `/api/admin/email/recipients/${r.id}/test`, {});
-      setMsg(log.status === "SENT" ? { kind: "success", text: m.testSent } : { kind: "error", text: format(m.testFailed, { error: emailReason(m.reasons, log.lastError) ?? log.status }) });
+      const reason = emailReason(m.reasons, log.lastError) ?? log.status;
+      // Not sent on the first try, but worth another (network / provider hiccup): the cron sends it again shortly.
+      setMsg(log.status === "SENT" ? { kind: "success", text: m.testSent }
+        : log.status === "PENDING" ? { kind: "info", text: format(m.testRetrying, { error: reason }) }
+          : { kind: "error", text: format(m.testFailed, { error: reason }) });
     } catch (err) {
       setMsg({ kind: "error", text: text(err) });
     } finally {
