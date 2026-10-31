@@ -233,11 +233,15 @@ export class MediaService {
     if (!permission) throw new HttpError(404, "MEDIA_NOT_FOUND", "Image not found");
     await this.authz.requirePermission(actor, permission, meta);
     const before = (await this.repo.focals([assetId])).get(assetId) ?? null;
+    const zoomed = !!focal?.zoom && focal.zoom > 100;
+    const next = focal ? { x: focal.x, y: focal.y, ...(zoomed ? { zoom: focal.zoom } : {}) } : null;
     await this.db.batch([
-      this.repo.setFocalStatement(assetId, focal),
-      this.log.auditStatement(actor.userId, "UPDATE_FOCAL", "media", assetId, { focal: before }, { focal }, meta),
+      this.repo.setFocalStatement(assetId, next),
+      // Back to 100 % (or no point at all): clear a zoom that was set.
+      ...(before?.zoom && !zoomed ? [this.repo.clearZoomStatement(assetId)] : []),
+      this.log.auditStatement(actor.userId, "UPDATE_FOCAL", "media", assetId, { focal: before }, { focal: next }, meta),
     ]);
-    return { focal };
+    return { focal: next };
   }
 
   /**

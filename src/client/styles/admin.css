@@ -2748,6 +2748,19 @@
   height: 90px;
 }
 
+.adm-focal__zoom {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.adm-focal__zoom input[type="range"] {
+  flex: 1;
+  min-width: 140px;
+  max-width: 320px;
+}
+
 .adm-focal__actions {
   display: flex;
   gap: 6px;

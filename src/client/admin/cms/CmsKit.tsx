@@ -160,7 +160,8 @@ export function ImageField({
       {hint && <p className="adm-field__hint">{hint}</p>}
       {(error || uploadError) && <p className="adm-field__error" role="alert">{error ?? uploadError}</p>}
       {url && assetId && onFocalChange && CROPPED.has(purpose as ImageProfilePurpose) && (
-        <FocalPicker key={assetId} assetId={assetId} url={url} focal={focal ?? null} onChange={onFocalChange} disabled={disabled} />
+        <FocalPicker key={assetId} assetId={assetId} url={url} focal={focal ?? null} onChange={onFocalChange} disabled={disabled}
+          allowZoom={purpose === "HOME_SLIDE"} />
       )}
     </div>
   );

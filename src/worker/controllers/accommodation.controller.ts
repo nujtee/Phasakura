@@ -434,12 +434,13 @@ export function accommodationController(services: ServicesFor) {
       return jsonOk(await services(ctx).media.upload(auth, file, purpose as MediaPurpose, requestMeta(ctx), variants, focal), { status: 201 });
     }),
 
-    /** PUT /api/admin/media/:id/focal { focal: { x, y } | null } — where the picture is kept when cropped (percent). */
+    /** PUT /api/admin/media/:id/focal { focal: { x, y, zoom? } | null } — where the picture is kept when cropped, and its zoom (percent). */
     setMediaFocal: withPermission(["accommodation.edit", "food.edit", "content.gallery", "content.home", "content.history", "settings.branding", "seo.edit", "receiving_accounts.edit", "landscape.edit"], services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
       new Validator(body).allowOnly(["focal"]).assertValid();
       if (body.focal !== null && !isFocalPoint(body.focal)) throw new ValidationError({ focal: "INVALID_VALUE" });
-      const focal = body.focal === null ? null : { x: (body.focal as FocalPoint).x, y: (body.focal as FocalPoint).y };
+      const f = body.focal as FocalPoint | null;
+      const focal = f === null ? null : { x: f.x, y: f.y, ...(f.zoom !== undefined ? { zoom: f.zoom } : {}) };
       return jsonOk(await services(ctx).media.setFocal(auth, id(ctx), focal, requestMeta(ctx)));
     }),
 

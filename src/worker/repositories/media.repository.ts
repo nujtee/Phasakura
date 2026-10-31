@@ -156,9 +156,18 @@ export class MediaRepository {
 
   /** Focal point of an image (migration 0046); the guard keeps it to active public originals. */
   setFocalStatement(id: string, focal: FocalPoint | null): D1PreparedStatementLike {
+    // Zoom (migration 0048) only when one is set, so a plain point still saves on the 0046 schema.
+    const zoom = focal?.zoom && focal.zoom > 100 ? focal.zoom : null;
     return this.db
-      .prepare("UPDATE media_assets SET focal_x = ?2, focal_y = ?3 WHERE id = ?1 AND bucket = 'PUBLIC' AND status = 'ACTIVE' AND parent_asset_id IS NULL")
-      .bind(id, focal?.x ?? null, focal?.y ?? null);
+      .prepare(zoom
+        ? "UPDATE media_assets SET focal_x = ?2, focal_y = ?3, zoom = ?4 WHERE id = ?1 AND bucket = 'PUBLIC' AND status = 'ACTIVE' AND parent_asset_id IS NULL"
+        : "UPDATE media_assets SET focal_x = ?2, focal_y = ?3 WHERE id = ?1 AND bucket = 'PUBLIC' AND status = 'ACTIVE' AND parent_asset_id IS NULL")
+      .bind(...[id, focal?.x ?? null, focal?.y ?? null, ...(zoom ? [zoom] : [])]);
+  }
+
+  /** Clears the zoom (migration 0048); ignored before it. */
+  clearZoomStatement(id: string): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE media_assets SET zoom = NULL WHERE id = ?1").bind(id);
   }
 
   /** Focal points of images (none before migration 0046). */

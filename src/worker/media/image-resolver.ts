@@ -9,17 +9,17 @@ export async function loadFocals(db: D1DatabaseLike, assetIds: (string | null | 
   const ids = [...new Set(assetIds.filter((x): x is string => !!x))];
   const map = new Map<string, FocalPoint>();
   if (!ids.length) return map;
-  const rows = await withFallback(
-    async () => (await db
-      .prepare(
-        `SELECT id, focal_x, focal_y FROM media_assets
-          WHERE id IN (SELECT value FROM json_each(?1)) AND focal_x IS NOT NULL AND focal_y IS NOT NULL`,
-      )
-      .bind(JSON.stringify(ids))
-      .all<{ id: string; focal_x: number; focal_y: number }>()).results,
-    async () => [],
-  );
-  for (const r of rows) map.set(r.id, { x: r.focal_x, y: r.focal_y });
+  type Row = { id: string; focal_x: number; focal_y: number; zoom: number | null };
+  const query = (zoom: string) => async () => (await db
+    .prepare(
+      `SELECT id, focal_x, focal_y, ${zoom} AS zoom FROM media_assets
+        WHERE id IN (SELECT value FROM json_each(?1)) AND focal_x IS NOT NULL AND focal_y IS NOT NULL`,
+    )
+    .bind(JSON.stringify(ids))
+    .all<Row>()).results;
+  // zoom since migration 0048, the point since 0046; before either, nothing.
+  const rows = await withFallback(query("zoom"), () => withFallback(query("NULL"), async () => [] as Row[]));
+  for (const r of rows) map.set(r.id, { x: r.focal_x, y: r.focal_y, ...(r.zoom && r.zoom > 100 ? { zoom: r.zoom } : {}) });
   return map;
 }
 

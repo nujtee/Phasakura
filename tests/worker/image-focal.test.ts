@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { AdminUnitDto, PublicUnitDto } from "../../src/shared/accommodation-types.ts";
 import type { CmsRecord } from "../../src/shared/cms-schema.ts";
 import type { PublicHomeDto } from "../../src/shared/content-types.ts";
-import { CENTER, findFocalPoint, isFocalPoint, objectPosition } from "../../src/shared/focal-point.ts";
+import { CENTER, findFocalPoint, isFocalPoint, objectPosition, zoomScale } from "../../src/shared/focal-point.ts";
 import { Harness } from "../helpers/harness.ts";
 import { pngBytes } from "../helpers/images.ts";
 
@@ -50,6 +50,11 @@ describe("focal point detection", () => {
     for (const bad of [{ x: -1, y: 5 }, { x: 5, y: 101 }, { x: 1.5, y: 5 }, { x: "5", y: 5 }, null, [1, 2]]) assert.equal(isFocalPoint(bad), false, JSON.stringify(bad));
     assert.equal(objectPosition({ x: 30, y: 70 }), "30% 70%");
     assert.equal(objectPosition(null), undefined);
+    assert.equal(isFocalPoint({ x: 5, y: 5, zoom: 300 }), true);
+    assert.equal(isFocalPoint({ x: 5, y: 5, zoom: 50 }), false);
+    assert.equal(zoomScale({ x: 1, y: 1, zoom: 150 }), 1.5);
+    assert.equal(zoomScale({ x: 1, y: 1 }), 1);
+    assert.equal(zoomScale(null), 1);
   });
 });
 
@@ -95,6 +100,22 @@ describe("focal point on upload, in admin and on the public pages", () => {
     await h.api("PUT", `/api/admin/media/${up.data.id}/focal`, { token, body: { focal: null } });
     home = (await h.api<PublicHomeDto>("GET", "/api/public/home?lang=th")).data;
     assert.equal(home.slides[0]!.desktop.focal, undefined, "no point = centre, field left out");
+
+    // Zoom (migration 0048): saved with the point, sent to the home page, cleared when back to 100 % or reset.
+    const zoomed = await h.api<{ focal: unknown }>("PUT", `/api/admin/media/${up.data.id}/focal`, { token, body: { focal: { x: 40, y: 70, zoom: 150 } } });
+    assert.deepEqual(zoomed.data.focal, { x: 40, y: 70, zoom: 150 });
+    home = (await h.api<PublicHomeDto>("GET", "/api/public/home?lang=th")).data;
+    assert.deepEqual(home.slides[0]!.desktop.focal, { x: 40, y: 70, zoom: 150 });
+    await h.api("PUT", `/api/admin/media/${up.data.id}/focal`, { token, body: { focal: { x: 40, y: 70, zoom: 100 } } });
+    assert.equal(h.db.get<{ zoom: number | null }>("SELECT zoom FROM media_assets WHERE id = ?", up.data.id)!.zoom, null);
+    home = (await h.api<PublicHomeDto>("GET", "/api/public/home?lang=th")).data;
+    assert.deepEqual(home.slides[0]!.desktop.focal, { x: 40, y: 70 });
+    await h.api("PUT", `/api/admin/media/${up.data.id}/focal`, { token, body: { focal: { x: 40, y: 70, zoom: 200 } } });
+    await h.api("PUT", `/api/admin/media/${up.data.id}/focal`, { token, body: { focal: null } });
+    assert.deepEqual({ ...h.db.get<{ focal_x: null; zoom: null }>("SELECT focal_x, zoom FROM media_assets WHERE id = ?", up.data.id) }, { focal_x: null, zoom: null });
+    for (const zoom of [99, 301, 1.5, "150"]) {
+      assert.equal((await h.api("PUT", `/api/admin/media/${up.data.id}/focal`, { token, body: { focal: { x: 5, y: 5, zoom } } })).status, 422, String(zoom));
+    }
 
     for (const body of [{ focal: { x: 120, y: 5 } }, { focal: "50 50" }, { focal: { x: 5, y: 5 }, extra: 1 }]) {
       assert.equal((await h.api("PUT", `/api/admin/media/${up.data.id}/focal`, { token, body })).status, 422, JSON.stringify(body));
