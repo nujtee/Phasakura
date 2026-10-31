@@ -24,8 +24,11 @@ export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
  * booking's adults / children.
  */
 export type StaySelection =
-  | { kind: "UNIT"; unitId: string; adults?: number; children?: number }
+  | { kind: "UNIT"; unitId: string; adults?: number; children?: number; extraBeds?: number; pets?: number }
   | { kind: "CAMPING"; tents: number; tarp?: boolean; adults?: number; children?: number };
+
+/** Most extra beds one house / VIP tent can ever take (the owner's limit is at most this). */
+export const MAX_EXTRA_BEDS_PER_UNIT = 10;
 
 /** Most stays one booking can hold (houses / VIP tents + camping). */
 export const MAX_STAYS_PER_BOOKING = 10;
@@ -88,6 +91,10 @@ export interface QuoteItemDto {
   children: number;
   /** Deposit plan: the part of this stay (with its tarp area) left for check-in; 0 = paid in full now. */
   payLaterSatang: number;
+  /** Extra beds of this house / VIP tent (migration 0043); part of the stay's money and of its deposit. */
+  extraBeds?: ExtraBedLineDto | null;
+  /** Pets brought to this house / VIP tent (migration 0044); part of the stay's money and of its deposit. */
+  pets?: PetLineDto | null;
   /** A booking's stay (not in a quote): its id, and whether staff cancelled it. */
   id?: string;
   status?: "ACTIVE" | "CANCELLED";
@@ -101,6 +108,58 @@ export interface TarpLineDto {
   pricePerNightSatang: number;
   nights: number;
   subtotalSatang: number;
+}
+
+/** Extra beds (ที่นอนเสริม) of one house / VIP tent: beds × price per bed per night × nights. */
+export type ExtraBedLineDto = TarpLineDto;
+
+/** What the booking page offers (null / absent = no extra beds). */
+export interface ExtraBedOfferDto {
+  pricePerNightSatang: number;
+  maxPerUnit: number;
+}
+
+/** Pet fee: per pet per night, or per pet per stay. */
+export type PetChargePer = "NIGHT" | "STAY";
+export const PET_CHARGE_PER: readonly PetChargePer[] = ["NIGHT", "STAY"];
+export const MAX_PETS_PER_UNIT = 10;
+export const MAX_PET_WEIGHT_KG = 200;
+
+/** Pets of one house / VIP tent: pets × price × (nights, or 1 per stay); each no heavier than maxWeightKg. */
+export interface PetLineDto {
+  quantity: number;
+  priceSatang: number;
+  chargePer: PetChargePer;
+  /** Nights (per night) or 1 (per stay). */
+  chargedUnits: number;
+  maxWeightKg: number;
+  subtotalSatang: number;
+}
+
+/** What the booking page offers for pets (null / absent = no pets). */
+export interface PetOfferDto {
+  priceSatang: number;
+  chargePer: PetChargePer;
+  maxWeightKg: number;
+  maxPerUnit: number;
+}
+
+/** Admin → pets settings (migration 0044). */
+export interface PetSettingsDto {
+  enabled: boolean;
+  priceSatang: number;
+  chargePer: PetChargePer;
+  maxWeightKg: number;
+  maxPerUnit: number;
+  updatedAt: string | null;
+}
+
+/** Admin → extra beds settings (migration 0043). */
+export interface ExtraBedSettingsDto {
+  enabled: boolean;
+  pricePerNightSatang: number;
+  maxPerUnit: number;
+  updatedAt: string | null;
 }
 
 export interface IncludedMealDto {
@@ -185,6 +244,8 @@ export interface PublicBookingDto extends QuoteDto {
   paymentRejectedReason: string | null;
   /** Why staff cancelled the booking. */
   cancelReason: string | null;
+  /** Moves the guest paid for (migration 0045): fee + higher price, part of the accommodation total. */
+  moveCharges?: { toCheckIn: string; feeSatang: number; diffSatang: number }[];
 }
 
 /** A stay in admin lists: what it is and, for camping, how many tents. */
@@ -288,6 +349,8 @@ export interface AdminBookingDto extends PublicBookingDto {
   payments: PaymentDto[];
   /** Check-in / check-out / no-show today (see shared/stay.ts). */
   stayActions: StayActionsDto;
+  /** Moves the guest asked for (migration 0045), newest first. */
+  moveRequests?: MoveRequestDto[];
   /**
    * Booked with a deposit, but the house / camping now takes full payment: this booking keeps the deposit plan
    * agreed at booking time (the rest is still taken at check-in).
@@ -345,6 +408,10 @@ export interface FoodCatalogueDto {
   checkIn: string;
   checkOut: string;
   categories: FoodCategoryDto[];
+  /** Extra beds for houses / VIP tents, when the owner offers them (shown on the same step). */
+  extraBed?: ExtraBedOfferDto | null;
+  /** Pets allowed in houses / VIP tents, when the owner allows them. */
+  pet?: PetOfferDto | null;
 }
 
 // ------------------------------------------------------------------ admin pricing rules
@@ -412,4 +479,73 @@ export function normalizePhone(input: string): string | null {
   const count = digits.replace("+", "").length;
   if (count < 6 || count > 15) return null;
   return digits;
+}
+
+// ------------------------------------------------------------------ guest moves the stay (migration 0045)
+
+export type MoveRequestStatus = "AWAITING_PAYMENT" | "REVIEWING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED" | "FAILED";
+
+/** Admin → move settings: on / off, fee, how close to the check-in, how many moves, how long the new nights are held. */
+export interface MoveSettingsDto {
+  enabled: boolean;
+  feeSatang: number;
+  minDaysBefore: number;
+  maxMoves: number;
+  payMinutes: number;
+  updatedAt: string | null;
+}
+
+/** One house / VIP tent of a move: its room before and after (the same room when it did not change). */
+export interface MoveRoomDto {
+  itemId: string;
+  fromUnitId: string;
+  fromName: string;
+  toUnitId: string;
+  toName: string;
+}
+
+export interface MoveRequestDto {
+  id: string;
+  status: MoveRequestStatus;
+  fromCheckIn: string;
+  fromCheckOut: string;
+  toCheckIn: string;
+  toCheckOut: string;
+  rooms: MoveRoomDto[];
+  feeSatang: number;
+  /** Higher price of the new nights (0 when the same or cheaper). */
+  diffSatang: number;
+  amountSatang: number;
+  /** AWAITING_PAYMENT: transfer and send the slip before this time (the new nights are held until then). */
+  expiresAt: string;
+  /** Why staff turned the slip down / why it failed. */
+  reason: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+/** Booking page → "เลื่อนวันเข้าพัก": what the guest may do with this booking. */
+export interface GuestMoveStartDto {
+  bookingCode: string;
+  customerName: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  /** The houses / VIP tents of the booking. */
+  stays: { itemId: string; name: string }[];
+  feeSatang: number;
+  minDaysBefore: number;
+  /** Moves still allowed. */
+  movesLeft: number;
+  /** Earliest new check-in the guest may pick. */
+  earliest: string;
+  /** null = may move; otherwise why not (MOVE_NOT_OFFERED, MOVE_NOT_CONFIRMED, MOVE_TOO_LATE, MOVE_LIMIT, MOVE_CAMPING). */
+  blocked: string | null;
+  /** The open request (waiting for the transfer / being checked), or the last one that ended. */
+  request: GuestMoveRequestDto | null;
+}
+
+export interface GuestMoveRequestDto extends MoveRequestDto {
+  /** While AWAITING_PAYMENT: where and how much to transfer. */
+  paymentInstructions: PaymentInstructionsDto | null;
 }

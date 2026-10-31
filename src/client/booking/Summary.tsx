@@ -42,6 +42,8 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
             <strong>{x.name}</strong>
             {x.type === "OWN_TENT" && <> · {fill(bt.tentsLine, { n: x.quantity })}</>}
             {x.type === "OWN_TENT" && quote.tarp && <> + {bt.tarpLine}</>}
+            {x.extraBeds && <> + {fill(bt.extraBedLine, { n: x.extraBeds.quantity })}</>}
+            {x.pets && <> + {fill(bt.petLine, { n: x.pets.quantity })}</>}
           </span>
         ))}
       </p>
@@ -61,7 +63,7 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
                   {x.name}
                   <small>{fill(bt.guestsLine, { adults: x.adults, children: x.children })}</small>
                 </dt>
-                <dd>{baht(x.subtotalSatang + (x.type === "OWN_TENT" && quote.tarp ? quote.tarp.subtotalSatang : 0))}</dd>
+                <dd>{baht(x.subtotalSatang + (x.type === "OWN_TENT" && quote.tarp ? quote.tarp.subtotalSatang : 0) + (x.extraBeds?.subtotalSatang ?? 0) + (x.pets?.subtotalSatang ?? 0))}</dd>
               </div>
             ),
             ...x.nightly.map((n) => (
@@ -76,12 +78,33 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
                 <dd>{baht(quote.tarp.subtotalSatang)}</dd>
               </div>
             ),
+            x.extraBeds && (
+              <div key={`${k}|beds`} className="summary__line summary__line--sub">
+                <dt>{fill(bt.extraBedNights, { n: x.extraBeds.quantity, nights: x.extraBeds.nights })}</dt>
+                <dd>{baht(x.extraBeds.subtotalSatang)}</dd>
+              </div>
+            ),
+            x.pets && (
+              <div key={`${k}|pets`} className="summary__line summary__line--sub">
+                <dt>
+                  {x.pets.chargePer === "STAY" ? fill(bt.petStay, { n: x.pets.quantity }) : fill(bt.petNights, { n: x.pets.quantity, nights: x.pets.chargedUnits })}
+                  <small> · {fill(bt.petWeight, { kg: x.pets.maxWeightKg })}</small>
+                </dt>
+                <dd>{x.pets.subtotalSatang === 0 ? bt.free : baht(x.pets.subtotalSatang)}</dd>
+              </div>
+            ),
           ];
         })}
         {cancelled.map((x, i) => (
           <div key={x.id ?? i} className="summary__line summary__line--cancelled">
             <dt>{x.name}</dt>
             <dd>{bt.stayCancelled}</dd>
+          </div>
+        ))}
+        {"moveCharges" in quote && (quote as { moveCharges?: { toCheckIn: string; feeSatang: number; diffSatang: number }[] }).moveCharges?.map((c, i) => (
+          <div key={`move|${i}`} className="summary__line summary__line--sub">
+            <dt>{bt.move.fee}{c.diffSatang > 0 && ` + ${bt.move.diff}`} · {dateText(c.toCheckIn)}</dt>
+            <dd>{baht(c.feeSatang + c.diffSatang)}</dd>
           </div>
         ))}
         <div className="summary__line">

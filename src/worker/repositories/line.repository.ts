@@ -1,3 +1,4 @@
+import type { MoveRequestRow } from "./move-request.repository.ts";
 import { maskEmailHalf, maskPhoneHalf } from "../../shared/booking-types.ts";
 import { netPayment } from "./booking.repository.ts";
 import { withFallback } from "./schema-fallback.ts";
@@ -390,6 +391,17 @@ export class LineRepository {
       [now]);
   }
 
+  /** A guest's move of the stay (migration 0045): staff who want booking news hear each step. */
+  moveEventStatement(requestId: string, bookingId: string, event: string, now: string): D1PreparedStatementLike {
+    return this.staffOutbox("BOOKING_MOVE", "notify_booking", `BOOKING_MOVE:${requestId}:${event}:staff:`, bookingId, { requestId, event }, now, now,
+      "EXISTS (SELECT 1 FROM booking_move_requests WHERE id = ?7)", [requestId]);
+  }
+
+  /** A move request, for message texts. */
+  moveRequest(id: string): Promise<MoveRequestRow | null> {
+    return withFallback(() => this.db.prepare("SELECT * FROM booking_move_requests WHERE id = ?1").bind(id).first<MoveRequestRow>(), async () => null);
+  }
+
   /** A guest booked (same batch as the booking insert; marker: created_at = now). */
   newBookingStatement(bookingId: string, now: string): D1PreparedStatementLike {
     return this.staffOutbox("NEW_BOOKING", "notify_booking", `NEW_BOOKING:${bookingId}:staff:`, bookingId, null, now, now,
@@ -573,7 +585,33 @@ export class LineRepository {
   async messageBookings(ids: string[], lang: string): Promise<MsgBooking[]> {
     if (!ids.length) return [];
     // The cron sends these: before migration 0025 every booking reads as "no deposit".
-    return withFallback(() => this.messageBookingsWith(ids, lang, "deposit_satang"), () => this.messageBookingsWith(ids, lang, "NULL"));
+    const [list, beds, pets] = await Promise.all([
+      withFallback(() => this.messageBookingsWith(ids, lang, "deposit_satang"), () => this.messageBookingsWith(ids, lang, "NULL")),
+      this.addOnsOf(ids, "booking_extra_beds"),
+      this.addOnsOf(ids, "booking_pets"),
+    ]);
+    return list.map((m) => {
+      const n = beds.get(m.code) ?? 0;
+      const p = pets.get(m.code) ?? 0;
+      return { ...m, ...(n ? { extraBeds: n } : {}), ...(p ? { pets: p } : {}) };
+    });
+  }
+
+  /** Extra beds / pets per booking code (houses / VIP tents still in the booking; none before migration 0043 / 0044). */
+  private addOnsOf(ids: string[], table: "booking_extra_beds" | "booking_pets"): Promise<Map<string, number>> {
+    return withFallback(async () => {
+      const { results } = await this.db
+        .prepare(
+          `SELECT b.booking_code, SUM(e.quantity) AS beds
+             FROM ${table} e JOIN booking_items i ON i.id = e.booking_item_id JOIN bookings b ON b.id = e.booking_id
+            WHERE e.booking_id IN (SELECT value FROM json_each(?1))
+              AND (i.status = 'ACTIVE' OR b.booking_status IN ('CANCELLED', 'EXPIRED'))
+            GROUP BY b.booking_code`,
+        )
+        .bind(JSON.stringify(ids))
+        .all<{ booking_code: string; beds: number }>();
+      return new Map(results.map((r) => [r.booking_code, r.beds]));
+    }, async () => new Map());
   }
 
   private async messageBookingsWith(ids: string[], lang: string, deposit: string): Promise<MsgBooking[]> {

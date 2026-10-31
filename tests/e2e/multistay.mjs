@@ -3,6 +3,7 @@
 const { chromium } = await import("playwright");
 const BASE = process.env.E2E_BASE ?? "https://localhost:4190";
 const SHOTS = process.env.E2E_SHOTS;
+const FIXTURES = process.env.E2E_FIXTURES;
 const H = { Origin: BASE, "X-Requested-With": "phasakura" };
 const results = [];
 const consoleErrors = [];
@@ -76,7 +77,7 @@ await check("guest (mobile, TH) picks two houses, a VIP tent and camping in one 
   await pg.screenshot({ path: `${SHOTS}/multistay-bar.png` });
 
   await picks.getByRole("button", { name: /ถัดไป/ }).click();
-  await pg.getByRole("heading", { name: "สั่งอาหารล่วงหน้า" }).waitFor();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
   const stay = pg.locator(".flow-stay");
   for (const name of ["House 01", "House 02", "VIP-01", "1 เต็นท์"]) await stay.getByText(name, { exact: false }).first().waitFor();
   const summary = pg.locator(".summary").first();
@@ -179,6 +180,155 @@ await check("booking page: a date search shows the time-based price of those nig
 });
 
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
+await check("extra beds: staff switch them on (houses page), the guest adds one on the food step and the price follows", async () => {
+  await pa.goto(`${BASE}/en/admin/houses`);
+  const card = pa.locator(".adm-extrabeds:not(.adm-pets):not(.adm-movesettings)");
+  await card.getByRole("heading", { name: "Extra beds" }).waitFor();
+  await card.getByText("Guests cannot add them yet").waitFor();
+  await card.getByRole("button", { name: "Settings" }).click();
+  await card.getByLabel("Let guests add extra beds when booking").check();
+  await card.getByLabel("Price per bed per night (THB)").fill("300");
+  await card.getByLabel("Most per unit (beds)").fill("2");
+  await card.getByRole("button", { name: "Save" }).click();
+  await card.getByText("Extra beds settings saved").waitFor();
+  await card.getByText(/฿300 per bed per night · up to 2 per unit/).waitFor();
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/extra-beds-admin.png` });
+
+  const ci = day(70), co = day(72);
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
+  await pg.locator("form.stay-search button[type=submit]").click();
+  const unit = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /House 02/ }) });
+  await unit.getByRole("button", { name: "เลือกหลังนี้" }).click();
+  await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  const beds = pg.locator(".extra-beds");
+  await beds.getByRole("heading", { name: "ที่นอนเสริม" }).waitFor();
+  await beds.getByText(/฿300 ต่อที่นอน ต่อคืน · สูงสุด 2 ที่นอนต่อหลัง/).waitFor();
+  const summary = pg.locator(".summary");
+  const before = await summary.textContent();
+  await beds.getByRole("group", { name: "ที่นอนเสริม" }).getByRole("button", { name: /^เพิ่ม / }).click();
+  await summary.getByText("ที่นอนเสริม 1 × 2 คืน").waitFor();
+  await beds.getByText("ที่นอนเสริม 1 × 2 คืน = ฿600").waitFor();
+  assert(before !== await summary.textContent(), "the summary changed");
+  const overflow = await pg.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 1, `horizontal scroll ${overflow}px`);
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/extra-beds-guest.png`, fullPage: true });
+
+  // Off again for the other suites.
+  const r = await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2 } });
+  assert(r.ok(), `switch off: ${r.status()}`);
+});
+
+await check("pets: a separate switch next to extra beds; the guest adds a pet, sees the weight limit and the price", async () => {
+  await pa.goto(`${BASE}/en/admin/houses`);
+  const card = pa.locator(".adm-pets");
+  await card.getByRole("heading", { name: "Pet fee" }).waitFor();
+  await card.getByText("Pets not allowed (guests cannot add them)").waitFor();
+  await card.getByRole("button", { name: "Settings" }).click();
+  await card.getByLabel("Allow pets (guests add them when booking)").check();
+  await card.getByLabel("Price per pet (THB)").fill("200");
+  await card.getByLabel("Charged").selectOption("NIGHT");
+  await card.getByLabel("Heaviest pet (kg each)").fill("15");
+  await card.getByLabel("Most per unit (pets)").fill("2");
+  await card.getByRole("button", { name: "Save" }).click();
+  await card.getByText("Pet settings saved").waitFor();
+  await card.getByText(/฿200 per pet per night · up to 15 kg · up to 2 per unit/).waitFor();
+  // Extra beds keep their own switch (off).
+  await pa.locator(".adm-extrabeds:not(.adm-pets):not(.adm-movesettings)").getByText("Guests cannot add them yet").waitFor();
+  if (SHOTS) await pa.locator(".adm-pets").screenshot({ path: `${SHOTS}/pets-admin.png` });
+
+  const ci = day(80), co = day(82);
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
+  await pg.locator("form.stay-search button[type=submit]").click();
+  const unit = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /House 02/ }) });
+  await unit.getByRole("button", { name: "เลือกหลังนี้" }).click();
+  await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  await pg.getByText("เลือกรายการเพิ่ม").first().waitFor();
+  const pets = pg.locator(".pets");
+  await pets.getByText(/฿200 ต่อตัว ต่อคืน · น้ำหนักไม่เกิน 15 กก\. ต่อตัว · สูงสุด 2 ตัวต่อหลัง/).waitFor();
+  await pets.getByRole("group", { name: "สัตว์เลี้ยง" }).getByRole("button", { name: /^เพิ่ม / }).click();
+  const summary = pg.locator(".summary");
+  await summary.getByText("สัตว์เลี้ยง 1 × 2 คืน").waitFor();
+  await summary.getByText("น้ำหนักไม่เกิน 15 กก. ต่อตัว").waitFor();
+  await pets.getByText("สัตว์เลี้ยง 1 × 2 คืน = ฿400").waitFor();
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/pets-guest.png`, fullPage: true });
+  const r = await req.put(`${BASE}/api/admin/pets`, { headers: H, data: { enabled: false, priceSatang: 20000, chargePer: "NIGHT", maxWeightKg: 15, maxPerUnit: 2 } });
+  assert(r.ok(), `switch off: ${r.status()}`);
+});
+
+await check("guest changes the dates from the booking page: Booking ID + phone, calendar, fee QR, slip; staff verify → moved", async () => {
+  // Staff switch it on (houses page card).
+  await pa.goto(`${BASE}/en/admin/houses`);
+  const card = pa.locator(".adm-movesettings");
+  await card.getByRole("heading", { name: "Guests change their dates" }).waitFor();
+  await card.getByRole("button", { name: "Settings" }).click();
+  await card.getByLabel("Let guests change their dates from the booking page (Booking ID + phone)").check();
+  await card.getByLabel("Date change fee (THB)").fill("300");
+  await card.getByLabel("Up to how many days before check-in").fill("3");
+  await card.getByRole("button", { name: "Save" }).click();
+  await card.getByText("Date change settings saved").waitFor();
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/move-admin.png` });
+
+  // A paid booking (House 01, in 90 days).
+  const ci = day(90), co = day(92);
+  const body = { checkIn: ci, checkOut: co, stays: [{ kind: "UNIT", unitId: "dev_house_01", adults: 2, children: 0 }], food: [], lang: "th" };
+  const q = await (await req.post(`${BASE}/api/public/bookings/quote`, { headers: H, data: body })).json();
+  const made = await (await req.post(`${BASE}/api/public/bookings`, { headers: H, data: { ...body, customer: { name: "Mover", phone: "0867777777" }, privacyAccepted: true, expectedTotalSatang: q.data.totalSatang, idempotencyKey: `e2e-move-${Date.now()}` } })).json();
+  const B = made.data;
+  const paid = await req.post(`${BASE}/api/admin/bookings/${B.bookingCode}/payments`, { headers: H, data: { amountSatang: B.totalSatang, method: "BANK_TRANSFER", paidAt: new Date().toISOString() } });
+  assert(paid.ok(), `paid ${paid.status()}`);
+
+  // Where it sits on a desktop: next to the page title, above the date search.
+  await pa.goto(`${BASE}/th/booking`);
+  await pa.locator(".move-launch").waitFor();
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/move-desktop-head.png`, clip: { x: 0, y: 0, width: 1366, height: 520 } });
+  // The guest (mobile, TH).
+  await pg.goto(`${BASE}/th/booking`);
+  const launch = pg.locator(".move-launch");
+  await launch.getByRole("heading", { name: "เลื่อนวันเข้าพัก" }).waitFor();
+  await launch.getByLabel("Booking ID").fill(B.bookingCode);
+  await launch.getByLabel("เบอร์โทรที่ใช้จอง").fill("0867777777");
+  await launch.getByRole("button", { name: "เลื่อนจอง" }).click();
+  const panel = pg.locator(".move-panel");
+  await panel.getByText(/ค่าเลื่อนวันเข้าพัก ฿300/).waitFor();
+  // Next month, first free day after the 10th.
+  await panel.getByRole("button", { name: "เดือนถัดไป" }).click();
+  await panel.locator(".move-day--ok").first().waitFor();
+  const target = panel.locator(".move-day--ok").nth(9);
+  await target.click();
+  await panel.getByText(/House 01 .* ว่าง/).waitFor();
+  await panel.locator(".move-summary").getByText("฿300").first().waitFor();
+  const overflow = await pg.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 1, `horizontal scroll ${overflow}px`);
+  if (SHOTS) await panel.screenshot({ path: `${SHOTS}/move-guest-pick.png` });
+  await panel.getByRole("button", { name: "ยืนยันเลื่อนจอง" }).click();
+  await panel.getByRole("heading", { name: "ชำระค่าเลื่อนวันเข้าพัก" }).waitFor();
+  await panel.locator(".pay-qr, .pay__body").first().waitFor();
+  if (SHOTS) await panel.screenshot({ path: `${SHOTS}/move-guest-pay.png` });
+  await panel.locator(".slip input[type=file]").setInputFiles(`${FIXTURES}/g1.png`);
+  await panel.locator(".slip").getByRole("button").last().click();
+  await panel.getByText("ได้รับสลิปแล้ว กำลังตรวจสอบ").waitFor();
+
+  // Staff verify the slip (it is marked as a date change fee) → the stay moves.
+  await pa.goto(`${BASE}/en/admin/slips`);
+  const item = pa.locator("article", { hasText: B.bookingCode });
+  await item.getByText("Date change fee").waitFor();
+  if (SHOTS) await item.screenshot({ path: `${SHOTS}/move-admin-slip.png` });
+  const queue = await (await req.get(`${BASE}/api/admin/slips`, { headers: H })).json();
+  const pay = queue.data.items.find((x) => x.bookingCode === B.bookingCode);
+  const ok = await req.post(`${BASE}/api/admin/payments/${pay.paymentId}/verify`, { headers: H, data: {} });
+  assert(ok.ok(), `verify ${ok.status()}`);
+  const after = (await (await req.get(`${BASE}/api/admin/bookings/${B.bookingCode}`, { headers: H })).json()).data;
+  assert(after.checkIn !== ci, "moved");
+  assert(after.totalSatang === B.totalSatang + 30000, `total ${after.totalSatang}`);
+  await pa.goto(`${BASE}/en/admin/bookings/${B.bookingCode}`);
+  await pa.getByRole("heading", { name: "Date changes asked by the guest" }).waitFor();
+  await pa.getByText("Moved").first().waitFor();
+  const off = await req.put(`${BASE}/api/admin/move-settings`, { headers: H, data: { enabled: false, feeSatang: 30000, minDaysBefore: 3, maxMoves: 1, payMinutes: 60 } });
+  assert(off.ok(), `switch off ${off.status()}`);
+});
+
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
   assert(!bad.length, bad.join("\n"));

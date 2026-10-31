@@ -120,6 +120,39 @@ export function BookingDetailPage({ code }: { code: string }) {
 
       <StaysCard booking={b} onChanged={stayChanged} />
 
+      {b.moveRequests && b.moveRequests.length > 0 && (
+        <div className="adm-card">
+          <h2 className="adm-h2">{t.bk.movesTitle}</h2>
+          <div className="adm-tablewrap">
+            <table className="adm-table">
+              <tbody>
+                {b.moveRequests.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <span className={`adm-badge ${r.status === "APPROVED" ? "adm-badge--active" : r.status === "AWAITING_PAYMENT" || r.status === "REVIEWING" ? "adm-badge--warning" : "adm-badge--muted"}`}>
+                        {t.bk.moveStatus[r.status] ?? r.status}
+                      </span>
+                      <div className="adm-small adm-muted">{dateTime(r.createdAt)}</div>
+                    </td>
+                    <td>
+                      {stayDate(r.fromCheckIn)} → <strong>{stayDate(r.toCheckIn)}</strong>
+                      {r.rooms.filter((x) => x.fromUnitId !== x.toUnitId).map((x) => (
+                        <div key={x.itemId} className="adm-small">{x.fromName} → {x.toName}</div>
+                      ))}
+                      {r.reason && <div className="adm-small adm-muted">{r.reason}</div>}
+                    </td>
+                    <td className="adm-num">
+                      {formatBaht(r.amountSatang, locale.code)}
+                      <div className="adm-small adm-muted">{format(t.bk.moveCharge, { fee: formatBaht(r.feeSatang, locale.code), diff: formatBaht(r.diffSatang, locale.code) })}</div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="adm-card">
         {(b.includedMeals.length > 0 || b.food.length > 0) && <h2 className="adm-h2">{t.bk.food}</h2>}
         {b.includedMeals.map((m, i) => (

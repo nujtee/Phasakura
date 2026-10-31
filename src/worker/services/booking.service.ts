@@ -1,3 +1,7 @@
+import { ExtraBedRepository, type BookingExtraBedRow } from "../repositories/extra-bed.repository.ts";
+import type { ExtraBedLineDto, GuestMoveRequestDto, GuestMoveStartDto, MoveRoomDto, MoveSettingsDto, PetLineDto } from "../../shared/booking-types.ts";
+import { MoveRequestRepository, moveHold, toMoveRequestDto, type MoveRequestRow, type MoveSettingsRow } from "../repositories/move-request.repository.ts";
+import { PetRepository, type BookingPetRow } from "../repositories/pet.repository.ts";
 import type {
   AdminBookingDto,
   AdminBookingSummaryDto,
@@ -38,7 +42,7 @@ import type { PreparedBooking, QuoteInput, QuoteService } from "./quote.service.
 import type { SecurityLogService } from "./security-log.service.ts";
 import type { GuestLineDto } from "../../shared/line-types.ts";
 import type { AppFeeDto } from "../../shared/credit-types.ts";
-import type { OutboxLike } from "./marketing.service.ts";
+import type { MoveEvent, OutboxLike } from "./marketing.service.ts";
 import type { Attribution, MarketingRepository } from "../repositories/marketing.repository.ts";
 
 export interface CreateBookingInput extends QuoteInput {
@@ -88,6 +92,16 @@ export class BookingService {
     /** PayPal Checkout can be offered (Cloudflare Secrets present). */
     private readonly paypalReady: boolean = false,
   ) {}
+
+  /** Extra beds snapshots (migration 0043). */
+  private get extraBeds(): ExtraBedRepository {
+    return new ExtraBedRepository(this.db);
+  }
+
+  /** Pets snapshots (migration 0044). */
+  private get petRepo(): PetRepository {
+    return new PetRepository(this.db);
+  }
 
   async quote(input: QuoteInput): Promise<QuoteDto> {
     await this.expireDue();
@@ -208,6 +222,20 @@ export class BookingService {
       // Inventory: the database rejects the whole batch if a night or tent is gone.
       if (stay.unit) {
         for (const night of p.nights) statements.push(repo.lockNightStatement(stay.unit.id, night, bookingId, itemId, at));
+        // Extra beds (migration 0043): price snapshot; the trigger re-checks the option is offered and the limit.
+        if (stay.extraBeds) {
+          statements.push(this.extraBeds.insertStatement({
+            id: newId(), bookingId, itemId, quantity: stay.extraBeds.quantity, pricePerNight: stay.extraBeds.pricePerNightSatang,
+            nights: stay.extraBeds.nights, subtotal: stay.extraBeds.subtotalSatang, now: at,
+          }));
+        }
+        // Pets (migration 0044): price snapshot; the trigger re-checks the option is on and the limit.
+        if (stay.pets) {
+          statements.push(this.petRepo.insertStatement({
+            id: newId(), bookingId, itemId, quantity: stay.pets.quantity, priceSatang: stay.pets.priceSatang, chargePer: stay.pets.chargePer,
+            chargedUnits: stay.pets.chargedUnits, maxWeightKg: stay.pets.maxWeightKg, subtotal: stay.pets.subtotalSatang, now: at,
+          }));
+        }
       } else {
         for (const night of p.nights) statements.push(...repo.reserveTentsStatements(night, stay.tents, at));
         // Tarp area: its own nightly limit (CHECK) and a price snapshot; triggers re-check camping + option offered.
@@ -450,7 +478,9 @@ export class BookingService {
     if (row.booking_status !== "PENDING" && row.booking_status !== "CONFIRMED") {
       throw new ConflictError("Only pending or confirmed bookings can change", "BOOKING_NOT_CANCELLABLE");
     }
-    const [items, tarp, payments] = await Promise.all([this.repo.items(row.id), this.repo.tarp(row.id), this.payments.payments(row.id)]);
+    const [items, tarp, payments, beds, pets] = await Promise.all([
+      this.repo.items(row.id), this.repo.tarp(row.id), this.payments.payments(row.id), this.extraBeds.forBooking(row.id), this.petRepo.forBooking(row.id),
+    ]);
     const target = items.find((i) => i.id === itemId);
     if (!target) throw new NotFoundError("This stay is not part of the booking", "STAY_NOT_FOUND");
     if (target.status !== "ACTIVE") throw new ConflictError("This stay is already cancelled", "STAY_ALREADY_CANCELLED");
@@ -466,7 +496,10 @@ export class BookingService {
 
     const camping = target.item_type === "OWN_TENT";
     const tarpMoney = camping && tarp?.status === "ACTIVE" ? tarp.subtotal_satang : 0;
-    const accommodation = row.accommodation_subtotal_satang - target.snapshot_subtotal_satang - tarpMoney;
+    // Its extra beds go with it (they follow the stay's status).
+    const bedMoney = beds.find((e) => e.booking_item_id === itemId)?.subtotal_satang ?? 0;
+    const petMoney = pets.find((e) => e.booking_item_id === itemId)?.subtotal_satang ?? 0;
+    const accommodation = row.accommodation_subtotal_satang - target.snapshot_subtotal_satang - tarpMoney - bedMoney - petMoney;
     // App fee (migration 0027): an unpaid booking stops paying for the stay's units (its credit hold shrinks with it,
     // trigger); once paid the fee was earned and stays.
     const unpaid = row.booking_status === "PENDING" && row.app_fee_units > 0;
@@ -665,7 +698,7 @@ export class BookingService {
   }
 
   /** Everything the day check needs for new check-in days in [from, to), read once. */
-  private async moveInputs(row: BookingRow, today: string, from: string, to: string): Promise<{ inputs: MoveInputs; plan: Awaited<ReturnType<BookingService["movable"]>> }> {
+  private async moveInputs(row: BookingRow, today: string, from: string, to: string, ownHold: string | null = null): Promise<{ inputs: MoveInputs; plan: Awaited<ReturnType<BookingService["movable"]>> }> {
     const plan = await this.movable(row);
     const until = addDays(to, row.nights);
     const own = new Set(stayNights(row.check_in, row.check_out));
@@ -675,10 +708,10 @@ export class BookingService {
     let tarps: MoveInputs["tarps"] = null;
     if (plan.units.length) {
       // A night is taken when any of the booking's houses / VIP tents is held by someone else (or blocked).
-      unitTaken = new Set((await Promise.all(plan.units.map((u) => this.moves.unitTaken(u.unitId, row.id, from, until)))).flatMap((t) => [...t]));
+      unitTaken = new Set((await Promise.all(plan.units.map((u) => this.moves.unitTaken(u.unitId, row.id, from, until, ownHold)))).flatMap((t) => [...t]));
       // Every bookable room of the same types, with the nights others hold: where the stay may go instead.
       const all = await this.moves.bookableRooms([...new Set(plan.units.map((u) => u.type))]);
-      const taken = await this.moves.roomsTaken(all.map((r) => r.id), row.id, from, until);
+      const taken = await this.moves.roomsTaken(all.map((r) => r.id), row.id, from, until, ownHold);
       const byUnit = new Map<string, Set<string>>();
       for (const t of taken) (byUnit.get(t.unit_id) ?? byUnit.set(t.unit_id, new Set()).get(t.unit_id)!).add(t.stay_date);
       rooms = {
@@ -730,10 +763,18 @@ export class BookingService {
     await this.authz.requirePermission(actor, "bookings.edit", meta);
     const row = await this.expireIfDue(await this.findOr404(code));
     const today = todayIn(await this.quotes.timezone(), this.clock());
+    return this.moveDays(row, today, from, days);
+  }
+
+  /** `earliest`: days before it read as PAST (a guest moves only so many days ahead). */
+  private async moveDays(row: BookingRow, today: string, from: string, days: number, earliest: string | null = null): Promise<BookingMoveOptionsDto> {
     const { inputs } = await this.moveInputs(row, today, from, addDays(from, days));
     return {
       checkIn: row.check_in, checkOut: row.check_out, nights: row.nights, today,
-      days: Array.from({ length: days }, (_, i) => addDays(from, i)).map((date) => ({ date, state: moveDayState(date, inputs) })),
+      days: Array.from({ length: days }, (_, i) => addDays(from, i)).map((date) => {
+        const state = moveDayState(date, inputs);
+        return { date, state: earliest && date < earliest && state !== "CURRENT" ? "PAST" : state };
+      }),
     };
   }
 
@@ -746,9 +787,14 @@ export class BookingService {
     await this.authz.requirePermission(actor, "bookings.edit", meta);
     const row = await this.expireIfDue(await this.findOr404(code));
     const today = todayIn(await this.quotes.timezone(), this.clock());
+    return this.roomsOn(row, today, checkIn);
+  }
+
+  private async roomsOn(row: BookingRow, today: string, checkIn: string, earliest: string | null = null): Promise<BookingMoveRoomsDto> {
     const span = 60;
     const { inputs, plan } = await this.moveInputs(row, today, addDays(checkIn, -span), addDays(checkIn, span + 1));
-    const state = moveDayState(checkIn, inputs);
+    const found = moveDayState(checkIn, inputs);
+    const state: MoveDayState = earliest && checkIn < earliest && found !== "CURRENT" ? "PAST" : found;
     const nights = stayDates(checkIn, row.nights);
     const assigned = inputs.rooms ? assignRooms(checkIn, row.nights, inputs.rooms.stays, inputs.rooms.candidates) : null;
     const candidates = inputs.rooms?.candidates ?? [];
@@ -787,7 +833,8 @@ export class BookingService {
         };
       }),
       nearest: state === "OK" || state === "OTHER_UNITS" ? []
-        : nearestDays(checkIn, inputs, span, 6).map((d) => ({ checkIn: d.date, checkOut: addDays(d.date, row.nights), state: d.state })),
+        : nearestDays(checkIn, inputs, span, 12).filter((d) => !earliest || d.date >= earliest).slice(0, 6)
+          .map((d) => ({ checkIn: d.date, checkOut: addDays(d.date, row.nights), state: d.state })),
     };
   }
 
@@ -796,11 +843,13 @@ export class BookingService {
    * counters, meals and their kitchen capacity — the database refuses anything that no longer fits. The price
    * the guest booked at stays (snapshots are never re-priced).
    */
-  async moveDates(actor: AuthContext, code: string, checkIn: string, meta: RequestMeta, wanted: { itemId: string; unitId: string }[] = []) {
-    await this.authz.requirePermission(actor, "bookings.edit", meta);
-    const row = await this.expireIfDue(await this.findOr404(code));
-    const today = todayIn(await this.quotes.timezone(), this.clock());
-    const { inputs, plan } = await this.moveInputs(row, today, checkIn, addDays(checkIn, 1));
+  /**
+   * Checks a move of the stay to `checkIn` (same nights) and works out the room of every house / VIP-tent stay:
+   * the rooms asked for (`wanted`), else its own when free, else the smallest free room of the same type.
+   * `ownHold`: the booking's own move hold (a guest's request), which does not count as taken.
+   */
+  private async planMove(row: BookingRow, checkIn: string, today: string, wanted: { itemId: string; unitId: string }[], ownHold: string | null = null) {
+    const { inputs, plan } = await this.moveInputs(row, today, checkIn, addDays(checkIn, 1), ownHold);
     const refused: Partial<Record<MoveDayState, [number, string, string]>> = {
       CURRENT: [422, "SAME_DATES", "The booking already starts on that day"],
       PAST: [422, "DATE_IN_PAST", "That day has passed"],
@@ -834,6 +883,18 @@ export class BookingService {
       }
     }
 
+    return { plan, rooms, changes, newNames };
+  }
+
+  async moveDates(actor: AuthContext, code: string, checkIn: string, meta: RequestMeta, wanted: { itemId: string; unitId: string }[] = []) {
+    await this.authz.requirePermission(actor, "bookings.edit", meta);
+    const row = await this.expireIfDue(await this.findOr404(code));
+    // A guest's move waiting for its transfer / slip holds other nights: staff settle that first.
+    if ((await this.moveRequests.forBooking(row.id)).some((r) => r.status === "AWAITING_PAYMENT" || r.status === "REVIEWING")) {
+      throw new ConflictError("The guest asked to move this stay; settle that request first", "MOVE_REQUEST_OPEN");
+    }
+    const today = todayIn(await this.quotes.timezone(), this.clock());
+    const { plan, rooms, changes, newNames } = await this.planMove(row, checkIn, today, wanted);
     const checkOut = addDays(checkIn, row.nights);
     const now = iso(this.clock());
     let results;
@@ -866,6 +927,283 @@ export class BookingService {
     return this.toAdmin((await this.repo.findByCode(row.booking_code))!);
   }
 
+
+  // ================================================================ guest moves the stay (migration 0045)
+
+  private get moveRequests(): MoveRequestRepository {
+    return new MoveRequestRepository(this.db);
+  }
+
+  async getMoveSettings(actor: AuthContext, meta: RequestMeta): Promise<MoveSettingsDto> {
+    await this.authz.requirePermission(actor, "bookings.view", meta);
+    return toMoveSettingsDto(await this.moveRequests.settings());
+  }
+
+  /** On / off, fee, days before check-in, moves per booking, how long new nights are held. The fee needs pricing.edit. */
+  async saveMoveSettings(actor: AuthContext, input: Omit<MoveSettingsDto, "updatedAt">, meta: RequestMeta): Promise<MoveSettingsDto> {
+    await this.authz.requirePermission(actor, "bookings.edit", meta);
+    const before = toMoveSettingsDto(await this.moveRequests.settings());
+    if (input.feeSatang !== before.feeSatang) await this.authz.requirePermission(actor, "pricing.edit", meta);
+    await this.db.batch([
+      this.moveRequests.saveSettingsStatement({ ...input, userId: actor.userId, now: iso(this.clock()) }),
+      this.log.auditStatement(actor.userId, "UPDATE_MOVE_SETTINGS", "settings", "move_settings", { ...before, updatedAt: undefined }, input, meta),
+    ]);
+    return toMoveSettingsDto(await this.moveRequests.settings());
+  }
+
+  /** Where a guest stands: may they move, until when, what it costs, and their open (or last) request. */
+  private async guestMoveContext(row: BookingRow) {
+    const settings = await this.moveRequests.settings();
+    const today = todayIn(await this.quotes.timezone(), this.clock());
+    const requests = await this.moveRequests.forBooking(row.id);
+    const items = (await this.repo.items(row.id)).filter((i) => i.status === "ACTIVE");
+    const earliest = addDays(today, settings.min_days_before);
+    const used = requests.filter((r) => r.status === "APPROVED").length;
+    let blocked: string | null = null;
+    if (settings.is_enabled !== 1) blocked = "MOVE_NOT_OFFERED";
+    else if (row.booking_status !== "CONFIRMED") blocked = "MOVE_NOT_CONFIRMED";
+    else if (items.some((i) => !i.unit_id)) blocked = "MOVE_CAMPING";
+    else if (row.check_in < earliest) blocked = "MOVE_TOO_LATE";
+    else if (used >= settings.max_moves) blocked = "MOVE_LIMIT";
+    const open = requests.find((r) => r.status === "AWAITING_PAYMENT" || r.status === "REVIEWING") ?? null;
+    return { settings, today, earliest, requests, open, items, blocked, movesLeft: Math.max(0, settings.max_moves - used) };
+  }
+
+  private async guestMoveDto(row: BookingRow, r: MoveRequestRow): Promise<GuestMoveRequestDto> {
+    const waiting = r.status === "AWAITING_PAYMENT" && r.amount_satang > 0;
+    return { ...toMoveRequestDto(r), paymentInstructions: waiting ? await this.instructionsFor(row.id, r.amount_satang) : null };
+  }
+
+  /** Where and how much to transfer: the account copied onto the booking (the slip check compares the receiver with it). */
+  private async instructionsFor(bookingId: string, amount: number): Promise<PaymentInstructionsDto | null> {
+    const [snapshot, paySettings] = await Promise.all([this.payments.snapshot(bookingId), this.payments.settings()]);
+    if (!snapshot || !paySettings) return null;
+    return {
+      bankName: snapshot.bank_name_snapshot,
+      accountName: snapshot.account_name_snapshot,
+      accountNumber: snapshot.account_number_snapshot,
+      promptpayNumber: snapshot.promptpay_number_snapshot,
+      qrUrl: publicMediaUrl(snapshot.payment_qr_snapshot, this.mediaBaseUrl),
+      amountDueSatang: amount,
+      channels: availableChannels(paySettings, {
+        promptpay: snapshot.promptpay_number_snapshot, accountNumber: snapshot.account_number_snapshot, qr: snapshot.payment_qr_snapshot,
+      }, false),
+      promptpayPayload: snapshot.promptpay_number_snapshot && amount > 0 ? promptpayPayload(snapshot.promptpay_number_snapshot, amount) : null,
+    };
+  }
+
+  async guestMoveStart(code: string, phone: string, meta: RequestMeta): Promise<GuestMoveStartDto> {
+    const row = await this.guestBooking(code, phone, meta);
+    const c = await this.guestMoveContext(row);
+    const last = c.open ?? c.requests[0] ?? null;
+    return {
+      bookingCode: row.booking_code, customerName: row.customer_name, checkIn: row.check_in, checkOut: row.check_out, nights: row.nights,
+      stays: c.items.filter((i) => i.unit_id).map((i) => ({ itemId: i.id, name: i.unit_name_snapshot })),
+      feeSatang: c.settings.fee_satang, minDaysBefore: c.settings.min_days_before, movesLeft: c.movesLeft, earliest: c.earliest,
+      blocked: c.open ? null : c.blocked,
+      request: last ? await this.guestMoveDto(row, last) : null,
+    };
+  }
+
+  private async guestMovable(code: string, phone: string, meta: RequestMeta) {
+    const row = await this.guestBooking(code, phone, meta);
+    const c = await this.guestMoveContext(row);
+    if (c.open) throw new ConflictError("A move of this booking is already waiting", "MOVE_REQUEST_OPEN");
+    if (c.blocked) throw new ConflictError("This booking cannot be moved online", c.blocked);
+    return { row, c };
+  }
+
+  async guestMoveCalendar(code: string, phone: string, from: string, days: number, meta: RequestMeta): Promise<BookingMoveOptionsDto> {
+    const { row, c } = await this.guestMovable(code, phone, meta);
+    return this.moveDays(row, c.today, from, days, c.earliest);
+  }
+
+  async guestMoveRooms(code: string, phone: string, checkIn: string, meta: RequestMeta): Promise<BookingMoveRoomsDto> {
+    const { row, c } = await this.guestMovable(code, phone, meta);
+    return this.roomsOn(row, c.today, checkIn, c.earliest);
+  }
+
+  /** Price of each room for these nights (pricing rules of that room / type, else its base price). */
+  private async roomPrices(unitIds: string[], checkIn: string, nights: number): Promise<Map<string, number>> {
+    const dates = stayDates(checkIn, nights);
+    const [units, rules] = await Promise.all([
+      this.moves.bookableRooms(["HOUSE", "VIP_TENT"]),
+      new PricingRepository(this.db).activeUnitRules(checkIn, dates.at(-1)!),
+    ]);
+    const byId = new Map(units.map((u) => [u.id, u]));
+    return new Map(unitIds.map((id) => {
+      const u = byId.get(id);
+      if (!u) return [id, 0];
+      const mine = rules.filter((r) => (r.target_type === "UNIT" && r.unit_id === id) || (r.target_type === "UNIT_TYPE" && r.unit_type === u.unit_type));
+      return [id, dates.reduce((acc, d) => acc + nightPrice(mine, d, u.base_price_satang), 0)];
+    }));
+  }
+
+  /**
+   * The guest asks to move the stay: the new nights are held (blocks) while they transfer the fee + any higher
+   * price of the new nights. Nothing about the booking changes until the slip is verified.
+   */
+  async guestMoveRequest(code: string, phone: string, checkIn: string, wanted: { itemId: string; unitId: string }[], meta: RequestMeta): Promise<GuestMoveRequestDto> {
+    const { row, c } = await this.guestMovable(code, phone, meta);
+    if (checkIn < c.earliest) throw new HttpError(422, "DATE_TOO_SOON", "That day is too close");
+    const { plan, rooms, newNames } = await this.planMove(row, checkIn, c.today, wanted);
+    const target = (u: (typeof plan.units)[number]) => rooms?.get(u.itemId) ?? u.unitId;
+    const prices = await this.roomPrices(plan.units.map(target), checkIn, row.nights);
+    const diff = Math.max(0, plan.units.reduce((acc, u) => acc + (prices.get(target(u)) ?? 0) - u.bookedSatang, 0));
+    const fee = c.settings.fee_satang;
+    const now = this.clock();
+    const at = iso(now);
+    const id = newId();
+    const roomsList: MoveRoomDto[] = plan.units.map((u) => ({
+      itemId: u.itemId, fromUnitId: u.unitId, fromName: u.name, toUnitId: target(u), toName: newNames.get(u.itemId) ?? u.name,
+    }));
+    const req: Omit<MoveRequestRow, "reason" | "decided_at" | "updated_at" | "status"> = {
+      id, booking_id: row.id, from_check_in: row.check_in, from_check_out: row.check_out, to_check_in: checkIn,
+      to_check_out: addDays(checkIn, row.nights), rooms_json: JSON.stringify(roomsList), fee_satang: fee, diff_satang: diff,
+      amount_satang: fee + diff, expires_at: iso(addMs(now, c.settings.pay_minutes * 60_000)), created_at: at,
+    };
+    // Hold the new nights the booking does not already have (a move by a day keeps the nights it shares).
+    const own = new Set((await this.moves.ownNights(row.id)).map((n) => `${n.unit_id}|${n.stay_date}`));
+    const holds = plan.units.flatMap((u) => stayDates(checkIn, row.nights)
+      .filter((d) => !own.has(`${target(u)}|${d}`))
+      .map((d) => this.moveRequests.holdStatement(id, target(u), d, at)));
+    try {
+      await this.db.batch([
+        this.moveRequests.insertStatement(req),
+        ...holds,
+        this.log.eventStatement("GUEST_MOVE_REQUESTED", "INFO", meta, { identifier: row.booking_code }),
+        ...(this.outbox?.moveEvent ? await this.outbox.moveEvent(id, row.id, "REQUESTED", at) : []),
+      ]);
+    } catch (error) {
+      const text = String(error);
+      if (/ux_move_requests_open|UNIQUE constraint failed: booking_move_requests/.test(text)) throw new ConflictError("A move of this booking is already waiting", "MOVE_REQUEST_OPEN");
+      if (/booking_unit_nights/.test(text)) throw new ConflictError("Those nights are not free", "DATES_UNAVAILABLE");
+      throw error;
+    }
+    // Nothing to pay (no fee, no higher price): the stay moves now.
+    if (req.amount_satang === 0) await this.settleMove(id, null);
+    return this.guestMoveDto(row, (await this.moveRequests.find(id))!);
+  }
+
+  /** The booking's move waiting for a transfer / being checked, if any. */
+  async openMoveRequest(bookingId: string): Promise<MoveRequestRow | null> {
+    return (await this.moveRequests.forBooking(bookingId)).find((r) => r.status === "AWAITING_PAYMENT" || r.status === "REVIEWING") ?? null;
+  }
+
+  /** AWAITING_PAYMENT → REVIEWING (the slip came in, before the time ran out); RETURNING id. */
+  moveReviewingStatement(requestId: string, now: string): D1PreparedStatementLike {
+    return this.moveRequests.statusStatement(requestId, ["AWAITING_PAYMENT"], "REVIEWING", now, { notExpiredAt: now });
+  }
+
+  async moveEventStatements(requestId: string, bookingId: string, event: MoveEvent, now: string): Promise<D1PreparedStatementLike[]> {
+    return this.outbox?.moveEvent ? this.outbox.moveEvent(requestId, bookingId, event, now) : [];
+  }
+
+  /** The guest gives up a move still waiting for the transfer: the held nights go back. */
+  async guestMoveCancel(code: string, phone: string, meta: RequestMeta): Promise<GuestMoveRequestDto> {
+    const row = await this.guestBooking(code, phone, meta);
+    const open = (await this.moveRequests.forBooking(row.id)).find((r) => r.status === "AWAITING_PAYMENT");
+    if (!open) throw new ConflictError("No move is waiting for a transfer", "MOVE_REQUEST_NOT_OPEN");
+    await this.db.batch([
+      this.moveRequests.statusStatement(open.id, ["AWAITING_PAYMENT"], "CANCELLED", iso(this.clock())),
+      this.moveRequests.releaseStatement(open.id),
+    ]);
+    return this.guestMoveDto(row, (await this.moveRequests.find(open.id))!);
+  }
+
+  /**
+   * Statements that carry out a paid move (in the batch that marks its payment verified): the held nights go back,
+   * the stay moves to its new dates / rooms, the fee + higher price join the booking's money, the request is APPROVED
+   * and staff hear about it. When the move no longer fits (dates gone, kitchen started, booking changed), the
+   * statements mark it FAILED instead (the money received shows as overpaid, for staff to refund or settle).
+   */
+  async moveSettleStatements(requestId: string, decidedBy: string | null, now: string): Promise<D1PreparedStatementLike[]> {
+    const r = await this.moveRequests.find(requestId);
+    if (!r || (r.status !== "AWAITING_PAYMENT" && r.status !== "REVIEWING")) return [];
+    const row = await this.repo.findById(r.booking_id);
+    const fail = async (reason: string) => [
+      this.moveRequests.statusStatement(r.id, ["AWAITING_PAYMENT", "REVIEWING"], "FAILED", now, { reason, decidedBy }),
+      this.moveRequests.releaseStatement(r.id),
+      ...(this.outbox?.moveEvent ? await this.outbox.moveEvent(r.id, r.booking_id, "FAILED", now) : []),
+    ];
+    if (!row || row.booking_status !== "CONFIRMED" || row.check_in !== r.from_check_in) return fail("BOOKING_CHANGED");
+    const roomsList = JSON.parse(r.rooms_json) as MoveRoomDto[];
+    let planned;
+    try {
+      const today = todayIn(await this.quotes.timezone(), this.clock());
+      planned = await this.planMove(row, r.to_check_in, today, roomsList.map((x) => ({ itemId: x.itemId, unitId: x.toUnitId })), moveHold(r.id));
+    } catch (error) {
+      return fail(error instanceof HttpError ? error.code : "MOVE_FAILED");
+    }
+    const { plan, rooms, newNames } = planned;
+    return [
+      this.moveRequests.releaseStatement(r.id),
+      ...this.moves.moveStatements({
+        bookingId: row.id,
+        from: { checkIn: row.check_in, checkOut: row.check_out },
+        to: { checkIn: r.to_check_in, checkOut: r.to_check_out },
+        offset: diffDays(row.check_in, r.to_check_in),
+        units: plan.units.map((u) => (newNames.has(u.itemId)
+          ? { unitId: rooms!.get(u.itemId)!, itemId: u.itemId, rename: newNames.get(u.itemId)! }
+          : { unitId: u.unitId, itemId: u.itemId })),
+        tents: plan.tents,
+        tarps: plan.tarps,
+        now,
+      }),
+      ...(r.amount_satang > 0 ? [this.moveRequests.chargeStatement(row.id, r.to_check_in, r.amount_satang, now)] : []),
+      this.moveRequests.approvedStatement(r.id, row.id, r.to_check_in, now, decidedBy),
+      ...(this.outbox?.moveEvent ? await this.outbox.moveEvent(r.id, row.id, "APPROVED", now) : []),
+    ];
+  }
+
+  /** After the settling batch: a request still open there did not move (booking changed in between) — FAILED. */
+  async moveSettleCheck(requestId: string, decidedBy: string | null): Promise<void> {
+    const r = await this.moveRequests.find(requestId);
+    if (!r || (r.status !== "AWAITING_PAYMENT" && r.status !== "REVIEWING")) return;
+    const now = iso(this.clock());
+    await this.db.batch([
+      this.moveRequests.statusStatement(r.id, ["AWAITING_PAYMENT", "REVIEWING"], "FAILED", now, { reason: "BOOKING_CHANGED", decidedBy }),
+      this.moveRequests.releaseStatement(r.id),
+      ...(this.outbox?.moveEvent ? await this.outbox.moveEvent(r.id, r.booking_id, "FAILED", now) : []),
+    ]);
+  }
+
+  /** Settles a move on its own (nothing to pay). */
+  private async settleMove(requestId: string, decidedBy: string | null): Promise<void> {
+    const now = iso(this.clock());
+    try {
+      await this.db.batch(await this.moveSettleStatements(requestId, decidedBy, now));
+    } catch {
+      // A night taken in between (the batch rolled back): the request is closed as FAILED below.
+    }
+    await this.moveSettleCheck(requestId, decidedBy);
+  }
+
+  /** Staff turned the move's slip down: the request ends, the held nights go back, staff hear about it. */
+  async moveRejectStatements(requestId: string, reason: string, decidedBy: string, now: string): Promise<D1PreparedStatementLike[]> {
+    const r = await this.moveRequests.find(requestId);
+    if (!r) return [];
+    return [
+      this.moveRequests.statusStatement(r.id, ["REVIEWING"], "REJECTED", now, { reason, decidedBy }),
+      this.moveRequests.releaseStatement(r.id),
+      ...(this.outbox?.moveEvent ? await this.outbox.moveEvent(r.id, r.booking_id, "REJECTED", now) : []),
+    ];
+  }
+
+  /** Cron: requests not paid in time (EXPIRED) or on a booking no longer confirmed (CANCELLED) release their nights. */
+  async expireMoveRequests(): Promise<number> {
+    const now = iso(this.clock());
+    let n = 0;
+    for (const r of await this.moveRequests.ended(now)) {
+      const results = await this.db.batch([
+        this.moveRequests.statusStatement(r.id, r.why === "EXPIRED" ? ["AWAITING_PAYMENT"] : ["AWAITING_PAYMENT", "REVIEWING"], r.why, now),
+        this.moveRequests.releaseStatement(r.id),
+      ]);
+      if (results[0]?.results.length) n++;
+    }
+    return n;
+  }
+
   private async findOr404(code: string): Promise<BookingRow> {
     const row = BOOKING_CODE_PATTERN.test(code) ? await this.repo.findByCode(code) : null;
     if (!row) throw new NotFoundError("Booking not found", "BOOKING_NOT_FOUND");
@@ -889,6 +1227,9 @@ export class BookingService {
       awaitingPayment || owing ? this.payments.settings() : Promise.resolve(null),
       this.payments.payments(row.id),
     ]);
+    const [bedRows, petRows, moves] = await Promise.all([this.extraBeds.forBooking(row.id), this.petRepo.forBooking(row.id), this.moveRequests.forBooking(row.id)]);
+    const beds = new Map(bedRows.map((e) => [e.booking_item_id, e]));
+    const pets = new Map(petRows.map((e) => [e.booking_item_id, e]));
     const rejected = payments.filter((p) => p.status === "REJECTED").at(-1);
     const paidSatang = paidOf(payments);
     const balanceSatang = balanceDue(row.total_satang, paidSatang);
@@ -927,6 +1268,8 @@ export class BookingService {
       adults: i.adults,
       children: i.children,
       payLaterSatang: i.pay_later_satang,
+      ...(beds.has(i.id) ? { extraBeds: bedLine(beds.get(i.id)!) } : {}),
+      ...(pets.has(i.id) ? { pets: petLine(pets.get(i.id)!) } : {}),
     }));
     const cancelledAlone = new Set(items.filter((i) => i.cancelled_at).map((i) => i.id));
     const live = stays.filter((x) => x.status === "ACTIVE");
@@ -987,16 +1330,22 @@ export class BookingService {
       appFee: appFeeOf(row),
       paidSatang,
       balanceSatang,
+      ...(moves.some((m) => m.status === "APPROVED" && m.amount_satang > 0) ? {
+        moveCharges: moves.filter((m) => m.status === "APPROVED" && m.amount_satang > 0).reverse()
+          .map((m) => ({ toCheckIn: m.to_check_in, feeSatang: m.fee_satang, diffSatang: m.diff_satang })),
+      } : {}),
     };
   }
 
   private async toAdmin(row: BookingRow): Promise<AdminBookingDto> {
-    const [snapshot, payments, modeToday] = await Promise.all([
+    const [snapshot, payments, modeToday, moves] = await Promise.all([
       this.payments.snapshot(row.id), this.payments.payments(row.id),
       row.deposit_satang !== null ? currentPaymentMode(this.db, row.id) : Promise.resolve(null),
+      this.moveRequests.forBooking(row.id),
     ]);
     return {
       ...(await this.toPublic(row)),
+      ...(moves.length ? { moveRequests: moves.map(toMoveRequestDto) } : {}),
       // The deposit was fixed at booking time: a later switch of the stay to full payment does not change this booking.
       depositPlanKept: modeToday === "FULL",
       // A stay cancelled after payment: money received beyond the new total, for staff to refund.
@@ -1052,6 +1401,13 @@ export function mapInventoryError(error: unknown): unknown {
   if (/TARP_DISABLED/.test(message)) {
     return new ConflictError("The tarp area option is not offered", "TARP_UNAVAILABLE");
   }
+  // Extra beds switched off (or their limit lowered) between the price check and the booking (migration 0043).
+  if (/EXTRA_BED_UNAVAILABLE/.test(message)) {
+    return new ConflictError("Extra beds are not offered", "EXTRA_BED_UNAVAILABLE");
+  }
+  if (/PET_UNAVAILABLE/.test(message)) {
+    return new ConflictError("Pets are not allowed", "PET_UNAVAILABLE");
+  }
   if (/NOT NULL constraint failed: payment_account_snapshots/.test(message)) {
     return new ConflictError("Online booking is temporarily unavailable", "PAYMENT_NOT_CONFIGURED");
   }
@@ -1072,4 +1428,24 @@ function safeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+/** Extra beds snapshot → line (beds × price per bed per night × nights). */
+function bedLine(e: BookingExtraBedRow): ExtraBedLineDto {
+  return { quantity: e.quantity, pricePerNightSatang: e.price_per_night_satang, nights: e.number_of_nights, subtotalSatang: e.subtotal_satang };
+}
+
+/** Pets snapshot → line. */
+function petLine(p: BookingPetRow): PetLineDto {
+  return {
+    quantity: p.quantity, priceSatang: p.price_satang, chargePer: p.charge_per, chargedUnits: p.charged_units,
+    maxWeightKg: p.max_weight_kg, subtotalSatang: p.subtotal_satang,
+  };
+}
+
+function toMoveSettingsDto(r: MoveSettingsRow): MoveSettingsDto {
+  return {
+    enabled: r.is_enabled === 1, feeSatang: r.fee_satang, minDaysBefore: r.min_days_before, maxMoves: r.max_moves, payMinutes: r.pay_minutes,
+    updatedAt: r.updated_at,
+  };
 }

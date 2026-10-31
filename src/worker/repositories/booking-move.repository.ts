@@ -33,14 +33,15 @@ export interface MoveFoodOrderRow {
 export class BookingMoveRepository {
   constructor(private readonly db: D1DatabaseLike) {}
 
-  /** Nights of `unitId` in [from, to) held by another booking or a block. */
-  async unitTaken(unitId: string, bookingId: string, from: string, to: string): Promise<Set<string>> {
+  /** Nights of `unitId` in [from, to) held by another booking or a block (`ownHold`: the booking's own move hold, not counted). */
+  async unitTaken(unitId: string, bookingId: string, from: string, to: string, ownHold: string | null = null): Promise<Set<string>> {
     const { results } = await this.db
       .prepare(
         `SELECT stay_date FROM booking_unit_nights
-          WHERE unit_id = ?1 AND stay_date >= ?2 AND stay_date < ?3 AND (booking_id IS NULL OR booking_id <> ?4)`,
+          WHERE unit_id = ?1 AND stay_date >= ?2 AND stay_date < ?3 AND (booking_id IS NULL OR booking_id <> ?4)
+            AND (?5 IS NULL OR block_reason IS NULL OR block_reason <> ?5)`,
       )
-      .bind(unitId, from, to, bookingId)
+      .bind(unitId, from, to, bookingId, ownHold)
       .all<{ stay_date: string }>();
     return new Set(results.map((r) => r.stay_date));
   }
@@ -59,14 +60,15 @@ export class BookingMoveRepository {
   }
 
   /** Nights in [from, to) of these rooms held by other bookings or blocks. */
-  async roomsTaken(unitIds: string[], bookingId: string, from: string, to: string): Promise<{ unit_id: string; stay_date: string }[]> {
+  async roomsTaken(unitIds: string[], bookingId: string, from: string, to: string, ownHold: string | null = null): Promise<{ unit_id: string; stay_date: string }[]> {
     if (!unitIds.length) return [];
     const { results } = await this.db
       .prepare(
         `SELECT unit_id, stay_date FROM booking_unit_nights
-          WHERE unit_id IN (SELECT value FROM json_each(?1)) AND stay_date >= ?2 AND stay_date < ?3 AND (booking_id IS NULL OR booking_id <> ?4)`,
+          WHERE unit_id IN (SELECT value FROM json_each(?1)) AND stay_date >= ?2 AND stay_date < ?3 AND (booking_id IS NULL OR booking_id <> ?4)
+            AND (?5 IS NULL OR block_reason IS NULL OR block_reason <> ?5)`,
       )
-      .bind(JSON.stringify(unitIds), from, to, bookingId)
+      .bind(JSON.stringify(unitIds), from, to, bookingId, ownHold)
       .all<{ unit_id: string; stay_date: string }>();
     return results;
   }
@@ -91,6 +93,15 @@ export class BookingMoveRepository {
       .prepare("SELECT stay_date, max_tarps, tarps_used FROM camping_tarp_night_inventory WHERE stay_date >= ?1 AND stay_date < ?2")
       .bind(from, to)
       .all<{ stay_date: string; max_tarps: number; tarps_used: number }>();
+    return results;
+  }
+
+  /** Nights this booking holds now, per room (a move may keep some of them). */
+  async ownNights(bookingId: string): Promise<{ unit_id: string; stay_date: string }[]> {
+    const { results } = await this.db
+      .prepare("SELECT unit_id, stay_date FROM booking_unit_nights WHERE booking_id = ?1")
+      .bind(bookingId)
+      .all<{ unit_id: string; stay_date: string }>();
     return results;
   }
 

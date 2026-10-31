@@ -38,7 +38,11 @@ export interface OutboxLike {
   paymentRejected?(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
   /** Deposit plan: the rest came in (guest's transfer verified, or taken at reception) — payment marked in this batch. */
   balancePaid?(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
+  /** A guest's move of the stay (migration 0045): asked, slip sent, moved, turned down or failed. */
+  moveEvent?(requestId: string, bookingId: string, event: MoveEvent, now: string): Promise<D1PreparedStatementLike[]>;
 }
+
+export type MoveEvent = "REQUESTED" | "SLIP" | "APPROVED" | "REJECTED" | "FAILED";
 
 export class CompositeOutbox implements OutboxLike {
   constructor(private readonly parts: OutboxLike[]) {}
@@ -56,6 +60,9 @@ export class CompositeOutbox implements OutboxLike {
   }
   async paymentRejected(paymentId: string, bookingId: string, now: string) {
     return (await Promise.all(this.parts.map((p) => p.paymentRejected?.(paymentId, bookingId, now) ?? Promise.resolve([])))).flat();
+  }
+  async moveEvent(requestId: string, bookingId: string, event: MoveEvent, now: string) {
+    return (await Promise.all(this.parts.map((p) => p.moveEvent?.(requestId, bookingId, event, now) ?? Promise.resolve([])))).flat();
   }
   async balancePaid(paymentId: string, bookingId: string, now: string) {
     return (await Promise.all(this.parts.map((p) => p.balancePaid?.(paymentId, bookingId, now) ?? Promise.resolve([])))).flat();

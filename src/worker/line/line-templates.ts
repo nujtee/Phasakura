@@ -1,3 +1,4 @@
+import type { MoveRequestRow } from "../repositories/move-request.repository.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
 import type { LocaleCode } from "../../shared/i18n/locales.ts";
 
@@ -30,6 +31,10 @@ export interface MsgBooking {
   stays?: { type: "HOUSE" | "VIP_TENT" | "OWN_TENT"; name: string; quantity: number }[];
   /** Tarp areas booked with the tents (camping add-on). */
   tarps?: number;
+  /** Extra beds of the houses / VIP tents (migration 0043). */
+  extraBeds?: number;
+  /** Pets brought to the houses / VIP tents (migration 0044). */
+  pets?: number;
   adults: number;
   children: number;
   bookingStatus: string;
@@ -73,6 +78,8 @@ const th = {
   camping: "ลานกางเต็นท์",
   tents: "{n} เต็นท์",
   tarp: "พื้นที่กางทาร์ป",
+  extraBeds: "ที่นอนเสริม {n}",
+  pets: "สัตว์เลี้ยง {n}",
   guests: "ผู้เข้าพัก",
   guestsValue: "ผู้ใหญ่ {a} · เด็ก {c}",
   food: "อาหาร",
@@ -126,6 +133,20 @@ const th = {
   } as Record<string, string>,
   methods: { BANK_TRANSFER: "โอนเงิน", PROMPTPAY: "พร้อมเพย์", CASH: "เงินสด", OTHER: "อื่น ๆ" } as Record<string, string>,
   channels: { PROMPTPAY: "พร้อมเพย์", BANK_TRANSFER: "โอนเข้าบัญชี", QR_CODE: "สแกน QR Code", PAYPAL: "PayPal" } as Record<string, string>,
+  moveTitles: {
+    REQUESTED: "🔁 ลูกค้าขอเลื่อนวันเข้าพัก — รอโอนค่าเลื่อน",
+    SLIP: "🧾 ลูกค้าส่งสลิปค่าเลื่อนวันเข้าพัก — รอตรวจสอบ",
+    APPROVED: "✅ เลื่อนวันเข้าพักแล้ว — สลิปผ่าน",
+    REJECTED: "❌ สลิปค่าเลื่อนวันเข้าพักไม่ผ่าน — การจองคงวันเดิม",
+    FAILED: "⚠️ เลื่อนวันเข้าพักไม่สำเร็จ — โปรดตรวจสอบ",
+  } as Record<string, string>,
+  moveDates: "วันเข้าพัก",
+  moveRoom: "ที่พัก",
+  moveFee: "ค่าเลื่อน",
+  moveDiff: "ส่วนต่างราคา",
+  moveAmount: "ยอดโอน",
+  movePayBy: "ต้องโอนภายใน",
+  reasonLabel: "เหตุผล",
   newBookingTitle: "🆕 การจองใหม่ — รอชำระเงิน",
   payBy: "ชำระภายใน",
   autoPassed: "ตรวจสลิปอัตโนมัติ: ถูกต้อง — รอแอดมินอนุมัติ",
@@ -165,6 +186,8 @@ const en: Texts = {
   camping: "Camping",
   tents: "{n} tent(s)",
   tarp: "tarp area",
+  extraBeds: "{n} extra bed(s)",
+  pets: "{n} pet(s)",
   guests: "Guests",
   guestsValue: "{a} adult(s) · {c} child(ren)",
   food: "Food",
@@ -218,6 +241,20 @@ const en: Texts = {
   },
   methods: { BANK_TRANSFER: "bank transfer", PROMPTPAY: "PromptPay", CASH: "cash", OTHER: "other" },
   channels: { PROMPTPAY: "PromptPay", BANK_TRANSFER: "bank transfer", QR_CODE: "QR code", PAYPAL: "PayPal" },
+  moveTitles: {
+    REQUESTED: "🔁 A guest asks to move the stay — awaiting the transfer",
+    SLIP: "🧾 Slip for moving the stay — to review",
+    APPROVED: "✅ Stay moved — slip accepted",
+    REJECTED: "❌ Slip for moving the stay declined — the booking keeps its dates",
+    FAILED: "⚠️ The stay could not be moved — please check",
+  } as Record<string, string>,
+  moveDates: "Dates",
+  moveRoom: "Unit",
+  moveFee: "Move fee",
+  moveDiff: "Price difference",
+  moveAmount: "To transfer",
+  movePayBy: "Transfer by",
+  reasonLabel: "Reason",
   newBookingTitle: "🆕 New booking — awaiting payment",
   payBy: "Pay by",
   autoPassed: "Automatic slip check: correct — waiting for your approval",
@@ -255,6 +292,8 @@ const zh: Texts = {
   camping: "露营",
   tents: "{n} 顶帐篷",
   tarp: "天幕区",
+  extraBeds: "加床 {n}",
+  pets: "宠物 {n}",
   guests: "入住人数",
   guestsValue: "成人 {a} · 儿童 {c}",
   food: "餐饮",
@@ -308,6 +347,20 @@ const zh: Texts = {
   },
   methods: { BANK_TRANSFER: "银行转账", PROMPTPAY: "PromptPay", CASH: "现金", OTHER: "其他" },
   channels: { PROMPTPAY: "PromptPay", BANK_TRANSFER: "银行转账", QR_CODE: "扫码支付", PAYPAL: "PayPal" },
+  moveTitles: {
+    REQUESTED: "🔁 客人申请改期 — 等待转账",
+    SLIP: "🧾 客人已发送改期费用凭证 — 待审核",
+    APPROVED: "✅ 已改期 — 凭证通过",
+    REJECTED: "❌ 改期费用凭证未通过 — 预订保持原日期",
+    FAILED: "⚠️ 改期未成功 — 请检查",
+  } as Record<string, string>,
+  moveDates: "日期",
+  moveRoom: "住宿",
+  moveFee: "改期费",
+  moveDiff: "差价",
+  moveAmount: "转账金额",
+  movePayBy: "转账截止",
+  reasonLabel: "原因",
   newBookingTitle: "🆕 新预订 — 待付款",
   payBy: "付款截止",
   autoPassed: "自动核验凭证：正确 — 等待管理员批准",
@@ -398,13 +451,18 @@ export class LineFormatter {
       const units = b.stays.filter((s) => s.type !== "OWN_TENT").map((s) => s.name);
       const camp = b.stays.find((s) => s.type === "OWN_TENT");
       return [
-        ...(units.length ? [`${this.t.houseVip}: ${units.join(", ")}`] : []),
+        ...(units.length ? [`${this.t.houseVip}: ${units.join(", ")}${this.beds(b)}`] : []),
         ...(camp ? [`${this.t.camping}: ${fill(this.t.tents, { n: camp.quantity })}${b.tarps ? ` + ${this.t.tarp}` : ""}`] : []),
       ].join("\n");
     }
     return b.itemType === "OWN_TENT"
       ? `${this.t.camping}: ${fill(this.t.tents, { n: b.tents })}${b.tarps ? ` + ${this.t.tarp}` : ""}`
-      : `${this.t.houseVip}: ${b.itemName}`;
+      : `${this.t.houseVip}: ${b.itemName}${this.beds(b)}`;
+  }
+
+  /** " + ที่นอนเสริม 2 + สัตว์เลี้ยง 1" when the guest asked for extra beds / brings pets. */
+  private beds(b: MsgBooking): string {
+    return (b.extraBeds ? ` + ${fill(this.t.extraBeds, { n: b.extraBeds })}` : "") + (b.pets ? ` + ${fill(this.t.pets, { n: b.pets })}` : "");
   }
 
   /** The booking fields of spec §47, one per line; `contact` adds the guest's half-hidden phone / e-mail (staff). */
@@ -635,4 +693,26 @@ export function staffLinkedText(f: LineFormatter, name: string, siteName: string
 
 export function guestLinkedText(f: LineFormatter, code: string): string {
   return fill(f.t.guestLinked, { code });
+}
+
+/** Staff: one step of a guest moving the stay (asked / slip sent / moved / declined / failed), from the request. */
+export function moveText(f: LineFormatter, b: MsgBooking, r: MoveRequestRow, event: string, link: string | null): string {
+  const t = f.t;
+  const rooms = JSON.parse(r.rooms_json) as { fromName: string; toName: string; fromUnitId: string; toUnitId: string }[];
+  const changed = rooms.filter((x) => x.fromUnitId !== x.toUnitId);
+  return [
+    t.moveTitles[event] ?? t.moveTitles.REQUESTED!,
+    `${t.bookingId}: ${b.code}`,
+    `${t.customer}: ${b.customerName}`,
+    ...(b.customerPhoneMasked ? [`${t.phone}: ${b.customerPhoneMasked}`] : []),
+    `${t.moveDates}: ${f.date(r.from_check_in)} – ${f.date(r.from_check_out)} → ${f.date(r.to_check_in)} – ${f.date(r.to_check_out)}`,
+    ...(changed.length
+      ? changed.map((x) => `${t.moveRoom}: ${x.fromName} → ${x.toName}`)
+      : rooms.length ? [`${t.moveRoom}: ${rooms.map((x) => x.toName).join(", ")}`] : []),
+    `${t.moveFee}: ${f.money(r.fee_satang)}${r.diff_satang > 0 ? ` · ${t.moveDiff}: ${f.money(r.diff_satang)}` : ""}`,
+    `${t.moveAmount}: ${f.money(r.amount_satang)}`,
+    ...(event === "REQUESTED" && r.amount_satang > 0 ? [`${t.movePayBy}: ${f.dateTime(r.expires_at)}`] : []),
+    ...((event === "REJECTED" || event === "FAILED") && r.reason ? [`${t.reasonLabel}: ${r.reason}`] : []),
+    ...(link ? ["", `${t.openAdmin}:`, link] : []),
+  ].join("\n");
 }

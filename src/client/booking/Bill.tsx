@@ -50,13 +50,24 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
   const live = (b.items?.length ? b.items : [b.item]).filter((x) => x.status !== "CANCELLED");
   const extra = b.food.filter((f) => f.includedQuantity === 0);
   const rows: { name: string; qty: string; amount: string }[] = [
-    ...live.map((x) => ({
+    ...live.flatMap((x) => [{
       name: x.name,
       qty: [fillText(m.nights, { n: b.nights }), x.type === "OWN_TENT" ? fillText(bt.tentsLine, { n: x.quantity }) : null,
         x.pricingType === "PER_ADULT_NIGHT" ? fillText(m.perAdult, { n: x.adults }) : null].filter(Boolean).join(" · "),
       amount: baht(x.subtotalSatang),
-    })),
+    }, ...(x.extraBeds ? [{
+      name: live.length > 1 ? `${m.extraBed} · ${x.name}` : m.extraBed,
+      qty: `${x.extraBeds.quantity} × ${fillText(m.nights, { n: x.extraBeds.nights })}`,
+      amount: x.extraBeds.subtotalSatang === 0 ? bt.free : baht(x.extraBeds.subtotalSatang),
+    }] : []), ...(x.pets ? [{
+      name: `${live.length > 1 ? `${m.pet} · ${x.name}` : m.pet} (${fillText(bt.petWeight, { kg: x.pets.maxWeightKg })})`,
+      qty: x.pets.chargePer === "STAY" ? String(x.pets.quantity) : `${x.pets.quantity} × ${fillText(m.nights, { n: x.pets.chargedUnits })}`,
+      amount: x.pets.subtotalSatang === 0 ? bt.free : baht(x.pets.subtotalSatang),
+    }] : [])]),
     ...(b.tarp ? [{ name: m.tarp, qty: fillText(m.nights, { n: b.tarp.nights }), amount: baht(b.tarp.subtotalSatang) }] : []),
+    ...(b.moveCharges ?? []).map((c) => ({
+      name: c.diffSatang > 0 ? `${bt.move.fee} + ${bt.move.diff}` : bt.move.fee, qty: date(c.toCheckIn), amount: baht(c.feeSatang + c.diffSatang),
+    })),
     ...b.includedMeals.map((x) => ({ name: x.name, qty: `${x.personsPerNight} × ${fillText(m.nights, { n: x.nights })}`, amount: bt.included })),
     ...extra.map((f) => ({ name: `${f.name} · ${date(f.serviceDate)}`, qty: String(f.quantity), amount: f.subtotalSatang === 0 ? bt.free : baht(f.subtotalSatang) })),
     ...(b.appFee && b.appFee.totalSatang > 0

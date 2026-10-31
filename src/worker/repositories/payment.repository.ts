@@ -102,6 +102,8 @@ export interface SlipPaymentRow {
   slip_sha256: string | null;
   /** 1 = sent after the booking was confirmed: the rest of a deposit, not the payment that confirms it. */
   is_balance: number;
+  /** The fee for moving the stay (migration 0045); null = a payment for the booking itself. */
+  move_request_id: string | null;
 }
 
 export interface VerificationRow {
@@ -121,12 +123,12 @@ export interface VerificationRow {
   created_at: string;
 }
 
-const SLIP_PAYMENT_SELECT = `
-  SELECT p.id, p.booking_id, b.booking_code, b.booking_status, b.payment_status AS booking_payment_status,
+const slipPaymentSelect = (move: string) => `
+  SELECT ${move} AS move_request_id, p.id, p.booking_id, b.booking_code, b.booking_status, b.payment_status AS booking_payment_status,
          b.created_at AS booking_created_at, b.total_satang, b.customer_name, b.check_in, b.check_out,
          p.amount_satang, p.status, p.channel, p.reference, p.rejected_reason, p.submitted_at,
          m.object_key AS slip_key, m.mime_type AS slip_mime, p.slip_sha256,
-         CASE WHEN b.confirmed_at IS NOT NULL AND p.submitted_at > b.confirmed_at THEN 1 ELSE 0 END AS is_balance
+         CASE WHEN b.confirmed_at IS NOT NULL AND p.submitted_at > b.confirmed_at AND ${move} IS NULL THEN 1 ELSE 0 END AS is_balance
     FROM payments p
     JOIN bookings b ON b.id = p.booking_id
     LEFT JOIN media_assets m ON m.id = p.slip_asset_id AND m.bucket = 'PRIVATE' AND m.purpose = 'PAYMENT_SLIP'`;
@@ -403,6 +405,28 @@ export class PaymentRepository {
       .bind(bookingId, now);
   }
 
+  /** A move's slip (migration 0045): stored only while its request was just put under review in this batch. */
+  insertMoveSlipAssetStatement(a: { id: string; requestId: string; key: string; mime: string; size: number; width: number; height: number; sha256: string; now: string }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO media_assets (id, bucket, object_key, purpose, mime_type, size_bytes, width, height, sha256, created_at)
+         SELECT ?1, 'PRIVATE', ?3, 'PAYMENT_SLIP', ?4, ?5, ?6, ?7, ?8, ?9
+          WHERE EXISTS (SELECT 1 FROM booking_move_requests WHERE id = ?2 AND status = 'REVIEWING' AND updated_at = ?9)`,
+      )
+      .bind(a.id, a.requestId, a.key, a.mime, a.size, a.width, a.height, a.sha256, a.now);
+  }
+
+  insertMovePaymentStatement(p: { id: string; bookingId: string; requestId: string; amount: number; assetId: string; sha256: string; channel: string; now: string }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO payments (id, booking_id, amount_satang, method, channel, status, slip_asset_id, slip_sha256, submitted_at, updated_at, move_request_id)
+         SELECT ?1, ?2, ?3, CASE ?7 WHEN 'PROMPTPAY' THEN 'PROMPTPAY' ELSE 'BANK_TRANSFER' END, ?7, 'PENDING_VERIFICATION', ?4, ?5, ?6, ?6, ?8
+          WHERE EXISTS (SELECT 1 FROM booking_move_requests WHERE id = ?8 AND status = 'REVIEWING' AND updated_at = ?6)
+         RETURNING id`,
+      )
+      .bind(p.id, p.bookingId, p.amount, p.assetId, p.sha256, p.now, p.channel, p.requestId);
+  }
+
   insertSlipAssetStatement(a: { id: string; bookingId: string; key: string; mime: string; size: number; width: number; height: number; sha256: string; now: string }): D1PreparedStatementLike {
     return this.db
       .prepare(
@@ -452,13 +476,19 @@ export class PaymentRepository {
   }
 
   findSlipPayment(paymentId: string): Promise<SlipPaymentRow | null> {
-    return this.db.prepare(`${SLIP_PAYMENT_SELECT} WHERE p.id = ?1`).bind(paymentId).first<SlipPaymentRow>();
+    // Before migration 0045 no payment is for a move.
+    const read = (move: string) => () => this.db.prepare(`${slipPaymentSelect(move)} WHERE p.id = ?1`).bind(paymentId).first<SlipPaymentRow>();
+    return withFallback(read("p.move_request_id"), read("NULL"));
   }
 
   async slipQueue(status: string, limit: number, before: string | null): Promise<SlipPaymentRow[]> {
+    return withFallback(() => this.slipQueueWith(status, limit, before, "p.move_request_id"), () => this.slipQueueWith(status, limit, before, "NULL"));
+  }
+
+  private async slipQueueWith(status: string, limit: number, before: string | null, move: string): Promise<SlipPaymentRow[]> {
     const { results } = await this.db
       .prepare(
-        `${SLIP_PAYMENT_SELECT}
+        `${slipPaymentSelect(move)}
           WHERE (p.slip_asset_id IS NOT NULL OR p.channel = 'PAYPAL') AND p.status = ?1 AND (?3 IS NULL OR p.submitted_at < ?3)
           ORDER BY p.submitted_at ${status === "PENDING_VERIFICATION" ? "ASC" : "DESC"} LIMIT ?2`,
       )

@@ -5,6 +5,7 @@ import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
 import type { FoodCart } from "./api.ts";
+import type { Pick } from "./StayPicks.tsx";
 import { useDateText } from "./Summary.tsx";
 import { useBookingT } from "./useBookingT.ts";
 
@@ -43,11 +44,18 @@ export function FoodStep({
   quote,
   cart,
   onChange,
+  picks = [],
+  onExtraBeds,
+  onPets,
 }: {
   catalogue: FoodCatalogueDto;
   quote: QuoteDto | null;
   cart: FoodCart;
   onChange: (cart: FoodCart) => void;
+  /** The stays chosen: extra beds are asked per house / VIP tent. */
+  picks?: Pick[];
+  onExtraBeds?: (unitId: string, n: number) => void;
+  onPets?: (unitId: string, n: number) => void;
 }) {
   const { locale } = useI18n();
   const bt = useBookingT();
@@ -61,8 +69,36 @@ export function FoodStep({
     onChange({ ...cart, [key]: { ...current, ...patch } });
   };
 
+  const offer = catalogue.extraBed ?? null;
+  const pet = catalogue.pet ?? null;
+  const units = picks.filter((p): p is Extract<Pick, { kind: "UNIT" }> => p.kind === "UNIT");
+
   return (
     <div className="food-step">
+      {offer && onExtraBeds && units.length > 0 && (
+        <section className="extra-beds" aria-labelledby="extra-beds-h">
+          <h3 id="extra-beds-h">{bt.extraBedTitle}</h3>
+          <p className="extra-beds__intro">
+            {offer.pricePerNightSatang > 0
+              ? fill(bt.extraBedIntro, { price: baht(offer.pricePerNightSatang), max: offer.maxPerUnit })
+              : fill(bt.extraBedFree, { max: offer.maxPerUnit })}
+          </p>
+          {units.map((p) => (
+            <div key={p.unit.id} className="food-option extra-beds__row">
+              <div className="food-option__info">
+                <strong>{p.unit.name}</strong>
+                {(p.extraBeds ?? 0) > 0 && offer.pricePerNightSatang > 0 && quote && (
+                  <span className="food-option__price">
+                    {fill(bt.extraBedNights, { n: p.extraBeds ?? 0, nights: quote.nights })} = {baht((p.extraBeds ?? 0) * offer.pricePerNightSatang * quote.nights)}
+                  </span>
+                )}
+              </div>
+              <Stepper label={units.length > 1 ? `${bt.extraBedCount} · ${p.unit.name}` : bt.extraBedCount} value={p.extraBeds ?? 0} min={0}
+                max={offer.maxPerUnit} onChange={(n) => onExtraBeds(p.unit.id, n)} />
+            </div>
+          ))}
+        </section>
+      )}
       {quote && quote.includedMeals.length > 0 && (
         <section className="food-included" aria-labelledby="incl-h">
           <h3 id="incl-h">{bt.includedTitle}</h3>
@@ -74,6 +110,37 @@ export function FoodStep({
         </section>
       )}
 
+      {pet && onPets && units.length > 0 && (
+        <section className="extra-beds pets" aria-labelledby="pets-h">
+          <h3 id="pets-h">{bt.petTitle}</h3>
+          <p className="extra-beds__intro">
+            {fill(pet.priceSatang === 0 ? bt.petIntroFree : pet.chargePer === "STAY" ? bt.petIntroStay : bt.petIntroNight,
+              { price: baht(pet.priceSatang), kg: pet.maxWeightKg, max: pet.maxPerUnit })}
+          </p>
+          {units.map((p) => {
+            const n = p.pets ?? 0;
+            const times = pet.chargePer === "STAY" ? 1 : quote?.nights ?? 1;
+            return (
+              <div key={p.unit.id} className="food-option extra-beds__row">
+                <div className="food-option__info">
+                  <strong>{p.unit.name}</strong>
+                  {n > 0 && pet.priceSatang > 0 && quote && (
+                    <span className="food-option__price">
+                      {pet.chargePer === "STAY" ? fill(bt.petStay, { n }) : fill(bt.petNights, { n, nights: quote.nights })} = {baht(n * pet.priceSatang * times)}
+                    </span>
+                  )}
+                </div>
+                <Stepper label={units.length > 1 ? `${bt.petCount} · ${p.unit.name}` : bt.petCount} value={n} min={0}
+                  max={pet.maxPerUnit} onChange={(v) => onPets(p.unit.id, v)} />
+              </div>
+            );
+          })}
+        </section>
+      )}
+
+      {((offer && onExtraBeds) || (pet && onPets)) && units.length > 0 && catalogue.categories.length > 0 && (
+        <h3 className="food-step__section">{bt.foodSection}</h3>
+      )}
       <p className="food-step__intro">{bt.foodIntro}</p>
       {catalogue.categories.length === 0 && <p className="notice">{bt.noFood}</p>}
 

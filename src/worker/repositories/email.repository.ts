@@ -176,6 +176,12 @@ export class EmailRepository {
   }
 
   /** Deposit plan: the rest came in (payment marked in this batch; marker: updated_at = now). One message per payment. */
+  /** A guest's move of the stay (migration 0045): staff who want booking news hear each step. */
+  moveEventStatement(requestId: string, bookingId: string, event: string, now: string): D1PreparedStatementLike {
+    return this.staffOutbox("BOOKING_MOVE", "notify_booking", `BOOKING_MOVE:${requestId}:${event}:staff:`, bookingId, { requestId, event }, now, now,
+      "EXISTS (SELECT 1 FROM booking_move_requests WHERE id = ?7)", [requestId]);
+  }
+
   balancePaidStatement(paymentId: string, bookingId: string, now: string): D1PreparedStatementLike {
     return this.staffOutbox("PAYMENT_CONFIRMED", "notify_payment", `PAYMENT_CONFIRMED:${paymentId}:staff:`, bookingId, { paymentId }, now, now,
       "EXISTS (SELECT 1 FROM payments p WHERE p.id = ?7 AND p.booking_id = ?3 AND p.status IN ('VERIFIED', 'PAID') AND p.updated_at = ?8)", [paymentId, now]);

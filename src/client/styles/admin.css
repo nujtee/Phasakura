@@ -652,6 +652,22 @@
   color: var(--color-warning);
 }
 
+.adm-badge.adm-statuspick {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid currentColor;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  min-height: 36px;
+  padding: 0.25rem 1.6rem 0.25rem 0.75rem;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 0.75rem center, right 0.45rem center;
+  background-size: 0.3rem 0.3rem;
+  background-repeat: no-repeat;
+}
+.adm-badge.adm-statuspick:disabled { cursor: progress; opacity: 0.6; }
+
 .adm-badge--deleted {
   background: color-mix(in srgb, var(--color-muted) 16%, transparent);
   color: var(--color-muted);
@@ -3555,3 +3571,14 @@
 .adm-amenity__btn:hover, .adm-amenity__btn:focus-visible { border-color: var(--color-border); background: var(--color-surface); color: var(--color-heading); }
 .adm-amenity__btn--danger:hover, .adm-amenity__btn--danger:focus-visible { color: var(--color-error); }
 @media (any-pointer: coarse) { .adm-amenity__btn { min-width: 44px; min-height: 44px; } }
+
+/* Houses / VIP tents → extra beds settings (migration 0043). */
+.adm-extrabeds__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.adm-extrabeds__head .adm-h2 { margin-bottom: 4px; }
+.adm-extrabeds form { margin-top: 12px; }

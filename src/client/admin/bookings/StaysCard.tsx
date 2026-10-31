@@ -39,6 +39,8 @@ export function StaysCard({ booking: b, onChanged }: { booking: AdminBookingDto;
                 {item.name}
                 {item.type === "OWN_TENT" && ` · ${format(t.bk.tents, { n: item.quantity })}`}
                 {tarp && ` + ${t.bk.tarp}`}
+                {item.extraBeds && ` + ${format(t.bk.extraBeds, { n: item.extraBeds.quantity })}`}
+                {item.pets && ` + ${format(t.bk.pets, { n: item.pets.quantity })}`}
               </h3>
               {several && <span className="adm-muted adm-small">{format(t.bk.guests, { adults: item.adults, children: item.children })}</span>}
               {cancelled && <span className="adm-badge adm-badge--muted">{t.bk.stayCancelled}</span>}
@@ -65,10 +67,25 @@ export function StaysCard({ booking: b, onChanged }: { booking: AdminBookingDto;
                       <td className="adm-num">{baht(tarp.subtotalSatang)} ({baht(tarp.pricePerNightSatang)} {t.bk.perNight})</td>
                     </tr>
                   )}
+                  {item.extraBeds && (
+                    <tr>
+                      <td>{format(t.bk.extraBedsNights, { n: item.extraBeds.quantity, nights: item.extraBeds.nights })}</td>
+                      <td className="adm-num">{baht(item.extraBeds.subtotalSatang)} ({baht(item.extraBeds.pricePerNightSatang)} {t.bk.perNight})</td>
+                    </tr>
+                  )}
+                  {item.pets && (
+                    <tr>
+                      <td>
+                        {item.pets.chargePer === "STAY" ? format(t.bk.petsStay, { n: item.pets.quantity }) : format(t.bk.petsNights, { n: item.pets.quantity, nights: item.pets.chargedUnits })}
+                        <span className="adm-muted adm-small"> · {format(t.bk.petsWeight, { kg: item.pets.maxWeightKg })}</span>
+                      </td>
+                      <td className="adm-num">{baht(item.pets.subtotalSatang)} ({baht(item.pets.priceSatang)})</td>
+                    </tr>
+                  )}
                   {several && (
                     <tr className="adm-table__total">
                       <th scope="row">{t.bk.staySubtotal}</th>
-                      <td className="adm-num">{cancelled ? <s>{baht(item.subtotalSatang)}</s> : baht(item.subtotalSatang + (tarp?.subtotalSatang ?? 0))}</td>
+                      <td className="adm-num">{cancelled ? <s>{baht(item.subtotalSatang + (item.extraBeds?.subtotalSatang ?? 0))}</s> : baht(item.subtotalSatang + (tarp?.subtotalSatang ?? 0) + (item.extraBeds?.subtotalSatang ?? 0))}</td>
                     </tr>
                   )}
                 </tbody>

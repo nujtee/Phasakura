@@ -9,7 +9,11 @@ import { useBookingT } from "./useBookingT.ts";
 type Result = { booking: PublicBookingDto } & SlipUploadResultDto;
 
 /** Guest slip upload. Booking ID + phone prove the booking is theirs; the image goes to private storage. */
-export function SlipUpload({ bookingCode, phone, channel, onDone }: { bookingCode: string; phone: string; channel?: SlipChannel; onDone: (r: Result) => void }) {
+export function SlipUpload<T = Result>({ bookingCode, phone, channel, onDone, path = "/api/public/bookings/slip" }: {
+  bookingCode: string; phone: string; channel?: SlipChannel; onDone: (r: T) => void;
+  /** Where the slip goes: the booking's payment (default) or a date change (/api/public/bookings/move/slip). */
+  path?: string;
+}) {
   const bt = useBookingT();
   const id = useId();
   const [file, setFile] = useState<File | null>(null);
@@ -27,7 +31,7 @@ export function SlipUpload({ bookingCode, phone, channel, onDone }: { bookingCod
       form.set("phone", phone);
       form.set("file", file);
       if (channel) form.set("channel", channel);
-      onDone(await apiUpload<Result>("/api/public/bookings/slip", form));
+      onDone(await apiUpload<T>(path, form));
     } catch (err) {
       setError(bookingErrorText(bt, err));
     } finally {

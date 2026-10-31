@@ -619,6 +619,27 @@ await check("website settings + booking rules", async () => {
   await pa.getByText("Saved").first().waitFor();
 });
 
+await check("houses list: change the status from the list (draft / bookable / closed / maintenance)", async () => {
+  const p = await pa.context().newPage();
+  await p.goto(`${BASE}/th/admin/houses`);
+  const pick = p.locator("select.adm-statuspick").first();
+  await pick.waitFor();
+  const before = await pick.inputValue();
+  const label = await pick.getAttribute("aria-label");
+  const saved = p.waitForResponse((r) => r.request().method() === "PATCH" && /\/api\/admin\/accommodations\//.test(r.url()));
+  await pick.selectOption({ label: "ปิดปรับปรุง" });
+  if ((await saved).status() !== 200) throw new Error("status saved");
+  // Still there after a reload: it was stored, not only shown.
+  await p.reload();
+  const again = p.getByLabel(label);
+  await again.waitFor();
+  if (await again.inputValue() !== "MAINTENANCE") throw new Error(`stored: ${await again.inputValue()}`);
+  if (SHOTS) await p.locator(".adm-unitlist").screenshot({ path: `${SHOTS}/houses-status.png` });
+  await again.selectOption(before);
+  await p.waitForResponse((r) => r.request().method() === "PATCH");
+  await p.close();
+});
+
 await check("amenities: add several in a row (form stays open), saved to the house, errors next to the field", async () => {
   const p = await pa.context().newPage();
   // 409 for the deliberately taken code (and the automatic retry) is expected here; anything else is not.
@@ -728,7 +749,7 @@ await check("camping: owner offers a tarp area; a guest books dates, 2 adults + 
   if (SHOTS) await form.screenshot({ path: `${SHOTS}/camping-form-phone.png` });
   await form.getByRole("button", { name: "จองลานกางเต็นท์" }).click();
 
-  await g.getByRole("heading", { name: "สั่งอาหารล่วงหน้า" }).waitFor();
+  await g.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
   await g.locator(".flow-stay").getByText("1 เต็นท์ + พื้นที่กางทาร์ป").waitFor();
   const summary = g.locator(".summary").first();
   await summary.getByText("พื้นที่กางทาร์ป × 2 คืน").waitFor();

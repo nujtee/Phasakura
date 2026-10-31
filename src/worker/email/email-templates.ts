@@ -9,6 +9,7 @@ import type { LocaleCode } from "../../shared/i18n/locales.ts";
 const th = {
   subjects: {
     NEW_BOOKING: "การจองใหม่ {code} — {name}",
+    BOOKING_MOVE: "เลื่อนวันเข้าพัก {code} — {name}",
     PAYMENT_REVIEW: "การชำระเงินรอตรวจสอบ — {code}",
     PAYMENT_CONFIRMED: "ชำระเงินแล้ว — ยืนยันการจอง {code}",
     GUEST_BOOKING_CREATED: "ได้รับการจอง {code} แล้ว — กรุณาชำระเงิน",
@@ -36,6 +37,7 @@ type Texts = typeof th;
 const en: Texts = {
   subjects: {
     NEW_BOOKING: "New booking {code} — {name}",
+    BOOKING_MOVE: "Stay moved {code} — {name}",
     PAYMENT_REVIEW: "Payment to review — {code}",
     PAYMENT_CONFIRMED: "Paid — booking {code} confirmed",
     GUEST_BOOKING_CREATED: "We received booking {code} — please pay",
@@ -61,6 +63,7 @@ const en: Texts = {
 const zh: Texts = {
   subjects: {
     NEW_BOOKING: "新预订 {code} — {name}",
+    BOOKING_MOVE: "改期 {code} — {name}",
     PAYMENT_REVIEW: "待审核付款 — {code}",
     PAYMENT_CONFIRMED: "已付款 — 预订 {code} 已确认",
     GUEST_BOOKING_CREATED: "已收到预订 {code} — 请付款",

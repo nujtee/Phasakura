@@ -25,7 +25,7 @@
   "preview_urls": false,
   "vars": {
     "APP_BASE_URL": "https://center.phasakura.com",
-    "CENTER_SITES": "[{\"slug\":\"phasakura\",\"name\":\"Phasakura\",\"domain\":\"phasakura.com\",\"binding\":\"SITE_PHASAKURA\"},{\"slug\":\"chomkhao\",\"name\":\"Chomkhao\",\"domain\":\"chomkhao.com\",\"binding\":\"SITE_CHOMKHAO\"},{\"slug\":\"cherngdoi\",\"name\":\"Cherngdoi\",\"domain\":\"cherngdoi.com\",\"binding\":\"SITE_CHERNGDOI\"},{\"slug\":\"suanpho\",\"name\":\"Suanpho\",\"domain\":\"suanpho.com\",\"binding\":\"SITE_SUANPHO\"},{\"slug\":\"pk-putaberg\",\"name\":\"Paikhao\",\"domain\":\"paikhao.com\",\"binding\":\"SITE_PK_PUTABERG\"}]",
+    "CENTER_SITES": "[{\"slug\":\"phasakura\",\"name\":\"Phasakura\",\"domain\":\"phasakura.com\",\"binding\":\"SITE_PHASAKURA\"},{\"slug\":\"chomkhao\",\"name\":\"Chomkhao\",\"domain\":\"chomkhao.com\",\"binding\":\"SITE_CHOMKHAO\"},{\"slug\":\"cherngdoi\",\"name\":\"Cherngdoi\",\"domain\":\"cherngdoi.com\",\"binding\":\"SITE_CHERNGDOI\"},{\"slug\":\"suanpho\",\"name\":\"Suanpho\",\"domain\":\"suanpho.com\",\"binding\":\"SITE_SUANPHO\"},{\"slug\":\"pk-putaberg\",\"name\":\"Paikhao\",\"domain\":\"paikhao.com\",\"binding\":\"SITE_PK_PUTABERG\"},{\"slug\":\"phatopview\",\"name\":\"Phatopview\",\"domain\":\"phatopview.com\",\"binding\":\"SITE_PHATOPVIEW\"},{\"slug\":\"lungtaihomestay\",\"name\":\"Lungtaihomestay\",\"domain\":\"lungtaihomestay.com\",\"binding\":\"SITE_LUNGTAIHOMESTAY\"}]",
     "CENTER_GITHUB_REPO": "nujtee/Phasakura"
   },
   "d1_databases": [
@@ -56,6 +56,14 @@
     {
       "binding": "SITE_PK_PUTABERG",
       "service": "pk-putaberg"
+    },
+    {
+      "binding": "SITE_PHATOPVIEW",
+      "service": "phatopview"
+    },
+    {
+      "binding": "SITE_LUNGTAIHOMESTAY",
+      "service": "lungtaihomestay"
     }
   ]
 }
