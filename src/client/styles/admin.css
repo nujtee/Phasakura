@@ -3709,6 +3709,47 @@
 .adm-extrabeds__head .adm-h2 { margin-bottom: 4px; }
 .adm-extrabeds form { margin-top: 12px; }
 .adm-extrabeds__units { margin-top: 12px; }
+
+/* Health massage menu (migration 0050). */
+.adm-massage__list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.adm-massage__item {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 8px;
+}
+
+.adm-massage__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-end;
+}
+
+.adm-massage__option {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.adm-massage__mini {
+  display: grid;
+  gap: 2px;
+  font-size: 0.8125rem;
+}
+
+.adm-massage__mini input {
+  width: 7em;
+}
 .adm-extrabeds__units:disabled { opacity: 0.55; }
 .adm-extrabeds__unitlist {
   list-style: none;

@@ -198,7 +198,7 @@ await check("booking page: a date search shows the time-based price of those nig
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
 await check("extra beds: staff switch them on (houses page), the guest adds one on the food step and the price follows", async () => {
   await pa.goto(`${BASE}/en/admin/houses`);
-  const card = pa.locator(".adm-extrabeds:not(.adm-pets):not(.adm-movesettings)");
+  const card = pa.locator(".adm-extrabeds:not(.adm-pets):not(.adm-movesettings):not(.adm-massage)");
   await card.getByRole("heading", { name: "Extra beds" }).waitFor();
   await card.getByText("Guests cannot add them yet").waitFor();
   await card.getByRole("button", { name: "Settings" }).click();
@@ -268,7 +268,7 @@ await check("pets: a separate switch next to extra beds; the guest adds a pet, s
   await card.getByText("Pet settings saved").waitFor();
   await card.getByText(/฿200 per pet per night · up to 15 kg · up to 2 per unit/).waitFor();
   // Extra beds keep their own switch (off).
-  await pa.locator(".adm-extrabeds:not(.adm-pets):not(.adm-movesettings)").getByText("Guests cannot add them yet").waitFor();
+  await pa.locator(".adm-extrabeds:not(.adm-pets):not(.adm-movesettings):not(.adm-massage)").getByText("Guests cannot add them yet").waitFor();
   if (SHOTS) await pa.locator(".adm-pets").screenshot({ path: `${SHOTS}/pets-admin.png` });
 
   const ci = day(80), co = day(82);
@@ -288,6 +288,48 @@ await check("pets: a separate switch next to extra beds; the guest adds a pet, s
   await pets.getByText("สัตว์เลี้ยง 1 × 2 คืน = ฿400").waitFor();
   if (SHOTS) await pg.screenshot({ path: `${SHOTS}/pets-guest.png`, fullPage: true });
   const r = await req.put(`${BASE}/api/admin/pets`, { headers: H, data: { enabled: false, priceSatang: 20000, chargePer: "NIGHT", maxWeightKg: 15, maxPerUnit: 2 } });
+  assert(r.ok(), `switch off: ${r.status()}`);
+});
+
+await check("health massage: off by default; staff switch it on and edit a price; the guest opens the list, picks one, the price follows", async () => {
+  await pa.goto(`${BASE}/en/admin/houses`);
+  const card = pa.locator(".adm-massage");
+  await card.getByRole("heading", { name: "Health massage" }).waitFor();
+  await card.getByText("Off (guests do not see the massage list)").waitFor();
+  await card.getByRole("button", { name: "Settings" }).click();
+  await card.getByLabel("Let guests add massage when booking (extras step)").check();
+  const first = card.locator(".adm-massage__item").first();
+  assert(await first.getByLabel("Treatment name (Thai)").inputValue() === "นวดแผนไทย", "sample menu");
+  await first.locator(".adm-massage__option").first().getByLabel("Price (THB)").fill("380");
+  await card.getByRole("button", { name: "Save" }).click();
+  await card.getByText("Massage menu saved").waitFor();
+  await card.getByText(/Guests can add it when booking · 9 treatments · from ฿350/).waitFor();
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/massage-admin.png` });
+
+  const ci = day(84), co = day(85);
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
+  await pg.locator("form.stay-search button[type=submit]").click();
+  const unit = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /House 02/ }) });
+  await unit.getByRole("button", { name: "เลือกหลังนี้" }).click();
+  await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  const box = pg.locator("details.massage");
+  await box.getByText("ไม่บังคับ — 9 รายการ แตะเพื่อดูและเลือก").waitFor();
+  assert(!(await box.locator(".massage__list").isVisible()), "folded until opened");
+  await box.locator("summary").click();
+  const thai = box.locator(".massage__item", { hasText: "นวดแผนไทย" }).first();
+  await thai.getByText("60 นาที · ฿380").waitFor();
+  await thai.getByRole("group", { name: "นวดแผนไทย 60 นาที · ท่าน" }).getByRole("button", { name: /^เพิ่ม / }).click();
+  await thai.getByRole("group", { name: "นวดแผนไทย 60 นาที · ท่าน" }).getByRole("button", { name: /^เพิ่ม / }).click();
+  const summary = pg.locator(".summary");
+  await summary.getByText("นวดแผนไทย 60 นาที × 2").waitFor();
+  await box.getByText("เลือกแล้ว 2 ท่าน · ฿760").waitFor();
+  const overflow = await pg.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 1, `horizontal scroll ${overflow}px`);
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/massage-guest.png`, fullPage: true });
+  // Off again for the other suites.
+  const now = (await (await req.get(`${BASE}/api/admin/massage`)).json()).data;
+  const r = await req.put(`${BASE}/api/admin/massage`, { headers: H, data: { enabled: false, items: now.items } });
   assert(r.ok(), `switch off: ${r.status()}`);
 });
 

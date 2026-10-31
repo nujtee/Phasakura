@@ -181,6 +181,28 @@ export function BookingDetailPage({ code }: { code: string }) {
             </table>
           </div>
         )}
+        {(b.massages?.length ?? 0) > 0 && (
+          <>
+            <h2 className="adm-h2">{t.bk.massage}</h2>
+            <div className="adm-tablewrap">
+              <table className="adm-table">
+                <thead>
+                  <tr><th scope="col">{t.bk.massage}</th><th scope="col" className="adm-num">{t.bk.minutes}</th><th scope="col" className="adm-num">{t.bk.qty}</th><th scope="col" className="adm-num">{t.bk.total}</th></tr>
+                </thead>
+                <tbody>
+                  {b.massages!.map((l) => (
+                    <tr key={l.optionId}>
+                      <td>{l.name}</td>
+                      <td className="adm-num">{l.minutes}</td>
+                      <td className="adm-num">{l.quantity}</td>
+                      <td className="adm-num">{baht(l.subtotalSatang)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
         <p className="adm-total">{t.bk.total}: <strong>{baht(b.totalSatang)}</strong></p>
       </div>
 

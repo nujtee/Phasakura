@@ -169,6 +169,8 @@ export function createApp(options: AppOptions = {}) {
     .put("/api/admin/extra-beds", acc.updateExtraBeds)
     .get("/api/admin/pets", acc.pets)
     .put("/api/admin/pets", acc.updatePets)
+    .get("/api/admin/massage", acc.massage)
+    .put("/api/admin/massage", acc.updateMassage)
     .get("/api/admin/camping", acc.camping)
     .put("/api/admin/camping", acc.updateCamping)
     .put("/api/admin/camping/nights/:date", acc.setCampingNight)

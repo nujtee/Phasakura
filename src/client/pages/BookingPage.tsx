@@ -87,6 +87,8 @@ export function BookingPage() {
   const [picks, setPicks] = useState<Pick[]>([]);
   const [catalogue, setCatalogue] = useState<FoodCatalogueDto | null>(null);
   const [cart, setCart] = useState<FoodCart>({});
+  /** Health massage (migration 0050): treatment length id → people. */
+  const [massages, setMassages] = useState<Record<string, number>>({});
   const [quote, setQuote] = useState<QuoteDto | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -142,7 +144,7 @@ export function BookingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  const request = useCallback((q: StayQuery, chosen: Pick[], foodCart: FoodCart): QuoteRequest => ({
+  const request = useCallback((q: StayQuery, chosen: Pick[], foodCart: FoodCart, massageCart: Record<string, number> = {}): QuoteRequest => ({
     checkIn: q.checkIn,
     checkOut: q.checkOut,
     adults: chosen.reduce((acc, p) => acc + p.adults, 0),
@@ -152,6 +154,8 @@ export function BookingPage() {
       ? { kind: "UNIT", unitId: p.unit.id, adults: p.adults, children: p.children, ...(p.extraBeds ? { extraBeds: p.extraBeds } : {}), ...(p.pets ? { pets: p.pets } : {}) }
       : { kind: "CAMPING", tents: p.tents, ...(p.tarp ? { tarp: true } : {}), adults: p.adults, children: p.children })),
     food: cartToSelections(foodCart, (id) => catalogue?.categories.some((cat) => cat.options.some((o) => o.id === id && o.pricingType === "PER_PERSON")) ?? false),
+    ...(Object.values(massageCart).some((n) => n > 0)
+      ? { massages: Object.entries(massageCart).filter(([, n]) => n > 0).map(([optionId, quantity]) => ({ optionId, quantity })) } : {}),
     lang: locale.code,
   }), [catalogue, locale.code]);
 
@@ -161,7 +165,7 @@ export function BookingPage() {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setQuoting(true);
-      fetchQuote(request(searched, picks, cart), controller.signal)
+      fetchQuote(request(searched, picks, cart, massages), controller.signal)
         .then((q) => { setQuote(q); setNotice(null); })
         .catch((err: unknown) => {
           if (controller.signal.aborted) return;
@@ -169,11 +173,16 @@ export function BookingPage() {
           // Extra beds switched off meanwhile: take them off (the price comes back without them) and stop offering them.
           if (err instanceof ApiError && err.code === "EXTRA_BED_UNAVAILABLE") dropExtraBeds();
           if (err instanceof ApiError && err.code === "PET_UNAVAILABLE") dropPets();
+          // Massage switched off or the menu changed: clear the choice, show the current menu.
+          if (err instanceof ApiError && (err.code === "MASSAGE_UNAVAILABLE" || Object.keys(err.details).some((k) => k.startsWith("massages")))) {
+            setMassages({});
+            fetchFoodCatalogue(searched.checkIn, searched.checkOut, locale.code).then(setCatalogue).catch(() => undefined);
+          }
         })
         .finally(() => { if (!controller.signal.aborted) setQuoting(false); });
     }, 250);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [picks, searched, cart, step, request, bt]);
+  }, [picks, searched, cart, massages, step, request, bt, locale.code]);
 
   useEffect(() => {
     if (step !== "choose") headingRef.current?.focus();
@@ -183,6 +192,12 @@ export function BookingPage() {
   function dropExtraBeds() {
     setPicks((cur) => (cur.some((p) => p.kind === "UNIT" && p.extraBeds) ? cur.map((p) => (p.kind === "UNIT" ? { ...p, extraBeds: 0 } : p)) : cur));
     setCatalogue((c) => (c ? { ...c, extraBed: null } : c));
+  }
+
+  /** Massage switched off or the menu changed: clear the choice and fetch the menu again. */
+  function dropMassage() {
+    setMassages({});
+    if (searched) fetchFoodCatalogue(searched.checkIn, searched.checkOut, locale.code).then(setCatalogue).catch(() => undefined);
   }
 
   /** Pets no longer allowed (the property switched them off): off every stay and off the page. */
@@ -207,6 +222,7 @@ export function BookingPage() {
     track({ name: "begin_booking", value: chosen.reduce((acc, p, i) => acc + (items[i]!.price ?? 0) * (p.kind === "UNIT" ? 1 : p.adults), 0), items });
     setPicks(chosen);
     setCart({});
+    setMassages({});
     setQuote(null);
     setCatalogue(null);
     setNotice(null);
@@ -243,7 +259,7 @@ export function BookingPage() {
     setNotice(null);
     try {
       const created = await createBooking({
-        ...request(searched, picks, cart),
+        ...request(searched, picks, cart, massages),
         customer: {
           name: details.name,
           phone: details.phone,
@@ -264,11 +280,12 @@ export function BookingPage() {
       const text = bookingErrorText(bt, err);
       if (err instanceof ApiError && err.code === "PRICE_CHANGED") {
         setNotice(bt.priceChanged);
-        setQuote(await fetchQuote(request(searched, picks, cart)).catch(() => quote));
+        setQuote(await fetchQuote(request(searched, picks, cart, massages)).catch(() => quote));
         setIdemKey(newIdempotencyKey());
-      } else if (err instanceof ApiError && (err.code === "EXTRA_BED_UNAVAILABLE" || err.code === "PET_UNAVAILABLE")) {
+      } else if (err instanceof ApiError && (err.code === "EXTRA_BED_UNAVAILABLE" || err.code === "PET_UNAVAILABLE" || err.code === "MASSAGE_UNAVAILABLE")) {
         if (err.code === "EXTRA_BED_UNAVAILABLE") dropExtraBeds();
-        else dropPets();
+        else if (err.code === "PET_UNAVAILABLE") dropPets();
+        else dropMassage();
         setNotice(text);
         setStep("food");
         window.scrollTo({ top: 0 });
@@ -302,6 +319,7 @@ export function BookingPage() {
     setBooking(null);
     setQuote(null);
     setCart({});
+    setMassages({});
     setPrivacy(false);
     setAvailability(null);
     setSearched(null);
@@ -372,6 +390,7 @@ export function BookingPage() {
               catalogue ? <FoodStep catalogue={catalogue} quote={quote} cart={cart} picks={picks}
                 onExtraBeds={(unitId, n) => setPicks((cur) => cur.map((p) => (p.kind === "UNIT" && p.unit.id === unitId ? { ...p, extraBeds: n } : p)))}
                 onPets={(unitId, n) => setPicks((cur) => cur.map((p) => (p.kind === "UNIT" && p.unit.id === unitId ? { ...p, pets: n } : p)))}
+                massages={massages} onMassage={(optionId, n) => setMassages((cur) => ({ ...cur, [optionId]: n }))}
                 onChange={(next) => { foodChangeEvents(cart, next, catalogue); setCart(next); }} />
                 : <p role="status">{t.common.loading}</p>
             )}

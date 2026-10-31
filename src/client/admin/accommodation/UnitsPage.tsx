@@ -8,6 +8,7 @@ import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, detailMessage, errorMessage } from "../ui.tsx";
 import { AvailabilityGrid } from "./AvailabilityGrid.tsx";
 import { ExtraBedsCard } from "./ExtraBedsCard.tsx";
+import { MassageCard } from "./MassageCard.tsx";
 import { PetsCard } from "./PetsCard.tsx";
 import { MoveSettingsCard } from "./MoveSettingsCard.tsx";
 
@@ -87,6 +88,7 @@ export function UnitsPage({ type }: { type: UnitType }) {
       {error && <Alert kind="error">{error}</Alert>}
       <ExtraBedsCard />
       <PetsCard />
+      <MassageCard />
       <MoveSettingsCard />
       {!units && !error && <p role="status">{t.common.loading}</p>}
       {units && units.length === 0 && <div className="adm-empty">{t.acc.empty}</div>}

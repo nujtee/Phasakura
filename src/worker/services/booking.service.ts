@@ -2,6 +2,7 @@ import { ExtraBedRepository, type BookingExtraBedRow } from "../repositories/ext
 import type { ExtraBedLineDto, GuestMoveRequestDto, GuestMoveStartDto, MoveRoomDto, MoveSettingsDto, PetLineDto } from "../../shared/booking-types.ts";
 import { MoveRequestRepository, moveHold, toMoveRequestDto, type MoveRequestRow, type MoveSettingsRow } from "../repositories/move-request.repository.ts";
 import { PetRepository, type BookingPetRow } from "../repositories/pet.repository.ts";
+import { MassageRepository, toMassageLine } from "../repositories/massage.repository.ts";
 import type {
   AdminBookingDto,
   AdminBookingSummaryDto,
@@ -103,6 +104,10 @@ export class BookingService {
     return new PetRepository(this.db);
   }
 
+  private get massageRepo(): MassageRepository {
+    return new MassageRepository(this.db);
+  }
+
   async quote(input: QuoteInput): Promise<QuoteDto> {
     await this.expireDue();
     return (await this.quotes.prepare(input)).quote;
@@ -196,7 +201,8 @@ export class BookingService {
         lineId: input.customer.lineId,
         note: input.customer.note,
         accommodationSubtotal: q.accommodationSubtotalSatang,
-        foodSubtotal: q.foodSubtotalSatang,
+        // Health massage (migration 0050) is paid in full now like food: stored with it, told apart by booking_massages.
+        foodSubtotal: q.foodSubtotalSatang + (q.massageSubtotalSatang ?? 0),
         total: q.totalSatang,
         deposit: q.depositSatang,
         appFeeUnits: q.appFee?.units ?? 0,
@@ -208,6 +214,9 @@ export class BookingService {
         now: at,
       }),
     ];
+
+    // Health massage lines (migration 0050): snapshot; the trigger re-checks massage is on and the treatment listed.
+    for (const line of q.massages ?? []) statements.push(this.massageRepo.insertStatement(newId(), bookingId, line, at));
 
     // One booking item per stay (houses / VIP tents / camping), in the order chosen.
     const itemIds = p.stays.map(() => newId());
@@ -1227,7 +1236,11 @@ export class BookingService {
       awaitingPayment || owing ? this.payments.settings() : Promise.resolve(null),
       this.payments.payments(row.id),
     ]);
-    const [bedRows, petRows, moves] = await Promise.all([this.extraBeds.forBooking(row.id), this.petRepo.forBooking(row.id), this.moveRequests.forBooking(row.id)]);
+    const [bedRows, petRows, moves, massageRows] = await Promise.all([
+      this.extraBeds.forBooking(row.id), this.petRepo.forBooking(row.id), this.moveRequests.forBooking(row.id), this.massageRepo.forBooking(row.id),
+    ]);
+    const massages = massageRows.map(toMassageLine);
+    const massageSubtotalSatang = massages.reduce((acc, l) => acc + l.subtotalSatang, 0);
     const beds = new Map(bedRows.map((e) => [e.booking_item_id, e]));
     const pets = new Map(petRows.map((e) => [e.booking_item_id, e]));
     const rejected = payments.filter((p) => p.status === "REJECTED").at(-1);
@@ -1321,8 +1334,9 @@ export class BookingService {
         unitPriceSatang: f.unit_price_snapshot_satang,
         subtotalSatang: f.subtotal_satang,
       })),
+      ...(massages.length ? { massages, massageSubtotalSatang } : {}),
       accommodationSubtotalSatang: row.accommodation_subtotal_satang,
-      foodSubtotalSatang: row.food_subtotal_satang,
+      foodSubtotalSatang: row.food_subtotal_satang - massageSubtotalSatang,
       discountSatang: row.discount_satang,
       totalSatang: row.total_satang,
       currency: row.currency,
@@ -1407,6 +1421,9 @@ export function mapInventoryError(error: unknown): unknown {
   }
   if (/PET_UNAVAILABLE/.test(message)) {
     return new ConflictError("Pets are not allowed", "PET_UNAVAILABLE");
+  }
+  if (/MASSAGE_UNAVAILABLE/.test(message)) {
+    return new ConflictError("Massage is not offered", "MASSAGE_UNAVAILABLE");
   }
   if (/NOT NULL constraint failed: payment_account_snapshots/.test(message)) {
     return new ConflictError("Online booking is temporarily unavailable", "PAYMENT_NOT_CONFIGURED");

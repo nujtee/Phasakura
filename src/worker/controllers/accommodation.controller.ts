@@ -10,8 +10,9 @@ import type { Handler, RequestContext } from "../router.ts";
 import { readJsonObject } from "../security/request.ts";
 import { MAX_UPLOAD_BYTES, UPLOAD_PERMISSIONS } from "../services/media.service.ts";
 import type { MediaPurpose } from "../repositories/media.repository.ts";
+import { newId } from "../security/tokens.ts";
 import { ID_PATTERN, Validator } from "../validation.ts";
-import { MAX_EXTRA_BEDS_PER_UNIT, MAX_PET_WEIGHT_KG, MAX_PETS_PER_UNIT, PET_CHARGE_PER, type PetChargePer } from "../../shared/booking-types.ts";
+import { MAX_EXTRA_BEDS_PER_UNIT, MAX_MASSAGE_ITEMS, MAX_PET_WEIGHT_KG, MAX_PETS_PER_UNIT, PET_CHARGE_PER, type MassageAdminItemDto, type PetChargePer } from "../../shared/booking-types.ts";
 
 const UNIT_CODE = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/;
@@ -341,6 +342,56 @@ export function accommodationController(services: ServicesFor) {
       };
       v.assertValid();
       return jsonOk(await services(ctx).accommodation.savePetSettings(auth, input, requestMeta(ctx)));
+    }),
+
+    // ------------------------------------------------------------------ health massage (migration 0050)
+    massage: withAuth(services, async (ctx, auth) => jsonOk(await services(ctx).accommodation.massageSettings(auth, requestMeta(ctx)))),
+
+    /** PUT /api/admin/massage { enabled, items: [{ id?, nameTh, nameEn?, nameZh?, active, options: [{ id?, minutes, priceSatang }] }] } */
+    updateMassage: withPermission("accommodation.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["enabled", "items", "updatedAt"]);
+      const enabled = v.boolean("enabled", false);
+      const items: MassageAdminItemDto[] = [];
+      if (!Array.isArray(body.items) || body.items.length > MAX_MASSAGE_ITEMS) v.errors.items = Array.isArray(body.items) ? "TOO_MANY" : "EXPECTED_ARRAY";
+      else {
+        const ids = new Set<string>();
+        body.items.forEach((raw, i) => {
+          const key = `items.${i}`;
+          if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return void (v.errors[key] = "INVALID_VALUE");
+          const r = raw as Record<string, unknown>;
+          const iv = new Validator(r).allowOnly(["id", "nameTh", "nameEn", "nameZh", "active", "options"]);
+          const id = r.id === undefined || r.id === null || r.id === "" ? newId() : iv.string("id", { pattern: ID_PATTERN }) ?? "";
+          const nameTh = iv.string("nameTh", { required: true, max: 120 }) ?? "";
+          const nameEn = iv.string("nameEn", { max: 120 }) ?? null;
+          const nameZh = iv.string("nameZh", { max: 120 }) ?? null;
+          const active = iv.boolean("active", true);
+          const options: MassageAdminItemDto["options"] = [];
+          if (!Array.isArray(r.options) || r.options.length < 1 || r.options.length > 6) iv.errors.options = "INVALID_VALUE";
+          else {
+            const minutesSeen = new Set<number>();
+            r.options.forEach((rawOpt, j) => {
+              const o = (typeof rawOpt === "object" && rawOpt !== null ? rawOpt : {}) as Record<string, unknown>;
+              const ov = new Validator(o).allowOnly(["id", "minutes", "priceSatang"]);
+              const oid = o.id === undefined || o.id === null || o.id === "" ? newId() : ov.string("id", { pattern: ID_PATTERN }) ?? "";
+              const minutes = int(ov, o, "minutes", 10, 480, true)!;
+              const priceSatang = int(ov, o, "priceSatang", 0, MAX_PRICE_SATANG, true)!;
+              if (minutesSeen.has(minutes)) ov.errors.minutes = "DUPLICATE";
+              if (ids.has(oid)) ov.errors.id = "DUPLICATE";
+              minutesSeen.add(minutes);
+              ids.add(oid);
+              for (const [k, e] of Object.entries(ov.errors)) iv.errors[`options.${j}.${k}`] = e;
+              options.push({ id: oid, minutes, priceSatang });
+            });
+          }
+          if (ids.has(id)) iv.errors.id = "DUPLICATE";
+          ids.add(id);
+          for (const [k, e] of Object.entries(iv.errors)) v.errors[`${key}.${k}`] = e;
+          items.push({ id, nameTh, nameEn: nameEn || null, nameZh: nameZh || null, active, options });
+        });
+      }
+      v.assertValid();
+      return jsonOk(await services(ctx).accommodation.saveMassageSettings(auth, { enabled, items }, requestMeta(ctx)));
     }),
 
     // ------------------------------------------------------------------ camping
