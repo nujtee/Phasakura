@@ -42,7 +42,7 @@ export function paypalController(services: ServicesFor) {
     /** POST /api/public/bookings/paypal/order { bookingCode, phone } → { orderId, approveUrl } */
     order: (async (ctx) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       v.assertValid();
       return jsonOk(await services(ctx).paypal.createOrder(bookingCode, phone, requestMeta(ctx)), { status: 201, headers: NO_STORE });

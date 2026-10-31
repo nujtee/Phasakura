@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "rea
 import type {
   BookingMoveOptionsDto, BookingMoveRoomsDto, GuestMoveRequestDto, GuestMoveStartDto, MoveDayState,
 } from "../../shared/booking-types.ts";
+import { normalizeBookingCode } from "../../shared/booking-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
 import { addDays } from "../../shared/dates.ts";
 import { fill } from "../accommodation/UnitCard.tsx";
@@ -35,7 +36,7 @@ export function MoveStayLauncher() {
 
   async function open(e: FormEvent) {
     e.preventDefault();
-    const who = { bookingCode: code.trim().toUpperCase(), phone: phone.trim() };
+    const who = { bookingCode: normalizeBookingCode(code), phone: phone.trim() };
     if (!who.bookingCode || !who.phone) return;
     setBusy(true);
     setError(null);
@@ -59,7 +60,7 @@ export function MoveStayLauncher() {
         <div className="move-launch__fields">
           <label className="move-launch__field">
             <span>{m.code}</span>
-            <input value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" placeholder="BK-…" maxLength={20} required />
+            <input value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" placeholder="BK-…" maxLength={40} required />
           </label>
           <label className="move-launch__field">
             <span>{m.phone}</span>

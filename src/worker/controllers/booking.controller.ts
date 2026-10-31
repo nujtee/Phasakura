@@ -272,7 +272,7 @@ export function bookingController(services: ServicesFor) {
     /** POST /api/public/bookings/lookup { bookingCode, phone } — POST keeps the phone out of URLs and logs. */
     lookup: (async (ctx) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       v.assertValid();
       return jsonOk(await services(ctx).bookings.lookup(bookingCode, phone, requestMeta(ctx)), { headers: NO_STORE });
@@ -282,7 +282,7 @@ export function bookingController(services: ServicesFor) {
     /** POST /api/public/bookings/move/start — { bookingCode, phone }: may this booking move, what it costs, the open request. */
     moveStart: (async (ctx) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       v.assertValid();
       return jsonOk(await services(ctx).bookings.guestMoveStart(bookingCode!, phone!, requestMeta(ctx)), { headers: NO_STORE });
@@ -292,7 +292,7 @@ export function bookingController(services: ServicesFor) {
     moveCalendar: (async (ctx) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["bookingCode", "phone", "from", "days"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       const from = date(v, body.from, "from");
       const days = int(v, body.days ?? 42, "days", 1, 62);
@@ -304,7 +304,7 @@ export function bookingController(services: ServicesFor) {
     moveRoomsGuest: (async (ctx) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["bookingCode", "phone", "checkIn"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       const checkIn = date(v, body.checkIn, "checkIn");
       v.assertValid();
@@ -315,7 +315,7 @@ export function bookingController(services: ServicesFor) {
     moveRequest: (async (ctx) => {
       const body = await readJsonObject(ctx.request);
       const v = new Validator(body).allowOnly(["bookingCode", "phone", "checkIn", "rooms"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       const checkIn = date(v, body.checkIn, "checkIn");
       const rooms = parseRooms(body.rooms, v);
@@ -326,7 +326,7 @@ export function bookingController(services: ServicesFor) {
     /** POST /api/public/bookings/move/cancel — { bookingCode, phone }: gives up the move still waiting for the transfer. */
     moveCancel: (async (ctx) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
-      const bookingCode = v.string("bookingCode", { required: true, max: 20 });
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
       const phone = v.string("phone", { required: true, max: 24 });
       v.assertValid();
       return jsonOk(await services(ctx).bookings.guestMoveCancel(bookingCode!, phone!, requestMeta(ctx)), { headers: NO_STORE });

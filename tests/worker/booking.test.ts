@@ -1,3 +1,4 @@
+import { normalizeBookingCode } from "../../src/shared/booking-types.ts";
 import type { AvailabilityDto } from "../../src/shared/accommodation-types.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -376,6 +377,23 @@ describe("booking lookup", () => {
     assert.deepEqual(wrongPhone.body, unknown.body);
     const get = await h.api("GET", "/api/public/bookings/lookup");
     assert.equal(get.status, 405, "phone never travels in a URL");
+  });
+
+  it("finds the booking when the pasted Booking ID carries invisible characters, other dashes, full-width or look-alike letters", async () => {
+    const h = new Harness({ seed: true });
+    const b = (await book(h)).data;
+    const [date = "", tail = ""] = /^BK-(\d{8})-(\w{4})$/.exec(b.bookingCode)!.slice(1);
+    const fullWidth = (x: string) => x.replace(/[A-Z0-9]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0));
+    const cyr = (x: string) => x.replace(/[ABCEHKMOPTX]/g, (c) => ({ A: "А", B: "В", C: "С", E: "Е", H: "Н", K: "К", M: "М", O: "О", P: "Р", T: "Т", X: "Х" })[c]!);
+    for (const typed of [
+      `\u200B${b.bookingCode}\u200B`, `BK–${date}–${tail}`, `BK\u2011${date}\u2011${tail}`, `BK ${date} ${tail}`, `BK${date}${tail}`,
+      `\u00A0${b.bookingCode}\uFEFF`, fullWidth(b.bookingCode), cyr(b.bookingCode), `bk-${date}-${tail.toLowerCase()}`,
+    ]) {
+      const res = await h.api<PublicBookingDto>("POST", "/api/public/bookings/lookup", { body: { bookingCode: typed, phone: "081-234-5678" } });
+      assert.equal(res.status, 200, JSON.stringify(typed));
+      assert.equal(res.data.bookingCode, b.bookingCode);
+    }
+    assert.equal(normalizeBookingCode("BK-2027011-ABCD"), "BK-2027011-ABCD", "not a code: cleaned, shape unchanged");
   });
 
   it("throttles guessing per booking code and per IP", async () => {

@@ -16,6 +16,30 @@ export type ChildPricing = "FREE" | "FULL" | "HALF" | "SPECIAL_PRICE";
 
 export const PAYMENT_STATUSES_ALL: readonly PaymentStatus[] = ["UNPAID", "PENDING_VERIFICATION", "VERIFIED", "PAID", "REJECTED", "REFUNDED"];
 export const BOOKING_CODE_PATTERN = /^BK-\d{8}-[A-Z0-9]{4}$/;
+
+/** Cyrillic / Greek capitals that look exactly like Latin ones (a code copied through some apps or fonts). */
+const LOOKALIKES: Record<string, string> = {
+  "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T", "Х": "X", "У": "Y",
+  "І": "I", "Ј": "J", "Ѕ": "S", "Ԛ": "Q", "Ԝ": "W",
+  "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+};
+
+/**
+ * A Booking ID as the guest typed or pasted it, in its canonical form: full-width letters / digits made plain (NFKC),
+ * look-alike Cyrillic / Greek letters made Latin, every kind of dash made "-", spaces and invisible characters
+ * (zero-width, BOM, no-break space) dropped, upper case; "BK20261031EIEC" gets its dashes back.
+ * Anything that is still not a Booking ID comes back cleaned but unchanged in shape (and simply matches nothing).
+ */
+export function normalizeBookingCode(input: string): string {
+  const s = input
+    .normalize("NFKC")
+    .toUpperCase()
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D\u2043_]/g, "-")
+    .replace(/[\s\u00A0\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/./gu, (c) => LOOKALIKES[c] ?? c);
+  const bare = /^BK-?(\d{8})-?([A-Z0-9]{4})$/.exec(s);
+  return bare ? `BK-${bare[1]}-${bare[2]}` : s;
+}
 export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
 
 /**

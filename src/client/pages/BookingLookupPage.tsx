@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { BOOKING_CODE_PATTERN, type PublicBookingDto } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, normalizeBookingCode, type PublicBookingDto } from "../../shared/booking-types.ts";
 import type { PaypalCaptureDto } from "../../shared/payment-types.ts";
 import { pagePath } from "../../shared/routes.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
@@ -100,8 +100,9 @@ export function BookingLookupPage() {
       <form className="flow-form lookup__form" onSubmit={(e) => void submit(e)}>
         <div className="form-field">
           <label htmlFor="lk-code">{bt.bookingCode}<span aria-hidden="true"> *</span></label>
-          <input id="lk-code" required maxLength={20} autoComplete="off" autoCapitalize="characters" spellCheck={false}
-            placeholder={bt.bookingCodeHint} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+          <input id="lk-code" required maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false}
+            placeholder={bt.bookingCodeHint} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onBlur={(e) => setCode(normalizeBookingCode(e.target.value))} />
         </div>
         <div className="form-field">
           <label htmlFor="lk-phone">{bt.phone}<span aria-hidden="true"> *</span></label>

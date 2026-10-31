@@ -14,7 +14,7 @@ import type {
   QuoteDto,
   QuoteItemDto,
 } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, maskPhone, normalizePhone, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, maskPhone, normalizeBookingCode, normalizePhone, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
 import type { BookingSettingsDto, StayAction } from "../../shared/dashboard-types.ts";
 import type { BalanceDueDto, BalanceMethod, PaymentInstructionsDto } from "../../shared/payment-types.ts";
 import { parseStays } from "../repositories/stay-sql.ts";
@@ -338,7 +338,8 @@ export class BookingService {
    * with the same enumeration throttle (failures per code and per IP).
    */
   async guestBooking(bookingCode: string, phone: string, meta: RequestMeta): Promise<BookingRow> {
-    const code = bookingCode.trim().toUpperCase();
+    // Pasted codes may carry invisible characters, other dashes or look-alike letters: compare the canonical form.
+    const code = normalizeBookingCode(bookingCode);
     const windowMs = BOOKING_LIMITS.lookupWindowMs;
     const [ipFailures, codeFailures] = await Promise.all([
       meta.ip ? this.log.countRecent(["BOOKING_LOOKUP_FAILED"], windowMs, { ip: meta.ip }) : 0,
