@@ -39,7 +39,7 @@ export function zohoRegion(value: string | undefined): ZohoRegion | null {
 
 type Json = Record<string, unknown>;
 type Failure = Extract<SendResult, { ok: false }>;
-type Answer = { ok: true; status: number; body: Json | null } | { ok: false; error: string };
+type Answer = { ok: true; status: number; body: Json | null; edgeCode?: string } | { ok: false; error: string };
 
 const TOKEN_MARGIN_MS = 5 * 60_000;
 const ACCOUNT_TTL_MS = 6 * 60 * 60_000;
@@ -115,7 +115,9 @@ export class ZohoMailClient implements EmailSender {
       } catch {
         body = null;
       }
-      return { ok: true, status: res.status, body };
+      // A Cloudflare error page (5xx, not JSON) names its cause as "error code: 1016" — kept, it tells what failed.
+      const edgeCode = !body && res.status >= 500 ? /error code:?\s*(\d{4})/i.exec(text)?.[1] : undefined;
+      return { ok: true, status: res.status, body, ...(edgeCode ? { edgeCode } : {}) };
     } catch {
       return { ok: false, error: controller.signal.aborted ? "ZOHO_TIMEOUT" : "ZOHO_UNREACHABLE" };
     } finally {
@@ -144,7 +146,7 @@ export class ZohoMailClient implements EmailSender {
     const description = typeof res.body?.error_description === "string" ? res.body.error_description : "";
     // Zoho limits how often one refresh token may mint access tokens ("too many requests … try again after some time").
     if (res.status === 429 || res.body?.error === "Access Denied" || /too many requests/i.test(description)) return fail(true, "ZOHO_TOKEN_RATE_LIMITED", 600);
-    if (res.status >= 500) return fail(true, `ZOHO_TOKEN_${res.status}`);
+    if (res.status >= 500) return fail(true, `ZOHO_TOKEN_${res.status}${res.edgeCode ? `_${res.edgeCode}` : ""}`);
     // invalid_client / invalid_code / … : the secrets or the region are wrong — retrying will not help.
     return fail(false, `ZOHO_AUTH_${code(res.body?.error) || res.status}`);
   }

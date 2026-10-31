@@ -142,7 +142,7 @@ describe("e-mail through Zoho Mail", () => {
     h.zoho.tokenMode = "EDGE_530";
     const first = await test();
     assert.equal(first.data.status, "PENDING");
-    assert.equal(first.data.lastError, "ZOHO_TOKEN_530");
+    assert.equal(first.data.lastError, "ZOHO_TOKEN_530_1016", "the Cloudflare error code tells what failed");
     h.zoho.tokenMode = "OK";
     h.advance(2 * 60_000);
     await h.app.scheduled(h.env, Date.parse("2027-01-10T03:02:00Z"));
