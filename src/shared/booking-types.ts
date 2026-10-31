@@ -117,6 +117,8 @@ export type ExtraBedLineDto = TarpLineDto;
 export interface ExtraBedOfferDto {
   pricePerNightSatang: number;
   maxPerUnit: number;
+  /** Houses / VIP tents that do not take extra beds (switched off one by one; migration 0047). */
+  offUnitIds?: string[];
 }
 
 /** Pet fee: per pet per night, or per pet per stay. */
@@ -159,6 +161,8 @@ export interface ExtraBedSettingsDto {
   enabled: boolean;
   pricePerNightSatang: number;
   maxPerUnit: number;
+  /** Houses / VIP tents where extra beds are switched off (empty = all take them while on; migration 0047). */
+  offUnitIds: string[];
   updatedAt: string | null;
 }
 

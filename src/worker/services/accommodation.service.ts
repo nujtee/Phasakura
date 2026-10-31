@@ -458,20 +458,33 @@ export class AccommodationService {
 
   async extraBedSettings(actor: AuthContext, meta: RequestMeta): Promise<ExtraBedSettingsDto> {
     await this.authz.requirePermission(actor, "accommodation.view", meta);
-    return toExtraBedDto(await new ExtraBedRepository(this.db).settings());
+    const repo = new ExtraBedRepository(this.db);
+    return toExtraBedDto(await repo.settings(), await repo.offUnits());
   }
 
   /** On / off, price per bed per night, beds per house / VIP tent. Bookings already made keep their price. */
-  async saveExtraBedSettings(actor: AuthContext, input: Omit<ExtraBedSettingsDto, "updatedAt">, meta: RequestMeta): Promise<ExtraBedSettingsDto> {
+  /** Houses where extra beds are off: omitted = unchanged; only existing houses / VIP tents. */
+  async saveExtraBedSettings(
+    actor: AuthContext, input: Omit<ExtraBedSettingsDto, "updatedAt" | "offUnitIds"> & { offUnitIds?: string[] }, meta: RequestMeta,
+  ): Promise<ExtraBedSettingsDto> {
     await this.authz.requirePermission(actor, "accommodation.edit", meta);
     const repo = new ExtraBedRepository(this.db);
-    const before = toExtraBedDto(await repo.settings());
+    const before = toExtraBedDto(await repo.settings(), await repo.offUnits());
     if (input.pricePerNightSatang !== before.pricePerNightSatang) await this.authz.requirePermission(actor, "pricing.edit", meta);
+    const offUnitIds = input.offUnitIds === undefined ? null : [...new Set(input.offUnitIds)].sort();
+    if (offUnitIds?.length) {
+      const known = new Set((await this.repo.listUnits({ publicOnly: false })).filter((u) => u.unit_type === "HOUSE" || u.unit_type === "VIP_TENT").map((u) => u.id));
+      const unknown = offUnitIds.filter((id) => !known.has(id));
+      if (unknown.length) throw new ValidationError({ offUnitIds: "UNKNOWN_UNIT" });
+    }
+    const now = this.now();
+    const { offUnitIds: _omit, ...settings } = input;
     await this.commit([
-      repo.saveStatement({ ...input, userId: actor.userId, now: this.now() }),
-      this.log.auditStatement(actor.userId, "UPDATE_EXTRA_BEDS", MODULE, "extra_bed_settings", before, input, meta),
+      repo.saveStatement({ ...settings, userId: actor.userId, now }),
+      ...(offUnitIds ? repo.saveOffUnitsStatements(offUnitIds, actor.userId, now) : []),
+      this.log.auditStatement(actor.userId, "UPDATE_EXTRA_BEDS", MODULE, "extra_bed_settings", before, { ...settings, offUnitIds: offUnitIds ?? before.offUnitIds }, meta),
     ]);
-    return toExtraBedDto(await repo.settings());
+    return toExtraBedDto(await repo.settings(), await repo.offUnits());
   }
 
   // ================================================================ pets (migration 0044)
@@ -570,8 +583,8 @@ function groupBy<T, K>(items: T[], key: (t: T) => K): Map<K, T[]> {
 
 export type { UnitImageRow };
 
-function toExtraBedDto(r: ExtraBedSettingsRow): ExtraBedSettingsDto {
-  return { enabled: r.is_enabled === 1, pricePerNightSatang: r.price_per_night_satang, maxPerUnit: r.max_per_unit, updatedAt: r.updated_at };
+function toExtraBedDto(r: ExtraBedSettingsRow, offUnitIds: string[]): ExtraBedSettingsDto {
+  return { enabled: r.is_enabled === 1, pricePerNightSatang: r.price_per_night_satang, maxPerUnit: r.max_per_unit, offUnitIds, updatedAt: r.updated_at };
 }
 
 function toPetDto(r: PetSettingsRow): PetSettingsDto {

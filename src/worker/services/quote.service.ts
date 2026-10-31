@@ -240,7 +240,7 @@ export class QuoteService {
         let extraBeds: ExtraBedLineDto | null = null;
         if (stay.extraBeds) {
           const offer = await this.extraBedSettings();
-          if (!offer) throw new ConflictError("Extra beds are not offered", "EXTRA_BED_UNAVAILABLE");
+          if (!offer || (await this.extraBedRepo!.offUnits()).includes(unit.id)) throw new ConflictError("Extra beds are not offered", "EXTRA_BED_UNAVAILABLE");
           if (stay.extraBeds > offer.max_per_unit) throw new ValidationError({ [key("extraBeds")]: "EXTRA_BEDS_TOO_MANY" });
           extraBeds = {
             quantity: stay.extraBeds,
@@ -426,10 +426,10 @@ export class QuoteService {
           .map((o) => optionDtos.get(o.id)!),
       }))
       .filter((c) => c.options.length > 0);
-    const [beds, pet] = await Promise.all([this.extraBedSettings(), this.petSettings()]);
+    const [beds, pet, bedsOff] = await Promise.all([this.extraBedSettings(), this.petSettings(), this.extraBedRepo?.offUnits() ?? []]);
     return {
       checkIn, checkOut, categories,
-      extraBed: beds ? { pricePerNightSatang: beds.price_per_night_satang, maxPerUnit: beds.max_per_unit } : null,
+      extraBed: beds ? { pricePerNightSatang: beds.price_per_night_satang, maxPerUnit: beds.max_per_unit, ...(bedsOff.length ? { offUnitIds: bedsOff } : {}) } : null,
       pet: pet ? { priceSatang: pet.price_satang, chargePer: pet.charge_per, maxWeightKg: pet.max_weight_kg, maxPerUnit: pet.max_per_unit } : null,
     };
   }

@@ -72,10 +72,12 @@ export function FoodStep({
   const offer = catalogue.extraBed ?? null;
   const pet = catalogue.pet ?? null;
   const units = picks.filter((p): p is Extract<Pick, { kind: "UNIT" }> => p.kind === "UNIT");
+  // Extra beds only for houses where the owner left them on (migration 0047).
+  const bedUnits = units.filter((p) => !(offer?.offUnitIds ?? []).includes(p.unit.id));
 
   return (
     <div className="food-step">
-      {offer && onExtraBeds && units.length > 0 && (
+      {offer && onExtraBeds && bedUnits.length > 0 && (
         <section className="extra-beds" aria-labelledby="extra-beds-h">
           <h3 id="extra-beds-h">{bt.extraBedTitle}</h3>
           <p className="extra-beds__intro">
@@ -83,7 +85,7 @@ export function FoodStep({
               ? fill(bt.extraBedIntro, { price: baht(offer.pricePerNightSatang), max: offer.maxPerUnit })
               : fill(bt.extraBedFree, { max: offer.maxPerUnit })}
           </p>
-          {units.map((p) => (
+          {bedUnits.map((p) => (
             <div key={p.unit.id} className="food-option extra-beds__row">
               <div className="food-option__info">
                 <strong>{p.unit.name}</strong>
@@ -93,7 +95,7 @@ export function FoodStep({
                   </span>
                 )}
               </div>
-              <Stepper label={units.length > 1 ? `${bt.extraBedCount} · ${p.unit.name}` : bt.extraBedCount} value={p.extraBeds ?? 0} min={0}
+              <Stepper label={bedUnits.length > 1 ? `${bt.extraBedCount} · ${p.unit.name}` : bt.extraBedCount} value={p.extraBeds ?? 0} min={0}
                 max={offer.maxPerUnit} onChange={(n) => onExtraBeds(p.unit.id, n)} />
             </div>
           ))}
