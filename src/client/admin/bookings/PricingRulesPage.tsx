@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { AdminUnitDto } from "../../../shared/accommodation-types.ts";
 import type { PricingRuleDto, PricingRuleInput, PricingTargetType } from "../../../shared/booking-types.ts";
-import { formatBaht, parseBahtToSatang, SATANG_PER_BAHT } from "../../../shared/booking-rules.ts";
+import { formatBaht, parseBahtToSatang, PAY_NOW_PERCENTS, SATANG_PER_BAHT } from "../../../shared/booking-rules.ts";
+import { format } from "../../../shared/i18n/admin-messages.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { unitName } from "../accommodation/UnitsPage.tsx";
@@ -10,7 +11,7 @@ import { useStayDate } from "./shared.tsx";
 
 const EMPTY: PricingRuleInput = {
   targetType: "UNIT_TYPE", unitId: null, unitType: "HOUSE", name: "", dateFrom: "", dateTo: "",
-  daysOfWeek: "0123456", priceSatang: 0, priority: 0, status: "ACTIVE",
+  daysOfWeek: "0123456", priceSatang: 0, priority: 0, status: "ACTIVE", payNowPercent: null,
 };
 
 /** Seasonal / weekday price rules. Viewing needs accommodation.view; saving needs pricing.edit (enforced by the Worker). */
@@ -141,6 +142,16 @@ export function PricingRulesPage() {
               hint={t.pricing.priorityHint} error={errors.priority} onChange={(e) => set({ priority: Number(e.target.value) || 0 })} />
           </div>
           <div className="adm-field">
+            <label htmlFor="pr-paynow">{t.pricing.payNow}</label>
+            <select id="pr-paynow" value={editing.input.payNowPercent === null ? "" : String(editing.input.payNowPercent)}
+              aria-describedby="pr-paynow-hint" onChange={(e) => set({ payNowPercent: e.target.value ? Number(e.target.value) : null })}>
+              <option value="">{t.pricing.payNowPlan}</option>
+              {PAY_NOW_PERCENTS.map((p) => <option key={p} value={p}>{p === 100 ? t.pricing.payNowFull : format(t.pricing.payNowPercent, { p })}</option>)}
+            </select>
+            <p className="adm-field__hint" id="pr-paynow-hint">{t.pricing.payNowHint}</p>
+            {errors.payNowPercent && <p className="adm-field__error">{errors.payNowPercent}</p>}
+          </div>
+          <div className="adm-field">
             <label htmlFor="pr-status">{t.pricing.status}</label>
             <select id="pr-status" value={editing.input.status} onChange={(e) => set({ status: e.target.value as "ACTIVE" | "INACTIVE" })}>
               <option value="ACTIVE">{t.pricing.active}</option>
@@ -166,6 +177,7 @@ export function PricingRulesPage() {
                 <th scope="col">{t.pricing.dateFrom}</th>
                 <th scope="col">{t.pricing.days}</th>
                 <th scope="col" className="adm-num">{t.pricing.price}</th>
+                <th scope="col" className="adm-num">{t.pricing.payNowColumn}</th>
                 <th scope="col" className="adm-num">{t.pricing.priority}</th>
                 <th scope="col">{t.pricing.status}</th>
                 {editable && <th scope="col"><span className="visually-hidden">{t.pricing.edit}</span></th>}
@@ -179,6 +191,7 @@ export function PricingRulesPage() {
                   <td className="adm-small">{stayDate(r.dateFrom)} → {stayDate(r.dateTo)}</td>
                   <td className="adm-small">{r.daysOfWeek === "0123456" ? "—" : r.daysOfWeek.split("").map((d) => days[Number(d)]).join(" ")}</td>
                   <td className="adm-num">{formatBaht(r.priceSatang, locale.code)}</td>
+                  <td className="adm-num">{r.payNowPercent === null ? <span className="adm-muted adm-small">{t.pricing.payNowPlanShort}</span> : `${r.payNowPercent}%`}</td>
                   <td className="adm-num">{r.priority}</td>
                   <td><span className={`adm-badge adm-badge--${r.status === "ACTIVE" ? "active" : "deleted"}`}>{r.status === "ACTIVE" ? t.pricing.active : t.pricing.inactive}</span></td>
                   {editable && (

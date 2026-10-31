@@ -82,7 +82,7 @@ describe("booking summary with a tarp area", () => {
     const quoted = wrap(<BookingSummary quote={{ ...quote, depositSatang: 65000 }} />);
     assert.match(quoted, /<dt>มัดจำ ชำระตอนนี้<\/dt><dd>฿650<\/dd>/);
     assert.match(quoted, /<dt>ส่วนที่เหลือ ชำระวันเช็กอิน<\/dt><dd>฿650<\/dd>/);
-    assert.match(quoted, /ที่พักนี้ชำระมัดจำ 50% ของค่าที่พัก/);
+    assert.match(quoted, /การจองนี้ชำระมัดจำบางส่วนของค่าที่พักตอนจอง/);
     const paid = wrap(<BookingSummary quote={{ ...quote, depositSatang: 65000, paidSatang: 65000, balanceSatang: 65000 } as QuoteDto} />, "en");
     assert.match(paid, /<dt>Paid<\/dt><dd>฿650<\/dd>/);
     assert.match(paid, /<dt>Balance, pay at check-in<\/dt><dd>฿650<\/dd>/);

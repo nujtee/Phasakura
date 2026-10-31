@@ -14,7 +14,7 @@ import type {
   TarpLineDto,
 } from "../../shared/booking-types.ts";
 import { MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
-import { depositFor, payLaterOf } from "../../shared/booking-rules.ts";
+import { depositFor, payLaterOfNights } from "../../shared/booking-rules.ts";
 import { DEFAULT_TIMEZONE, addDays, dayOfWeek, localDateTimeIn, todayIn } from "../../shared/dates.ts";
 import { ConflictError, HttpError, NotFoundError, ValidationError } from "../http/errors.ts";
 import type { AccommodationRepository, UnitRow } from "../repositories/accommodation.repository.ts";
@@ -274,7 +274,9 @@ export class QuoteService {
             adults: stay.adults,
             children: stay.children,
             // Deposit plan of this house / VIP tent (migration 0025): half of its stay (with its extra beds) left for check-in.
-            payLaterSatang: payLaterOf(unit.payment_mode ?? "FULL", subtotalSatang + (extraBeds?.subtotalSatang ?? 0) + (pets?.subtotalSatang ?? 0)),
+            // A price rule may set its own pay-now percentage for its nights (migration 0049).
+            payLaterSatang: payLaterOfNights(unit.payment_mode ?? "FULL", nightPayNow(rules, nightly), 1,
+              (extraBeds?.subtotalSatang ?? 0) + (pets?.subtotalSatang ?? 0)),
             ...(extraBeds ? { extraBeds } : {}),
             ...(pets ? { pets } : {}),
           },
@@ -330,7 +332,7 @@ export class QuoteService {
             adults: stay.adults,
             children: stay.children,
             // The tarp area is part of the camping stay (and of its deposit).
-            payLaterSatang: payLaterOf(camping.payment_mode ?? "FULL", subtotalSatang + (tarp?.subtotalSatang ?? 0)),
+            payLaterSatang: payLaterOfNights(camping.payment_mode ?? "FULL", nightPayNow(rules, nightly), stay.adults, tarp?.subtotalSatang ?? 0),
           },
           unit: null,
           tents,
@@ -632,8 +634,8 @@ export class QuoteService {
   }
 }
 
-/** Highest priority wins; ties go to the more specific rule (unit > unit type), then the newest. */
-export function nightPrice(rules: PricingRuleRow[], date: string, base: number): number {
+/** The rule that prices a night: highest priority wins; ties go to the more specific rule (unit > unit type), then the newest. */
+export function winningRule(rules: PricingRuleRow[], date: string): PricingRuleRow | null {
   const dow = String(dayOfWeek(date));
   const matching = rules.filter((r) => r.date_from <= date && r.date_to >= date && r.days_of_week.includes(dow));
   matching.sort((a, b) =>
@@ -641,7 +643,16 @@ export function nightPrice(rules: PricingRuleRow[], date: string, base: number):
     || SPECIFICITY[b.target_type] - SPECIFICITY[a.target_type]
     || b.updated_at.localeCompare(a.updated_at)
     || a.id.localeCompare(b.id));
-  return matching[0]?.price_satang ?? base;
+  return matching[0] ?? null;
+}
+
+export function nightPrice(rules: PricingRuleRow[], date: string, base: number): number {
+  return winningRule(rules, date)?.price_satang ?? base;
+}
+
+/** Pay-now percentage of each night (the winning rule's, migration 0049), next to its price. */
+function nightPayNow(rules: PricingRuleRow[], nightly: { date: string; priceSatang: number }[]): { priceSatang: number; payNowPercent: number | null }[] {
+  return nightly.map((n) => ({ priceSatang: n.priceSatang, payNowPercent: winningRule(rules, n.date)?.pay_now_percent ?? null }));
 }
 
 /** Price per child portion; null when children pay the adult price. */

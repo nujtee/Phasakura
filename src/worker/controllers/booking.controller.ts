@@ -1,6 +1,6 @@
 import type { BookingStatus, FoodSelection, PaymentStatus, PricingRuleInput } from "../../shared/booking-types.ts";
 import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_PETS_PER_UNIT, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
-import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
+import { MAX_PRICE_SATANG, PAY_NOW_PERCENTS } from "../../shared/booking-rules.ts";
 import { BALANCE_METHODS, type BalanceMethod } from "../../shared/payment-types.ts";
 import { isIsoDate } from "../../shared/dates.ts";
 import { DEFAULT_LOCALE, parseLocale } from "../../shared/i18n/locales.ts";
@@ -163,7 +163,7 @@ function parseQuote(body: Record<string, unknown>, v: Validator): QuoteInput {
 }
 
 function parseRule(body: Record<string, unknown>, partial: boolean): Partial<PricingRuleInput> {
-  const v = new Validator(body).allowOnly(["targetType", "unitId", "unitType", "name", "dateFrom", "dateTo", "daysOfWeek", "priceSatang", "priority", "status"]);
+  const v = new Validator(body).allowOnly(["targetType", "unitId", "unitType", "name", "dateFrom", "dateTo", "daysOfWeek", "priceSatang", "priority", "status", "payNowPercent"]);
   const out: Partial<PricingRuleInput> = {};
   const want = (k: string) => !partial || v.has(k);
   if (want("targetType")) out.targetType = v.oneOf("targetType", TARGET_TYPES, { required: true });
@@ -176,6 +176,12 @@ function parseRule(body: Record<string, unknown>, partial: boolean): Partial<Pri
   if (want("priceSatang")) out.priceSatang = int(v, body.priceSatang, "priceSatang", 0, MAX_PRICE_SATANG);
   if (v.has("priority") || !partial) out.priority = body.priority === undefined ? 0 : int(v, body.priority, "priority", -1000, 1000);
   if (v.has("status") || !partial) out.status = v.oneOf("status", RULE_STATUSES) ?? "ACTIVE";
+  // Pay-now percentage (migration 0049): 10, 20 … 100, or null = the stay's own plan.
+  if (Object.prototype.hasOwnProperty.call(body, "payNowPercent") || !partial) {
+    const p = body.payNowPercent ?? null;
+    if (p !== null && !(PAY_NOW_PERCENTS as readonly unknown[]).includes(p)) v.errors.payNowPercent = "INVALID_VALUE";
+    else out.payNowPercent = p as number | null;
+  }
   v.assertValid();
   if (!partial) {
     if (out.targetType === "UNIT" && !out.unitId) throw new ValidationError({ unitId: "REQUIRED" });
