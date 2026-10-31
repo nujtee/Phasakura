@@ -34,6 +34,7 @@ export class PricingRuleService {
     const now = iso(this.clock());
     await this.db.batch([
       this.repo.insertRuleStatement(row, actor.userId, now),
+      ...(row.pay_now_percent !== null ? [this.repo.setPayNowStatement(row.id, row.pay_now_percent ?? null)] : []),
       this.historyStatement(row.id, null, row.price_satang, actor.userId, now, "create"),
       this.log.auditStatement(actor.userId, "CREATE_PRICING_RULE", "pricing", row.id, null, input, meta),
     ]);
@@ -55,6 +56,8 @@ export class PricingRuleService {
     const now = iso(this.clock());
     const statements = [
       this.repo.updateRuleStatement(row, now),
+      // Only when it changes, so other edits keep working before migration 0049.
+      ...((row.pay_now_percent ?? null) !== (current.pay_now_percent ?? null) ? [this.repo.setPayNowStatement(id, row.pay_now_percent ?? null)] : []),
       this.log.auditStatement(actor.userId, "UPDATE_PRICING_RULE", "pricing", id, omitMeta(before), merged, meta),
     ];
     if (row.price_satang !== current.price_satang) {
@@ -95,6 +98,7 @@ function toRow(id: string, r: PricingRuleInput): Omit<PricingRuleRow, "created_a
     price_satang: r.priceSatang,
     priority: r.priority,
     status: r.status,
+    pay_now_percent: r.payNowPercent ?? null,
   };
 }
 
@@ -111,6 +115,7 @@ function toDto(r: PricingRuleRow): PricingRuleDto {
     priceSatang: r.price_satang,
     priority: r.priority,
     status: r.status,
+    payNowPercent: r.pay_now_percent ?? null,
     updatedAt: r.updated_at,
   };
 }

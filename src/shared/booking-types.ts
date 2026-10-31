@@ -435,6 +435,8 @@ export interface PricingRuleDto {
   priceSatang: number;
   priority: number;
   status: "ACTIVE" | "INACTIVE";
+  /** Pay online at booking for the nights this rule prices: 10–100 %; null = the stay's own plan (migration 0049). */
+  payNowPercent: number | null;
   updatedAt: string;
 }
 

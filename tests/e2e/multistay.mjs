@@ -177,6 +177,22 @@ await check("booking page: a date search shows the time-based price of those nig
   await price.getByText(baht(590000 + base)).waitFor();
   assert(/รวม 2 คืน/.test(await price.textContent()), "total for 2 nights");
   if (SHOTS) await card.screenshot({ path: `${SHOTS}/booking-search-prices.png` });
+
+  // Pay-now percentage on the rule (migration 0049): set in admin, shown in the list, asked at booking.
+  const ruleId = (await made.json()).data.id;
+  await pa.goto(`${BASE}/en/admin/pricing`);
+  const row = pa.locator("tr", { hasText: "e2e peak" });
+  await row.getByRole("button", { name: "Edit" }).click();
+  await pa.getByLabel("Paid at booking").selectOption("30");
+  await pa.getByRole("button", { name: "Save" }).click();
+  await row.getByText("30%").waitFor();
+  const quote = (await (await req.post(`${BASE}/api/public/bookings/quote`, { headers: H, data: {
+    checkIn: ci, checkOut: day(61), stays: [{ kind: "UNIT", unitId: vip.unitId, adults: 2, children: 0 }], food: [], lang: "th",
+  } })).json()).data;
+  assert(quote.items[0].payLaterSatang === 413000, `pay later ${quote.items[0].payLaterSatang}`);
+  assert(quote.depositSatang === quote.totalSatang - 413000, `deposit ${quote.depositSatang}`);
+  const reset = await req.patch(`${BASE}/api/admin/pricing-rules/${ruleId}`, { headers: H, data: { status: "INACTIVE", payNowPercent: null } });
+  assert(reset.ok(), `reset rule ${reset.status()}`);
 });
 
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));

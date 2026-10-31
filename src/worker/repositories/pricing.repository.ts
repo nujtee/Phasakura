@@ -1,3 +1,4 @@
+import { withFallback } from "./schema-fallback.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 
 export interface PricingRuleRow {
@@ -12,6 +13,8 @@ export interface PricingRuleRow {
   price_satang: number;
   priority: number;
   status: "ACTIVE" | "INACTIVE";
+  /** Pay-now percentage of the nights this rule prices (migration 0049); null = the stay's own plan. */
+  pay_now_percent?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -99,7 +102,26 @@ export class PricingRepository {
       )
       .bind(toInclusive, from, unitId, unitType)
       .all<PricingRuleRow>();
-    return results;
+    return this.withPayNow(results);
+  }
+
+  /** Adds each rule's pay-now percentage (migration 0049; none before it) — read on its own so prices never depend on it. */
+  private async withPayNow(rules: PricingRuleRow[]): Promise<PricingRuleRow[]> {
+    if (!rules.length) return rules;
+    const rows = await withFallback(
+      async () => (await this.db
+        .prepare("SELECT id, pay_now_percent FROM pricing_settings WHERE id IN (SELECT value FROM json_each(?1)) AND pay_now_percent IS NOT NULL")
+        .bind(JSON.stringify(rules.map((r) => r.id)))
+        .all<{ id: string; pay_now_percent: number }>()).results,
+      async () => [] as { id: string; pay_now_percent: number }[],
+    );
+    const pct = new Map(rows.map((r) => [r.id, r.pay_now_percent]));
+    return rules.map((r) => ({ ...r, pay_now_percent: pct.get(r.id) ?? null }));
+  }
+
+  /** Sets (or clears) a rule's pay-now percentage (migration 0049). */
+  setPayNowStatement(id: string, percent: number | null): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE pricing_settings SET pay_now_percent = ?2 WHERE id = ?1").bind(id, percent);
   }
 
   /** Every active house / VIP-tent rule overlapping [from, toInclusive] — one read for a whole availability search. */
@@ -123,11 +145,12 @@ export class PricingRepository {
       )
       .bind(filter.targetType ?? null, filter.unitId ?? null, filter.status ?? null)
       .all<PricingRuleRow>();
-    return results;
+    return this.withPayNow(results);
   }
 
-  findRule(id: string): Promise<PricingRuleRow | null> {
-    return this.db.prepare(`SELECT ${RULE_COLUMNS} FROM pricing_settings WHERE id = ?1`).bind(id).first<PricingRuleRow>();
+  async findRule(id: string): Promise<PricingRuleRow | null> {
+    const row = await this.db.prepare(`SELECT ${RULE_COLUMNS} FROM pricing_settings WHERE id = ?1`).bind(id).first<PricingRuleRow>();
+    return row ? (await this.withPayNow([row]))[0]! : null;
   }
 
   insertRuleStatement(r: Omit<PricingRuleRow, "created_at" | "updated_at">, createdBy: string, now: string): D1PreparedStatementLike {

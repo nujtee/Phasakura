@@ -389,7 +389,7 @@ await check("deposit: the dashboard totals what is still due at check-in; the gu
   const unitNow = (await (await req.get(`${BASE}/api/admin/accommodations/dev_house_02`)).json()).data;
   assert(unitNow.paymentMode === "FULL" && unitNow.depositBookings.paid === 1, JSON.stringify(unitNow.depositBookings));
   await pa.goto(`${BASE}/en/admin/bookings/${R.bookingCode}`);
-  await pa.locator(".adm-deposit__kept").getByText("This stay now takes full payment", { exact: false }).waitFor();
+  await pa.locator(".adm-deposit__kept").getByText("This booking keeps the deposit agreed when it was made", { exact: false }).waitFor();
 
   // Guest: the rest, by PromptPay QR (no PayPal here), then the slip — the plan agreed at booking time still holds.
   await pg.goto(`${BASE}/th/booking/lookup?code=${R.bookingCode}`);
