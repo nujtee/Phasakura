@@ -6,15 +6,15 @@ jobs:
   diag:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-      - name: smoke (read-only)
+      - name: zoho token endpoints (no credentials sent)
         run: |
-          { npx tsx scripts/smoke-test.ts https://lungtaihomestay.com 2>&1; } > out.txt || true
+          for h in accounts.zoho.com accounts.zoho.eu accounts.zoho.in accounts.zoho.com.au accounts.zoho.jp accounts.zohocloud.ca accounts.zoho.sa; do
+            r=$(curl -s -o b.txt -w "%{http_code}" -X POST "https://$h/oauth/v2/token" -d grant_type=refresh_token -d client_id=x -d client_secret=x -d refresh_token=x -D h.txt)
+            srv=$(grep -i '^server:' h.txt | tr -d '\r')
+            echo "$h $r $srv $(head -c 120 b.txt)" >> out.txt
+          done
       - name: annotate
         if: always()
         run: |
-          m=$(grep -v '^\s*$' out.txt | cut -c1-300 | head -60 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
+          m=$(cat out.txt | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
           echo "::notice title=out::$m"
