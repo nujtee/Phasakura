@@ -32,7 +32,23 @@ export type SiteEvent =
   | { name: "generate_lead"; bookingCode: string; value: number }
   | { name: "payment_submitted"; bookingCode: string; value: number }
   | { name: "booking_confirmed"; bookingCode: string; value: number; items: TrackItem[] }
-  | { name: "contact"; method: "phone" | "email" | "line" | "map" };
+  /** Phone / LINE / e-mail / map link clicked anywhere on the public site; `place` = where on the page. */
+  | { name: "contact"; method: "phone" | "email" | "line" | "map"; place?: string }
+  /** A "book" link / button (to the booking page) clicked; `place` = where on the page. */
+  | { name: "click_book"; place: string }
+  /** Core Web Vitals of this page view (LCP / CLS / INP), measured in the visitor's browser. */
+  | { name: "web_vitals"; metric: "LCP" | "CLS" | "INP"; value: number; rating: "good" | "needs-improvement" | "poor"; page: string };
+
+/** GA4 event name per contact method — the ones to mark as key events (conversions) in GA4. */
+export const CONTACT_EVENTS = { phone: "click_call", line: "click_line", email: "click_email", map: "click_map" } as const;
+
+/** Google's thresholds (good ≤ first, poor > second). */
+export const WEB_VITAL_THRESHOLDS = { LCP: [2500, 4000], CLS: [0.1, 0.25], INP: [200, 500] } as const;
+
+export function vitalRating(metric: keyof typeof WEB_VITAL_THRESHOLDS, value: number): "good" | "needs-improvement" | "poor" {
+  const [good, poor] = WEB_VITAL_THRESHOLDS[metric];
+  return value <= good ? "good" : value <= poor ? "needs-improvement" : "poor";
+}
 
 export const CURRENCY = "THB";
 
@@ -116,7 +132,22 @@ export function toGa4(e: SiteEvent): [string, Record<string, unknown>][] {
         ["booking_confirmed", { booking_id: e.bookingCode, value: money(e.value), currency: CURRENCY }],
       ];
     case "contact":
-      return [];
+      // A named event per method (mark click_call / click_line as key events in GA4) + GA4's generic "contact".
+      return [
+        [CONTACT_EVENTS[e.method], { method: e.method, ...(e.place ? { link_location: cleanText(e.place, 40) } : {}) }],
+        ["contact", { method: e.method }],
+      ];
+    case "click_book":
+      return [["click_book", { link_location: cleanText(e.place, 40) }]];
+    case "web_vitals":
+      // CLS is a score (×1000 as an integer, as Google's own web-vitals guide does); LCP / INP in milliseconds.
+      return [[e.metric, {
+        value: Math.round(e.metric === "CLS" ? e.value * 1000 : e.value),
+        metric_value: e.metric === "CLS" ? Math.round(e.value * 1000) / 1000 : Math.round(e.value),
+        metric_rating: e.rating,
+        page_path: cleanText(e.page, 100),
+        non_interaction: true,
+      }]];
   }
 }
 
@@ -154,6 +185,8 @@ export function toPixel(e: SiteEvent): PixelCall | null {
     case "begin_booking":
     case "view_food":
     case "select_food":
+    case "web_vitals":
+    case "click_book":
       return null;
   }
 }

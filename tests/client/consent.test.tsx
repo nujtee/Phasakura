@@ -6,7 +6,7 @@ import { consentEn, consentTh, consentZhCN } from "../../src/shared/i18n/consent
 import { adminPrivacyEn, adminPrivacyTh, adminPrivacyZhCN } from "../../src/shared/i18n/admin-privacy-messages.ts";
 import { getLocale, type LocaleCode } from "../../src/shared/i18n/index.ts";
 import { configureTracking, deleteCookies, resetTracking, setTrackingSuspended, track, trackOnce, GA4_SRC, PIXEL_SRC } from "../../src/client/analytics/tracker.ts";
-import { contactMethod } from "../../src/client/components/Layout.tsx";
+import { contactMethod, isBookingLink } from "../../src/client/components/Layout.tsx";
 import { Footer } from "../../src/client/components/Footer.tsx";
 import { ConsentBanner } from "../../src/client/consent/ConsentBanner.tsx";
 import { ConsentDialog } from "../../src/client/consent/ConsentDialog.tsx";
@@ -238,5 +238,10 @@ describe("tracking runtime (consent-gated)", () => {
     assert.equal(contactMethod("https://www.google.com/maps/place/x"), "map");
     assert.equal(contactMethod("/th/booking"), null);
     assert.equal(contactMethod("https://evil.example/line.me/"), null);
+  });
+
+  it("book links → click_book (booking page in any language, not the Booking ID lookup or another site)", () => {
+    for (const ok of ["/th/booking", "/en/booking/", "/zh-cn/booking?checkIn=2027-01-01&checkOut=2027-01-02", "/th/booking#picks"]) assert.equal(isBookingLink(ok), true, ok);
+    for (const no of ["/th/booking/lookup", "/th/gallery", "https://other.example/th/booking", "tel:0812345678", "/th/bookings"]) assert.equal(isBookingLink(no), false, no);
   });
 });

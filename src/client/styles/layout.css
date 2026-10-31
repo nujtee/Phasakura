@@ -195,6 +195,10 @@
 /* ---------- Main / pages ---------- */
 .site-main {
   flex: 1;
+  /* At least one screen tall: the footer starts below the fold, so it is not pushed down when the page's
+     content arrives (that move was the home page's layout shift, CLS). */
+  min-height: 100vh;
+  min-height: 100svh;
 }
 
 .page {

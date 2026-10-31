@@ -4,6 +4,7 @@ import type { Services } from "../container.ts";
 import type { Env } from "../env.ts";
 import { PAGE_SECURITY_HEADERS, pageSecurityHeaders } from "../http/security-headers.ts";
 import { escapeHtml, injectHead } from "./html.ts";
+import { injectBody } from "./prerender.ts";
 
 /** Paths that are never pages (and never redirect targets of Website → SEO → Redirects). */
 const RESERVED = /^\/(api|media|assets)(\/|$)/;
@@ -112,7 +113,10 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
       const meta = await s.seo.meta(route, path);
       const indexable = meta.robots.startsWith("index");
       const tracking = (await s.site.getPublicSite(route.locale)).tracking;
-      return withHeaders(injectHead(shell, meta), meta.status, {
+      // The page's content in the HTML itself (prerender); a failure here only costs the prerender.
+      const body = await s.seo.prerender(route, meta).catch(async (error: unknown) => { await log("page_prerender_failed", error); return null; });
+      const html = body ? injectBody(injectHead(shell, meta), body) : injectHead(shell, meta);
+      return withHeaders(html, meta.status, {
         // GA4 / Pixel origins only while they are switched on (the app still waits for consent).
         ...pageSecurityHeaders({ ga4: !!tracking.ga4MeasurementId, pixel: !!tracking.metaPixelId }),
         "Content-Type": "text/html; charset=utf-8",

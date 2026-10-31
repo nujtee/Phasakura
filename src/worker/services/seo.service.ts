@@ -9,6 +9,7 @@ import { accommodationPath, bookingLookupPath, pagePath, privacyPath, PUBLIC_PAG
 import type { PublicPrivacyDto } from "../../shared/settings-types.ts";
 import { HREFLANG, OG_LOCALE, type MetaImageDto, type PageMetaDto, type RobotsDirective } from "../../shared/seo-types.ts";
 import { HttpError } from "../http/errors.ts";
+import { prerenderBody, type PrerenderPage } from "../seo/prerender.ts";
 import type { SeoRepository, SeoRow } from "../repositories/seo.repository.ts";
 import type { AccommodationService } from "./accommodation.service.ts";
 import { publicMediaUrl } from "./media-url.ts";
@@ -273,6 +274,49 @@ export class SeoService {
       },
       jsonLd,
     };
+  }
+
+  /**
+   * The page's content as plain HTML for <div id="root"> (prerender): public pages that exist (200), never the
+   * private Booking ID lookup. Null = serve the empty app shell as before.
+   */
+  async prerender(route: MetaRoute, meta: PageMetaDto): Promise<string | null> {
+    if (route.kind !== "page" || meta.status !== 200 || route.page === "bookingLookup") return null;
+    const locale = route.locale;
+    const lang = locale.code;
+    const t = getMessages(lang);
+    const site = await this.site.getPublicSite(locale);
+    let page: PrerenderPage | null = null;
+    switch (route.page) {
+      case "home": {
+        const [home, stays] = await Promise.all([this.content.home(lang), this.accommodation.publicList(locale)]);
+        page = { kind: "home", home, stays };
+        break;
+      }
+      case "booking":
+        page = { kind: "booking", stays: await this.accommodation.publicList(locale) };
+        break;
+      case "gallery":
+        page = { kind: "gallery", gallery: await this.content.gallery(lang) };
+        break;
+      case "history":
+        page = { kind: "history", history: await this.content.history(lang) };
+        break;
+      case "accommodation":
+        page = { kind: "accommodation", unit: await this.accommodation.publicBySlug(route.slug!, locale), bookingUrl: pagePath(locale, "booking") };
+        break;
+      case "privacy":
+        if (this.privacyPolicy) page = { kind: "privacy", policy: await this.privacyPolicy(locale) };
+        break;
+      default:
+        page = null;
+    }
+    if (!page) return null;
+    return prerenderBody({
+      meta, site, t, nav: t.nav, page,
+      paths: { home: pagePath(locale, "home"), gallery: pagePath(locale, "gallery"), booking: pagePath(locale, "booking"), history: pagePath(locale, "history") },
+      unitPath: (slug) => accommodationPath(locale, slug),
+    });
   }
 
   /** WebSite + LodgingBusiness for the home page (contact details, map, price range from live prices). */

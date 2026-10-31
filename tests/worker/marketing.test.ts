@@ -4,7 +4,7 @@ import { beforeEach, describe, it } from "node:test";
 import type { PublicSiteDto } from "../../src/shared/api-types.ts";
 import type { PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
 import { currentConsent, metaBrowserIds, parseConsent, serializeConsent } from "../../src/shared/consent.ts";
-import { cleanText, leadEventId, purchaseEventId, sanitizeLocation, toGa4, toPixel, type SiteEvent, type TrackItem } from "../../src/shared/analytics.ts";
+import { cleanText, leadEventId, purchaseEventId, sanitizeLocation, toGa4, toPixel, vitalRating, type SiteEvent, type TrackItem } from "../../src/shared/analytics.ts";
 import type { DashboardDto } from "../../src/shared/dashboard-types.ts";
 import type { MarketingDto, MarketingEventDto, PrivacySettingsDto, PublicPrivacyDto } from "../../src/shared/settings-types.ts";
 import type { RateLimitBinding } from "../../src/worker/env.ts";
@@ -149,6 +149,21 @@ describe("website events → GA4 / Meta Pixel (spec §43–44)", () => {
     assert.equal(purchase.transaction_id, "BK-20270110-ABCD");
     assert.equal(purchase.value, 7000);
     assert.equal(purchase.currency, "THB");
+  });
+
+  it("phone / LINE / book clicks and Core Web Vitals reach GA4 (key events), never the Pixel twice", () => {
+    assert.deepEqual(toGa4({ name: "contact", method: "phone", place: "footer" }), [
+      ["click_call", { method: "phone", link_location: "footer" }], ["contact", { method: "phone" }]]);
+    assert.equal(toGa4({ name: "contact", method: "line" })[0]![0], "click_line");
+    assert.deepEqual(toGa4({ name: "click_book", place: "hero" }), [["click_book", { link_location: "hero" }]]);
+    assert.equal(toPixel({ name: "click_book", place: "hero" }), null);
+    const [[name, params]] = toGa4({ name: "web_vitals", metric: "CLS", value: 0.1234, rating: vitalRating("CLS", 0.1234), page: "/th/" }) as [[string, Record<string, unknown>]];
+    assert.equal(name, "CLS");
+    assert.deepEqual(params, { value: 123, metric_value: 0.123, metric_rating: "needs-improvement", page_path: "/th/", non_interaction: true });
+    assert.equal(vitalRating("LCP", 2400), "good");
+    assert.equal(vitalRating("LCP", 4100), "poor");
+    assert.equal(vitalRating("INP", 300), "needs-improvement");
+    assert.equal(toPixel({ name: "web_vitals", metric: "LCP", value: 1, rating: "good", page: "/" }), null);
   });
 
   it("covers every Pixel event of the spec; Lead / Purchase carry the Conversions API event_id", () => {

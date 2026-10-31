@@ -74,7 +74,7 @@ describe("app shell with page metadata (Phase 13)", () => {
     assert.equal(lodging.priceRange, "฿250 – ฿3,500", "from live active prices (camping per adult … dearest house)");
     assert.deepEqual(lodging.availableLanguage, ["th", "en", "zh-Hans"]);
     for (const [k, v] of Object.entries(PAGE_SECURITY_HEADERS)) assert.equal(res.headers.get(k), v, k);
-    assert.match(html, /<div id="root"><\/div>/, "the app shell itself is unchanged");
+    assert.match(html, /<div id="root"><div class="prerender">/, "the page content is in the HTML (prerender); the app replaces it");
   });
 
   it("several contact numbers: JSON-LD telephone lists each one", async () => {
@@ -388,5 +388,51 @@ describe("translation coverage (i18n)", () => {
     const email = await h.user({ id: "noperm" });
     const noperm = await h.login(email);
     assert.equal((await h.api("GET", "/api/admin/i18n/coverage", { token: noperm })).status, 403);
+  });
+});
+
+describe("prerendered page content (SSR / prerender for crawlers)", () => {
+  const body = (html: string) => /<div id="root">([\s\S]*?)<\/div>\s*<noscript>/.exec(html)?.[1] ?? "";
+
+  it("home: site name as the one h1, menu, every house linked, hero photo early, contact links", async () => {
+    production();
+    const { html } = await page("/th/");
+    const b = body(html);
+    assert.equal((b.match(/<h1>/g) ?? []).length, 1);
+    assert.match(b, /<h1>Phasakura \(ข้อมูลตัวอย่าง\)<\/h1>/);
+    for (const href of ["/th/", "/th/gallery", "/th/booking", "/th/history"]) assert.ok(b.includes(`href="${href}"`), href);
+    assert.match(b, /href="\/th\/accommodation\/house-sakura"/, "houses are linked (crawl discovery)");
+    assert.match(b, /href="tel:0000000000"/);
+    assert.match(b, /hreflang="en"/, "other languages linked");
+    assert.doesNotMatch(b, /<script/i);
+  });
+
+  it("house page: name h1, price, description, amenities, photos with alt, link to booking", async () => {
+    production();
+    const { html } = await page("/en/accommodation/house-sakura");
+    const b = body(html);
+    assert.match(b, /<h1>[^<]+<\/h1>/);
+    assert.match(b, /฿[\d,]+ \/ night/);
+    assert.match(b, /href="\/en\/booking"/);
+    for (const tag of b.match(/<img [^>]*>/g) ?? []) assert.match(tag, /alt="[^"]+"/, tag);
+  });
+
+  it("gallery, booking and history pages have their heading; texts are escaped", async () => {
+    production();
+    h.db.run("UPDATE home_section_translations SET title = '<script>alert(1)</script> & co' WHERE rowid = (SELECT MIN(rowid) FROM home_section_translations)");
+    const home = body((await page("/th/")).html);
+    assert.doesNotMatch(home, /<script>alert/);
+    assert.match(home, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; co/, "shown as text");
+    for (const path of ["/th/gallery", "/en/booking", "/th/history"]) {
+      const b = body((await page(path)).html);
+      assert.match(b, /<main><h1>[^<]+<\/h1>/, path);
+    }
+  });
+
+  it("never for the Booking ID lookup, 404 pages or admin", async () => {
+    for (const path of ["/th/booking/lookup", "/th/no-such-page", "/en/accommodation/no-such-house", "/th/admin"]) {
+      const { html } = await page(path);
+      assert.match(html, /<div id="root"><\/div>/, path);
+    }
   });
 });

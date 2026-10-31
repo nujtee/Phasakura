@@ -163,3 +163,29 @@ main:focus {
 
 /* Labels on site plans (landscape): editor and booking-page map. */
 .landscape-label { fill: #212121; font-family: inherit; font-weight: 600; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+
+/*
+ * Prerendered page content (Worker, src/worker/seo/prerender.ts): the same published content as the app, as plain
+ * HTML, for crawlers and previews that do not run JavaScript. Browsers that run scripts keep it invisible (its photos
+ * still start downloading early) until the app replaces it, so visitors never see the page change.
+ */
+.prerender {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.prerender img {
+  max-width: 100%;
+  height: auto;
+}
+
+.prerender ul {
+  padding-left: 1.2em;
+}
+
+@media (scripting: enabled) {
+  .prerender {
+    visibility: hidden;
+  }
+}
