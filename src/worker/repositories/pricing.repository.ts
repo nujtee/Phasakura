@@ -15,6 +15,8 @@ export interface PricingRuleRow {
   status: "ACTIVE" | "INACTIVE";
   /** Pay-now percentage of the nights this rule prices (migration 0049); null = the stay's own plan. */
   pay_now_percent?: number | null;
+  /** Several houses edited as one rule (migration 0051); null = a rule on its own. */
+  group_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,18 +107,48 @@ export class PricingRepository {
     return this.withPayNow(results);
   }
 
-  /** Adds each rule's pay-now percentage (migration 0049; none before it) — read on its own so prices never depend on it. */
+  /**
+   * Adds each rule's pay-now percentage (migration 0049) and group (0051) — read on their own so prices never depend
+   * on the new columns during a deploy.
+   */
   private async withPayNow(rules: PricingRuleRow[]): Promise<PricingRuleRow[]> {
     if (!rules.length) return rules;
+    type Extra = { id: string; pay_now_percent: number | null; group_id: string | null };
+    const ids = JSON.stringify(rules.map((r) => r.id));
     const rows = await withFallback(
       async () => (await this.db
-        .prepare("SELECT id, pay_now_percent FROM pricing_settings WHERE id IN (SELECT value FROM json_each(?1)) AND pay_now_percent IS NOT NULL")
-        .bind(JSON.stringify(rules.map((r) => r.id)))
-        .all<{ id: string; pay_now_percent: number }>()).results,
-      async () => [] as { id: string; pay_now_percent: number }[],
+        .prepare(`SELECT id, pay_now_percent, group_id FROM pricing_settings
+                   WHERE id IN (SELECT value FROM json_each(?1)) AND (pay_now_percent IS NOT NULL OR group_id IS NOT NULL)`)
+        .bind(ids).all<Extra>()).results,
+      () => withFallback(
+        async () => (await this.db
+          .prepare("SELECT id, pay_now_percent, NULL AS group_id FROM pricing_settings WHERE id IN (SELECT value FROM json_each(?1)) AND pay_now_percent IS NOT NULL")
+          .bind(ids).all<Extra>()).results,
+        async () => [] as Extra[],
+      ),
     );
-    const pct = new Map(rows.map((r) => [r.id, r.pay_now_percent]));
-    return rules.map((r) => ({ ...r, pay_now_percent: pct.get(r.id) ?? null }));
+    const extra = new Map(rows.map((r) => [r.id, r]));
+    return rules.map((r) => ({ ...r, pay_now_percent: extra.get(r.id)?.pay_now_percent ?? null, group_id: extra.get(r.id)?.group_id ?? null }));
+  }
+
+  /** Every rule of a group (none before migration 0051). */
+  async groupRules(groupId: string): Promise<PricingRuleRow[]> {
+    const ids = await withFallback(
+      async () => (await this.db.prepare("SELECT id FROM pricing_settings WHERE group_id = ?1 ORDER BY created_at, id")
+        .bind(groupId).all<{ id: string }>()).results.map((r) => r.id),
+      async () => [] as string[],
+    );
+    if (!ids.length) return [];
+    const { results } = await this.db
+      .prepare(`SELECT ${RULE_COLUMNS} FROM pricing_settings WHERE id IN (SELECT value FROM json_each(?1))`)
+      .bind(JSON.stringify(ids))
+      .all<PricingRuleRow>();
+    return this.withPayNow(results);
+  }
+
+  /** Puts a rule in a group, or takes it out (null). */
+  setGroupStatement(id: string, groupId: string | null): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE pricing_settings SET group_id = ?2 WHERE id = ?1").bind(id, groupId);
   }
 
   /** Sets (or clears) a rule's pay-now percentage (migration 0049). */

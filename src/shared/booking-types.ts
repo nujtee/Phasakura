@@ -504,7 +504,11 @@ export interface FoodCatalogueDto {
 
 // ------------------------------------------------------------------ admin pricing rules
 
-export type PricingTargetType = "UNIT" | "UNIT_TYPE" | "CAMPING";
+/** UNITS = several chosen houses / VIP tents in one rule (migration 0051; stored as one UNIT rule per house). */
+export type PricingTargetType = "UNIT" | "UNIT_TYPE" | "CAMPING" | "UNITS";
+
+/** Most houses / VIP tents one group rule can hold. */
+export const MAX_RULE_UNITS = 100;
 
 export interface PricingRuleDto {
   id: string;
@@ -521,6 +525,8 @@ export interface PricingRuleDto {
   status: "ACTIVE" | "INACTIVE";
   /** Pay online at booking for the nights this rule prices: 10–100 %; null = the stay's own plan (migration 0049). */
   payNowPercent: number | null;
+  /** targetType UNITS: the chosen houses / VIP tents. */
+  unitIds?: string[];
   updatedAt: string;
 }
 

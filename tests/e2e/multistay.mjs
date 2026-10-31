@@ -193,6 +193,27 @@ await check("booking page: a date search shows the time-based price of those nig
   assert(quote.depositSatang === quote.totalSatang - 413000, `deposit ${quote.depositSatang}`);
   const reset = await req.patch(`${BASE}/api/admin/pricing-rules/${ruleId}`, { headers: H, data: { status: "INACTIVE", payNowPercent: null } });
   assert(reset.ok(), `reset rule ${reset.status()}`);
+
+  // Group rule (migration 0051): several chosen houses in one rule.
+  await pa.getByRole("button", { name: "+ Add price rule" }).click();
+  await pa.getByLabel("Applies to").selectOption("UNITS");
+  const unitsBox = pa.locator(".adm-ruleunits");
+  await unitsBox.getByRole("checkbox", { name: /House 01/ }).check();
+  await unitsBox.getByRole("checkbox", { name: /House 02/ }).check();
+  await pa.getByLabel("Rule name").fill("e2e group");
+  await pa.getByLabel("From night").fill(day(90));
+  await pa.getByLabel("To night (inclusive)").fill(day(91));
+  await pa.getByLabel("Price (THB)").fill("4100");
+  await pa.getByRole("button", { name: "Save" }).click();
+  const grow = pa.locator("tr", { hasText: "e2e group" });
+  await grow.waitFor();
+  assert((await pa.locator("tr", { hasText: "e2e group" }).count()) === 1, "one row for the group");
+  assert(/House 01.*House 02|House 02.*House 01/.test(await grow.textContent()), `group houses: ${await grow.textContent()}`);
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/pricing-group.png`, fullPage: true });
+  const groups = (await (await req.get(`${BASE}/api/admin/pricing-rules?targetType=UNITS`)).json()).data;
+  const g = groups.find((r) => r.name === "e2e group");
+  assert(g && g.unitIds.length === 2, `group ${JSON.stringify(g)}`);
+  assert((await req.patch(`${BASE}/api/admin/pricing-rules/${g.id}`, { headers: H, data: { status: "INACTIVE" } })).ok(), "group off");
 });
 
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
