@@ -3,11 +3,14 @@ import {
   type AiMarketingSettingsDto, type AiMarketingSettingsInput, type InsightDto, type MarketingMetrics, type MarketingReportDto,
   type MarketingReportListItemDto, type ReportKind,
 } from "../../shared/ai-marketing-types.ts";
-import { DEFAULT_TIMEZONE, localDateTimeIn, todayIn, utcOffsetMinutes } from "../../shared/dates.ts";
+import { addDays, DEFAULT_TIMEZONE, localDateTimeIn, todayIn, utcOffsetMinutes } from "../../shared/dates.ts";
 import { ConflictError, HttpError, NotFoundError, TooManyRequestsError, ValidationError } from "../http/errors.ts";
 import { parseUnitDraft, unitSystemPrompt, unitUserPrompt, type UnitDraftInput } from "../ai-marketing/content-writer.ts";
 import { AI_DRAFTS_PER_DAY, type UnitTextDraftDto } from "../../shared/ai-content-types.ts";
-import { buildMetrics, lastPeriod, periodStarting } from "../ai-marketing/metrics.ts";
+import { buildMetrics, forward, lastPeriod, periodStarting } from "../ai-marketing/metrics.ts";
+import { parsePostDraft, postSystemPrompt, postUserPrompt, type PostFacts } from "../ai-marketing/post-writer.ts";
+import type { PostChannel, PostDraftDto, QuietDatesDto } from "../../shared/ai-post-types.ts";
+import type { LocaleCode } from "../../shared/i18n/locales.ts";
 import { insights } from "../ai-marketing/insights.ts";
 import type { AiMarketingRepository, ReportRow, SettingsRow } from "../repositories/ai-marketing.repository.ts";
 import type { AttributionRepository } from "../repositories/attribution.repository.ts";
@@ -25,6 +28,8 @@ const LIST_LIMIT = 60;
 const DAY_MS = 86_400_000;
 const REPORT_REQUESTED = "MARKETING_REPORT_REQUESTED";
 const AI_DRAFT_REQUESTED = "AI_DRAFT_REQUESTED";
+/** Days ahead the post helper looks for quiet dates. */
+const QUIET_DAYS = 60;
 
 function parse<T>(json: string, fallback: T): T {
   try {
@@ -220,6 +225,44 @@ export class AiMarketingService {
       costSatang: costSatang(res.inputTokens, res.outputTokens), status: value !== null ? "OK" : "FAILED", error, now: now(),
     });
     return value !== null ? { ok: true, value, model: res.ok ? res.model : model } : { ok: false, error: error ?? "UNREADABLE_ANSWER" };
+  }
+
+  /** Module C: quiet dates of the next 60 days (runs of 3+ nights with at least half the units free; empty days). */
+  async quietDates(actor: AuthContext, lang: LocaleCode, meta: RequestMeta): Promise<QuietDatesDto> {
+    await this.authz.requirePermission(actor, "marketing.view", meta);
+    const z = await this.zone();
+    const to = addDays(z.today, QUIET_DAYS - 1);
+    const [units, rows] = await Promise.all([this.repo.activeUnits(lang), this.repo.dateNights(z.today, to)]);
+    return { ...forward(rows, units.length, z.today, QUIET_DAYS), units: units.map((u) => ({ id: u.id, name: u.name, slug: u.slug })) };
+  }
+
+  /** Facts for a post (Module C): active units (or the one featured), in the post's language. */
+  async postUnits(lang: LocaleCode, unitId: string | null) {
+    const all = await this.repo.activeUnits(lang);
+    return unitId ? all.filter((u) => u.id === unitId) : all.slice(0, 12);
+  }
+
+  async today(): Promise<string> {
+    return (await this.zone()).today;
+  }
+
+  /**
+   * Module C: three drafts of a post / LINE message selling quiet dates, with the tracked booking link put in.
+   * Nothing is posted or sent. Same AI switch / budget / daily draft limit as Module B; audited.
+   */
+  async draftPost(actor: AuthContext, input: { channel: PostChannel; lang: LocaleCode; link: string; facts: PostFacts }, meta: RequestMeta): Promise<PostDraftDto> {
+    await this.authz.requirePermission(actor, "marketing.edit", meta);
+    const s = await this.repo.settings();
+    if (s.ai_enabled !== 1 || !this.config.apiKey?.trim()) throw new ConflictError("The AI is not switched on", "AI_OFF");
+    if ((await this.log.countRecent([AI_DRAFT_REQUESTED], DAY_MS)) >= AI_DRAFTS_PER_DAY) throw new TooManyRequestsError(60 * 60, "Too many AI drafts today");
+    await this.log.event(AI_DRAFT_REQUESTED, "INFO", meta, { userId: actor.userId, details: { kind: "POST", channel: input.channel, lang: input.lang } });
+    const res = await this.callAi(null, postSystemPrompt(input.channel, input.lang), postUserPrompt(input.facts), 2000, (text) => parsePostDraft(text, input.link));
+    if (res === null) throw new ConflictError("The AI is not switched on", "AI_OFF");
+    if (!res.ok) throw new HttpError(res.error === "BUDGET_REACHED" ? 409 : 502, res.error === "BUDGET_REACHED" ? "AI_BUDGET_REACHED" : "AI_FAILED",
+      res.error === "BUDGET_REACHED" ? "This month's AI budget is used up" : "The AI could not write a draft", { reason: res.error });
+    await this.log.auditStatement(actor.userId, "AI_DRAFT_POST", "ai_content", null, null,
+      { channel: input.channel, lang: input.lang, dates: input.facts.dates, offer: input.facts.offer, model: res.model }, meta).run();
+    return { variants: res.value, link: input.link, model: res.model };
   }
 
   /**

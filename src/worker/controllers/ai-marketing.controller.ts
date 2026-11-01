@@ -2,6 +2,9 @@ import { REPORT_KINDS, type AiMarketingSettingsInput } from "../../shared/ai-mar
 import { AI_DRAFT_MODES, UNIT_TEXT_LIMITS } from "../../shared/ai-content-types.ts";
 import { getLocale, LOCALES, parseLocale, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { UnitDraftInput } from "../ai-marketing/content-writer.ts";
+import { POST_CHANNELS, POST_NOTE_MAX, POST_OFFER_MAX } from "../../shared/ai-post-types.ts";
+import { trackedLink } from "../ai-marketing/post-writer.ts";
+import { diffDays } from "../../shared/dates.ts";
 import { isIsoDate } from "../../shared/dates.ts";
 import { requestMeta, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { ValidationError } from "../http/errors.ts";
@@ -82,6 +85,46 @@ export function aiMarketingController(services: ServicesFor) {
           standardGuests: unit.standardGuests, maxGuests: unit.maxGuests,
           amenities: amenities.filter((a) => unit.amenityIds.includes(a.id)).map((a) => a.names[lang!] || a.names.th || a.code).slice(0, 40),
           siteName: site.siteName ?? null, area: site.contact.address?.slice(0, 160) ?? null,
+        },
+      }, meta);
+      return jsonOk(draft, { headers: NO_STORE });
+    }),
+
+    /** GET /api/admin/ai-marketing/quiet-dates?lang= — Module C: quiet runs / empty days of the next 60 days + units. */
+    quietDates: withPermission("marketing.view", services, async (ctx, auth) => {
+      const lang = parseLocale(ctx.url.searchParams.get("lang") ?? "th")?.code ?? "th";
+      return jsonOk(await services(ctx).aiMarketing.quietDates(auth, lang, requestMeta(ctx)), { headers: NO_STORE });
+    }),
+
+    /** POST /api/admin/ai-marketing/post-drafts — Module C: three drafts of a post / LINE message; nothing posted. */
+    postDrafts: withPermission("marketing.edit", services, async (ctx, auth) => {
+      const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["channel", "lang", "from", "to", "unitId", "offer", "note"]);
+      const channel = v.oneOf("channel", POST_CHANNELS, { required: true });
+      const lang = parseLocale(v.string("lang", { required: true, max: 10 }) ?? "")?.code;
+      if (!lang) v.errors.lang = "INVALID_VALUE";
+      const from = v.string("from", { max: 10 });
+      const to = v.string("to", { max: 10 });
+      if (from !== undefined && !isIsoDate(from)) v.errors.from = "INVALID_DATE";
+      if (to !== undefined && !isIsoDate(to)) v.errors.to = "INVALID_DATE";
+      if ((from === undefined) !== (to === undefined)) v.errors[from === undefined ? "from" : "to"] = "REQUIRED";
+      if (from && to && isIsoDate(from) && isIsoDate(to) && (to < from || diffDays(from, to) > 90)) v.errors.to = "INVALID_RANGE";
+      const unitId = v.string("unitId", { pattern: ID_PATTERN });
+      const offer = v.string("offer", { max: POST_OFFER_MAX }) ?? null;
+      const note = v.string("note", { max: POST_NOTE_MAX }) ?? null;
+      v.assertValid();
+      const s = services(ctx);
+      const meta = requestMeta(ctx);
+      const units = await s.aiMarketing.postUnits(lang!, unitId ?? null);
+      if (unitId && !units.length) throw new ValidationError({ unitId: "NOT_BOOKABLE" });
+      const site = await s.site.getPublicSite(getLocale(lang!));
+      const link = trackedLink(ctx.url.origin, lang!, channel!, { from: from ?? null, unitSlug: unitId ? units[0]!.slug : null, today: await s.aiMarketing.today() });
+      const draft = await s.aiMarketing.draftPost(auth, {
+        channel: channel!, lang: lang!, link,
+        facts: {
+          siteName: site.siteName ?? null, area: site.contact.address?.slice(0, 160) ?? null,
+          dates: from && to ? { from, to, nights: diffDays(from, to) + 1, freeUnits: null } : null,
+          units: units.map((u) => ({ name: u.name, type: u.unit_type, maxGuests: u.max_guests, priceBaht: Math.round(u.base_price_satang / 100), shortDescription: u.short_description })),
+          offer, note,
         },
       }, meta);
       return jsonOk(draft, { headers: NO_STORE });

@@ -295,6 +295,9 @@ export function createApp(options: AppOptions = {}) {
     .put("/api/admin/ai-marketing/settings", aiMkt.saveSettings)
     // AI content helper (Module B): drafts only, nothing saved
     .post("/api/admin/accommodations/:id/ai-draft", aiMkt.unitDraft)
+    // AI post helper (Module C): quiet dates + drafts only, nothing posted
+    .get("/api/admin/ai-marketing/quiet-dates", aiMkt.quietDates)
+    .post("/api/admin/ai-marketing/post-drafts", aiMkt.postDrafts)
     // LINE Official Account (spec §47)
     .get("/api/admin/line/settings", line.settings)
     .put("/api/admin/line/settings", line.saveSettings)

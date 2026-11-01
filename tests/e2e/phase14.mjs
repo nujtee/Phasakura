@@ -340,6 +340,24 @@ await check("AI content helper (Module B): draft the English texts of a house fr
   await pa.screenshot({ path: `${SHOTS}/p14-ai-draft.png` });
 });
 
+await check("AI post helper (Module C): pick quiet dates, draft LINE messages with a tracked link, copy-ready; nothing sent", async () => {
+  await pa.goto(`${BASE}/en/admin/ai-marketing`);
+  const box = pa.getByTestId("aim-post");
+  await box.locator(".aim-chip").first().click();
+  assert((await box.getByLabel("First night").inputValue()) !== "", "dates from the chip");
+  await box.getByLabel("Channel").selectOption("LINE");
+  await box.getByLabel("Your offer (optional)").fill("Free breakfast on weekdays");
+  const pushes = async () => (await (await req.get(`${BASE}/__e2e/line`)).json()).pushes.length;
+  const sentBefore = await pushes();
+  await box.getByRole("button", { name: "✨ Draft posts" }).click();
+  const result = pa.getByTestId("aim-post-result");
+  await result.locator("textarea").nth(2).waitFor();
+  const first = await result.locator("textarea").first().inputValue();
+  assert(/utm_source=line&utm_medium=social/.test(first), `tracked link: ${first}`);
+  assert((await pushes()) === sentBefore, "nothing sent to LINE");
+  await pa.screenshot({ path: `${SHOTS}/p14-ai-posts.png`, fullPage: true });
+});
+
 await check("ask everyone again → banner returns, trackers stop until a new choice", async () => {
   await pa.goto(`${BASE}/en/admin/settings-privacy`);
   await pa.getByRole("checkbox", { name: "Ask everyone again" }).check();
