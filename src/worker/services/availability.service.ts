@@ -7,7 +7,7 @@ import type {
   NightState,
   TarpNightDto,
 } from "../../shared/accommodation-types.ts";
-import { STAY_RULES } from "../../shared/booking-rules.ts";
+import { STAY_RULES, storedDepositPercent } from "../../shared/booking-rules.ts";
 import { CALENDAR_LOCK_MAX, type CalendarLockResultDto } from "../../shared/dashboard-types.ts";
 import { DEFAULT_TIMEZONE, addDays, diffDays, isIsoDate, stayNights, todayIn } from "../../shared/dates.ts";
 import { DEFAULT_LOCALE_CODE, type LocaleCode } from "../../shared/i18n/locales.ts";
@@ -500,6 +500,9 @@ export class AvailabilityService {
     const now = iso(this.clock());
     const statements: D1PreparedStatementLike[] = [
       this.inventory.upsertCampingSettingsStatement({ ...input, updatedBy: actor.userId, now }),
+      // Deposit percentage (migration 0054): written only when a 60 / 70 % deposit is set or taken away.
+      ...(storedDepositPercent(input.paymentMode) !== null || storedDepositPercent(current.paymentMode) !== null
+        ? [this.inventory.campingDepositPercentStatement(input.paymentMode)] : []),
       ...Object.entries(input.translations ?? {}).flatMap(([lang, t]) => (t ? [this.inventory.upsertCampingTranslationStatement(lang, t)] : [])),
       this.inventory.applyDefaultCapacityStatement(input.maxTentsPerNight, await this.today()),
       this.inventory.applyDefaultTarpCapacityStatement(input.maxTarpsPerNight, await this.today(), now),

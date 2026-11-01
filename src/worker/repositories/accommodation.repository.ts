@@ -1,5 +1,6 @@
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { withFallback } from "./schema-fallback.ts";
+import { storedDepositPercent, storedPaymentMode, type PaymentMode } from "../../shared/booking-rules.ts";
 
 export interface UnitRow {
   id: string;
@@ -7,8 +8,8 @@ export interface UnitRow {
   unit_type: "HOUSE" | "VIP_TENT";
   slug: string;
   base_price_satang: number;
-  /** FULL | DEPOSIT_50 (migration 0025). */
-  payment_mode: "FULL" | "DEPOSIT_50";
+  /** FULL | DEPOSIT_50 / 60 / 70 (migrations 0025, 0054). */
+  payment_mode: PaymentMode;
   standard_guests: number;
   max_guests: number;
   max_adults: number | null;
@@ -61,7 +62,10 @@ const unitSelect = (paymentMode: string) => `
          u.created_at, u.updated_at
     FROM accommodation_units u
     LEFT JOIN media_assets m ON m.id = u.cover_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'`;
-const UNIT_SELECT = unitSelect("u.payment_mode");
+/** Deposit of 60 / 70 % (migration 0054) read back as DEPOSIT_60 / DEPOSIT_70. */
+const UNIT_SELECT = unitSelect("CASE WHEN u.payment_mode = 'DEPOSIT_50' AND u.deposit_percent IN (60, 70) THEN 'DEPOSIT_' || u.deposit_percent ELSE u.payment_mode END");
+/** Before migration 0054: 50 % deposits only. */
+const UNIT_SELECT_0025 = unitSelect("u.payment_mode");
 /** Before migration 0025: every unit is paid in full. */
 const UNIT_SELECT_LEGACY = unitSelect("'FULL'");
 
@@ -70,7 +74,7 @@ export class AccommodationRepository {
 
   /** Runs a unit read with the current columns, or the pre-0025 ones while that migration is not applied yet. */
   private units<T>(read: (select: string) => Promise<T>): Promise<T> {
-    return withFallback(() => read(UNIT_SELECT), () => read(UNIT_SELECT_LEGACY));
+    return withFallback(() => read(UNIT_SELECT), () => withFallback(() => read(UNIT_SELECT_0025), () => read(UNIT_SELECT_LEGACY)));
   }
 
   async listUnits(filter: { type?: "HOUSE" | "VIP_TENT"; publicOnly?: boolean; includeDeleted?: boolean }): Promise<UnitRow[]> {
@@ -173,7 +177,12 @@ export class AccommodationRepository {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13)`,
       )
       .bind(u.id, u.unitCode, u.unitType, u.slug, u.basePriceSatang, u.standardGuests, u.maxGuests, u.maxAdults,
-        u.status, u.sortOrder, u.createdBy, u.now, u.paymentMode);
+        u.status, u.sortOrder, u.createdBy, u.now, storedPaymentMode(u.paymentMode as PaymentMode));
+  }
+
+  /** Deposit percentage of a unit (migration 0054): 60 / 70, or NULL for 50 % / full payment. */
+  depositPercentStatement(id: string, mode: PaymentMode): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE accommodation_units SET deposit_percent = ?2 WHERE id = ?1").bind(id, storedDepositPercent(mode));
   }
 
   updateUnitStatement(id: string, f: {
@@ -187,7 +196,8 @@ export class AccommodationRepository {
                 deleted_at = CASE WHEN ?8 = 'DELETED' THEN ?10 ELSE NULL END
           WHERE id = ?1`,
       )
-      .bind(id, f.unitCode, f.slug, f.basePriceSatang, f.standardGuests, f.maxGuests, f.maxAdults, f.status, f.sortOrder, f.now, f.paymentMode);
+      .bind(id, f.unitCode, f.slug, f.basePriceSatang, f.standardGuests, f.maxGuests, f.maxAdults, f.status, f.sortOrder, f.now,
+        storedPaymentMode(f.paymentMode as PaymentMode));
   }
 
   upsertTranslationStatement(unitId: string, lang: string, t: {

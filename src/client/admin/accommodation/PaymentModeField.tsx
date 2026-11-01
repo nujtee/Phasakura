@@ -5,7 +5,7 @@ import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 
 /**
- * How guests pay a house / VIP tent / camping: everything when booking, or a 50% deposit with the rest taken at
+ * How guests pay a house / VIP tent / camping: everything when booking, or a 50 / 60 / 70% deposit with the rest taken at
  * reception before check-in. A money setting: changing it needs pricing.edit (the Worker checks it too).
  *
  * `deposits`: open bookings made with a deposit. Their deposit is fixed at booking time, so with "full payment"

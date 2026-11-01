@@ -11,7 +11,7 @@ import type {
   UnitTranslationDto,
   UnitType,
 } from "../../shared/accommodation-types.ts";
-import type { PaymentMode } from "../../shared/booking-rules.ts";
+import { storedDepositPercent, type PaymentMode } from "../../shared/booking-rules.ts";
 import { DEFAULT_TIMEZONE, todayIn } from "../../shared/dates.ts";
 import { DEFAULT_LOCALE_CODE, parseLocale, type Locale, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike, R2BucketLike } from "../env.ts";
@@ -232,6 +232,8 @@ export class AccommodationService {
     const now = this.now();
     await this.commit([
       this.repo.insertUnitStatement({ id, ...input, createdBy: actor.userId, now }),
+      // A 60 / 70 % deposit (migration 0054); 50 % and full payment need no extra column.
+      ...(storedDepositPercent(input.paymentMode) !== null ? [this.repo.depositPercentStatement(id, input.paymentMode)] : []),
       this.priceHistory(id, null, input.basePriceSatang, actor.userId),
       this.log.auditStatement(actor.userId, "CREATE", MODULE, id, null, input, meta),
     ]);
@@ -267,6 +269,9 @@ export class AccommodationService {
 
     const statements: D1PreparedStatementLike[] = [
       this.repo.updateUnitStatement(id, { ...next, now: this.now() }),
+      // Deposit percentage (migration 0054): written only when a 60 / 70 % deposit is set or taken away.
+      ...(storedDepositPercent(next.paymentMode) !== null || storedDepositPercent(current.paymentMode) !== null
+        ? [this.repo.depositPercentStatement(id, next.paymentMode)] : []),
       this.log.auditStatement(actor.userId, "UPDATE", MODULE, id, pickUnitFields(current), {
         ...next,
         // Deposit ↔ full payment: open deposit bookings keep the plan agreed at booking time (deposit frozen).
