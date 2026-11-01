@@ -38,10 +38,10 @@ export class AttributionRepository {
   }
 
   /**
-   * Bookings made since `fromDate` (property time zone via `offset`), grouped by what decides their source / medium;
+   * Bookings made from `fromDate` to `toDate` (property time zone via `offset`), grouped by what decides their source / medium;
    * bookings without a row count as one group of NULLs (direct / unknown). Revenue = paid & confirmed bookings only.
    */
-  sourceGroups(fromDate: string, offset: string): Promise<SourceGroupRow[]> {
+  sourceGroups(fromDate: string, offset: string, toDate = "9999-12-31"): Promise<SourceGroupRow[]> {
     return withFallback(
       async () => (await this.db
         .prepare(
@@ -52,10 +52,10 @@ export class AttributionRepository {
                                      AND b.booking_status IN ('CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'NO_SHOW')
                                      AND b.payment_status IN ('PAID', 'VERIFIED') THEN b.total_satang ELSE 0 END), 0) AS revenue
              FROM bookings b LEFT JOIN booking_attribution a ON a.booking_id = b.id
-            WHERE date(b.created_at, ?2) >= ?1
+            WHERE date(b.created_at, ?2) BETWEEN ?1 AND ?3
             GROUP BY a.utm_source, a.utm_medium, a.referrer_host, a.click_kind`,
         )
-        .bind(fromDate, offset)
+        .bind(fromDate, offset, toDate)
         .all<SourceGroupRow>()).results,
       async () => [],
     );

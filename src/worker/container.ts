@@ -38,6 +38,9 @@ import { SiteService } from "./services/site.service.ts";
 import { UserManagementService } from "./services/user-management.service.ts";
 import { CmsService } from "./cms/cms.service.ts";
 import { DashboardRepository } from "./repositories/dashboard.repository.ts";
+import { AiMarketingRepository } from "./repositories/ai-marketing.repository.ts";
+import { AttributionRepository } from "./repositories/attribution.repository.ts";
+import { AiMarketingService } from "./services/ai-marketing.service.ts";
 import { FoodAdminRepository } from "./repositories/food-admin.repository.ts";
 import { SettingsRepository } from "./repositories/settings.repository.ts";
 import { DashboardService } from "./services/dashboard.service.ts";
@@ -115,6 +118,7 @@ export interface Services {
   foodAdmin: FoodAdminService;
   content: PublicContentService;
   reports: ReportService;
+  aiMarketing: AiMarketingService;
   line: LineService;
   notifications: NotificationService;
   fonts: FontService;
@@ -352,6 +356,8 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     foodAdmin: new FoodAdminService(db, new FoodAdminRepository(db), inventory, authorization, log, clock),
     content,
     reports: new ReportService(new ReportRepository(db), inventory, authorization, log, clock),
+    aiMarketing: new AiMarketingService(new AiMarketingRepository(db), new AttributionRepository(db), inventory, authorization, log, clock,
+      (from, to) => ga4.range(from, to), { aiKeyConfigured: !!env.AI_API_KEY?.trim() }),
     line,
     notifications,
     fonts: new FontService(db, fontRepo, media, mediaRepo, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),

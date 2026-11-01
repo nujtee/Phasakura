@@ -44,6 +44,16 @@ export class Ga4ReportService {
     }
   }
 
+  /** Numbers for any date range, straight from Google (not cached: reports run a few times a week). */
+  async range(from: string, to: string): Promise<Ga4DashboardResult> {
+    const key = parseServiceAccountKey(this.config.keyJson);
+    const propertyId = await this.propertyId();
+    if (!key || !propertyId) return { status: "NOT_CONFIGURED", fetchedAt: null, numbers: null };
+    const now = this.clock();
+    const result = await fetchDashboardNumbers({ key, propertyId, startDate: from, endDate: to, fetch: this.config.fetch, nowSec: Math.floor(now.getTime() / 1000) });
+    return result.ok ? { status: "OK", fetchedAt: iso(now), numbers: result.data } : { status: "ERROR", fetchedAt: null, numbers: null };
+  }
+
   async dashboard(from: string, to: string, opts: { refresh?: boolean } = {}): Promise<Ga4DashboardResult> {
     const key = parseServiceAccountKey(this.config.keyJson);
     const propertyId = await this.propertyId();

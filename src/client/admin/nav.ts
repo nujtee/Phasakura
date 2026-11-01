@@ -80,6 +80,7 @@ export const ADMIN_NAV: NavGroup[] = [
       { ready: true, path: "ga4", label: (t) => t.nav.ga4, permission: "marketing.view" },
       { ready: true, path: "meta-pixel", label: (t) => t.nav.metaPixel, permission: "marketing.view" },
       { ready: true, path: "capi", label: (t) => t.nav.capi, permission: "marketing.view" },
+      { ready: true, path: "ai-marketing", label: (t) => t.nav.aiMarketing, permission: "reports.view" },
     ],
   },
   {

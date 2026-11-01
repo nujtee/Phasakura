@@ -209,7 +209,10 @@ describe("schema covers the spec (§52)", () => {
         // tokens_json = theme design tokens (colors/fonts), not credentials. ical_feeds.export_token (migration 0033) is
         // the secret part of a calendar link that staff must be able to copy again (like any Airbnb / Booking iCal
         // link): it reveals only free / busy nights of one unit — no guest data — and can be renewed at any time.
-        if (/token|secret|password/i.test(c.name) && c.name !== "tokens_json" && `${t}.${c.name}` !== "ical_feeds.export_token") {
+        // ai_usage.input_tokens / output_tokens (migration 0053) are counts of AI text units used, for the budget.
+        const counts = ["ai_usage.input_tokens", "ai_usage.output_tokens"];
+        if (/token|secret|password/i.test(c.name) && c.name !== "tokens_json" && `${t}.${c.name}` !== "ical_feeds.export_token"
+          && !counts.includes(`${t}.${c.name}`)) {
           assert.ok(
             ["token_hash", "password_hash", "password_changed_at", "must_change_password"].includes(c.name),
             `${t}.${c.name} looks like a secret column`,

@@ -21,7 +21,7 @@ export type CreditState = "OFF" | "NORMAL" | "LOW" | "EMPTY";
 /** Permissions a STANDARD plan removes from everyone but SUPER_ADMIN (Reports, Marketing, Theme). */
 export const PREMIUM_ONLY_PERMISSIONS = ["reports.view", "reports.export", "marketing.view", "marketing.edit", "settings.theme"] as const;
 /** Sidebar items of those permissions (shown with a lock on STANDARD). */
-export const PREMIUM_ONLY_MENU_PATHS = ["reports", "ga4", "meta-pixel", "capi", "settings-theme"] as const;
+export const PREMIUM_ONLY_MENU_PATHS = ["reports", "ga4", "meta-pixel", "capi", "ai-marketing", "settings-theme"] as const;
 
 /** Biggest top-up / adjustment accepted at once (credits = baht). */
 export const MAX_CREDIT_AMOUNT = 10_000_000;

@@ -95,6 +95,8 @@ export interface Env {
   META_PIXEL_ID?: string;
   /** GA4 Data API: JSON key of a service account with Viewer access to the GA4 property (secret). */
   GA4_SERVICE_ACCOUNT_KEY?: string;
+  /** AI provider API key for the marketing report's summary (AI Marketing A3). Cloudflare Secret; never stored or returned. */
+  AI_API_KEY?: string;
   /** Graph API version for CAPI (plain var, e.g. "v23.0"). */
   META_GRAPH_API_VERSION?: string;
   /** Workers Rate Limiting bindings (Phase 14). Missing in local dev / tests unless configured. */

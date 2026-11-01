@@ -13,6 +13,7 @@ import { adminDashboardController } from "./controllers/admin-dashboard.controll
 import { cmsController } from "./controllers/cms.controller.ts";
 import { settingsController } from "./controllers/settings.controller.ts";
 import { reportController } from "./controllers/report.controller.ts";
+import { aiMarketingController } from "./controllers/ai-marketing.controller.ts";
 import { lineController } from "./controllers/line.controller.ts";
 import type { Env } from "./env.ts";
 import { HttpError, MethodNotAllowedError, TooManyRequestsError } from "./http/errors.ts";
@@ -70,6 +71,7 @@ export function createApp(options: AppOptions = {}) {
   const cms = cmsController(services);
   const settings = settingsController(services);
   const rep = reportController(services);
+  const aiMkt = aiMarketingController(services);
   const line = lineController(services);
   const seo = seoController(services);
   const search = searchController(services);
@@ -285,6 +287,12 @@ export function createApp(options: AppOptions = {}) {
     // Reports (spec §50)
     .get("/api/admin/reports/:type", rep.run)
     .get("/api/admin/reports/:type/export", rep.exportXlsx)
+    // AI marketing report (migration 0053)
+    .get("/api/admin/ai-marketing/reports", aiMkt.list)
+    .post("/api/admin/ai-marketing/reports", aiMkt.generate)
+    .get("/api/admin/ai-marketing/reports/:id", aiMkt.get)
+    .get("/api/admin/ai-marketing/settings", aiMkt.settings)
+    .put("/api/admin/ai-marketing/settings", aiMkt.saveSettings)
     // LINE Official Account (spec §47)
     .get("/api/admin/line/settings", line.settings)
     .put("/api/admin/line/settings", line.saveSettings)
@@ -518,6 +526,11 @@ export function createApp(options: AppOptions = {}) {
       if (ari?.sent) console.log(JSON.stringify({ level: "info", message: "channex_ari", ...ari }));
       const pp = await task("paypal_reconcile", () => s.paypal.reconcile());
       if (pp?.settled) console.log(JSON.stringify({ level: "info", message: "paypal_reconciled", ...pp }));
+      // AI marketing report (migration 0053): last week's / month's report from 07:00 when switched on, every 5 minutes.
+      if (minute === null || minute % 5 === 2) {
+        const reports = await task("marketing_reports", () => s.aiMarketing.tick());
+        if (reports) console.log(JSON.stringify({ level: "info", message: "marketing_reports_written", count: reports }));
+      }
       // Error log retention, once an hour.
       if (minute === null || minute === 11) await task("error_log_retention", () => s.monitoring.retention());
       // Center request nonces older than their replay window (migration 0030), every 5 minutes.

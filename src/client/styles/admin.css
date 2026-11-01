@@ -3770,3 +3770,56 @@
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 4px 16px;
 }
+
+/* AI marketing report (migration 0053) */
+.aim-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.aim-block + .aim-block {
+  margin-top: 20px;
+}
+
+.aim-insights {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.aim-insight {
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--radius-md, 8px);
+  border-left: 4px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.aim-insight--warn {
+  border-left-color: #b45309;
+  background: #fffbeb;
+}
+
+.aim-insight--good {
+  border-left-color: #15803d;
+  background: #f0fdf4;
+}
+
+.aim-insight--info {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+@media print {
+  body:has(.aim-report) .adm-topbar,
+  body:has(.aim-report) .adm-sidebar,
+  body:has(.aim-report) .skip-link,
+  .aim-report .aim-toolbar {
+    display: none !important;
+  }
+}
