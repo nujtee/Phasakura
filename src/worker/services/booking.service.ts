@@ -45,6 +45,8 @@ import type { GuestLineDto } from "../../shared/line-types.ts";
 import type { AppFeeDto } from "../../shared/credit-types.ts";
 import type { MoveEvent, OutboxLike } from "./marketing.service.ts";
 import type { Attribution, MarketingRepository } from "../repositories/marketing.repository.ts";
+import { AttributionRepository } from "../repositories/attribution.repository.ts";
+import type { CampaignDto } from "../../shared/campaign.ts";
 
 export interface CreateBookingInput extends QuoteInput {
   customer: { name: string; phone: string; email: string | null; lineId: string | null; note: string | null };
@@ -52,6 +54,8 @@ export interface CreateBookingInput extends QuoteInput {
   idempotencyKey: string;
   /** Cookie consent + Meta browser ids at booking time (Phase 14); browser ids only with Marketing consent. */
   attribution?: Attribution | null;
+  /** Where the visitor came from (migration 0052), already cleaned; stored after the booking commits. */
+  campaign?: CampaignDto | null;
 }
 
 /** Abuse limits (security policy, not business configuration). */
@@ -156,6 +160,8 @@ export class BookingService {
         // Staff notices (LINE / e-mail) are queued in the same batch: only if the booking really exists.
         const notices = this.outbox?.bookingCreated ? await this.outbox.bookingCreated(bookingId, iso(now)) : [];
         await this.db.batch([...this.createStatements(prepared, input, phoneNormalized, code, bookingId, now, meta), ...notices]);
+        // Source of the booking (migration 0052): best effort, after the commit — never fails the booking.
+        if (input.campaign) await new AttributionRepository(this.db).save(bookingId, input.campaign, iso(now));
         const row = await this.repo.findByCode(code);
         return { booking: await this.toPublic(row!), replayed: false };
       } catch (error) {

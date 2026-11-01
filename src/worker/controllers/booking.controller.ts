@@ -14,6 +14,7 @@ import { ID_PATTERN, Validator } from "../validation.ts";
 import { currentConsent, metaBrowserIds } from "../../shared/consent.ts";
 import type { Services } from "../container.ts";
 import type { Attribution } from "../repositories/marketing.repository.ts";
+import { sanitizeCampaign } from "../../shared/campaign.ts";
 import type { RequestMeta } from "../services/auth-context.ts";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -251,7 +252,7 @@ export function bookingController(services: ServicesFor) {
     create: (async (ctx) => {
       await services(ctx).centerAdmin.assertOpenForBooking();
       const body = await readJsonObject(ctx.request);
-      const v = new Validator(body).allowOnly([...QUOTE_FIELDS, "customer", "privacyAccepted", "expectedTotalSatang", "idempotencyKey"]);
+      const v = new Validator(body).allowOnly([...QUOTE_FIELDS, "customer", "privacyAccepted", "expectedTotalSatang", "idempotencyKey", "attribution"]);
       const input = parseQuote(body, v);
       const c = obj(body.customer);
       const cv = new Validator(c ?? {}).allowOnly(["name", "phone", "email", "lineId", "note"]);
@@ -270,7 +271,11 @@ export function bookingController(services: ServicesFor) {
       v.assertValid();
       const meta = requestMeta(ctx);
       const { booking, replayed } = await services(ctx).bookings.create(
-        { ...input, customer, expectedTotalSatang, idempotencyKey, attribution: await attributionOf(ctx, services(ctx), meta) },
+        {
+          ...input, customer, expectedTotalSatang, idempotencyKey, attribution: await attributionOf(ctx, services(ctx), meta),
+          // Source of the visit (migration 0052): cleaned; anything unusable is dropped, never an error.
+          campaign: sanitizeCampaign(body.attribution),
+        },
         meta,
       );
       return jsonOk(booking, { status: replayed ? 200 : 201, headers: NO_STORE });

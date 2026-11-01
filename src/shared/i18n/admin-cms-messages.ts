@@ -240,6 +240,11 @@ const th = {
     ga4Updated: "ข้อมูล GA4 อัปเดตเมื่อ {time}",
     analyticsNote: "ตัวเลขการเงินมาจากฐานข้อมูลการจองเท่านั้น ไม่ใช้ข้อมูล Analytics",
     restricted: "ส่วนนี้แสดงตามสิทธิ์ของคุณ",
+    bookingSourcesTitle: "การจองมาจากไหน (30 วัน)",
+    bookingSourcesNote: "นับจากการจองจริงในระบบ ช่องทางมาจากหน้าแรกที่ลูกค้าเปิด (UTM / เว็บที่ลิงก์มา) — การจองก่อนเริ่มเก็บข้อมูลนับเป็น (direct)",
+    channelsTitle: "ช่องทางผู้เข้าชม (GA4, 30 วัน)",
+    colSource: "แหล่งที่มา / สื่อ", colBookings: "จอง", colConfirmed: "ยืนยัน", colRevenue: "รายได้", colChannel: "ช่องทาง",
+    colSessions: "เซสชัน", colUsers: "ผู้ใช้", noSources: "ยังไม่มีการจองในช่วงนี้",
   },
   cal: {
     title: "ปฏิทินการจอง",
@@ -739,6 +744,11 @@ const en: AdminCmsMessages = {
     fromGa4: "From GA4", ga4NotConnected: "GA4 Data API not connected", ga4Error: "Could not load GA4 data",
     ga4Updated: "GA4 data updated {time}", analyticsNote: "Money figures come from the booking database only, never from analytics.",
     restricted: "Sections are shown according to your permissions.",
+    bookingSourcesTitle: "Where bookings came from (30 days)",
+    bookingSourcesNote: "Counted from real bookings; the source is the first page the guest opened (UTM tags / linking site). Bookings made before sources were recorded count as (direct).",
+    channelsTitle: "Visitor channels (GA4, 30 days)",
+    colSource: "Source / medium", colBookings: "Bookings", colConfirmed: "Confirmed", colRevenue: "Revenue", colChannel: "Channel",
+    colSessions: "Sessions", colUsers: "Users", noSources: "No bookings in this period yet",
   },
   cal: {
     title: "Booking calendar", day: "Day", week: "Week", month: "Month", custom: "Custom", unit: "Unit", camping: "Camping",
@@ -995,6 +1005,9 @@ const zhCN: AdminCmsMessages = {
     bookingStarted: "开始预订", checkoutStarted: "开始付款", searches: "搜索", bookingsCreated: "创建的预订", paymentSubmitted: "提交凭证",
     confirmedBookings: "已确认预订", revenue: "收入", foodOrders: "餐饮订单", fromGa4: "来自 GA4", ga4NotConnected: "尚未连接 GA4 Data API", ga4Error: "无法获取 GA4 数据", ga4Updated: "GA4 数据更新于 {time}",
     analyticsNote: "金额仅来自预订数据库，绝不使用分析数据。", restricted: "各区块按您的权限显示。",
+    bookingSourcesTitle: "预订来源（30 天）", bookingSourcesNote: "按实际预订统计；来源为客人打开的第一个页面（UTM / 来源网站）。开始记录之前的预订计为 (direct)。",
+    channelsTitle: "访客渠道（GA4，30 天）", colSource: "来源 / 媒介", colBookings: "预订", colConfirmed: "已确认", colRevenue: "收入", colChannel: "渠道",
+    colSessions: "会话", colUsers: "用户", noSources: "此期间暂无预订",
   },
   cal: {
     title: "预订日历", day: "日", week: "周", month: "月", custom: "自定义", unit: "住宿", camping: "露营区", tents: "{used}/{max} 顶帐篷",

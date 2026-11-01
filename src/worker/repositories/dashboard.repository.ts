@@ -1,3 +1,4 @@
+import { AttributionRepository, type SourceGroupRow } from "./attribution.repository.ts";
 import type { D1DatabaseLike } from "../env.ts";
 import { PAID_SQL } from "./booking.repository.ts";
 import { withFallback } from "./schema-fallback.ts";
@@ -154,6 +155,11 @@ export class DashboardRepository {
       .bind(fromDate, offset)
       .all<{ day: string; bookings: number; revenue: number }>();
     return results;
+  }
+
+  /** Bookings since `fromDate` grouped by where they came from (migration 0052). */
+  sourceGroups(fromDate: string, offset: string): Promise<SourceGroupRow[]> {
+    return new AttributionRepository(this.db).sourceGroups(fromDate, offset);
   }
 
   async analytics(fromDate: string, offset: string) {

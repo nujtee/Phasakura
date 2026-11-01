@@ -94,6 +94,14 @@ export interface DashboardDto {
     confirmedBookings: number;
     revenueSatang: number | null;
     foodOrders: number;
+    /** Sessions by GA4 default channel group (Organic Search, Direct, …); null without GA4 numbers. */
+    channels: { name: string; sessions: number; users: number }[] | null;
+    /**
+     * Bookings made in the period by where they came from (migration 0052, counted in D1): source / medium as GA4
+     * would name it; "(direct) / (none)" also holds bookings made before sources were recorded.
+     * revenueSatang = paid & confirmed only; null without money permission.
+     */
+    bookingSources: { source: string; medium: string; bookings: number; confirmed: number; revenueSatang: number | null }[];
   };
 }
 

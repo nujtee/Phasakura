@@ -127,6 +127,62 @@ export function DashboardPage() {
             )}
             <p className="adm-small adm-muted">{c.dash.analyticsNote} {c.dash.restricted}</p>
           </div>
+
+          <div className="adm-grid2 adm-grid2--gap">
+            <div className="adm-card" data-testid="booking-sources">
+              <h2 className="adm-h2">{c.dash.bookingSourcesTitle}</h2>
+              {data.analytics.bookingSources.length === 0 ? <p className="adm-muted">{c.dash.noSources}</p> : (
+                <div className="adm-tablewrap">
+                  <table className="adm-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">{c.dash.colSource}</th>
+                        <th scope="col" className="adm-num">{c.dash.colBookings}</th>
+                        <th scope="col" className="adm-num">{c.dash.colConfirmed}</th>
+                        {data.analytics.revenueSatang !== null && <th scope="col" className="adm-num">{c.dash.colRevenue}</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.analytics.bookingSources.map((r) => (
+                        <tr key={`${r.source}/${r.medium}`}>
+                          <td>{r.medium ? `${r.source} / ${r.medium}` : r.source}</td>
+                          <td className="adm-num">{num.format(r.bookings)}</td>
+                          <td className="adm-num">{num.format(r.confirmed)}</td>
+                          {r.revenueSatang !== null && <td className="adm-num">{baht(r.revenueSatang)}</td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="adm-small adm-muted">{c.dash.bookingSourcesNote}</p>
+            </div>
+            {data.analytics.channels && (
+              <div className="adm-card" data-testid="ga4-channels">
+                <h2 className="adm-h2">{c.dash.channelsTitle}</h2>
+                <div className="adm-tablewrap">
+                  <table className="adm-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">{c.dash.colChannel}</th>
+                        <th scope="col" className="adm-num">{c.dash.colSessions}</th>
+                        <th scope="col" className="adm-num">{c.dash.colUsers}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.analytics.channels.map((r) => (
+                        <tr key={r.name}>
+                          <td>{r.name}</td>
+                          <td className="adm-num">{num.format(r.sessions)}</td>
+                          <td className="adm-num">{num.format(r.users)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
     </section>

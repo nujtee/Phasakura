@@ -7,6 +7,7 @@ import type { StayActionsDto } from "./stay.ts";
 import type { GuestLineDto } from "./line-types.ts";
 import type { BalancePaymentDto, PaymentAccountSnapshotDto, PaymentDto, PaymentInstructionsDto } from "./payment-types.ts";
 import type { AppFeeDto } from "./credit-types.ts";
+import type { CampaignDto } from "./campaign.ts";
 
 export type BookingItemType = "HOUSE" | "VIP_TENT" | "OWN_TENT";
 export type BookingStatus = "PENDING" | "CONFIRMED" | "CHECKED_IN" | "CHECKED_OUT" | "CANCELLED" | "EXPIRED" | "NO_SHOW";
@@ -149,6 +150,8 @@ export interface CreateBookingRequest extends QuoteRequest {
   expectedTotalSatang: number;
   /** Random client key: retries/double clicks return the same booking. */
   idempotencyKey: string;
+  /** Where the visitor came from (first page of the tab, migration 0052); never personal data. */
+  attribution?: CampaignDto;
 }
 
 export interface NightPriceDto {

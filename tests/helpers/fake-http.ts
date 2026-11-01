@@ -48,6 +48,20 @@ export const fakeMeta = () => new FakeHttp(["graph.facebook.com"], (req) => ({ e
 export function fakeGoogle(numbers = { users: 321, views: 1234, events: { view_accommodation: 210, begin_booking: 40, begin_checkout: 25, search: 77, add_food: 12 } }) {
   return new FakeHttp(["oauth2.googleapis.com", "analyticsdata.googleapis.com"], (req) => {
     if (req.url.startsWith("https://oauth2.googleapis.com/token")) return { access_token: "ya29.fake-access-token", expires_in: 3600, token_type: "Bearer" };
+    const first = (req.json?.requests as { dimensions?: { name: string }[] }[] | undefined)?.[0];
+    if (first?.dimensions?.[0]?.name === "sessionDefaultChannelGroup") {
+      const rows = (list: [string[], number, number][]) => ({
+        rows: list.map(([dims, sessions, users]) => ({ dimensionValues: dims.map((value) => ({ value })), metricValues: [{ value: String(sessions) }, { value: String(users) }] })),
+      });
+      return {
+        reports: [
+          rows([[["Organic Search"], 180, 150], [["Direct"], 90, 80], [["Organic Social"], 60, 55]]),
+          rows([[["google", "organic"], 170, 140], [["(direct)", "(none)"], 90, 80], [["facebook.com", "referral"], 40, 38]]),
+          rows([[["/"], 200, 170], [["/th/booking"], 80, 70]]),
+          rows([[["mobile"], 250, 210], [["desktop"], 80, 75]]),
+        ],
+      };
+    }
     return {
       reports: [
         { rows: [{ metricValues: [{ value: String(numbers.users) }, { value: String(numbers.views) }] }] },
