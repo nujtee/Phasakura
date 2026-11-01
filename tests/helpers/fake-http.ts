@@ -71,6 +71,24 @@ export function fakeGoogle(numbers = { users: 321, views: 1234, events: { view_a
   });
 }
 
+/** A good AI answer for the marketing report (AI Marketing A3). */
+export const AI_SUMMARY = {
+  headline: "สัปดาห์นี้การจองมาจาก Facebook มากที่สุด",
+  summary: "มีการจอง 2 รายการ ยืนยันแล้วทั้งหมด ช่วง 30 วันข้างหน้ายังว่างมาก",
+  recommendations: [
+    { title: "ทำโปรช่วงวันว่าง", detail: "ลดราคาคืนวันธรรมดาในสองสัปดาห์หน้า", basedOn: "30 วันข้างหน้าจองแล้วต่ำ" },
+    { title: "ใส่ UTM ในลิงก์โพสต์", detail: "ใช้ utm_source=facebook ในทุกโพสต์", basedOn: "การจองครึ่งหนึ่งไม่รู้แหล่งที่มา" },
+  ],
+};
+
+/** Anthropic Messages API: answers with `answer` (JSON text) and token usage. */
+export function fakeAnthropic(answer: () => string = () => JSON.stringify(AI_SUMMARY)) {
+  return new FakeHttp(["api.anthropic.com"], (req) => ({
+    id: "msg_fake", type: "message", role: "assistant", model: String(req.json?.model ?? "claude-sonnet-5-5"),
+    content: [{ type: "text", text: answer() }], stop_reason: "end_turn", usage: { input_tokens: 4000, output_tokens: 800 },
+  }));
+}
+
 /** Resend e-mail API: accepts every message (id per message). */
 export const fakeResend = () => {
   let n = 0;

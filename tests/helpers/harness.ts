@@ -5,7 +5,7 @@ import type { PasswordResetDelivery } from "../../src/worker/services/password-l
 import type { SlipVerifier } from "../../src/worker/slip/slip-verifier.ts";
 import { makeEnv, type MemoryBucket } from "./fake-env.ts";
 import { FakeLine } from "./fake-line.ts";
-import { fakeGoogle, fakeMeta, fakeResend, FakePaypal, FakeZoho } from "./fake-http.ts";
+import { fakeAnthropic, fakeGoogle, fakeMeta, fakeResend, FakePaypal, FakeZoho } from "./fake-http.ts";
 import { resetZohoCache } from "../../src/worker/email/zoho.ts";
 import { resetPaypalTokens } from "../../src/worker/paypal/paypal-api.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
@@ -49,6 +49,8 @@ export class Harness {
   /** Fake Meta Graph API (Conversions API) and Google APIs (GA4 Data API). */
   readonly meta = fakeMeta();
   readonly google = fakeGoogle();
+  /** Fake AI provider (Anthropic Messages API) for the marketing report summary. */
+  readonly ai = fakeAnthropic();
   /** Fake Zoho Mail / Resend (e-mail) and PayPal REST API (migration 0023). */
   readonly resend = fakeResend();
   readonly zoho = new FakeZoho();
@@ -73,6 +75,7 @@ export class Harness {
       lineFetch: (input: string, init?: RequestInit) => this.line.fetch(input, init),
       metaFetch: (input: string, init?: RequestInit) => this.meta.fetch(input, init),
       googleFetch: (input: string, init?: RequestInit) => this.google.fetch(input, init),
+      aiFetch: (input: string, init?: RequestInit) => this.ai.fetch(input, init),
       emailFetch: (input: string, init: RequestInit) =>
         (/(^|\.)zoho\.com$/.test(new URL(input).hostname) ? this.zoho.fetch(input, init) : this.resend.fetch(input, init)),
       paypalFetch: (input: string, init: RequestInit) => this.paypal.fetch(input, init),

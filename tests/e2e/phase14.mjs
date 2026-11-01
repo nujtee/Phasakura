@@ -295,15 +295,23 @@ await check("admin: CAPI log shows Lead + Purchase sent; dashboard shows GA4 num
 await check("AI marketing report (migration 0053): switch on, write one, read it — numbers + GA4, no guest data; phone fits", async () => {
   await pa.goto(`${BASE}/en/admin/ai-marketing`);
   await pa.getByRole("heading", { name: "AI marketing report" }).waitFor();
-  await pa.getByTestId("aim-settings").getByRole("checkbox").check();
+  await pa.getByTestId("aim-settings").getByRole("checkbox", { name: "Write reports automatically (weekly + monthly)" }).check();
   await pa.getByText("Settings saved").waitFor();
+  // AI summary (A3): the key is a Cloudflare secret on the server; the page only says it is set.
+  await pa.getByTestId("aim-settings").getByRole("checkbox", { name: "Let the AI write a summary and recommendations" }).check();
+  await pa.getByTestId("aim-spend").getByText(/This month about/).waitFor();
+  assert(!(await pa.content()).includes("sk-ant"), "key shown");
   await pa.getByTestId("aim-generate").getByRole("button", { name: "Write report" }).click();
   await pa.getByTestId("aim-list").locator("tbody tr").first().waitFor();
   await pa.getByTestId("aim-list").locator("tbody a").first().click();
   await pa.getByTestId("aim-kpis").waitFor();
   await pa.getByTestId("aim-ga4").getByText("Organic Search").waitFor();
+  await pa.getByTestId("aim-ai").getByText("ทำโปรช่วงวันว่าง").waitFor();
   const text = await pa.locator(".aim-report").textContent();
   for (const pii of ["สมหญิง", "0891112222", "guest14@example.test", code]) assert(!text.includes(pii), `report shows ${pii}`);
+  const sent = JSON.stringify(await (await req.get(`${BASE}/__e2e/ai`)).json());
+  assert(sent.includes("api.anthropic.com/v1/messages"), "AI called");
+  for (const pii of ["สมหญิง", "0891112222", "guest14@example.test", code]) assert(!sent.includes(pii), `sent to the AI: ${pii}`);
   await pa.screenshot({ path: `${SHOTS}/p14-ai-marketing-report.png`, fullPage: true });
   await pa.setViewportSize({ width: 390, height: 844 });
   const width = await pa.evaluate(() => document.documentElement.scrollWidth);

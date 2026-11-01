@@ -3823,3 +3823,37 @@
     display: none !important;
   }
 }
+
+/* AI summary (AI Marketing A3) */
+.aim-ai {
+  border-left: 4px solid #7c3aed;
+}
+
+.aim-ai__note {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: #6d28d9;
+}
+
+.aim-recs {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 10px;
+}
+
+.aim-recs p {
+  margin: 2px 0 0;
+}
+
+.aim-budget {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.aim-budget .adm-field {
+  margin: 0;
+  max-width: 220px;
+}

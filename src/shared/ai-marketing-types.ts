@@ -148,6 +148,9 @@ export interface AiMarketingSettingsDto {
   notifyEmail: boolean;
   notifyLine: boolean;
   updatedAt: string | null;
+  /** Estimated AI cost this month (satang) and calls made — the budget stops the AI when spent ≥ budget. */
+  monthSpentSatang: number;
+  monthAiCalls: number;
 }
 
 export interface AiMarketingSettingsInput {
