@@ -69,12 +69,18 @@ export function ShapeView({ o, imageUrl, highlight, labelSize }: {
       {s.type === "path" && highlight === "selected" && (
         <polyline points={s.points.map((p) => p.join(",")).join(" ")} fill="none" stroke="#1565c0" strokeWidth={2} vectorEffect="non-scaling-stroke" />
       )}
-      {o.label && (
-        <text x={cx} y={o.kind === "LABEL" ? cy : cy + labelSize * 0.35} fontSize={o.kind === "LABEL" ? labelSize * 1.3 : labelSize} textAnchor="middle"
-          dominantBaseline={o.kind === "LABEL" ? "middle" : undefined} className="landscape-label" pointerEvents="none">
-          {o.label}
-        </text>
-      )}
+      {o.label && (() => {
+        // Size and colour set per object (percent of the normal size; a light text gets a dark halo).
+        const size = (o.kind === "LABEL" ? labelSize * 1.3 : labelSize) * ((o.labelSize ?? 100) / 100);
+        const color = o.labelColor ?? null;
+        return (
+          <text x={cx} y={o.kind === "LABEL" ? cy : cy + size * 0.35} fontSize={size} textAnchor="middle"
+            dominantBaseline={o.kind === "LABEL" ? "middle" : undefined} className="landscape-label" pointerEvents="none"
+            style={color ? { fill: color, stroke: isLight(color) ? "#212121" : "#fff" } : undefined}>
+            {o.label}
+          </text>
+        );
+      })()}
     </g>
   );
 }
@@ -117,4 +123,11 @@ function SymbolGlyph({ kind, x, y, size, fill, stroke, opacity }: {
     default:
       return <circle cx={x} cy={y} r={r} fill={fill ?? "#9e9e9e"} {...common} />;
   }
+}
+
+/** Light colour (#RRGGBB): its text halo is dark instead of white. */
+function isLight(hex: string): boolean {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 170;
 }

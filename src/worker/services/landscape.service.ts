@@ -233,7 +233,8 @@ export class LandscapeService {
     if (Object.keys(errors).length) throw new ValidationError(prefix(errors, "object"));
     const o = probe.objects[0] as LandscapeObject;
     await this.checkImages({ ...probe, objects: [o] } as LandscapeDocument);
-    const stored = { kind: o.kind, shape: o.shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId, typeId: o.typeId ?? null, look: o.look ?? null };
+    const stored = { kind: o.kind, shape: o.shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId, typeId: o.typeId ?? null, look: o.look ?? null,
+      labelSize: o.labelSize ?? null, labelColor: o.labelColor ?? null };
     const id = newId();
     const now = iso(this.clock());
     await this.db.batch([
