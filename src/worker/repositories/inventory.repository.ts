@@ -1,5 +1,6 @@
 import { withFallback } from "./schema-fallback.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
+import { storedDepositPercent, storedPaymentMode, type PaymentMode } from "../../shared/booking-rules.ts";
 
 export interface CampingSettingsRow {
   is_enabled: number;
@@ -14,8 +15,8 @@ export interface CampingSettingsRow {
   tarp_enabled: number;
   tarp_price_per_night_satang: number;
   max_tarps_per_night: number;
-  /** FULL | DEPOSIT_50 (migration 0025). */
-  payment_mode: "FULL" | "DEPOSIT_50";
+  /** FULL | DEPOSIT_50 / 60 / 70 (migrations 0025, 0054). */
+  payment_mode: PaymentMode;
 }
 
 export interface CampingTranslationRow {
@@ -102,16 +103,31 @@ export class InventoryRepository {
 
   async campingSettings(): Promise<CampingSettingsRow | null> {
     try {
-      return await this.db
-        .prepare(
-          `SELECT c.is_enabled, c.max_tents_per_night, c.price_per_adult_night_satang, c.child_free_under_age,
-                  c.max_guests_per_tent, c.cover_asset_id, m.object_key AS cover_key, m.width AS cover_width, m.height AS cover_height,
-                  c.tarp_enabled, c.tarp_price_per_night_satang, c.max_tarps_per_night, c.payment_mode
-             FROM camping_settings c
-             LEFT JOIN media_assets m ON m.id = c.cover_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'
-            WHERE c.id = 1`,
-        )
-        .first<CampingSettingsRow>();
+      return await withFallback(
+        // Deposit of 60 / 70 % (migration 0054) read back as DEPOSIT_60 / DEPOSIT_70.
+        () => this.db
+          .prepare(
+            `SELECT c.is_enabled, c.max_tents_per_night, c.price_per_adult_night_satang, c.child_free_under_age,
+                    c.max_guests_per_tent, c.cover_asset_id, m.object_key AS cover_key, m.width AS cover_width, m.height AS cover_height,
+                    c.tarp_enabled, c.tarp_price_per_night_satang, c.max_tarps_per_night,
+                    CASE WHEN c.payment_mode = 'DEPOSIT_50' AND c.deposit_percent IN (60, 70) THEN 'DEPOSIT_' || c.deposit_percent
+                         ELSE c.payment_mode END AS payment_mode
+               FROM camping_settings c
+               LEFT JOIN media_assets m ON m.id = c.cover_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'
+              WHERE c.id = 1`,
+          )
+          .first<CampingSettingsRow>(),
+        () => this.db
+          .prepare(
+            `SELECT c.is_enabled, c.max_tents_per_night, c.price_per_adult_night_satang, c.child_free_under_age,
+                    c.max_guests_per_tent, c.cover_asset_id, m.object_key AS cover_key, m.width AS cover_width, m.height AS cover_height,
+                    c.tarp_enabled, c.tarp_price_per_night_satang, c.max_tarps_per_night, c.payment_mode
+               FROM camping_settings c
+               LEFT JOIN media_assets m ON m.id = c.cover_asset_id AND m.status = 'ACTIVE' AND m.bucket = 'PUBLIC'
+              WHERE c.id = 1`,
+          )
+          .first<CampingSettingsRow>(),
+      );
     } catch (error) {
       // Deployed before migration 0021: camping keeps working, without the tarp option.
       if (!isMissingSchema(error)) throw error;
@@ -154,7 +170,13 @@ export class InventoryRepository {
            payment_mode = excluded.payment_mode`,
       )
       .bind(s.isEnabled ? 1 : 0, s.maxTentsPerNight, s.pricePerAdultNightSatang, s.childFreeUnderAge, s.maxGuestsPerTent,
-        s.coverAssetId, s.now, s.updatedBy, s.tarpEnabled ? 1 : 0, s.tarpPricePerNightSatang, s.maxTarpsPerNight, s.paymentMode);
+        s.coverAssetId, s.now, s.updatedBy, s.tarpEnabled ? 1 : 0, s.tarpPricePerNightSatang, s.maxTarpsPerNight,
+        storedPaymentMode(s.paymentMode as PaymentMode));
+  }
+
+  /** Camping deposit percentage (migration 0054): 60 / 70, or NULL for 50 % / full payment. */
+  campingDepositPercentStatement(mode: PaymentMode): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE camping_settings SET deposit_percent = ?1 WHERE id = 1").bind(storedDepositPercent(mode));
   }
 
   /** New tarp-area capacity for every night from `fromDate` (no per-night overrides); CHECK aborts if below areas sold. */

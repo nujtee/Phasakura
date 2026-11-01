@@ -65,7 +65,7 @@ export interface AdminUnitDto {
   unitType: UnitType;
   slug: string;
   basePriceSatang: number;
-  /** FULL, or DEPOSIT_50 = guests pay half of the stay online and the rest before check-in. */
+  /** FULL, or DEPOSIT_50 / 60 / 70 = guests pay that share of the stay online and the rest before check-in. */
   paymentMode: PaymentMode;
   /** Open deposit bookings of this house / VIP tent (single-unit reads only). */
   depositBookings?: DepositBookingsDto;
@@ -190,7 +190,7 @@ export interface CampingSettingsDto {
   tarpEnabled: boolean;
   tarpPricePerNightSatang: number;
   maxTarpsPerNight: number;
-  /** FULL, or DEPOSIT_50 = guests pay half of the stay online and the rest before check-in. */
+  /** FULL, or DEPOSIT_50 / 60 / 70 = guests pay that share of the stay online and the rest before check-in. */
   paymentMode: PaymentMode;
   /** Open deposit bookings of the camping ground (admin reads). */
   depositBookings?: DepositBookingsDto;
