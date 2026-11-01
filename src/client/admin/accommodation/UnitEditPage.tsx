@@ -14,6 +14,7 @@ import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, errorMessage, Field, fieldErrors } from "../ui.tsx";
 import { amenityCode, nextAmenityCode } from "./amenity-code.ts";
 import { AvailabilityGrid } from "./AvailabilityGrid.tsx";
+import { AiDraftBar } from "./AiDraftBar.tsx";
 import { TYPE_PATH, unitName, UnitStatusBadge } from "./UnitsPage.tsx";
 
 type Msg = { kind: "error" | "success"; text: string } | null;
@@ -203,6 +204,7 @@ function TranslationsForm({ unit, canEdit, onSaved, onError }: {
         ))}
       </div>
       <fieldset className="adm-fieldset" disabled={!canEdit} lang={lang} style={{ marginTop: 12 }}>
+        {canEdit && <AiDraftBar key={lang} unitId={unit.id} lang={lang} texts={draft} onDraft={(next) => setDraft({ ...draft, [lang]: next })} />}
         <Field label={t.acc.name} value={current.name} onChange={set("name")} maxLength={120} required={lang === "th"} />
         <Field label={t.acc.shortDescription} value={current.shortDescription ?? ""} onChange={set("shortDescription")} maxLength={300} />
         <div className="adm-field">

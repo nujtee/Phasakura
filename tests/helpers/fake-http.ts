@@ -81,11 +81,19 @@ export const AI_SUMMARY = {
   ],
 };
 
-/** Anthropic Messages API: answers with `answer` (JSON text) and token usage. */
-export function fakeAnthropic(answer: () => string = () => JSON.stringify(AI_SUMMARY)) {
+/** A good AI draft of a house's texts (Module B). */
+export const AI_UNIT_DRAFT = {
+  name: "Sakura House", shortDescription: "A quiet wooden house for four with a terrace.",
+  description: "Wake up to the hills and the smell of pine.\n\nThe house sleeps four, with a terrace and a small kitchen.",
+  seoTitle: "Sakura House | Phasakura", seoDescription: "Wooden house for up to four guests with a terrace and kitchen — book direct at Phasakura.",
+};
+
+/** Anthropic Messages API: the report summary, or a house draft when the copywriter prompt asks; token usage. */
+export function fakeAnthropic(answer?: (req: FakeRequest) => string) {
+  const reply = answer ?? ((req: FakeRequest) => JSON.stringify(/copywriter/.test(String(req.json?.system ?? "")) ? AI_UNIT_DRAFT : AI_SUMMARY));
   return new FakeHttp(["api.anthropic.com"], (req) => ({
     id: "msg_fake", type: "message", role: "assistant", model: String(req.json?.model ?? "claude-sonnet-5-5"),
-    content: [{ type: "text", text: answer() }], stop_reason: "end_turn", usage: { input_tokens: 4000, output_tokens: 800 },
+    content: [{ type: "text", text: reply(req) }], stop_reason: "end_turn", usage: { input_tokens: 4000, output_tokens: 800 },
   }));
 }
 

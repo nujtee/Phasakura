@@ -325,6 +325,21 @@ await check("AI marketing report (migration 0053): switch on, write one, read it
   await pa.setViewportSize({ width: 1440, height: 900 });
 });
 
+await check("AI content helper (Module B): draft the English texts of a house from the Thai — into the form, saved only with Save", async () => {
+  await pa.goto(`${BASE}/en/admin/houses/dev_house_01`);
+  await pa.getByRole("tab", { name: /English/ }).click();
+  const bar = pa.getByTestId("ai-draft");
+  await bar.getByRole("button", { name: "✨ Draft with AI" }).click();
+  await bar.getByText(/AI draft put in the fields/).waitFor();
+  const form = bar.locator("xpath=ancestor::form");
+  assert((await form.getByLabel("Name", { exact: true }).inputValue()) === "Sakura House", "name drafted");
+  const saved = (await (await req.get(`${BASE}/api/admin/accommodations/dev_house_01`)).json()).data.translations.en;
+  assert(!saved || saved.name !== "Sakura House", "not saved before Save");
+  await bar.getByRole("button", { name: "Put the previous texts back" }).click();
+  assert((await form.getByLabel("Name", { exact: true }).inputValue()) !== "Sakura House", "undo");
+  await pa.screenshot({ path: `${SHOTS}/p14-ai-draft.png` });
+});
+
 await check("ask everyone again → banner returns, trackers stop until a new choice", async () => {
   await pa.goto(`${BASE}/en/admin/settings-privacy`);
   await pa.getByRole("checkbox", { name: "Ask everyone again" }).check();
