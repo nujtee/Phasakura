@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { AvailabilityDto, PublicUnitDto } from "../../shared/accommodation-types.ts";
 import type { FoodCatalogueDto, PublicBookingDto, QuoteDto, QuoteRequest } from "../../shared/booking-types.ts";
+import { MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
 import { isIsoDate } from "../../shared/dates.ts";
 import { bookingLookupPath } from "../../shared/routes.ts";
@@ -211,6 +212,11 @@ export function BookingPage() {
 
   /** Add a house / VIP tent to the stays (guests: whoever the search asked for and no other stay holds yet). */
   function addUnit(unit: PublicUnitDto) {
+    // One booking holds at most MAX_STAYS_PER_BOOKING stays: say so here, not as an error later.
+    if (!picks.some((p) => pickKey(p) === unit.id) && picks.length >= MAX_STAYS_PER_BOOKING) {
+      setNotice(bt.errors.TOO_MANY_STAYS);
+      return;
+    }
     track({ name: "select_accommodation", item: unitItem(unit) });
     setPicks((cur) => [...cur.filter((p) => pickKey(p) !== unit.id), { kind: "UNIT", unit, ...guestsForNewUnit(unit, searched ?? query, cur) }]);
   }
@@ -506,6 +512,7 @@ export function BookingPage() {
         }} />
       {!availability && <p className="notice" role="note">{bt.searchFirst}</p>}
       <p className="lookup-link"><Link to={bookingLookupPath(locale)}>{bt.lookupLink} →</Link></p>
+      {notice === bt.errors.TOO_MANY_STAYS && <p role="alert" className="notice notice--error">{notice}</p>}
       {picks.length > 0 && (
         <StayPicks picks={picks} camping={data?.camping ?? null} campingName={data?.camping.name ?? t.accommodation.camping}
           onChange={setPicks} onEditCamping={goToCamping} onNext={() => start(picks)} />

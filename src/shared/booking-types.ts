@@ -55,8 +55,11 @@ export type StaySelection =
 /** Most extra beds one house / VIP tent can ever take (the owner's limit is at most this). */
 export const MAX_EXTRA_BEDS_PER_UNIT = 10;
 
-/** Most stays one booking can hold (houses / VIP tents + camping). */
-export const MAX_STAYS_PER_BOOKING = 10;
+/**
+ * Most stays one booking can hold (houses / VIP tents + camping). 20 = a whole small site for a group; with the
+ * longest stay (30 nights) the booking's batch stays well under D1's statement limit.
+ */
+export const MAX_STAYS_PER_BOOKING = 20;
 
 export interface FoodSelection {
   optionId: string;

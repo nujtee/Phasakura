@@ -118,7 +118,7 @@ function parseQuote(body: Record<string, unknown>, v: Validator): QuoteInput {
   if (!legacy) {
     if (body.stay !== undefined) v.errors.stay = "NOT_WITH_STAYS";
     if (!Array.isArray(body.stays) || body.stays.length === 0) v.errors.stays = "REQUIRED";
-    else if (body.stays.length > MAX_STAYS_PER_BOOKING) v.errors.stays = "TOO_MANY";
+    else if (body.stays.length > MAX_STAYS_PER_BOOKING) v.errors.stays = "TOO_MANY_STAYS";
     else {
       stays = body.stays.map((raw, i) => parseStay(raw, v, `stays.${i}`, true)).filter((x): x is StayInput => x !== null);
       // The booking's guests are the stays' guests (a total sent alongside must agree).

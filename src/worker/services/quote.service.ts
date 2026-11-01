@@ -236,7 +236,7 @@ export class QuoteService {
       maxAdvanceDays: settings.max_advance_days,
     });
     if (!input.stays.length) throw new ValidationError({ stays: "REQUIRED" });
-    if (input.stays.length > MAX_STAYS_PER_BOOKING) throw new ValidationError({ stays: "TOO_MANY" });
+    if (input.stays.length > MAX_STAYS_PER_BOOKING) throw new ValidationError({ stays: "TOO_MANY_STAYS" });
     // Each house / VIP tent once; camping once (its tents and tarp area are counted in it).
     const units = input.stays.flatMap((s, i) => (s.kind === "UNIT" ? [[s.unitId, i] as const] : []));
     const seen = new Map<string, number>();
