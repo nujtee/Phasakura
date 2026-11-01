@@ -182,6 +182,23 @@ export class AiMarketingRepository {
     await this.db.batch(statements);
   }
 
+  /** Active houses / VIP tents for the post helper (Module C): public facts, names in `lang` (Thai when missing). */
+  async activeUnits(lang: string): Promise<{ id: string; unit_type: "HOUSE" | "VIP_TENT"; slug: string; max_guests: number; base_price_satang: number; name: string; short_description: string | null }[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT u.id, u.unit_type, u.slug, u.max_guests, u.base_price_satang,
+                COALESCE(NULLIF(t.name, ''), th.name, u.unit_code) AS name, COALESCE(t.short_description, th.short_description) AS short_description
+           FROM accommodation_units u
+           LEFT JOIN accommodation_translations t ON t.unit_id = u.id AND t.language_code = ?1
+           LEFT JOIN accommodation_translations th ON th.unit_id = u.id AND th.language_code = 'th'
+          WHERE u.status = 'ACTIVE'
+          ORDER BY u.unit_type, u.sort_order, u.unit_code`,
+      )
+      .bind(lang)
+      .all<{ id: string; unit_type: "HOUSE" | "VIP_TENT"; slug: string; max_guests: number; base_price_satang: number; name: string; short_description: string | null }>();
+    return results;
+  }
+
   /** Active site users (not Center accounts) — the service keeps those who may read reports. */
   async activeUserIds(): Promise<string[]> {
     const { results } = await this.db

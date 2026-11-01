@@ -88,9 +88,21 @@ export const AI_UNIT_DRAFT = {
   seoTitle: "Sakura House | Phasakura", seoDescription: "Wooden house for up to four guests with a terrace and kitchen — book direct at Phasakura.",
 };
 
+/** Three post drafts (Module C), each with the {LINK} placeholder. */
+export const AI_POST_DRAFT = {
+  variants: [
+    { text: "หมอกมาแล้ว 🌫️ คืนวันธรรมดายังว่าง จองตรงที่ {LINK} #ผาซากุระ" },
+    { text: "Cool mornings, quiet nights. Book direct: {LINK}" },
+    { text: "บ้านไม้กลางเขา ว่างช่วงนี้ ดูรายละเอียด {LINK}" },
+  ],
+};
+
 /** Anthropic Messages API: the report summary, or a house draft when the copywriter prompt asks; token usage. */
 export function fakeAnthropic(answer?: (req: FakeRequest) => string) {
-  const reply = answer ?? ((req: FakeRequest) => JSON.stringify(/copywriter/.test(String(req.json?.system ?? "")) ? AI_UNIT_DRAFT : AI_SUMMARY));
+  const reply = answer ?? ((req: FakeRequest) => {
+    const system = String(req.json?.system ?? "");
+    return JSON.stringify(/copywriter/.test(system) ? AI_UNIT_DRAFT : /marketing posts/.test(system) ? AI_POST_DRAFT : AI_SUMMARY);
+  });
   return new FakeHttp(["api.anthropic.com"], (req) => ({
     id: "msg_fake", type: "message", role: "assistant", model: String(req.json?.model ?? "claude-sonnet-5-5"),
     content: [{ type: "text", text: reply(req) }], stop_reason: "end_turn", usage: { input_tokens: 4000, output_tokens: 800 },

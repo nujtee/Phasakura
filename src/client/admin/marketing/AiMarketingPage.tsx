@@ -10,6 +10,7 @@ import { apiGet, apiRequest, ApiError } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, errorMessage, useDateFormatter } from "../ui.tsx";
+import { PostHelper } from "./PostHelper.tsx";
 
 /** AI marketing report (migration 0053): list + settings + ask for one; one report in full. */
 export function AiMarketingPage({ reportId }: { reportId?: string }) {
@@ -54,6 +55,12 @@ function ReportList() {
   const [periodStart, setPeriodStart] = useState("");
   const [busy, setBusy] = useState(false);
   const [budget, setBudget] = useState("");
+  // From a report's quiet dates ("Draft a post"): ?from=YYYY-MM-DD&to=YYYY-MM-DD fills the post helper.
+  const [postDates] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    const ok = (v: string | null) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+    return { from: ok(q.get("from")), to: ok(q.get("to")) };
+  });
   const canEdit = can("marketing.edit");
   const canView = can("reports.view");
 
@@ -170,6 +177,8 @@ function ReportList() {
         )}
       </div>
 
+      {canEdit && <PostHelper initial={postDates} />}
+
       {!canView ? <Alert kind="info">{m.needsReports}</Alert> : (
         <div className="adm-card">
           <h2 className="adm-h2">{m.listTitle}</h2>
@@ -263,7 +272,7 @@ function Rows({ title, head, rows }: { title: string; head: string[]; rows: (str
 }
 
 function ReportView({ id }: { id: string }) {
-  const { t, href } = useAdmin();
+  const { t, href, can } = useAdmin();
   const m = useM();
   const n = useNumbers();
   const [r, setR] = useState<MarketingReportDto | null>(null);
@@ -351,7 +360,12 @@ function ReportView({ id }: { id: string }) {
           <div>
             <h3 className="adm-h3">{m.quietRuns}</h3>
             {x.forward.quietRuns.length === 0 ? <p className="adm-muted">{m.none}</p> : (
-              <ul>{x.forward.quietRuns.map((q) => <li key={q.from}>{n.date(q.from)} – {n.date(q.to)} · {format(m.nights, { n: q.nights })}</li>)}</ul>
+              <ul>{x.forward.quietRuns.map((q) => (
+                <li key={q.from}>
+                  {n.date(q.from)} – {n.date(q.to)} · {format(m.nights, { n: q.nights })}
+                  {can("marketing.edit") && <> · <Link to={`${href("ai-marketing")}?from=${q.from}&to=${q.to}#aim-post-h`}>{m.post.fromReport}</Link></>}
+                </li>
+              ))}</ul>
             )}
           </div>
           <div>

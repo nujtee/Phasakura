@@ -3901,3 +3901,68 @@
   background: #fff;
   font: inherit;
 }
+
+/* AI post helper (Module C) */
+.aim-post__quiet {
+  margin: 8px 0 12px;
+}
+
+.aim-post__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.aim-chip {
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.aim-chip[aria-pressed="true"] {
+  border-color: #7c3aed;
+  background: #f5f3ff;
+  color: #5b21b6;
+}
+
+.aim-post__result {
+  margin-top: 16px;
+}
+
+.aim-post__link {
+  word-break: break-all;
+}
+
+.aim-post__variants {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.aim-post__variants textarea {
+  width: 100%;
+  font: inherit;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+
+.aim-post__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.aim-post__label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
