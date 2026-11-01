@@ -10,7 +10,7 @@ import { MemoryBucket } from "../helpers/fake-env.ts";
 import { hashPassword } from "../../src/worker/security/password.ts";
 import { FakeLine } from "../helpers/fake-line.ts";
 import { signLineBody } from "../../src/worker/line/line-api.ts";
-import { fakeGoogle, fakeMeta, FakePaypal, FakeZoho } from "../helpers/fake-http.ts";
+import { fakeAnthropic, fakeGoogle, fakeMeta, FakePaypal, FakeZoho } from "../helpers/fake-http.ts";
 import { crc32, deflateSync } from "node:zlib";
 
 const PORT = Number(process.env.PORT ?? 4190);
@@ -48,7 +48,7 @@ const env = {
   LINE_CHANNEL_ACCESS_TOKEN: "e2e-channel-token", LINE_CHANNEL_SECRET: "e2e-channel-secret",
   // Meta Conversions API and GA4 Data API (the APIs themselves are the in-process fakes below).
   // E2E_NO_CAPI=1: no token, like a deployment before the secret is set (Phase 9 e2e checks that case).
-  META_CAPI_ACCESS_TOKEN: process.env.E2E_NO_CAPI === "1" ? undefined : "e2e-capi-secret-token", GA4_SERVICE_ACCOUNT_KEY: await serviceAccountKey(),
+  META_CAPI_ACCESS_TOKEN: process.env.E2E_NO_CAPI === "1" ? undefined : "e2e-capi-secret-token", GA4_SERVICE_ACCOUNT_KEY: await serviceAccountKey(), AI_API_KEY: "sk-ant-e2e-fake-key",
   // E-mail (Zoho Mail, US data centre) and PayPal Checkout (sandbox): the APIs are the in-process fakes below.
   ZOHO_CLIENT_ID: "1000.E2EZOHOCLIENT", ZOHO_CLIENT_SECRET: "e2e-zoho-secret", ZOHO_REFRESH_TOKEN: "1000.e2e-zoho-refresh",
   PAYPAL_CLIENT_ID: "e2e-paypal-client", PAYPAL_CLIENT_SECRET: "e2e-paypal-secret", PAYPAL_ENV: "sandbox",
@@ -68,6 +68,7 @@ const env = {
 const line = new FakeLine();
 const meta = fakeMeta();
 const google = fakeGoogle();
+const ai = fakeAnthropic();
 const zoho = new FakeZoho();
 const paypal = new FakePaypal();
 // Footer map: the site's place (Settings → Website) and a stand-in for the OpenStreetMap tile server.
@@ -104,7 +105,7 @@ const channexFetch = async (url: string, init?: RequestInit) => {
   }
   return json(404, { errors: { code: "not_found", title: "Not Found" } });
 };
-const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch, mapFetch, emailFetch: zoho.fetch, paypalFetch: paypal.fetch, channexFetch } });
+const app = createApp({ serviceOptions: { lineFetch: line.fetch, metaFetch: meta.fetch, googleFetch: google.fetch, aiFetch: ai.fetch, mapFetch, emailFetch: zoho.fetch, paypalFetch: paypal.fetch, channexFetch } });
 
 /** A real, decodable 256 × 256 PNG that looks a little like a map tile (land, two roads, a park). */
 function fakeTile(): Uint8Array<ArrayBuffer> {
@@ -154,6 +155,7 @@ async function debugRoute(path: string, method: string, body: Buffer | undefined
     return json(meta.requests.map((r) => ({ url: r.url, testEventCode: r.json?.test_event_code ?? null, hasToken: r.json?.access_token === "e2e-capi-secret-token", data: r.json?.data })));
   }
   if (path === "/__e2e/google" && method === "GET") return json(google.requests.map((r) => r.url));
+  if (path === "/__e2e/ai" && method === "GET") return json(ai.requests.map((r) => ({ url: r.url, body: r.body })));
   if (path === "/__e2e/email" && method === "GET") {
     // Zoho sends HTML only: `text` is that HTML without tags, for the suites' text checks.
     const plain = (html: string) => html.replace(/<(style|script)[\s\S]*?<\/\1>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "")

@@ -145,6 +145,39 @@ export class AiMarketingRepository {
       .run();
   }
 
+  /** The AI's part of a report (A3): summary JSON or the reason there is none. */
+  async setAi(id: string, a: { status: ReportStatus; summaryJson: string | null; model: string | null; error: string | null; now: string }): Promise<void> {
+    await this.db
+      .prepare("UPDATE marketing_reports SET status = ?2, ai_summary = ?3, ai_model = ?4, ai_error = ?5, updated_at = ?6 WHERE id = ?1")
+      .bind(id, a.status, a.summaryJson, a.model, a.error?.slice(0, 300) ?? null, a.now)
+      .run();
+  }
+
+  async insertUsage(u: {
+    id: string; reportId: string | null; provider: "ANTHROPIC"; model: string; inputTokens: number; outputTokens: number; costSatang: number;
+    status: "OK" | "FAILED" | "SKIPPED_BUDGET"; error: string | null; now: string;
+  }): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO ai_usage (id, report_id, provider, model, input_tokens, output_tokens, cost_satang, status, error, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+      )
+      .bind(u.id, u.reportId, u.provider, u.model.slice(0, 80), u.inputTokens, u.outputTokens, u.costSatang, u.status, u.error?.slice(0, 300) ?? null, u.now)
+      .run();
+  }
+
+  /** AI cost and calls since a local date (property time zone via `offset`): this month's spend for the budget. */
+  monthUsage(fromDate: string, offset: string): Promise<{ spent: number; calls: number }> {
+    return withFallback(
+      async () => (await this.db
+        .prepare(`SELECT COALESCE(SUM(cost_satang), 0) AS spent, COALESCE(SUM(CASE WHEN status <> 'SKIPPED_BUDGET' THEN 1 ELSE 0 END), 0) AS calls
+                    FROM ai_usage WHERE date(created_at, ?2) >= ?1`)
+        .bind(fromDate, offset)
+        .first<{ spent: number; calls: number }>()) ?? { spent: 0, calls: 0 },
+      async () => ({ spent: 0, calls: 0 }),
+    );
+  }
+
   // ------------------------------------------------------------------ numbers (read only)
 
   /** Bookings made between two dates (property time zone via `offset`), revenue by the day it was confirmed. */

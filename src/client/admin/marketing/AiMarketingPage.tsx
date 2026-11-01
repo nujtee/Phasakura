@@ -53,6 +53,7 @@ function ReportList() {
   const [kind, setKind] = useState<ReportKind>("WEEKLY");
   const [periodStart, setPeriodStart] = useState("");
   const [busy, setBusy] = useState(false);
+  const [budget, setBudget] = useState("");
   const canEdit = can("marketing.edit");
   const canView = can("reports.view");
 
@@ -60,22 +61,33 @@ function ReportList() {
     const controller = new AbortController();
     const fail = (err: unknown) => !controller.signal.aborted && setMessage({ kind: "error", text: errorMessage(t, err) });
     if (canView) apiGet<MarketingReportListItemDto[]>("/api/admin/ai-marketing/reports", controller.signal).then(setReports).catch(fail);
-    if (can("marketing.view")) apiGet<AiMarketingSettingsDto>("/api/admin/ai-marketing/settings", controller.signal).then(setSettings).catch(fail);
+    if (can("marketing.view")) {
+      apiGet<AiMarketingSettingsDto>("/api/admin/ai-marketing/settings", controller.signal)
+        .then((x) => { setSettings(x); setBudget(String(x.monthlyBudgetSatang / 100)); })
+        .catch(fail);
+    }
     return () => controller.abort();
   }, [t, can, canView]);
 
-  async function toggle(enabled: boolean) {
+  async function save(patch: Partial<Pick<AiMarketingSettingsDto, "enabled" | "aiEnabled" | "monthlyBudgetSatang">>) {
     if (!settings) return;
     const before = settings;
     setMessage(null);
-    setSettings({ ...settings, enabled }); // shown at once; put back if saving fails
+    setSettings({ ...settings, ...patch }); // shown at once; put back if saving fails
     try {
-      setSettings(await apiRequest<AiMarketingSettingsDto>("PUT", "/api/admin/ai-marketing/settings", { enabled }));
+      setSettings(await apiRequest<AiMarketingSettingsDto>("PUT", "/api/admin/ai-marketing/settings", patch));
       setMessage({ kind: "success", text: m.saved });
     } catch (err) {
       setSettings(before);
-      setMessage({ kind: "error", text: errorMessage(t, err) });
+      setMessage({ kind: "error", text: err instanceof ApiError && err.details.aiEnabled === "AI_KEY_MISSING" ? m.aiKeyMissing : errorMessage(t, err) });
     }
+  }
+
+  function saveBudget(e: FormEvent) {
+    e.preventDefault();
+    const baht = Number(budget);
+    if (!Number.isInteger(baht) || baht < 0 || baht > 100_000) return setMessage({ kind: "error", text: m.budgetInvalid });
+    void save({ monthlyBudgetSatang: baht * 100 });
   }
 
   async function generate(e: FormEvent) {
@@ -104,11 +116,27 @@ function ReportList() {
           <div className="adm-card" data-testid="aim-settings">
             <h2 className="adm-h2">{m.settingsTitle}</h2>
             <label className="adm-check">
-              <input type="checkbox" checked={settings.enabled} disabled={!canEdit} onChange={(e) => void toggle(e.target.checked)} />
+              <input type="checkbox" checked={settings.enabled} disabled={!canEdit} onChange={(e) => void save({ enabled: e.target.checked })} />
               {m.enabled}
             </label>
             <p className="adm-field__hint">{m.enabledHint}</p>
-            <p className="adm-small adm-muted">{m.aiSoon}</p>
+            <label className="adm-check">
+              <input type="checkbox" checked={settings.aiEnabled} disabled={!canEdit || (!settings.aiKeyConfigured && !settings.aiEnabled)}
+                onChange={(e) => void save({ aiEnabled: e.target.checked })} />
+              {m.aiEnabled}
+            </label>
+            <p className="adm-field__hint">{settings.aiKeyConfigured ? m.aiHint : m.aiKeyMissing}</p>
+            <form className="aim-budget" onSubmit={saveBudget} noValidate>
+              <div className="adm-field">
+                <label htmlFor="aim-budget">{m.budget}</label>
+                <input id="aim-budget" inputMode="numeric" value={budget} disabled={!canEdit} onChange={(e) => setBudget(e.target.value)} />
+              </div>
+              {canEdit && <Button type="submit" variant="secondary">{t.common.save}</Button>}
+            </form>
+            <p className="adm-small" data-testid="aim-spend">{format(m.spent, {
+              spent: n.baht(settings.monthSpentSatang), budget: n.baht(settings.monthlyBudgetSatang), calls: n.num(settings.monthAiCalls),
+            })}</p>
+            <p className="adm-small adm-muted">{format(m.modelLine, { model: settings.model ?? "—" })}</p>
           </div>
         )}
         {canEdit && canView && (
@@ -268,6 +296,32 @@ function ReportView({ id }: { id: string }) {
         <Kpi label={m.kpiLead} value={c.avgLeadDays === null ? "—" : format(m.days, { n: n.num(c.avgLeadDays) })} />
         <Kpi label={m.kpiStay} value={c.avgStayNights === null ? "—" : format(m.nights, { n: n.num(c.avgStayNights) })} />
       </ul>
+
+      {r.aiSummary ? (
+        <div className="adm-card aim-ai" data-testid="aim-ai">
+          <h2 className="adm-h2">{m.aiTitle}</h2>
+          <p className="aim-ai__note">{m.aiNote}</p>
+          <p className="aim-ai__headline"><strong>{r.aiSummary.headline}</strong></p>
+          <p>{r.aiSummary.summary}</p>
+          {r.aiSummary.recommendations.length > 0 && (
+            <>
+              <h3 className="adm-h3">{m.aiRecs}</h3>
+              <ol className="aim-recs">
+                {r.aiSummary.recommendations.map((rec, k) => (
+                  <li key={k}>
+                    <strong>{rec.title}</strong>
+                    <p>{rec.detail}</p>
+                    {rec.basedOn && <p className="adm-small adm-muted">{format(m.aiBasedOn, { why: rec.basedOn })}</p>}
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+          {r.aiModel && <p className="adm-small adm-muted">{format(m.modelLine, { model: r.aiModel })}</p>}
+        </div>
+      ) : r.aiError ? (
+        <Alert kind="info">{r.aiError === "BUDGET_REACHED" ? m.aiBudgetReached : format(m.aiFailed, { reason: r.aiError })}</Alert>
+      ) : null}
 
       <div className="adm-card">
         <h2 className="adm-h2">{m.insightsTitle}</h2>

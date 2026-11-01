@@ -97,6 +97,8 @@ export interface Env {
   GA4_SERVICE_ACCOUNT_KEY?: string;
   /** AI provider API key for the marketing report's summary (AI Marketing A3). Cloudflare Secret; never stored or returned. */
   AI_API_KEY?: string;
+  /** Optional plain var: AI model id for the marketing report (default claude-sonnet-5-5). */
+  AI_MODEL?: string;
   /** Graph API version for CAPI (plain var, e.g. "v23.0"). */
   META_GRAPH_API_VERSION?: string;
   /** Workers Rate Limiting bindings (Phase 14). Missing in local dev / tests unless configured. */

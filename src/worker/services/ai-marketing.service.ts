@@ -15,6 +15,9 @@ import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-cont
 import type { AuthorizationService } from "./authorization.service.ts";
 import type { Ga4DashboardResult } from "./ga4-report.service.ts";
 import type { SecurityLogService } from "./security-log.service.ts";
+import { aiInput, parseSummary, SYSTEM_PROMPT, userPrompt } from "../ai-marketing/ai-writer.ts";
+import { anthropicMessage, costSatang, DEFAULT_AI_MODEL } from "../ai-marketing/llm-client.ts";
+import type { FetchLike } from "../line/line-api.ts";
 
 const LIST_LIMIT = 60;
 const DAY_MS = 86_400_000;
@@ -31,7 +34,8 @@ function parse<T>(json: string, fallback: T): T {
 /**
  * AI marketing report (migration 0053, Module A). Weekly (Monday 07:00) and monthly (the 1st, 07:00) reports when
  * switched on; staff may also ask for one. Reading needs `reports.view` (money); settings / asking need `marketing.edit`.
- * PR A2: numbers + fixed-rule findings. The AI summary arrives in A3.
+ * Numbers + fixed-rule findings (A2); when the AI is switched on, the key is set and the month's budget allows,
+ * the AI writes a summary and recommendations from the numbers only (A3).
  */
 export class AiMarketingService {
   constructor(
@@ -42,7 +46,7 @@ export class AiMarketingService {
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
     private readonly ga4: ((from: string, to: string) => Promise<Ga4DashboardResult>) | null,
-    private readonly config: { aiKeyConfigured: boolean },
+    private readonly config: { aiKeyConfigured: boolean; apiKey?: string | null; model?: string | null; fetch?: FetchLike },
   ) {}
 
   private async zone() {
@@ -52,21 +56,29 @@ export class AiMarketingService {
     return { tz, now, today: todayIn(tz, now), local: localDateTimeIn(tz, now), offset: `${minutes >= 0 ? "+" : ""}${minutes} minutes` };
   }
 
-  private settingsDto(s: SettingsRow): AiMarketingSettingsDto {
+  private async settingsDto(s: SettingsRow): Promise<AiMarketingSettingsDto> {
+    const z = await this.zone();
+    const usage = await this.repo.monthUsage(`${z.today.slice(0, 7)}-01`, z.offset);
     return {
-      enabled: s.is_enabled === 1, aiEnabled: s.ai_enabled === 1, aiKeyConfigured: this.config.aiKeyConfigured, model: s.model,
+      enabled: s.is_enabled === 1, aiEnabled: s.ai_enabled === 1, aiKeyConfigured: this.config.aiKeyConfigured, model: this.model(),
       monthlyBudgetSatang: s.monthly_budget_satang, notifyEmail: s.notify_email === 1, notifyLine: s.notify_line === 1, updatedAt: s.updated_at,
+      monthSpentSatang: usage.spent, monthAiCalls: usage.calls,
     };
+  }
+
+  private model(): string {
+    return this.config.model?.trim() || DEFAULT_AI_MODEL;
   }
 
   async settings(actor: AuthContext, meta: RequestMeta): Promise<AiMarketingSettingsDto> {
     await this.authz.requirePermission(actor, "marketing.view", meta);
-    return this.settingsDto(await this.repo.settings());
+    return await this.settingsDto(await this.repo.settings());
   }
 
   async updateSettings(actor: AuthContext, input: AiMarketingSettingsInput, meta: RequestMeta): Promise<AiMarketingSettingsDto> {
     await this.authz.requirePermission(actor, "marketing.edit", meta);
     const before = await this.repo.settings();
+    if (input.aiEnabled && !this.config.aiKeyConfigured) throw new ValidationError({ aiEnabled: "AI_KEY_MISSING" });
     const next = {
       is_enabled: input.enabled === undefined ? before.is_enabled : input.enabled ? 1 : 0,
       ai_enabled: input.aiEnabled === undefined ? before.ai_enabled : input.aiEnabled ? 1 : 0,
@@ -81,7 +93,7 @@ export class AiMarketingService {
       notifyEmail: s.notify_email === 1, notifyLine: s.notify_line === 1,
     });
     await this.log.auditStatement(actor.userId, "UPDATE_AI_MARKETING_SETTINGS", "ai_marketing", null, pick(before), pick(next), meta).run();
-    return this.settingsDto(await this.repo.settings());
+    return await this.settingsDto(await this.repo.settings());
   }
 
   private listItem(r: ReportRow): MarketingReportListItemDto {
@@ -150,9 +162,47 @@ export class AiMarketingService {
       metricsJson: JSON.stringify(metrics), insightsJson: JSON.stringify(found), aiSummary: null, aiModel: null, aiError: null,
       trigger, userId, now: iso(z.now),
     });
+    const saved = await this.repo.findPeriod(kind, period.start);
+    if (saved) await this.writeAi(saved.id, metrics, found, z);
     const row = await this.repo.findPeriod(kind, period.start);
     if (!row) throw new HttpError(500, "REPORT_NOT_SAVED", "The report could not be saved");
     return row;
+  }
+
+  /**
+   * The AI's summary of a saved report (A3): only when switched on with a key, and while this month's estimated cost
+   * is under the budget. Every call (and every call skipped for the budget) is recorded. Never throws: without an
+   * answer the report simply stays "ready without AI" with the reason.
+   */
+  private async writeAi(reportId: string, metrics: MarketingMetrics, found: InsightDto[], z: Awaited<ReturnType<AiMarketingService["zone"]>>): Promise<void> {
+    const s = await this.repo.settings();
+    const apiKey = this.config.apiKey?.trim();
+    if (s.ai_enabled !== 1 || !apiKey) return;
+    const model = this.model();
+    const now = () => iso(this.clock());
+    try {
+      const usage = await this.repo.monthUsage(`${z.today.slice(0, 7)}-01`, z.offset);
+      if (usage.spent >= s.monthly_budget_satang) {
+        await this.repo.insertUsage({ id: newId(), reportId, provider: "ANTHROPIC", model, inputTokens: 0, outputTokens: 0, costSatang: 0, status: "SKIPPED_BUDGET", error: null, now: now() });
+        await this.repo.setAi(reportId, { status: "READY_NO_AI", summaryJson: null, model: null, error: "BUDGET_REACHED", now: now() });
+        return;
+      }
+      const res = await anthropicMessage({
+        apiKey, model, system: SYSTEM_PROMPT, user: userPrompt(aiInput(metrics, found)), maxTokens: 1500, fetch: this.config.fetch,
+      });
+      const cost = costSatang(res.inputTokens, res.outputTokens);
+      const summary = res.ok ? parseSummary(res.text) : null;
+      const error = !res.ok ? res.error : summary ? null : "UNREADABLE_ANSWER";
+      await this.repo.insertUsage({
+        id: newId(), reportId, provider: "ANTHROPIC", model: res.ok ? res.model : model, inputTokens: res.inputTokens, outputTokens: res.outputTokens,
+        costSatang: cost, status: summary ? "OK" : "FAILED", error, now: now(),
+      });
+      await this.repo.setAi(reportId, summary
+        ? { status: "READY", summaryJson: JSON.stringify(summary), model: res.ok ? res.model : model, error: null, now: now() }
+        : { status: "READY_NO_AI", summaryJson: null, model: null, error, now: now() });
+    } catch (e) {
+      console.error(JSON.stringify({ level: "error", message: "ai_marketing_summary_failed", error: String(e).slice(0, 200) }));
+    }
   }
 
   /**

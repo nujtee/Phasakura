@@ -168,6 +168,8 @@ export interface ServiceOptions {
   metaFetch?: FetchLike;
   /** Google APIs (GA4 Data API, OAuth) — tests use a fake. */
   googleFetch?: FetchLike;
+  /** AI provider (Anthropic Messages API) for the marketing report summary — tests use a fake. */
+  aiFetch?: FetchLike;
   /** Tests / e2e: fetch used for OpenStreetMap map tiles. */
   mapFetch?: FetchLike;
   /** Tests / e2e: fetch used for the e-mail API (Zoho Mail / Resend). */
@@ -357,7 +359,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
     content,
     reports: new ReportService(new ReportRepository(db), inventory, authorization, log, clock),
     aiMarketing: new AiMarketingService(new AiMarketingRepository(db), new AttributionRepository(db), inventory, authorization, log, clock,
-      (from, to) => ga4.range(from, to), { aiKeyConfigured: !!env.AI_API_KEY?.trim() }),
+      (from, to) => ga4.range(from, to), { aiKeyConfigured: !!env.AI_API_KEY?.trim(), apiKey: env.AI_API_KEY ?? null, model: env.AI_MODEL ?? null, fetch: options.aiFetch }),
     line,
     notifications,
     fonts: new FontService(db, fontRepo, media, mediaRepo, authorization, log, clock, env.PUBLIC_MEDIA_BASE_URL),
