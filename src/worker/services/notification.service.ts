@@ -12,6 +12,8 @@ import type { ReportRepository } from "../repositories/report.repository.ts";
 import { addMs, iso, type Clock } from "./auth-context.ts";
 import type { CreditRepository } from "../repositories/credit.repository.ts";
 import { CREDIT_NOTICE_TYPES, creditNoticePath, renderCreditNotice } from "../credit/credit-notices.ts";
+import { MARKETING_REPORT_NOTICE, renderReportNotice, reportNoticeLineText } from "../ai-marketing/report-notice.ts";
+import { AiMarketingRepository } from "../repositories/ai-marketing.repository.ts";
 import { creditLineText } from "../credit/credit-messages.ts";
 
 /** Slip review notices wait this long so an automatic verification can settle the slip first. */
@@ -160,7 +162,7 @@ export class NotificationService {
     const due = await this.repo.due(now, limit);
     if (!due.length) return summary;
     const settings = await this.repo.settings();
-    const ctx = new RenderContext(this.repo, this.reports, this.siteInfo, this.config.linkBase, settings, now, this.credits);
+    const ctx = new RenderContext(this.repo, this.reports, this.siteInfo, this.config.linkBase, settings, now, this.credits, new AiMarketingRepository(this.db));
     for (const row of due) {
       const outcome = await this.deliver(row, settings, ctx).catch((error: unknown) => {
         console.error(JSON.stringify({ level: "error", message: "notification_dispatch_failed", id: row.id, error: String(error).slice(0, 200) }));
@@ -176,7 +178,7 @@ export class NotificationService {
     const row = await this.repo.notification(id);
     if (!row) return null;
     const settings = await this.repo.settings();
-    await this.deliver(row, settings, new RenderContext(this.repo, this.reports, this.siteInfo, this.config.linkBase, settings, iso(this.clock()), this.credits));
+    await this.deliver(row, settings, new RenderContext(this.repo, this.reports, this.siteInfo, this.config.linkBase, settings, iso(this.clock()), this.credits, new AiMarketingRepository(this.db)));
     return this.repo.notification(id);
   }
 
@@ -261,6 +263,8 @@ class RenderContext {
     private readonly settings: LineSettingsRow | null,
     private readonly now: string,
     private readonly credits: CreditRepository | null = null,
+    /** Marketing reports (AI Marketing A4). */
+    private readonly marketing: AiMarketingRepository | null = null,
   ) {}
 
   private site(lang: string): Promise<SiteInfo> {
@@ -298,6 +302,14 @@ class RenderContext {
       const m = await renderCreditNotice(this.credits, row.notification_type, p, lang);
       if ("skip" in m) return m;
       return text(creditLineText(m, this.link(lang, (l) => `/${l.path}/admin/${creditNoticePath(m)}`)));
+    }
+
+    // Marketing report ready (AI Marketing A4).
+    if (row.notification_type === MARKETING_REPORT_NOTICE) {
+      if (!this.marketing) return { skip: "NOT_RELEVANT" };
+      const n = await renderReportNotice(this.marketing, p, lang);
+      if ("skip" in n) return n;
+      return text(reportNoticeLineText(n, this.link(lang, (l) => `/${l.path}/admin/${n.path}`)));
     }
 
     switch (row.notification_type) {

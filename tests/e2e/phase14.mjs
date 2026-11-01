@@ -300,6 +300,11 @@ await check("AI marketing report (migration 0053): switch on, write one, read it
   // AI summary (A3): the key is a Cloudflare secret on the server; the page only says it is set.
   await pa.getByTestId("aim-settings").getByRole("checkbox", { name: "Let the AI write a summary and recommendations" }).check();
   await pa.getByTestId("aim-spend").getByText(/This month about/).waitFor();
+  // Notices (A4): e-mail / own LINE when an automatic report is ready.
+  await pa.getByTestId("aim-settings").getByRole("checkbox", { name: "E-mail" }).check();
+  await pa.getByTestId("aim-settings").getByRole("checkbox", { name: "Own LINE" }).check();
+  const saved = (await (await req.get(`${BASE}/api/admin/ai-marketing/settings`)).json()).data;
+  assert(saved.notifyEmail === true && saved.notifyLine === true, `notify ${JSON.stringify(saved)}`);
   assert(!(await pa.content()).includes("sk-ant"), "key shown");
   await pa.getByTestId("aim-generate").getByRole("button", { name: "Write report" }).click();
   await pa.getByTestId("aim-list").locator("tbody tr").first().waitFor();

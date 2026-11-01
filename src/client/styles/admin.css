@@ -3857,3 +3857,14 @@
   margin: 0;
   max-width: 220px;
 }
+
+.aim-notify {
+  border: 0;
+  margin: 12px 0;
+  padding: 0;
+}
+
+.aim-notify legend {
+  font-weight: 600;
+  margin-bottom: 4px;
+}

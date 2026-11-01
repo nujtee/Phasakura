@@ -23,6 +23,8 @@ import { REVIEW_DELAY_MS, RETRY_DELAYS_MIN, type SiteInfo } from "./notification
 import type { SecurityLogService } from "./security-log.service.ts";
 import type { CreditRepository } from "../repositories/credit.repository.ts";
 import { CREDIT_NOTICE_TYPES, creditNoticePath, renderCreditNotice } from "../credit/credit-notices.ts";
+import { MARKETING_REPORT_NOTICE, renderReportNotice } from "../ai-marketing/report-notice.ts";
+import { AiMarketingRepository } from "../repositories/ai-marketing.repository.ts";
 
 const LEASE_MS = 2 * 60_000;
 /** Older than this and still not sent: no longer useful. */
@@ -417,6 +419,14 @@ export class EmailService {
           const url = this.link(lang, (l) => `/${l.path}/admin/${creditNoticePath(m)}`);
           return url ? { label: m.linkLabel, url } : null;
         })() });
+    }
+
+    // Marketing report ready (AI Marketing A4): totals + the link to the full report.
+    if (row.notification_type === MARKETING_REPORT_NOTICE) {
+      const n = await renderReportNotice(new AiMarketingRepository(this.db), payload, lang);
+      if ("skip" in n) return n;
+      const url = this.link(lang, (l) => `/${l.path}/admin/${n.path}`);
+      return renderEmail({ lang, subject: n.subject, title: n.title, body: n.body, siteName: site.name, button: url ? { label: n.linkLabel, url } : null });
     }
 
     switch (row.notification_type as EmailType) {

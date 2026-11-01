@@ -69,7 +69,7 @@ function ReportList() {
     return () => controller.abort();
   }, [t, can, canView]);
 
-  async function save(patch: Partial<Pick<AiMarketingSettingsDto, "enabled" | "aiEnabled" | "monthlyBudgetSatang">>) {
+  async function save(patch: Partial<Pick<AiMarketingSettingsDto, "enabled" | "aiEnabled" | "monthlyBudgetSatang" | "notifyEmail" | "notifyLine">>) {
     if (!settings) return;
     const before = settings;
     setMessage(null);
@@ -120,6 +120,18 @@ function ReportList() {
               {m.enabled}
             </label>
             <p className="adm-field__hint">{m.enabledHint}</p>
+            <fieldset className="aim-notify" disabled={!canEdit}>
+              <legend>{m.notifyTitle}</legend>
+              <label className="adm-check">
+                <input type="checkbox" checked={settings.notifyEmail} onChange={(e) => void save({ notifyEmail: e.target.checked })} />
+                {m.notifyEmail}
+              </label>
+              <label className="adm-check">
+                <input type="checkbox" checked={settings.notifyLine} onChange={(e) => void save({ notifyLine: e.target.checked })} />
+                {m.notifyLine}
+              </label>
+              <p className="adm-field__hint">{m.notifyHint}</p>
+            </fieldset>
             <label className="adm-check">
               <input type="checkbox" checked={settings.aiEnabled} disabled={!canEdit || (!settings.aiKeyConfigured && !settings.aiEnabled)}
                 onChange={(e) => void save({ aiEnabled: e.target.checked })} />
