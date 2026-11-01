@@ -46,7 +46,11 @@ export class AiMarketingService {
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
     private readonly ga4: ((from: string, to: string) => Promise<Ga4DashboardResult>) | null,
-    private readonly config: { aiKeyConfigured: boolean; apiKey?: string | null; model?: string | null; fetch?: FetchLike },
+    private readonly config: {
+      aiKeyConfigured: boolean; apiKey?: string | null; model?: string | null; fetch?: FetchLike;
+      /** Does this user (now) hold reports.view? Notices go only to people who may read the report (A4). */
+      mayReadReports?: (userId: string) => Promise<boolean>;
+    },
   ) {}
 
   private async zone() {
@@ -206,6 +210,26 @@ export class AiMarketingService {
   }
 
   /**
+   * "Report ready" (A4), for reports the cron wrote: e-mail and / or the user's own LINE, as switched on in the
+   * settings, to every active user who may read reports. Best effort — a failure never undoes the report.
+   */
+  private async notify(reportId: string, now: Date): Promise<number> {
+    try {
+      const s = await this.repo.settings();
+      const channels = { email: s.notify_email === 1, line: s.notify_line === 1 };
+      if ((!channels.email && !channels.line) || !this.config.mayReadReports) return 0;
+      const readers: string[] = [];
+      for (const id of await this.repo.activeUserIds()) if (await this.config.mayReadReports(id)) readers.push(id);
+      const statements = readers.flatMap((id) => this.repo.noticeStatements(reportId, id, channels, iso(now)));
+      if (statements.length) await this.repo.batch(statements);
+      return readers.length;
+    } catch (e) {
+      console.error(JSON.stringify({ level: "error", message: "marketing_report_notice_failed", error: String(e).slice(0, 200) }));
+      return 0;
+    }
+  }
+
+  /**
    * Cron (every 5 minutes): when switched on and it is 07:00 or later (property time), writes last week's report
    * (and on / after the 1st, last month's) if it is not there yet. Returns how many reports it wrote.
    */
@@ -218,7 +242,8 @@ export class AiMarketingService {
     for (const kind of ["WEEKLY", "MONTHLY"] as const) {
       const period = lastPeriod(kind, z.today);
       if (await this.repo.findPeriod(kind, period.start)) continue;
-      await this.write(kind, period, "CRON", null, z);
+      const row = await this.write(kind, period, "CRON", null, z);
+      await this.notify(row.id, z.now);
       written += 1;
     }
     return written;

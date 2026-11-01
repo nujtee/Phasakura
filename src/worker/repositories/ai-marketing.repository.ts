@@ -1,5 +1,5 @@
 import type { ReportKind, ReportStatus } from "../../shared/ai-marketing-types.ts";
-import type { D1DatabaseLike } from "../env.ts";
+import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { withFallback } from "./schema-fallback.ts";
 
 /**
@@ -176,6 +176,50 @@ export class AiMarketingRepository {
         .first<{ spent: number; calls: number }>()) ?? { spent: 0, calls: 0 },
       async () => ({ spent: 0, calls: 0 }),
     );
+  }
+
+  async batch(statements: D1PreparedStatementLike[]): Promise<void> {
+    await this.db.batch(statements);
+  }
+
+  /** Active site users (not Center accounts) — the service keeps those who may read reports. */
+  async activeUserIds(): Promise<string[]> {
+    const { results } = await this.db
+      // Not Center accounts (siteUser() in center.repository: ids starting with "center_").
+      .prepare("SELECT u.id FROM users u WHERE u.status = 'ACTIVE' AND substr(u.id, 1, 7) <> 'center_' ORDER BY u.id")
+      .all<{ id: string }>();
+    return results.map((r) => r.id);
+  }
+
+  /**
+   * "Report ready" notices for one user (A4): an e-mail to the account address (when e-mail notifications are on)
+   * and a LINE message to the user's own linked LINE (when LINE is on). INSERT OR IGNORE: once per report and user.
+   */
+  noticeStatements(reportId: string, userId: string, channels: { email: boolean; line: boolean }, now: string): D1PreparedStatementLike[] {
+    const json = JSON.stringify({ reportId });
+    const key = `MARKETING_REPORT:${reportId}:user:${userId}`;
+    const out: D1PreparedStatementLike[] = [];
+    if (channels.email) {
+      out.push(this.db
+        .prepare(
+          `INSERT OR IGNORE INTO email_logs (id, notification_type, idempotency_key, language_code, recipient, payload_json, scheduled_for, created_at, updated_at)
+           SELECT lower(hex(randomblob(16))), 'MARKETING_REPORT', ?1, COALESCE(u.preferred_language, 'th'), 'user:' || u.id, ?2, ?3, ?3, ?3
+             FROM users u WHERE u.id = ?4 AND u.status = 'ACTIVE'
+              AND EXISTS (SELECT 1 FROM email_settings s WHERE s.id = 1 AND s.enabled = 1)`,
+        )
+        .bind(key, json, now, userId));
+    }
+    if (channels.line) {
+      out.push(this.db
+        .prepare(
+          `INSERT OR IGNORE INTO notification_logs (id, channel, notification_type, idempotency_key, language_code, recipient, payload_json, scheduled_for, created_at, updated_at)
+           SELECT lower(hex(randomblob(16))), 'LINE', 'MARKETING_REPORT', ?1, COALESCE(u.preferred_language, 'th'), 'user:' || u.id, ?2, ?3, ?3, ?3
+             FROM users u JOIN user_line_links l ON l.user_id = u.id
+            WHERE u.id = ?4 AND u.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM line_settings s WHERE s.id = 1 AND s.enabled = 1)`,
+        )
+        .bind(key, json, now, userId));
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------ numbers (read only)

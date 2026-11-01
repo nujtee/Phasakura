@@ -97,7 +97,7 @@ const th = {
       NEW_BOOKING: "การจองใหม่", BOOKING_MOVE: "เลื่อนวันเข้าพัก", PAYMENT_REVIEW: "การชำระเงินรอตรวจ", PAYMENT_CONFIRMED: "ชำระเงินแล้ว",
       GUEST_BOOKING_CREATED: "ลูกค้า: ได้รับการจอง", GUEST_CONFIRMED: "ลูกค้า: ยืนยันการจอง", GUEST_PAYMENT_REJECTED: "ลูกค้า: การชำระเงินไม่ผ่าน",
       GUEST_CANCELLED: "ลูกค้า: ยกเลิกการจอง", TEST: "ทดสอบ",
-      CREDIT_LOW: "เครดิตใกล้หมด", CREDIT_EMPTY: "เครดิตหมด", CREDIT_TOPUP_REQUEST: "คำขอเติมเครดิต", CREDIT_TOPUP_RESULT: "ผลการเติมเครดิต",
+      CREDIT_LOW: "เครดิตใกล้หมด", CREDIT_EMPTY: "เครดิตหมด", CREDIT_TOPUP_REQUEST: "คำขอเติมเครดิต", CREDIT_TOPUP_RESULT: "ผลการเติมเครดิต", MARKETING_REPORT: "รายงานการตลาดพร้อมแล้ว",
     },
     statuses: { PENDING: "รอส่ง", SENT: "ส่งแล้ว", FAILED: "ไม่สำเร็จ", CANCELLED: "ข้าม/ยกเลิก" },
     reasons: {
@@ -221,7 +221,7 @@ const en: AdminNotifyMessages = {
       NEW_BOOKING: "New booking", BOOKING_MOVE: "Stay moved", PAYMENT_REVIEW: "Payment to review", PAYMENT_CONFIRMED: "Paid",
       GUEST_BOOKING_CREATED: "Guest: booking received", GUEST_CONFIRMED: "Guest: booking confirmed", GUEST_PAYMENT_REJECTED: "Guest: payment declined",
       GUEST_CANCELLED: "Guest: booking cancelled", TEST: "Test",
-      CREDIT_LOW: "Credits low", CREDIT_EMPTY: "Credits used up", CREDIT_TOPUP_REQUEST: "Top-up request", CREDIT_TOPUP_RESULT: "Top-up result",
+      CREDIT_LOW: "Credits low", CREDIT_EMPTY: "Credits used up", CREDIT_TOPUP_REQUEST: "Top-up request", CREDIT_TOPUP_RESULT: "Top-up result", MARKETING_REPORT: "Marketing report ready",
     },
     statuses: { PENDING: "Waiting", SENT: "Sent", FAILED: "Failed", CANCELLED: "Skipped" },
     reasons: {
@@ -343,7 +343,7 @@ const zhCN: AdminNotifyMessages = {
       NEW_BOOKING: "新预订", BOOKING_MOVE: "改期", PAYMENT_REVIEW: "待审核付款", PAYMENT_CONFIRMED: "已付款",
       GUEST_BOOKING_CREATED: "客人：已收到预订", GUEST_CONFIRMED: "客人：预订确认", GUEST_PAYMENT_REJECTED: "客人：付款未通过",
       GUEST_CANCELLED: "客人：预订取消", TEST: "测试",
-      CREDIT_LOW: "积分不足", CREDIT_EMPTY: "积分已用完", CREDIT_TOPUP_REQUEST: "充值申请", CREDIT_TOPUP_RESULT: "充值结果",
+      CREDIT_LOW: "积分不足", CREDIT_EMPTY: "积分已用完", CREDIT_TOPUP_REQUEST: "充值申请", CREDIT_TOPUP_RESULT: "充值结果", MARKETING_REPORT: "营销报告已生成",
     },
     statuses: { PENDING: "待发送", SENT: "已发送", FAILED: "失败", CANCELLED: "已跳过" },
     reasons: {
