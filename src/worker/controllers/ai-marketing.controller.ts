@@ -1,4 +1,7 @@
 import { REPORT_KINDS, type AiMarketingSettingsInput } from "../../shared/ai-marketing-types.ts";
+import { AI_DRAFT_MODES, UNIT_TEXT_LIMITS } from "../../shared/ai-content-types.ts";
+import { getLocale, LOCALES, parseLocale, type LocaleCode } from "../../shared/i18n/locales.ts";
+import type { UnitDraftInput } from "../ai-marketing/content-writer.ts";
 import { isIsoDate } from "../../shared/dates.ts";
 import { requestMeta, withPermission, type ServicesFor } from "../http/auth-guard.ts";
 import { ValidationError } from "../http/errors.ts";
@@ -29,6 +32,59 @@ export function aiMarketingController(services: ServicesFor) {
       if (periodStart !== undefined && !isIsoDate(periodStart)) v.errors.periodStart = "INVALID_DATE";
       v.assertValid();
       return jsonOk(await services(ctx).aiMarketing.generate(auth, { kind: kind!, periodStart }, requestMeta(ctx)), { status: 201, headers: NO_STORE });
+    }),
+
+    /** POST /api/admin/accommodations/:id/ai-draft — Module B: the AI drafts this unit's texts in one language (not saved). */
+    unitDraft: withPermission("accommodation.edit", services, async (ctx, auth) => {
+      const id = ctx.params.id ?? "";
+      if (!ID_PATTERN.test(id)) throw new ValidationError({ id: "INVALID_ID" });
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["lang", "mode", "texts"]);
+      const lang = parseLocale(v.string("lang", { required: true, max: 10 }) ?? "")?.code;
+      if (!lang) v.errors.lang = "INVALID_VALUE";
+      const mode = v.oneOf("mode", AI_DRAFT_MODES, { required: true });
+      const sent: UnitDraftInput["texts"] = {};
+      if (body.texts !== undefined) {
+        if (typeof body.texts !== "object" || body.texts === null || Array.isArray(body.texts)) v.errors.texts = "INVALID_VALUE";
+        else {
+          for (const [code, raw] of Object.entries(body.texts as Record<string, unknown>)) {
+            const loc = parseLocale(code)?.code;
+            if (!loc || typeof raw !== "object" || raw === null) { v.errors.texts = "INVALID_VALUE"; continue; }
+            const tv = new Validator(raw as Record<string, unknown>).allowOnly(["name", "shortDescription", "description", "seoTitle", "seoDescription"]);
+            sent[loc] = {
+              name: tv.string("name", { max: UNIT_TEXT_LIMITS.name }) ?? "",
+              shortDescription: tv.string("shortDescription", { max: UNIT_TEXT_LIMITS.shortDescription }) ?? null,
+              description: tv.string("description", { max: UNIT_TEXT_LIMITS.description, raw: true })?.trim() || null,
+              seoTitle: tv.string("seoTitle", { max: UNIT_TEXT_LIMITS.seoTitle }) ?? null,
+              seoDescription: tv.string("seoDescription", { max: UNIT_TEXT_LIMITS.seoDescription }) ?? null,
+            };
+            if (Object.keys(tv.errors).length) v.errors.texts = "INVALID_VALUE";
+          }
+        }
+      }
+      v.assertValid();
+      const s = services(ctx);
+      const meta = requestMeta(ctx);
+      const unit = await s.accommodation.get(auth, id, meta);
+      const amenities = await s.accommodation.listAmenities(auth, meta).catch(() => []);
+      const site = await s.site.getPublicSite(getLocale(lang!));
+      const texts: UnitDraftInput["texts"] = {};
+      for (const l of LOCALES) {
+        const saved = unit.translations[l.code as LocaleCode];
+        const t = sent[l.code as LocaleCode] ?? (saved ? { ...saved } : undefined);
+        if (t && (t.name || t.description || t.shortDescription)) texts[l.code as LocaleCode] = t;
+      }
+      if (mode === "TRANSLATE" && !texts.th?.name) throw new ValidationError({ mode: "THAI_TEXT_REQUIRED" });
+      const draft = await s.aiMarketing.draftUnitText(auth, {
+        lang: lang!, mode: mode!, texts,
+        facts: {
+          unitId: unit.id, type: unit.unitType, code: unit.unitCode, priceBaht: Math.round(unit.basePriceSatang / 100),
+          standardGuests: unit.standardGuests, maxGuests: unit.maxGuests,
+          amenities: amenities.filter((a) => unit.amenityIds.includes(a.id)).map((a) => a.names[lang!] || a.names.th || a.code).slice(0, 40),
+          siteName: site.siteName ?? null, area: site.contact.address?.slice(0, 160) ?? null,
+        },
+      }, meta);
+      return jsonOk(draft, { headers: NO_STORE });
     }),
 
     settings: withPermission("marketing.view", services, async (ctx, auth) =>

@@ -293,6 +293,8 @@ export function createApp(options: AppOptions = {}) {
     .get("/api/admin/ai-marketing/reports/:id", aiMkt.get)
     .get("/api/admin/ai-marketing/settings", aiMkt.settings)
     .put("/api/admin/ai-marketing/settings", aiMkt.saveSettings)
+    // AI content helper (Module B): drafts only, nothing saved
+    .post("/api/admin/accommodations/:id/ai-draft", aiMkt.unitDraft)
     // LINE Official Account (spec §47)
     .get("/api/admin/line/settings", line.settings)
     .put("/api/admin/line/settings", line.saveSettings)

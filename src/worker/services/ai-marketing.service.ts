@@ -4,7 +4,9 @@ import {
   type MarketingReportListItemDto, type ReportKind,
 } from "../../shared/ai-marketing-types.ts";
 import { DEFAULT_TIMEZONE, localDateTimeIn, todayIn, utcOffsetMinutes } from "../../shared/dates.ts";
-import { HttpError, NotFoundError, TooManyRequestsError, ValidationError } from "../http/errors.ts";
+import { ConflictError, HttpError, NotFoundError, TooManyRequestsError, ValidationError } from "../http/errors.ts";
+import { parseUnitDraft, unitSystemPrompt, unitUserPrompt, type UnitDraftInput } from "../ai-marketing/content-writer.ts";
+import { AI_DRAFTS_PER_DAY, type UnitTextDraftDto } from "../../shared/ai-content-types.ts";
 import { buildMetrics, lastPeriod, periodStarting } from "../ai-marketing/metrics.ts";
 import { insights } from "../ai-marketing/insights.ts";
 import type { AiMarketingRepository, ReportRow, SettingsRow } from "../repositories/ai-marketing.repository.ts";
@@ -22,6 +24,7 @@ import type { FetchLike } from "../line/line-api.ts";
 const LIST_LIMIT = 60;
 const DAY_MS = 86_400_000;
 const REPORT_REQUESTED = "MARKETING_REPORT_REQUESTED";
+const AI_DRAFT_REQUESTED = "AI_DRAFT_REQUESTED";
 
 function parse<T>(json: string, fallback: T): T {
   try {
@@ -179,34 +182,63 @@ export class AiMarketingService {
    * answer the report simply stays "ready without AI" with the reason.
    */
   private async writeAi(reportId: string, metrics: MarketingMetrics, found: InsightDto[], z: Awaited<ReturnType<AiMarketingService["zone"]>>): Promise<void> {
-    const s = await this.repo.settings();
-    const apiKey = this.config.apiKey?.trim();
-    if (s.ai_enabled !== 1 || !apiKey) return;
-    const model = this.model();
     const now = () => iso(this.clock());
     try {
-      const usage = await this.repo.monthUsage(`${z.today.slice(0, 7)}-01`, z.offset);
-      if (usage.spent >= s.monthly_budget_satang) {
-        await this.repo.insertUsage({ id: newId(), reportId, provider: "ANTHROPIC", model, inputTokens: 0, outputTokens: 0, costSatang: 0, status: "SKIPPED_BUDGET", error: null, now: now() });
-        await this.repo.setAi(reportId, { status: "READY_NO_AI", summaryJson: null, model: null, error: "BUDGET_REACHED", now: now() });
-        return;
-      }
-      const res = await anthropicMessage({
-        apiKey, model, system: SYSTEM_PROMPT, user: userPrompt(aiInput(metrics, found)), maxTokens: 1500, fetch: this.config.fetch,
-      });
-      const cost = costSatang(res.inputTokens, res.outputTokens);
-      const summary = res.ok ? parseSummary(res.text) : null;
-      const error = !res.ok ? res.error : summary ? null : "UNREADABLE_ANSWER";
-      await this.repo.insertUsage({
-        id: newId(), reportId, provider: "ANTHROPIC", model: res.ok ? res.model : model, inputTokens: res.inputTokens, outputTokens: res.outputTokens,
-        costSatang: cost, status: summary ? "OK" : "FAILED", error, now: now(),
-      });
-      await this.repo.setAi(reportId, summary
-        ? { status: "READY", summaryJson: JSON.stringify(summary), model: res.ok ? res.model : model, error: null, now: now() }
-        : { status: "READY_NO_AI", summaryJson: null, model: null, error, now: now() });
+      const res = await this.callAi(reportId, SYSTEM_PROMPT, userPrompt(aiInput(metrics, found)), 1500, parseSummary, z);
+      if (res === null) return;
+      await this.repo.setAi(reportId, res.ok
+        ? { status: "READY", summaryJson: JSON.stringify(res.value), model: res.model, error: null, now: now() }
+        : { status: "READY_NO_AI", summaryJson: null, model: null, error: res.error, now: now() });
     } catch (e) {
       console.error(JSON.stringify({ level: "error", message: "ai_marketing_summary_failed", error: String(e).slice(0, 200) }));
     }
+  }
+
+  /**
+   * One call to the AI under the site's switch, key and monthly budget; every call (and every call refused for the
+   * budget) is recorded in ai_usage with its estimated cost. null = AI off / no key (nothing recorded).
+   * `read` turns the answer into the value wanted (null = not what was asked → UNREADABLE_ANSWER).
+   */
+  private async callAi<T>(reportId: string | null, system: string, user: string, maxTokens: number, read: (text: string) => T | null,
+    z?: Awaited<ReturnType<AiMarketingService["zone"]>>): Promise<{ ok: true; value: T; model: string } | { ok: false; error: string } | null> {
+    const s = await this.repo.settings();
+    const apiKey = this.config.apiKey?.trim();
+    if (s.ai_enabled !== 1 || !apiKey) return null;
+    const zone = z ?? await this.zone();
+    const model = this.model();
+    const now = () => iso(this.clock());
+    const usage = await this.repo.monthUsage(`${zone.today.slice(0, 7)}-01`, zone.offset);
+    if (usage.spent >= s.monthly_budget_satang) {
+      await this.repo.insertUsage({ id: newId(), reportId, provider: "ANTHROPIC", model, inputTokens: 0, outputTokens: 0, costSatang: 0, status: "SKIPPED_BUDGET", error: null, now: now() });
+      return { ok: false, error: "BUDGET_REACHED" };
+    }
+    const res = await anthropicMessage({ apiKey, model, system, user, maxTokens, fetch: this.config.fetch });
+    const value = res.ok ? read(res.text) : null;
+    const error = !res.ok ? res.error : value !== null ? null : "UNREADABLE_ANSWER";
+    await this.repo.insertUsage({
+      id: newId(), reportId, provider: "ANTHROPIC", model: res.ok ? res.model : model, inputTokens: res.inputTokens, outputTokens: res.outputTokens,
+      costSatang: costSatang(res.inputTokens, res.outputTokens), status: value !== null ? "OK" : "FAILED", error, now: now(),
+    });
+    return value !== null ? { ok: true, value, model: res.ok ? res.model : model } : { ok: false, error: error ?? "UNREADABLE_ANSWER" };
+  }
+
+  /**
+   * Module B: the AI drafts the texts of a house / VIP tent in one language — written fresh from the facts, or
+   * translated from the Thai text. Nothing is saved: staff put the draft in the form, check it and press Save.
+   * Facts only (no guest data). At most AI_DRAFTS_PER_DAY drafts a day for the whole site.
+   */
+  async draftUnitText(actor: AuthContext, input: UnitDraftInput, meta: RequestMeta): Promise<UnitTextDraftDto> {
+    await this.authz.requirePermission(actor, "accommodation.edit", meta);
+    const s = await this.repo.settings();
+    if (s.ai_enabled !== 1 || !this.config.apiKey?.trim()) throw new ConflictError("The AI is not switched on", "AI_OFF");
+    if ((await this.log.countRecent([AI_DRAFT_REQUESTED], DAY_MS)) >= AI_DRAFTS_PER_DAY) throw new TooManyRequestsError(60 * 60, "Too many AI drafts today");
+    await this.log.event(AI_DRAFT_REQUESTED, "INFO", meta, { userId: actor.userId, details: { kind: "UNIT_TEXT", unitId: input.facts.unitId, lang: input.lang, mode: input.mode } });
+    const res = await this.callAi(null, unitSystemPrompt(input.lang, input.mode), unitUserPrompt(input), 2500, (text) => parseUnitDraft(text, input.lang));
+    if (res === null) throw new ConflictError("The AI is not switched on", "AI_OFF");
+    if (!res.ok) throw new HttpError(res.error === "BUDGET_REACHED" ? 409 : 502, res.error === "BUDGET_REACHED" ? "AI_BUDGET_REACHED" : "AI_FAILED",
+      res.error === "BUDGET_REACHED" ? "This month's AI budget is used up" : "The AI could not write a draft", { reason: res.error });
+    await this.log.auditStatement(actor.userId, "AI_DRAFT_UNIT_TEXT", "ai_content", input.facts.unitId, null, { lang: input.lang, mode: input.mode, model: res.model }, meta).run();
+    return { ...res.value, model: res.model };
   }
 
   /**
