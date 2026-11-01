@@ -292,6 +292,26 @@ await check("admin: CAPI log shows Lead + Purchase sent; dashboard shows GA4 num
   await pa.screenshot({ path: `${SHOTS}/p14-dashboard-ga4.png`, fullPage: true });
 });
 
+await check("AI marketing report (migration 0053): switch on, write one, read it — numbers + GA4, no guest data; phone fits", async () => {
+  await pa.goto(`${BASE}/en/admin/ai-marketing`);
+  await pa.getByRole("heading", { name: "AI marketing report" }).waitFor();
+  await pa.getByTestId("aim-settings").getByRole("checkbox").check();
+  await pa.getByText("Settings saved").waitFor();
+  await pa.getByTestId("aim-generate").getByRole("button", { name: "Write report" }).click();
+  await pa.getByTestId("aim-list").locator("tbody tr").first().waitFor();
+  await pa.getByTestId("aim-list").locator("tbody a").first().click();
+  await pa.getByTestId("aim-kpis").waitFor();
+  await pa.getByTestId("aim-ga4").getByText("Organic Search").waitFor();
+  const text = await pa.locator(".aim-report").textContent();
+  for (const pii of ["สมหญิง", "0891112222", "guest14@example.test", code]) assert(!text.includes(pii), `report shows ${pii}`);
+  await pa.screenshot({ path: `${SHOTS}/p14-ai-marketing-report.png`, fullPage: true });
+  await pa.setViewportSize({ width: 390, height: 844 });
+  const width = await pa.evaluate(() => document.documentElement.scrollWidth);
+  assert(width <= 390, `phone: horizontal scroll ${width}px`);
+  await pa.screenshot({ path: `${SHOTS}/p14-ai-marketing-phone.png`, fullPage: true });
+  await pa.setViewportSize({ width: 1440, height: 900 });
+});
+
 await check("ask everyone again → banner returns, trackers stop until a new choice", async () => {
   await pa.goto(`${BASE}/en/admin/settings-privacy`);
   await pa.getByRole("checkbox", { name: "Ask everyone again" }).check();

@@ -19,7 +19,7 @@ export const ADMIN_MENU_PATHS = [
   "payments", "slips", "receiving-accounts", "payment-settings", "credit-topup", "credit-admin",
   "reports",
   "content-home", "content-gallery", "content-history", "seo",
-  "ga4", "meta-pixel", "capi",
+  "ga4", "meta-pixel", "capi", "ai-marketing",
   "settings-website", "settings-branding", "settings-theme", "settings-booking-cta", "settings-line", "settings-email", "settings-privacy",
   "users", "roles", "permissions", "security-events", "admin-menu",
   "audit-logs", "system",
@@ -65,6 +65,8 @@ export const MENU_ACCESS: Record<AdminMenuPath, { view: PermissionCode; manage: 
   ga4: { view: "marketing.view", manage: ["marketing.edit"] },
   "meta-pixel": { view: "marketing.view", manage: ["marketing.edit"] },
   capi: { view: "marketing.view", manage: ["marketing.edit"] },
+  // AI marketing report (migration 0053): reports hold money figures, so seeing them needs reports.view.
+  "ai-marketing": { view: "reports.view", manage: ["marketing.edit"] },
   "settings-website": { view: "settings.website", manage: [] },
   "settings-branding": { view: "settings.branding", manage: [] },
   "settings-theme": { view: "settings.theme", manage: [] },

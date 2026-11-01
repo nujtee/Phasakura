@@ -36,6 +36,7 @@ import { GalleryPage, HistoryPage, HomeContentPage } from "./content/ContentPage
 import { FoodMenuPage, FoodOrdersPage } from "./food/FoodPages.tsx";
 import { PaymentsPage } from "./payments/PaymentsPage.tsx";
 import { BookingCtaPage, BrandingPage, MarketingPage, SeoPage, WebsiteSettingsPage } from "./settings/SettingsPages.tsx";
+import { AiMarketingPage } from "./marketing/AiMarketingPage.tsx";
 import { ThemePage } from "./settings/ThemePage.tsx";
 import { LinePage } from "./settings/LinePage.tsx";
 import { EmailPage } from "./settings/EmailPage.tsx";
@@ -242,6 +243,8 @@ function renderPage(segments: string[], notFound: string) {
     case "meta-pixel":
     case "capi":
       return <MarketingPage focus={page} />;
+    case "ai-marketing":
+      return <AiMarketingPage reportId={id} />;
     case "settings-website":
       return <WebsiteSettingsPage />;
     case "settings-branding":
