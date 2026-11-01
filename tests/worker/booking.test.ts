@@ -551,3 +551,17 @@ describe("admin pricing rules", () => {
     assert.equal(snapshot.data.totalSatang, before.totalSatang, "existing booking unchanged");
   });
 });
+
+describe("stays per booking", () => {
+  it("up to 20 stays; more is refused with its own message code", async () => {
+    const h = new Harness({ seed: true });
+    const stays = Array.from({ length: 21 }, (_, i) => ({ kind: "UNIT", unitId: `unit_${i}`, adults: 1, children: 0 }));
+    const res = await h.api("POST", "/api/public/bookings/quote", { body: { checkIn: "2027-02-01", checkOut: "2027-02-02", adults: 21, children: 0, stays, food: [], lang: "th" } });
+    assert.equal(res.status, 422);
+    assert.equal(res.body.error?.details?.stays, "TOO_MANY_STAYS");
+    const eleven = await h.api("POST", "/api/public/bookings/quote", {
+      body: { checkIn: "2027-02-01", checkOut: "2027-02-02", adults: 11, children: 0, stays: stays.slice(0, 11), food: [], lang: "th" },
+    });
+    assert.notEqual(eleven.body.error?.details?.stays, "TOO_MANY_STAYS", "11 is within the limit");
+  });
+});
