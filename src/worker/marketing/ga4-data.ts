@@ -17,6 +17,25 @@ export interface Ga4Numbers {
   pageViews: number;
   /** eventCount per funnel event name. */
   events: Record<string, number>;
+  /**
+   * Where visits came from (AI Marketing PR A1): sessions by default channel group, top source / medium,
+   * top landing pages and device category. null when Google could not give it (the numbers above still count);
+   * absent in caches written before.
+   */
+  breakdown?: Ga4Breakdown | null;
+}
+
+export interface Ga4Row {
+  name: string;
+  sessions: number;
+  users: number;
+}
+
+export interface Ga4Breakdown {
+  channels: Ga4Row[];
+  sources: Ga4Row[];
+  landingPages: Ga4Row[];
+  devices: Ga4Row[];
 }
 
 export type Ga4Result = { ok: true; data: Ga4Numbers } | { ok: false; error: string };
@@ -153,8 +172,53 @@ export async function fetchDashboardNumbers(opts: {
       const name = row.dimensionValues?.[0]?.value;
       if (name && name in events) events[name] = num(row.metricValues?.[0]?.value);
     }
-    return { ok: true, data: { visitors: num(totals[0]?.value), pageViews: num(totals[1]?.value), events } };
+    const breakdown = await fetchBreakdown(f, auth.token, opts.propertyId, dateRanges);
+    return { ok: true, data: { visitors: num(totals[0]?.value), pageViews: num(totals[1]?.value), events, breakdown } };
   } catch (e) {
     return { ok: false, error: scrub(e instanceof Error ? `NETWORK ${e.message}` : "NETWORK") };
+  }
+}
+
+const BREAKDOWN_ROWS = 10;
+const NAME_MAX = 200;
+
+/** Rows of a one-dimension report: name (or "(not set)"), sessions, users; at most `limit`, most sessions first. */
+function rowsOf(report: { rows?: ReportRow[] } | undefined, limit: number): Ga4Row[] {
+  return (report?.rows ?? [])
+    .map((r) => ({
+      name: (r.dimensionValues?.map((d) => d.value ?? "").filter(Boolean).join(" / ") || "(not set)").slice(0, NAME_MAX),
+      sessions: num(r.metricValues?.[0]?.value),
+      users: num(r.metricValues?.[1]?.value),
+    }))
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, limit);
+}
+
+/** Sessions by channel / source-medium / landing page / device in one batch; null when it fails (never throws). */
+async function fetchBreakdown(f: FetchLike, token: string, propertyId: string, dateRanges: { startDate: string; endDate: string }[]): Promise<Ga4Breakdown | null> {
+  const metrics = [{ name: "sessions" }, { name: "activeUsers" }];
+  const byDims = (names: string[], limit: number) => ({
+    dateRanges, metrics, dimensions: names.map((name) => ({ name })), limit, orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+  });
+  try {
+    const res = await f(`${DATA_API}/properties/${propertyId}:batchRunReports`, {
+      method: "POST",
+      signal: timeout(),
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requests: [
+          byDims(["sessionDefaultChannelGroup"], 20),
+          byDims(["sessionSource", "sessionMedium"], BREAKDOWN_ROWS),
+          byDims(["landingPage"], BREAKDOWN_ROWS),
+          byDims(["deviceCategory"], 5),
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as BatchResponse;
+    const r = body.reports ?? [];
+    return { channels: rowsOf(r[0], 20), sources: rowsOf(r[1], BREAKDOWN_ROWS), landingPages: rowsOf(r[2], BREAKDOWN_ROWS), devices: rowsOf(r[3], 5) };
+  } catch {
+    return null;
   }
 }

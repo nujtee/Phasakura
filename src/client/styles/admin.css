@@ -1762,6 +1762,17 @@
   gap: 0 16px;
 }
 
+/* Grid of cards holding tables: a column never grows wider than the screen (the table scrolls inside its wrap). */
+.adm-grid2--tables {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) {
+  .adm-grid2--tables {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* dashboard */
 .adm-kpis {
   list-style: none;

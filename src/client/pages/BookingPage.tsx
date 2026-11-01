@@ -6,6 +6,7 @@ import { isIsoDate } from "../../shared/dates.ts";
 import { bookingLookupPath } from "../../shared/routes.ts";
 import { campingItem, foodChangeEvents, quoteItems, unitItem } from "../analytics/booking-events.ts";
 import { track } from "../analytics/tracker.ts";
+import { readCampaign } from "../analytics/campaign.ts";
 import { useSite } from "../site/SiteProvider.tsx";
 import { ApiError } from "../api/client.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
@@ -270,6 +271,7 @@ export function BookingPage() {
         privacyAccepted: true,
         expectedTotalSatang: quote.totalSatang,
         idempotencyKey: idemKey,
+        attribution: readCampaign(),
       });
       setBooking(created);
       // Lead: same event_id as the server copy (Conversions API) → Meta keeps one.

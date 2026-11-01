@@ -198,7 +198,8 @@ const v2 = await visitorContext();
 let code = "";
 await check("accept all → GA4 + Pixel (no automatic events); booking funnel events; Lead shares the server event_id", async () => {
   const p = v2.page;
-  await p.goto(`${BASE}/th/`);
+  // Landed from a newsletter link (migration 0052): the tab remembers the source for the booking.
+  await p.goto(`${BASE}/th/?utm_source=Newsletter&utm_medium=email&utm_campaign=rainy&gclid=SECRET123`, { referer: "https://mail.example.com/inbox" });
   await p.locator(".consent-banner").getByRole("button", { name: "ยอมรับทั้งหมด" }).click();
   await until(async () => v2.hits.some((u) => u.startsWith("https://connect.facebook.net/")));
   assert(/^1\.1\.1\.\d+$/.test((await consentCookie(v2.ctx)).value), "consent cookie");
@@ -281,6 +282,11 @@ await check("admin: CAPI log shows Lead + Purchase sent; dashboard shows GA4 num
   const visitors = pa.locator(".adm-kpi", { hasText: "Visitors" });
   await visitors.getByText("321").waitFor();
   await pa.getByText(/GA4 data updated/).waitFor();
+  // Where bookings came from (D1) and visitor channels (GA4).
+  const sources = pa.getByTestId("booking-sources");
+  await sources.locator("tr", { hasText: "newsletter / email" }).waitFor();
+  assert(!(await sources.textContent()).includes("SECRET123"), "click id value never stored or shown");
+  await pa.getByTestId("ga4-channels").locator("tr", { hasText: "Organic Search" }).getByText("180").waitFor();
   const calls = await (await req.get(`${BASE}/__e2e/google`)).json();
   assert(calls.some((u) => u.includes("properties/345678901:batchRunReports")), "GA4 Data API called");
   await pa.screenshot({ path: `${SHOTS}/p14-dashboard-ga4.png`, fullPage: true });

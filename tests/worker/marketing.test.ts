@@ -602,9 +602,17 @@ describe("dashboard web analytics from the GA4 Data API", () => {
     const reqs = report!.json!.requests as { dateRanges: { startDate: string; endDate: string }[] }[];
     assert.deepEqual(reqs[0]!.dateRanges, [{ startDate: "2026-12-12", endDate: "2027-01-10" }], "30 days including today");
 
+    // Where visits came from (AI Marketing PR A1): a second batch, same token, read-only.
+    const detail = h.google.requests[2]!;
+    assert.equal(detail.url, report!.url);
+    assert.deepEqual((detail.json!.requests as { dimensions: { name: string }[] }[]).map((r) => r.dimensions.map((x) => x.name).join("+")),
+      ["sessionDefaultChannelGroup", "sessionSource+sessionMedium", "landingPage", "deviceCategory"]);
+    assert.deepEqual(d.analytics.channels, [{ name: "Organic Search", sessions: 180, users: 150 }, { name: "Direct", sessions: 90, users: 80 },
+      { name: "Organic Social", sessions: 60, users: 55 }]);
+
     // Cached: a second dashboard load does not call Google.
     await h.api("GET", "/api/admin/dashboard", { token: root });
-    assert.equal(h.google.requests.length, 2);
+    assert.equal(h.google.requests.length, 3);
     const dump = JSON.stringify([h.db.all("SELECT * FROM analytics_report_cache"), h.db.all("SELECT * FROM audit_logs"), m]);
     assert.doesNotMatch(dump, /PRIVATE KEY|ya29\.|eyJhbGci/);
   });

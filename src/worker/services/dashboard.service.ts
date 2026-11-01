@@ -13,8 +13,34 @@ import type { InventoryRepository } from "../repositories/inventory.repository.t
 import type { AuthContext, Clock, RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
 import type { Ga4DashboardResult } from "./ga4-report.service.ts";
+import type { SourceGroupRow } from "../repositories/attribution.repository.ts";
+import { sourceMedium } from "../../shared/campaign.ts";
 
 const TREND_DAYS = 14;
+const SOURCE_ROWS = 10;
+
+/** Booking groups → source / medium rows (most bookings first, the rest summed as "(other)"). */
+export function bookingSources(rows: SourceGroupRow[], seesMoney: boolean): DashboardDto["analytics"]["bookingSources"] {
+  const merged = new Map<string, { source: string; medium: string; bookings: number; confirmed: number; revenue: number }>();
+  for (const r of rows) {
+    const sm = sourceMedium(r.click_kind === null && !r.utm_source && !r.referrer_host ? null
+      : { utmSource: r.utm_source, utmMedium: r.utm_medium, referrerHost: r.referrer_host, clickKind: r.click_kind ?? "NONE" });
+    const key = `${sm.source}\u0000${sm.medium}`;
+    const m = merged.get(key) ?? { ...sm, bookings: 0, confirmed: 0, revenue: 0 };
+    m.bookings += r.bookings;
+    m.confirmed += r.confirmed;
+    m.revenue += r.revenue;
+    merged.set(key, m);
+  }
+  const sorted = [...merged.values()].sort((a, b) => b.bookings - a.bookings || b.revenue - a.revenue || a.source.localeCompare(b.source));
+  const top = sorted.slice(0, SOURCE_ROWS);
+  const rest = sorted.slice(SOURCE_ROWS);
+  if (rest.length) {
+    top.push(rest.reduce((acc, r) => ({ ...acc, bookings: acc.bookings + r.bookings, confirmed: acc.confirmed + r.confirmed, revenue: acc.revenue + r.revenue }),
+      { source: "(other)", medium: "", bookings: 0, confirmed: 0, revenue: 0 }));
+  }
+  return top.map((r) => ({ source: r.source, medium: r.medium, bookings: r.bookings, confirmed: r.confirmed, revenueSatang: seesMoney ? r.revenue : null }));
+}
 const ANALYTICS_DAYS = 30;
 
 /** Dashboard (spec §48) and booking calendar (spec §49). Widgets follow the viewer's permissions. */
@@ -43,13 +69,14 @@ export class DashboardService {
     const seesMoney = this.authz.can(actor, "payments.view") || this.authz.can(actor, "reports.view");
 
     const analyticsFrom = addDays(today, -(ANALYTICS_DAYS - 1));
-    const [counts, due, inv, analytics, web] = await Promise.all([
+    const [counts, due, inv, analytics, web, sourceRows] = await Promise.all([
       this.repo.counts(today, monthStart, offset),
       this.repo.balanceDue(),
       this.repo.inventoryTonight(today),
       this.repo.analytics(analyticsFrom, offset),
       this.ga4 ? this.ga4(analyticsFrom, today).catch((): Ga4DashboardResult => ({ status: "ERROR", fetchedAt: null, numbers: null }))
         : Promise.resolve<Ga4DashboardResult>({ status: "NOT_CONFIGURED", fetchedAt: null, numbers: null }),
+      this.repo.sourceGroups(analyticsFrom, offset),
     ]);
     const ga = web.numbers;
     const units = (type: string) => inv.units.find((u) => u.unit_type === type) ?? { total: 0, available: 0 };
@@ -122,6 +149,8 @@ export class DashboardService {
         confirmedBookings: analytics.confirmed,
         revenueSatang: seesMoney ? analytics.revenue : null,
         foodOrders: analytics.food_orders,
+        channels: ga?.breakdown?.channels ?? null,
+        bookingSources: bookingSources(sourceRows, seesMoney),
       },
     };
   }
