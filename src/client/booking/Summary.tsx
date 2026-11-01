@@ -3,6 +3,7 @@ import { formatBaht } from "../../shared/booking-rules.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { fill } from "../accommodation/UnitCard.tsx";
 import { useBookingT } from "./useBookingT.ts";
+import { PromoBillRows, usePromo } from "./Promotions.tsx";
 
 /** A calendar date (YYYY-MM-DD) in the reader's language — never shifted by their time zone. */
 export function useDateText() {
@@ -21,6 +22,7 @@ export function useDateTimeText() {
 export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; headingLevel?: 2 | 3 }) {
   const { locale } = useI18n();
   const bt = useBookingT();
+  const promo = usePromo();
   const dateText = useDateText();
   const baht = (s: number) => formatBaht(s, locale.code);
   const H = `h${headingLevel}` as "h2" | "h3";
@@ -69,9 +71,21 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
             ...x.nightly.map((n) => (
               <div key={`${k}|${n.date}`} className="summary__line summary__line--sub">
                 <dt>{dateText(n.date)}{x.pricingType === "PER_ADULT_NIGHT" && ` × ${adultsOf(x)}`}</dt>
-                <dd>{baht(x.pricingType === "PER_ADULT_NIGHT" ? n.priceSatang * adultsOf(x) : n.priceSatang)}</dd>
+                <dd>
+                  {n.listPriceSatang !== undefined && n.listPriceSatang > n.priceSatang && (
+                    <><s className="summary__was"><span className="visually-hidden">{promo.wasPrice} </span>
+                      {baht(x.pricingType === "PER_ADULT_NIGHT" ? n.listPriceSatang * adultsOf(x) : n.listPriceSatang)}</s>{" "}</>
+                  )}
+                  {baht(x.pricingType === "PER_ADULT_NIGHT" ? n.priceSatang * adultsOf(x) : n.priceSatang)}
+                </dd>
               </div>
             )),
+            (x.promotions ?? []).some((p) => p.text || p.roomDiscountSatang || p.extraBedFreeSatang || p.petsFreeSatang || p.foodFreeSatang) && (
+              <div key={`${k}|promo`} className="summary__line summary__line--sub summary__line--promo">
+                <dt><ul className="promo__list"><PromoBillRows promotions={x.promotions} /></ul></dt>
+                <dd />
+              </div>
+            ),
             x.type === "OWN_TENT" && quote.tarp && (
               <div key={`${k}|tarp`} className="summary__line summary__line--sub">
                 <dt>{fill(bt.tarpNights, { n: quote.tarp.nights })}</dt>
@@ -80,8 +94,11 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
             ),
             x.extraBeds && (
               <div key={`${k}|beds`} className="summary__line summary__line--sub">
-                <dt>{fill(bt.extraBedNights, { n: x.extraBeds.quantity, nights: x.extraBeds.nights })}</dt>
-                <dd>{baht(x.extraBeds.subtotalSatang)}</dd>
+                <dt>
+                  {fill(bt.extraBedNights, { n: x.extraBeds.quantity, nights: x.extraBeds.nights })}
+                  {x.extraBeds.freeNights ? <small> · {fill(promo.freeNights, { n: x.extraBeds.freeNights })}</small> : null}
+                </dt>
+                <dd>{x.extraBeds.subtotalSatang === 0 ? bt.free : baht(x.extraBeds.subtotalSatang)}</dd>
               </div>
             ),
             x.pets && (
@@ -120,7 +137,10 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
         ))}
         {extra.map((f) => (
           <div key={`${f.optionId}|${f.serviceDate}`} className="summary__line summary__line--sub">
-            <dt>{f.name} · {dateText(f.serviceDate)} × {f.quantity}</dt>
+            <dt>
+              {f.name} · {dateText(f.serviceDate)} × {f.quantity}
+              {f.promoFreeQuantity ? <> <span className="promo__badge promo__badge--free">{fill(promo.foodFreeQty, { n: f.promoFreeQuantity })}</span></> : null}
+            </dt>
             <dd>{f.subtotalSatang === 0 ? bt.free : baht(f.subtotalSatang)}</dd>
           </div>
         ))}
@@ -155,6 +175,12 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
           <dt>{bt.total}</dt>
           <dd>{baht(quote.totalSatang)}</dd>
         </div>
+        {(quote.promotionSavingsSatang ?? 0) > 0 && (
+          <div className="summary__line summary__line--savings">
+            <dt>{promo.savings}</dt>
+            <dd>{baht(quote.promotionSavingsSatang!)}</dd>
+          </div>
+        )}
         <DepositLines quote={quote} baht={baht} />
       </dl>
       {quote.depositSatang !== null && paidOf(quote) === 0 && <p className="summary__note">{bt.depositNote}</p>}

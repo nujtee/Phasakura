@@ -120,6 +120,28 @@ export function BookingDetailPage({ code }: { code: string }) {
 
       <StaysCard booking={b} onChanged={stayChanged} />
 
+      {(b.items ?? []).some((x) => x.promotions?.length) && (
+        <div className="adm-card">
+          <h2 className="adm-h2">{t.pricing.promo}</h2>
+          <ul className="adm-list">
+            {(b.items ?? []).flatMap((x) => (x.promotions ?? []).map((p, i) => (
+              <li key={`${x.id ?? x.name}|${i}`}>
+                <strong>{x.name}</strong>{p.text && <> · “{p.text}”</>}
+                <div className="adm-small adm-muted">
+                  {[
+                    p.roomDiscountSatang ? `${t.pricing.discount} −${formatBaht(p.roomDiscountSatang, locale.code)}` : null,
+                    p.extraBedFreeSatang ? `${t.pricing.freeExtraBed} −${formatBaht(p.extraBedFreeSatang, locale.code)}` : null,
+                    p.petsFreeSatang ? `${t.pricing.freePets} −${formatBaht(p.petsFreeSatang, locale.code)}` : null,
+                    p.foodFreeSatang ? `${t.pricing.promoFoodFree} −${formatBaht(p.foodFreeSatang, locale.code)}` : null,
+                  ].filter(Boolean).join(" · ")}
+                </div>
+              </li>
+            )))}
+          </ul>
+          {(b.promotionSavingsSatang ?? 0) > 0 && <p><strong>{t.pricing.promoSavings}: {formatBaht(b.promotionSavingsSatang!, locale.code)}</strong></p>}
+        </div>
+      )}
+
       {b.moveRequests && b.moveRequests.length > 0 && (
         <div className="adm-card">
           <h2 className="adm-h2">{t.bk.movesTitle}</h2>

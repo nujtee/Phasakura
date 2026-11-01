@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { AdminUnitDto } from "../../../shared/accommodation-types.ts";
-import type { PricingRuleDto, PricingRuleInput, PricingTargetType } from "../../../shared/booking-types.ts";
+import { MAX_PROMO_TEXT, type FoodMenuDto, type PricingRuleDto, type PricingRuleInput, type PricingTargetType } from "../../../shared/booking-types.ts";
 import { formatBaht, parseBahtToSatang, PAY_NOW_PERCENTS, SATANG_PER_BAHT } from "../../../shared/booking-rules.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
@@ -12,7 +12,14 @@ import { useStayDate } from "./shared.tsx";
 const EMPTY: PricingRuleInput = {
   targetType: "UNIT_TYPE", unitId: null, unitType: "HOUSE", name: "", dateFrom: "", dateTo: "",
   daysOfWeek: "0123456", priceSatang: 0, priority: 0, status: "ACTIVE", payNowPercent: null,
+  discountKind: null, discountValue: null, freeExtraBed: false, freePets: false, freeFoodOptionIds: [], promoText: null,
 };
+
+type Editing = { id: string | null; input: PricingRuleInput; price: string; discount: string };
+
+/** The discount as typed: percent as is, an amount in baht. */
+const discountText = (r: PricingRuleInput) =>
+  r.discountKind === "PERCENT" ? String(r.discountValue ?? "") : r.discountKind === "AMOUNT" && r.discountValue ? String(r.discountValue / SATANG_PER_BAHT) : "";
 
 /** Seasonal / weekday price rules. Viewing needs accommodation.view; saving needs pricing.edit (enforced by the Worker). */
 export function PricingRulesPage() {
@@ -20,7 +27,8 @@ export function PricingRulesPage() {
   const stayDate = useStayDate();
   const [rules, setRules] = useState<PricingRuleDto[] | null>(null);
   const [units, setUnits] = useState<AdminUnitDto[]>([]);
-  const [editing, setEditing] = useState<{ id: string | null; input: PricingRuleInput; price: string } | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [foods, setFoods] = useState<FoodMenuDto["categories"]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -31,6 +39,8 @@ export function PricingRulesPage() {
   useEffect(() => {
     void load();
     apiGet<AdminUnitDto[]>("/api/admin/accommodations").then(setUnits).catch(() => undefined);
+    // Dishes a promotion can give for free (active menu, in the admin's language).
+    apiGet<FoodMenuDto>(`/api/public/food-menu?lang=${locale.code}`).then((m) => setFoods(m.categories)).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -49,7 +59,15 @@ export function PricingRulesPage() {
       setErrors({ priceSatang: t.errors.INVALID_PRICE });
       return;
     }
-    const body = { ...editing.input, priceSatang };
+    const kind = editing.input.discountKind ?? null;
+    let discountValue: number | null = null;
+    if (kind === "PERCENT") discountValue = Number(editing.discount);
+    if (kind === "AMOUNT") discountValue = parseBahtToSatang(editing.discount);
+    if (kind && (discountValue === null || !Number.isInteger(discountValue) || discountValue < 1)) {
+      setErrors({ discountValue: kind === "PERCENT" ? t.errors.PERCENT_RANGE : t.errors.AMOUNT_RANGE });
+      return;
+    }
+    const body = { ...editing.input, priceSatang, discountKind: kind, discountValue, promoText: editing.input.promoText?.trim() || null };
     setBusy(true);
     setErrors({});
     setMessage(null);
@@ -76,12 +94,21 @@ export function PricingRulesPage() {
     set({ daysOfWeek: [...current].sort().join("") });
   };
 
+  const promoSummary = (r: PricingRuleDto) => [
+    r.discountKind === "PERCENT" ? format(t.pricing.promoOff, { v: r.discountValue ?? 0 }) : null,
+    r.discountKind === "AMOUNT" ? format(t.pricing.promoBaht, { v: formatBaht(r.discountValue ?? 0, locale.code) }) : null,
+    r.freeExtraBed ? t.pricing.promoBed : null,
+    r.freePets ? t.pricing.promoPet : null,
+    r.freeFoodOptionIds?.length ? format(t.pricing.promoFood, { n: r.freeFoodOptionIds.length }) : null,
+    r.promoText ? `“${r.promoText}”` : null,
+  ].filter(Boolean).join(" · ");
+
   return (
     <section>
       <div className="adm-pagehead">
         <h1 className="adm-h1">{t.pricing.title}</h1>
         {editable && !editing && (
-          <Button onClick={() => { setEditing({ id: null, input: EMPTY, price: "" }); setErrors({}); }}>+ {t.pricing.newRule}</Button>
+          <Button onClick={() => { setEditing({ id: null, input: EMPTY, price: "", discount: "" }); setErrors({}); }}>+ {t.pricing.newRule}</Button>
         )}
       </div>
       <p className="adm-muted">{t.pricing.intro}</p>
@@ -179,6 +206,7 @@ export function PricingRulesPage() {
             <p className="adm-field__hint" id="pr-paynow-hint">{t.pricing.payNowHint}</p>
             {errors.payNowPercent && <p className="adm-field__error">{errors.payNowPercent}</p>}
           </div>
+          <PromotionFields editing={editing} setEditing={setEditing} foods={foods} errors={errors} />
           <div className="adm-field">
             <label htmlFor="pr-status">{t.pricing.status}</label>
             <select id="pr-status" value={editing.input.status} onChange={(e) => set({ status: e.target.value as "ACTIVE" | "INACTIVE" })}>
@@ -206,6 +234,7 @@ export function PricingRulesPage() {
                 <th scope="col">{t.pricing.days}</th>
                 <th scope="col" className="adm-num">{t.pricing.price}</th>
                 <th scope="col" className="adm-num">{t.pricing.payNowColumn}</th>
+                <th scope="col">{t.pricing.promoColumn}</th>
                 <th scope="col" className="adm-num">{t.pricing.priority}</th>
                 <th scope="col">{t.pricing.status}</th>
                 {editable && <th scope="col"><span className="visually-hidden">{t.pricing.edit}</span></th>}
@@ -220,13 +249,14 @@ export function PricingRulesPage() {
                   <td className="adm-small">{r.daysOfWeek === "0123456" ? "—" : r.daysOfWeek.split("").map((d) => days[Number(d)]).join(" ")}</td>
                   <td className="adm-num">{formatBaht(r.priceSatang, locale.code)}</td>
                   <td className="adm-num">{r.payNowPercent === null ? <span className="adm-muted adm-small">{t.pricing.payNowPlanShort}</span> : `${r.payNowPercent}%`}</td>
+                  <td className="adm-small">{promoSummary(r) || <span className="adm-muted">{t.pricing.promoNone}</span>}</td>
                   <td className="adm-num">{r.priority}</td>
                   <td><span className={`adm-badge adm-badge--${r.status === "ACTIVE" ? "active" : "deleted"}`}>{r.status === "ACTIVE" ? t.pricing.active : t.pricing.inactive}</span></td>
                   {editable && (
                     <td>
                       <Button variant="ghost" onClick={() => {
                         const { id, updatedAt: _u, ...input } = r;
-                        setEditing({ id, input, price: String(r.priceSatang / SATANG_PER_BAHT) });
+                        setEditing({ id, input, price: String(r.priceSatang / SATANG_PER_BAHT), discount: discountText(input) });
                         setErrors({});
                         window.scrollTo({ top: 0 });
                       }}>{t.pricing.edit}</Button>
@@ -239,5 +269,81 @@ export function PricingRulesPage() {
         </div>
       )}
     </section>
+  );
+}
+
+/** Promotion of a price rule (migration 0055): room discount, free extra bed / pets / dishes, a text for guests. */
+function PromotionFields({ editing, setEditing, foods, errors }: {
+  editing: Editing; setEditing: (e: Editing) => void; foods: FoodMenuDto["categories"]; errors: Record<string, string>;
+}) {
+  const { t, locale } = useAdmin();
+  const input = editing.input;
+  const set = (patch: Partial<PricingRuleInput>, discount = editing.discount) => setEditing({ ...editing, input: { ...input, ...patch }, discount });
+  const chosen = input.freeFoodOptionIds ?? [];
+  const price = parseBahtToSatang(editing.price);
+  const value = input.discountKind === "PERCENT" ? Number(editing.discount) : input.discountKind === "AMOUNT" ? parseBahtToSatang(editing.discount) : null;
+  const after = price !== null && value ? (input.discountKind === "PERCENT"
+    ? Math.round((price * (100 - Math.min(value, 100))) / 100 / SATANG_PER_BAHT) * SATANG_PER_BAHT : Math.max(0, price - value)) : null;
+  return (
+    <fieldset className="adm-fieldset adm-promo">
+      <legend className="adm-label">{t.pricing.promo}</legend>
+      <p className="adm-field__hint">{t.pricing.promoHint}</p>
+      <div className="adm-grid2">
+        <div className="adm-field">
+          <label htmlFor="pr-disc-kind">{t.pricing.discount}</label>
+          <select id="pr-disc-kind" value={input.discountKind ?? ""}
+            onChange={(e) => set({ discountKind: (e.target.value || null) as PricingRuleInput["discountKind"], discountValue: null }, "")}>
+            <option value="">{t.pricing.discountNone}</option>
+            <option value="PERCENT">{t.pricing.discountPercent}</option>
+            <option value="AMOUNT">{t.pricing.discountAmount}</option>
+          </select>
+          {errors.discountKind && <p className="adm-field__error">{errors.discountKind}</p>}
+        </div>
+        {input.discountKind && (
+          <Field label={input.discountKind === "PERCENT" ? t.pricing.discountValuePercent : t.pricing.discountValueAmount} required
+            inputMode={input.discountKind === "PERCENT" ? "numeric" : "decimal"} value={editing.discount} error={errors.discountValue}
+            hint={after !== null ? format(t.pricing.discountPreview, { price: formatBaht(after, locale.code) }) : undefined}
+            onChange={(e) => setEditing({ ...editing, discount: e.target.value })} />
+        )}
+      </div>
+      <div className="adm-row adm-promo__checks">
+        <label className="adm-check">
+          <input type="checkbox" checked={!!input.freeExtraBed} onChange={(e) => set({ freeExtraBed: e.target.checked })} />
+          {t.pricing.freeExtraBed}
+        </label>
+        <label className="adm-check">
+          <input type="checkbox" checked={!!input.freePets} onChange={(e) => set({ freePets: e.target.checked })} />
+          {t.pricing.freePets}
+        </label>
+      </div>
+      <fieldset className="adm-fieldset adm-promo__foods">
+        <legend className="adm-label">{t.pricing.freeFoods}</legend>
+        {!foods.some((c) => c.options.length) && <p className="adm-muted adm-small">{t.pricing.freeFoodsNone}</p>}
+        {foods.filter((c) => c.options.length).map((c) => (
+          <div key={c.id} className="adm-promo__foodgroup">
+            <p className="adm-small adm-muted">{c.name}</p>
+            <ul className="adm-extrabeds__unitlist">
+              {c.options.map((o) => (
+                <li key={o.id}>
+                  <label className="adm-check">
+                    <input type="checkbox" checked={chosen.includes(o.id)}
+                      onChange={(e) => set({ freeFoodOptionIds: e.target.checked ? [...chosen, o.id] : chosen.filter((x) => x !== o.id) })} />
+                    {o.name} <span className="adm-muted">· {formatBaht(o.priceSatang, locale.code)}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {errors.freeFoodOptionIds && <p className="adm-field__error">{errors.freeFoodOptionIds}</p>}
+      </fieldset>
+      <div className="adm-field">
+        <label htmlFor="pr-promo-text">{t.pricing.promoText}</label>
+        <textarea id="pr-promo-text" rows={2} maxLength={MAX_PROMO_TEXT} value={input.promoText ?? ""} aria-describedby="pr-promo-text-hint"
+          onChange={(e) => set({ promoText: e.target.value })} />
+        <p className="adm-field__hint" id="pr-promo-text-hint">{t.pricing.promoTextHint}</p>
+        {errors.promoText && <p className="adm-field__error">{errors.promoText}</p>}
+      </div>
+    </fieldset>
   );
 }

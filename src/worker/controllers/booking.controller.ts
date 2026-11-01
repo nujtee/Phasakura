@@ -1,5 +1,5 @@
 import type { BookingStatus, FoodSelection, MassageSelection, PaymentStatus, PricingRuleInput } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_MASSAGE_LINES, MAX_MASSAGE_QUANTITY, MAX_PETS_PER_UNIT, MAX_RULE_UNITS, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_MASSAGE_LINES, MAX_MASSAGE_QUANTITY, MAX_PETS_PER_UNIT, MAX_FREE_FOODS, MAX_PROMO_TEXT, MAX_RULE_UNITS, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
 import { MAX_PRICE_SATANG, PAY_NOW_PERCENTS } from "../../shared/booking-rules.ts";
 import { BALANCE_METHODS, type BalanceMethod } from "../../shared/payment-types.ts";
 import { isIsoDate } from "../../shared/dates.ts";
@@ -185,7 +185,8 @@ function parseQuote(body: Record<string, unknown>, v: Validator): QuoteInput {
 }
 
 function parseRule(body: Record<string, unknown>, partial: boolean): Partial<PricingRuleInput> {
-  const v = new Validator(body).allowOnly(["targetType", "unitId", "unitType", "name", "dateFrom", "dateTo", "daysOfWeek", "priceSatang", "priority", "status", "payNowPercent", "unitIds"]);
+  const v = new Validator(body).allowOnly(["targetType", "unitId", "unitType", "name", "dateFrom", "dateTo", "daysOfWeek", "priceSatang", "priority", "status", "payNowPercent", "unitIds",
+    "discountKind", "discountValue", "freeExtraBed", "freePets", "freeFoodOptionIds", "promoText"]);
   const out: Partial<PricingRuleInput> = {};
   const want = (k: string) => !partial || v.has(k);
   if (want("targetType")) out.targetType = v.oneOf("targetType", TARGET_TYPES, { required: true });
@@ -203,6 +204,34 @@ function parseRule(body: Record<string, unknown>, partial: boolean): Partial<Pri
     const p = body.payNowPercent ?? null;
     if (p !== null && !(PAY_NOW_PERCENTS as readonly unknown[]).includes(p)) v.errors.payNowPercent = "INVALID_VALUE";
     else out.payNowPercent = p as number | null;
+  }
+  // Promotion (migration 0055). Checked against the price in the service (an amount may not exceed it).
+  if (v.has("discountKind") || !partial) {
+    const k = body.discountKind ?? null;
+    if (k !== null && k !== "PERCENT" && k !== "AMOUNT") v.errors.discountKind = "INVALID_VALUE";
+    else out.discountKind = k as "PERCENT" | "AMOUNT" | null;
+  }
+  if (v.has("discountValue") || !partial) {
+    const d = body.discountValue ?? null;
+    if (d !== null && !(Number.isInteger(d) && (d as number) >= 1 && (d as number) <= MAX_PRICE_SATANG)) v.errors.discountValue = "INVALID_VALUE";
+    else out.discountValue = d as number | null;
+  }
+  for (const k of ["freeExtraBed", "freePets"] as const) {
+    if (v.has(k) || !partial) {
+      const b = body[k] ?? false;
+      if (typeof b !== "boolean") v.errors[k] = "INVALID_VALUE";
+      else out[k] = b;
+    }
+  }
+  if (v.has("freeFoodOptionIds") || !partial) {
+    const ids = body.freeFoodOptionIds ?? [];
+    if (!Array.isArray(ids) || ids.length > MAX_FREE_FOODS || !ids.every((x) => typeof x === "string" && ID_PATTERN.test(x))) v.errors.freeFoodOptionIds = "INVALID_VALUE";
+    else out.freeFoodOptionIds = [...new Set(ids as string[])].sort();
+  }
+  if (v.has("promoText") || !partial) {
+    const t = body.promoText;
+    if (t === null || t === undefined || (typeof t === "string" && !t.trim())) out.promoText = null;
+    else out.promoText = v.string("promoText", { max: MAX_PROMO_TEXT })?.trim() ?? null;
   }
   // Several chosen houses / VIP tents (migration 0051).
   if (v.has("unitIds")) {

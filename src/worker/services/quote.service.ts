@@ -10,12 +10,15 @@ import type {
   MassageSelection,
   IncludedMealDto,
   NightPriceDto,
+  StayPromotionDto,
   QuoteDto,
   ExtraBedLineDto,
   PetLineDto,
   QuoteItemDto,
   TarpLineDto,
 } from "../../shared/booking-types.ts";
+import type { PromotionBriefDto } from "../../shared/accommodation-types.ts";
+import { promotionSaving } from "../repositories/promotion.repository.ts";
 import { MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
 import { depositFor, payLaterOfNights } from "../../shared/booking-rules.ts";
 import { DEFAULT_TIMEZONE, addDays, dayOfWeek, localDateTimeIn, todayIn } from "../../shared/dates.ts";
@@ -95,6 +98,8 @@ export interface PreparedStay {
   pets: PetLineDto | null;
   /** Meals that come with this stay. */
   included: PreparedIncludedMeal[];
+  /** The price rules of this stay's nights (promotions: migration 0055). */
+  rules: PricingRuleRow[];
 }
 
 /** Everything booking creation needs — computed once, from D1, on the server. */
@@ -268,7 +273,9 @@ export class QuoteService {
         if (locks.length) throw new HttpError(409, "UNIT_UNAVAILABLE", "This accommodation is not available for the selected dates", { unitId: unit.id });
 
         const rules = await this.pricing.activeRules({ unitId: unit.id, unitType: unit.unit_type }, nights[0]!, lastNight);
-        const nightly = nights.map((date) => ({ date, priceSatang: nightPrice(rules, date, unit.base_price_satang) }));
+        const nightly = nights.map((date) => nightPriceDto(rules, date, unit.base_price_satang));
+        const promotions = stayPromotions(rules, nightly, 1);
+        const promoOf = (date: string) => promotions.find((pr) => pr.dates!.includes(date)) ?? null;
         const names = Object.fromEntries((await this.units.translations([unit.id])).map((t) => [t.language_code, t.name]));
         const subtotalSatang = sum(nightly);
         // Extra beds (migration 0043): beds × price per bed per night, part of this stay (and of its deposit).
@@ -277,12 +284,17 @@ export class QuoteService {
           const offer = await this.extraBedSettings();
           if (!offer || (await this.extraBedRepo!.offUnits()).includes(unit.id)) throw new ConflictError("Extra beds are not offered", "EXTRA_BED_UNAVAILABLE");
           if (stay.extraBeds > offer.max_per_unit) throw new ValidationError({ [key("extraBeds")]: "EXTRA_BEDS_TOO_MANY" });
-          extraBeds = {
-            quantity: stay.extraBeds,
-            pricePerNightSatang: offer.price_per_night_satang,
-            nights: nights.length,
-            subtotalSatang: stay.extraBeds * offer.price_per_night_satang * nights.length,
-          };
+          // Promotion (migration 0055): nights whose rule gives free extra beds are not charged.
+          const freeNights = nights.filter((d) => promoOf(d)?.freeExtraBed).length;
+          const charged = nights.length - freeNights;
+          extraBeds = charged > 0
+            ? { quantity: stay.extraBeds, pricePerNightSatang: offer.price_per_night_satang, nights: charged,
+              subtotalSatang: stay.extraBeds * offer.price_per_night_satang * charged, ...(freeNights ? { freeNights } : {}) }
+            : { quantity: stay.extraBeds, pricePerNightSatang: 0, nights: nights.length, subtotalSatang: 0, freeNights };
+          for (const d of nights) {
+            const pr = promoOf(d);
+            if (pr?.freeExtraBed) pr.extraBedFreeSatang += stay.extraBeds * offer.price_per_night_satang;
+          }
         }
         // Pets (migration 0044): pets × price × (nights, or once per stay), part of this stay (and of its deposit).
         let pets: PetLineDto | null = null;
@@ -290,11 +302,15 @@ export class QuoteService {
           const offer = await this.petSettings();
           if (!offer) throw new ConflictError("Pets are not allowed", "PET_UNAVAILABLE");
           if (stay.pets > offer.max_per_unit) throw new ValidationError({ [key("pets")]: "PETS_TOO_MANY" });
-          const chargedUnits = offer.charge_per === "STAY" ? 1 : nights.length;
-          pets = {
-            quantity: stay.pets, priceSatang: offer.price_satang, chargePer: offer.charge_per, chargedUnits,
-            maxWeightKg: offer.max_weight_kg, subtotalSatang: stay.pets * offer.price_satang * chargedUnits,
-          };
+          // Promotion (migration 0055): free on the nights whose rule says so (per stay: when the first night's does).
+          const freeDates = offer.charge_per === "STAY" ? (promoOf(nights[0]!)?.freePets ? [nights[0]!] : []) : nights.filter((d) => promoOf(d)?.freePets);
+          const units = offer.charge_per === "STAY" ? 1 : nights.length;
+          const chargedUnits = units - freeDates.length;
+          pets = chargedUnits > 0
+            ? { quantity: stay.pets, priceSatang: offer.price_satang, chargePer: offer.charge_per, chargedUnits,
+              maxWeightKg: offer.max_weight_kg, subtotalSatang: stay.pets * offer.price_satang * chargedUnits, ...(freeDates.length ? { freeUnits: freeDates.length } : {}) }
+            : { quantity: stay.pets, priceSatang: 0, chargePer: offer.charge_per, chargedUnits: units, maxWeightKg: offer.max_weight_kg, subtotalSatang: 0, freeUnits: units };
+          for (const d of freeDates) promoOf(d)!.petsFreeSatang += stay.pets * offer.price_satang;
         }
         stays.push({
           item: {
@@ -314,7 +330,9 @@ export class QuoteService {
               (extraBeds?.subtotalSatang ?? 0) + (pets?.subtotalSatang ?? 0)),
             ...(extraBeds ? { extraBeds } : {}),
             ...(pets ? { pets } : {}),
+            ...(promotions.length ? { promotions } : {}),
           },
+          rules,
           unit,
           tents: 0,
           tarp: null,
@@ -336,7 +354,8 @@ export class QuoteService {
         if (capacity.some((n) => n.remaining < tents)) throw new ConflictError("Not enough camping space for these nights", "CAMPING_FULL");
 
         const rules = await this.pricing.activeRules("CAMPING", nights[0]!, lastNight);
-        const nightly = nights.map((date) => ({ date, priceSatang: nightPrice(rules, date, camping!.price_per_adult_night_satang) }));
+        const nightly = nights.map((date) => nightPriceDto(rules, date, camping!.price_per_adult_night_satang));
+        const promotions = stayPromotions(rules, nightly, stay.adults);
         const names = Object.fromEntries((await this.inventory.campingTranslations()).map((t) => [t.language_code, t.name]));
 
         // Tarp area: one per booking, a fixed price per night, its own nightly limit.
@@ -368,7 +387,9 @@ export class QuoteService {
             children: stay.children,
             // The tarp area is part of the camping stay (and of its deposit).
             payLaterSatang: payLaterOfNights(camping.payment_mode ?? "FULL", nightPayNow(rules, nightly), stay.adults, tarp?.subtotalSatang ?? 0),
+            ...(promotions.length ? { promotions } : {}),
           },
+          rules,
           unit: null,
           tents,
           tarp,
@@ -388,6 +409,7 @@ export class QuoteService {
       includedLines.push(...included.lines.map((l) => ({ ...l, stayIndex: i })));
     }
     const extra = await this.extraFood(input, nights, menu);
+    applyFoodPromotions(extra, stays, nights);
 
     const foodLines = [...includedLines, ...extra];
     const tarp = stays.find((st) => st.tarp)?.tarp ?? null;
@@ -419,6 +441,10 @@ export class QuoteService {
         accommodationSubtotalSatang,
         foodSubtotalSatang,
         discountSatang: 0,
+        ...(() => {
+          const saved = items.reduce((acc, it) => acc + (it.promotions ?? []).reduce((a, p) => a + promotionSaving(p), 0), 0);
+          return saved > 0 ? { promotionSavingsSatang: saved } : {};
+        })(),
         totalSatang,
         currency: "THB",
         // Deposit plan (migration 0025), per stay: what each DEPOSIT_50 stay leaves for check-in; food is paid now.
@@ -692,8 +718,48 @@ export function winningRule(rules: PricingRuleRow[], date: string): PricingRuleR
   return matching[0] ?? null;
 }
 
+/** A rule's price after its promotion discount (migration 0055): percent rounded to whole baht, amount never below 0. */
+export function discountedPrice(rule: Pick<PricingRuleRow, "price_satang" | "discount_kind" | "discount_value">): number {
+  const v = rule.discount_value ?? 0;
+  if (rule.discount_kind === "PERCENT" && v > 0) return Math.round((rule.price_satang * (100 - Math.min(v, 100))) / 100 / 100) * 100;
+  if (rule.discount_kind === "AMOUNT" && v > 0) return Math.max(0, rule.price_satang - v);
+  return rule.price_satang;
+}
+
 export function nightPrice(rules: PricingRuleRow[], date: string, base: number): number {
-  return winningRule(rules, date)?.price_satang ?? base;
+  const rule = winningRule(rules, date);
+  return rule ? discountedPrice(rule) : base;
+}
+
+/** Night price with the rule's price before the discount, when there is one (for the crossed-out price). */
+export function nightPriceDto(rules: PricingRuleRow[], date: string, base: number): NightPriceDto {
+  const rule = winningRule(rules, date);
+  if (!rule) return { date, priceSatang: base };
+  const price = discountedPrice(rule);
+  return price < rule.price_satang ? { date, priceSatang: price, listPriceSatang: rule.price_satang } : { date, priceSatang: price };
+}
+
+/** Whether a rule is a promotion (migration 0055): anything a guest gets or reads beyond the price. */
+export function isPromotion(r: PricingRuleRow): boolean {
+  return !!(r.discount_kind || r.free_extra_bed === 1 || r.free_pets === 1 || r.promo_text || r.free_food_ids?.length);
+}
+
+/** The promotions of a stay's nights, one per rule, with what the room discount saves (benefits added later). */
+export function stayPromotions(rules: PricingRuleRow[], nightly: NightPriceDto[], factor: number): StayPromotionDto[] {
+  const out = new Map<string, StayPromotionDto>();
+  for (const n of nightly) {
+    const r = winningRule(rules, n.date);
+    if (!r || !isPromotion(r)) continue;
+    const p = out.get(r.id) ?? {
+      ruleId: r.id, text: r.promo_text ?? null, roomDiscountSatang: 0, extraBedFreeSatang: 0, petsFreeSatang: 0, foodFreeSatang: 0,
+      discount: r.discount_kind ? { kind: r.discount_kind, value: r.discount_value ?? 0 } : null,
+      freeExtraBed: r.free_extra_bed === 1, freePets: r.free_pets === 1, freeFoodOptionIds: r.free_food_ids ?? [], dates: [],
+    };
+    p.roomDiscountSatang += ((n.listPriceSatang ?? n.priceSatang) - n.priceSatang) * factor;
+    p.dates!.push(n.date);
+    out.set(r.id, p);
+  }
+  return [...out.values()];
 }
 
 /** Pay-now percentage of each night (the winning rule's, migration 0049), next to its price. */
@@ -720,4 +786,73 @@ function remainingFor(c: FoodCategoryRow, date: string, rows: { food_category_id
 
 function sum(nightly: NightPriceDto[]): number {
   return nightly.reduce((acc, n) => acc + n.priceSatang, 0);
+}
+
+/**
+ * Free food of promotions (migration 0055): a food line on date D is free when a stay's night D or D − 1 (breakfast the
+ * morning after) is priced by a rule that lists the option — for at most the guests of those stays (per person) or
+ * one portion / set per stay. The free part is left out of the line's price (promoFreeQuantity says how many).
+ */
+export function applyFoodPromotions(lines: PreparedFoodLine[], stays: PreparedStay[], nights: string[]): void {
+  const prev = (d: string) => nights[nights.indexOf(d) - 1] ?? null;
+  for (const line of lines) {
+    const d = line.dto.serviceDate;
+    const covering: { stay: PreparedStay; promo: StayPromotionDto }[] = [];
+    for (const stay of stays) {
+      for (const date of [d, nights.includes(d) ? prev(d) : nights[nights.length - 1]!]) {
+        if (!date || !nights.includes(date)) continue;
+        const r = winningRule(stay.rules, date);
+        if (!r?.free_food_ids?.includes(line.option.id)) continue;
+        const promo = stay.item.promotions?.find((p) => p.ruleId === r.id);
+        if (promo) { covering.push({ stay, promo }); break; }
+      }
+    }
+    if (!covering.length) continue;
+    const dto = line.dto;
+    let freeQty: number;
+    let freeAmount: number;
+    if (dto.pricingType === "PER_PERSON") {
+      const guests = covering.reduce((acc, c) => acc + c.stay.item.adults + c.stay.item.children, 0);
+      const freeAdults = Math.min(dto.adults, guests);
+      const freeChildren = Math.min(dto.children, guests - freeAdults);
+      freeQty = freeAdults + freeChildren;
+      freeAmount = freeAdults * dto.unitPriceSatang + freeChildren * (line.childPriceSatang ?? dto.unitPriceSatang);
+    } else {
+      freeQty = Math.min(dto.quantity, covering.length);
+      freeAmount = freeQty * dto.unitPriceSatang;
+    }
+    freeAmount = Math.min(freeAmount, dto.subtotalSatang);
+    if (freeQty < 1 || freeAmount <= 0) continue;
+    // Not counted as "included" (that marks the stay's own meals); the line stays an extra, at a lower price.
+    dto.subtotalSatang -= freeAmount;
+    dto.promoFreeQuantity = freeQty;
+    covering[0]!.promo.foodFreeSatang += freeAmount;
+  }
+}
+
+/** The promotions of the given nights as guests see them, one per rule (in night order). */
+export function promotionBriefs(rules: PricingRuleRow[], nights: string[]): PromotionBriefDto[] {
+  const out = new Map<string, PromotionBriefDto>();
+  for (const date of nights) {
+    const r = winningRule(rules, date);
+    if (!r || !isPromotion(r)) continue;
+    const have = out.get(r.id);
+    if (have) { have.dateTo = date; continue; }
+    out.set(r.id, {
+      text: r.promo_text ?? null, discount: r.discount_kind ? { kind: r.discount_kind, value: r.discount_value ?? 0 } : null,
+      freeExtraBed: r.free_extra_bed === 1, freePets: r.free_pets === 1, freeFoodOptionIds: r.free_food_ids ?? [], dateFrom: date, dateTo: date,
+    });
+  }
+  return [...out.values()];
+}
+
+/** Night prices + crossed-out prices + promotions of a search (availability). */
+export function searchPrices(rules: PricingRuleRow[], nights: string[], base: number) {
+  const dtos = nights.map((d) => nightPriceDto(rules, d, base));
+  const promotions = promotionBriefs(rules, nights);
+  return {
+    prices: dtos.map((d) => d.priceSatang),
+    ...(dtos.some((d) => d.listPriceSatang !== undefined) ? { list: dtos.map((d) => d.listPriceSatang ?? d.priceSatang) } : {}),
+    ...(promotions.length ? { promotions } : {}),
+  };
 }

@@ -3,6 +3,7 @@ import type { ExtraBedLineDto, GuestMoveRequestDto, GuestMoveStartDto, MoveRoomD
 import { MoveRequestRepository, moveHold, toMoveRequestDto, type MoveRequestRow, type MoveSettingsRow } from "../repositories/move-request.repository.ts";
 import { PetRepository, type BookingPetRow } from "../repositories/pet.repository.ts";
 import { MassageRepository, toMassageLine } from "../repositories/massage.repository.ts";
+import { PromotionRepository, promotionSaving, toStayPromotion } from "../repositories/promotion.repository.ts";
 import type {
   AdminBookingDto,
   AdminBookingSummaryDto,
@@ -106,6 +107,11 @@ export class BookingService {
   /** Pets snapshots (migration 0044). */
   private get petRepo(): PetRepository {
     return new PetRepository(this.db);
+  }
+
+  /** Promotions a booking got (migration 0055). */
+  private get promoRepo(): PromotionRepository {
+    return new PromotionRepository(this.db);
   }
 
   private get massageRepo(): MassageRepository {
@@ -281,6 +287,9 @@ export class BookingService {
         subtotal: item.subtotalSatang,
         now: at,
       }));
+
+      // Promotions this stay got (migration 0055): what the bill shows; the prices above already include them.
+      for (const promo of (item.promotions ?? []).filter((pr) => pr.text || promotionSaving(pr) > 0)) statements.push(this.promoRepo.insertStatement(newId(), bookingId, itemId, promo, at));
 
       // Included meals snapshot (spec §20).
       for (const m of stay.included) {
@@ -1243,9 +1252,12 @@ export class BookingService {
       awaitingPayment || owing ? this.payments.settings() : Promise.resolve(null),
       this.payments.payments(row.id),
     ]);
-    const [bedRows, petRows, moves, massageRows] = await Promise.all([
+    const [bedRows, petRows, moves, massageRows, promoRows] = await Promise.all([
       this.extraBeds.forBooking(row.id), this.petRepo.forBooking(row.id), this.moveRequests.forBooking(row.id), this.massageRepo.forBooking(row.id),
+      this.promoRepo.forBooking(row.id),
     ]);
+    const promosOf = (itemId: string) => promoRows.filter((p) => p.booking_item_id === itemId).map(toStayPromotion);
+    const promotionSavingsSatang = promoRows.reduce((acc, p) => acc + promotionSaving(toStayPromotion(p)), 0);
     const massages = massageRows.map(toMassageLine);
     const massageSubtotalSatang = massages.reduce((acc, l) => acc + l.subtotalSatang, 0);
     const beds = new Map(bedRows.map((e) => [e.booking_item_id, e]));
@@ -1290,6 +1302,7 @@ export class BookingService {
       payLaterSatang: i.pay_later_satang,
       ...(beds.has(i.id) ? { extraBeds: bedLine(beds.get(i.id)!) } : {}),
       ...(pets.has(i.id) ? { pets: petLine(pets.get(i.id)!) } : {}),
+      ...(promosOf(i.id).length ? { promotions: promosOf(i.id) } : {}),
     }));
     const cancelledAlone = new Set(items.filter((i) => i.cancelled_at).map((i) => i.id));
     const live = stays.filter((x) => x.status === "ACTIVE");
@@ -1345,6 +1358,7 @@ export class BookingService {
       accommodationSubtotalSatang: row.accommodation_subtotal_satang,
       foodSubtotalSatang: row.food_subtotal_satang - massageSubtotalSatang,
       discountSatang: row.discount_satang,
+      ...(promotionSavingsSatang > 0 ? { promotionSavingsSatang } : {}),
       totalSatang: row.total_satang,
       currency: row.currency,
       depositSatang: row.deposit_satang,
