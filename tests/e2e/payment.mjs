@@ -301,7 +301,10 @@ await check("deposit: House 02 takes 50%; the guest is asked for the deposit; ch
   // Owner: House 02 → Payment → 50% deposit.
   await pa.goto(`${BASE}/en/admin/houses/dev_house_02`);
   await pa.getByLabel("Payment", { exact: true }).selectOption("DEPOSIT_50");
-  await pa.getByText("Deposit = half of the stay (tarp area included) plus food in full. Applies to new bookings only.").waitFor();
+  await pa.getByText("Deposit = the chosen share (50 / 60 / 70%) of the stay (tarp area included) plus food in full; the rest at check-in. Applies to new bookings only.").waitFor();
+  // 60 % and 70 % are offered too (migration 0054).
+  const offered = await pa.getByLabel("Payment", { exact: true }).locator("option").evaluateAll((os) => os.map((o) => o.value));
+  assert(JSON.stringify(offered) === JSON.stringify(["FULL", "DEPOSIT_50", "DEPOSIT_60", "DEPOSIT_70"]), `options ${offered}`);
   await pa.locator("form.adm-card").first().getByRole("button", { name: "Save" }).click();
   await pa.getByText("Saved").first().waitFor();
   const unit = (await (await req.get(`${BASE}/api/admin/accommodations/dev_house_02`)).json()).data;
