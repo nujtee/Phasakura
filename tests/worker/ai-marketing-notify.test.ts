@@ -51,7 +51,7 @@ describe("marketing report ready notices", () => {
 
     await h.app.scheduled(h.env, h.now.getTime() + 60_000);
     assert.equal(rows(h, "email_logs").length, 4, "no second notice");
-    const mail = h.resend.requests.find((x) => (x.json!.to as string[])[0] === readerEmail && /รายงานการตลาด/.test(String(x.json!.subject)));
+    const mail = h.resend.requests.find((x) => (x.json!.to as string[])[0] === readerEmail && /รายงานการตลาดรายสัปดาห์/.test(String(x.json!.subject)));
     assert.ok(mail, `reader e-mailed: ${h.resend.requests.map((x) => x.json!.subject).join(" | ")}`);
     const weekly = reports.find((r) => r.period_kind === "WEEKLY")!;
     const all = JSON.stringify(h.resend.requests.map((x) => x.json)) + JSON.stringify(h.line.pushes);
