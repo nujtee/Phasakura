@@ -128,7 +128,7 @@ export function DashboardPage() {
             <p className="adm-small adm-muted">{c.dash.analyticsNote} {c.dash.restricted}</p>
           </div>
 
-          <div className="adm-grid2 adm-grid2--gap">
+          <div className="adm-grid2 adm-grid2--gap adm-grid2--tables">
             <div className="adm-card" data-testid="booking-sources">
               <h2 className="adm-h2">{c.dash.bookingSourcesTitle}</h2>
               {data.analytics.bookingSources.length === 0 ? <p className="adm-muted">{c.dash.noSources}</p> : (
