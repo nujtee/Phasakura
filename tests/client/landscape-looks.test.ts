@@ -56,3 +56,26 @@ describe("illustrated looks (3D-style houses, tents, trees, shrubs, flowers)", (
     assert.equal(custom.find((p) => p.id === "kpine")!.look, "pine");
   });
 });
+
+describe("name / text size and colour per object", () => {
+  it("draws the text at its size and colour (a light colour gets a dark halo); default as before", () => {
+    const plain = svg(obj({ label: "A1" }));
+    assert.match(plain, /font-size="2"/);
+    assert.doesNotMatch(plain, /style=/);
+    const big = svg(obj({ label: "A1", labelSize: 250, labelColor: "#d32f2f" }));
+    assert.match(big, /font-size="5"/);
+    assert.match(big, /fill:#d32f2f/);
+    assert.match(big, /stroke:#fff/);
+    assert.match(svg(obj({ label: "A1", labelColor: "#ffeb3b" })), /stroke:#212121/, "light text, dark halo");
+  });
+
+  it("validates size (50–400 %, whole numbers) and colour", () => {
+    const doc = (o: Partial<LandscapeObject>) => ({ ...emptyLandscape("BLANK"), objects: [obj({ layerId: "stays", label: "A1", ...o })] });
+    assert.deepEqual(validateLandscapeDocument(doc({ labelSize: 150, labelColor: "#123abc" }), { backgroundKind: "BLANK" }), {});
+    assert.deepEqual(validateLandscapeDocument(doc({ labelSize: null, labelColor: null }), { backgroundKind: "BLANK" }), {});
+    for (const labelSize of [40, 401, 120.5]) {
+      assert.equal(validateLandscapeDocument(doc({ labelSize }), { backgroundKind: "BLANK" })["objects.0.labelSize"], "OUT_OF_RANGE", String(labelSize));
+    }
+    assert.equal(validateLandscapeDocument(doc({ labelColor: "red" }), { backgroundKind: "BLANK" })["objects.0.labelColor"], "INVALID");
+  });
+});

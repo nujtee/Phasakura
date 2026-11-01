@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { AdminLandscapeMessages } from "../../../shared/i18n/admin-landscape-messages.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import {
-  LANDSCAPE_LIMITS, LANDSCAPE_LOOKS, RESERVABLE_KINDS,
+  LABEL_SIZE_MAX, LABEL_SIZE_MIN, LANDSCAPE_LIMITS, LANDSCAPE_LOOKS, RESERVABLE_KINDS,
   type LandscapeLayer, type LandscapeObject, type LandscapeObjectKind, type LandscapeOverviewDto, type LandscapeTemplateDto,
 } from "../../../shared/landscape-types.ts";
 import { objectsBox, measuredDistance, planUnit, type Size } from "../../landscape/geometry.ts";
@@ -87,6 +87,29 @@ export function PropertiesPanel({ e, scene, selected, units, campingEnabled, rea
             onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }} />
         </div>
       )}
+      {objs.some((o) => o.label) && (() => {
+        // Text size and colour (every selected object with a name / text).
+        const size = first.labelSize ?? 100;
+        const setSize = (n: number) => {
+          const v = Math.max(LABEL_SIZE_MIN, Math.min(LABEL_SIZE_MAX, Math.round(n / 10) * 10));
+          set((o) => ({ ...o, labelSize: v === 100 ? null : v }), "labelSize");
+        };
+        return (
+          <div className="lse-textstyle">
+            <div className="adm-field">
+              <label htmlFor="lse-textsize">{e.textSize}: {size}%</label>
+              <div className="lse-row">
+                <Button variant="ghost" disabled={dis || size <= LABEL_SIZE_MIN} aria-label={e.textSmaller} onClick={() => setSize(size - 10)}>A−</Button>
+                <input id="lse-textsize" type="range" min={LABEL_SIZE_MIN} max={LABEL_SIZE_MAX} step={10} disabled={dis} value={size}
+                  onChange={(ev) => setSize(Number(ev.target.value))} />
+                <Button variant="ghost" disabled={dis || size >= LABEL_SIZE_MAX} aria-label={e.textBigger} onClick={() => setSize(size + 10)}>A+</Button>
+              </div>
+            </div>
+            <ColorField id="lse-textcolor" label={e.textColor} none={e.textColorDefault} disabled={dis} value={first.labelColor ?? null}
+              onChange={(labelColor) => set((o) => ({ ...o, labelColor }), "labelColor")} />
+          </div>
+        );
+      })()}
       {LANDSCAPE_LOOKS[first.kind] && objs.every((o) => o.kind === first.kind) && (
         <>
           <LookPicker kind={first.kind} value={objs.every((o) => (o.look ?? null) === (first.look ?? null)) ? first.look ?? null : "—"}

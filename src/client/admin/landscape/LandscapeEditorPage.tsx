@@ -290,7 +290,8 @@ function Editor({ layout, overview, templates: initialTemplates, palette: initia
     const c = shapeCenter(o.shape);
     const scale = 1 / Math.max(b.w, b.h, 1e-9);
     const shape = mapShape(o.shape, ([x, y]) => [round6(0.5 + (x - c[0]) * scale), round6(0.5 + (y - c[1]) * scale)], (l) => round6(l * scale));
-    const object = { kind: o.kind, shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId, typeId: o.typeId ?? null };
+    const object = { kind: o.kind, shape, rotation: o.rotation, style: o.style, label: o.label, locked: false, imageAssetId: o.imageAssetId, typeId: o.typeId ?? null,
+      look: o.look ?? null, labelSize: o.labelSize ?? null, labelColor: o.labelColor ?? null };
     setBusy(true);
     try {
       const tpl = await apiRequest<LandscapeTemplateDto>("POST", "/api/admin/landscape/templates", { name: templateName, object });

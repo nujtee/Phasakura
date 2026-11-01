@@ -68,7 +68,14 @@ export interface LandscapeObject {
    * with its fill as the main colour. null / absent = the flat drawing (plans from before looks existed).
    */
   look?: string | null;
+  /** Size of its name / text, percent of the normal size (LABEL_SIZE_MIN–MAX); null / absent = 100. */
+  labelSize?: number | null;
+  /** Colour of its name / text (#RRGGBB); null / absent = the usual dark text. */
+  labelColor?: string | null;
 }
+
+export const LABEL_SIZE_MIN = 50;
+export const LABEL_SIZE_MAX = 400;
 
 /** The illustrated looks each kind offers; the first is what a new object gets. */
 export const LANDSCAPE_LOOKS: Partial<Record<LandscapeObjectKind, readonly string[]>> = {
@@ -375,6 +382,10 @@ export function validateLandscapeDocument(raw: unknown, ctx: {
     if (o.typeId !== undefined && o.typeId !== null && (typeof o.typeId !== "string" || !ID.test(o.typeId))) errors[at("typeId")] = "INVALID_ID";
     if (o.look !== undefined && o.look !== null && !isLook(o.kind as LandscapeObjectKind, o.look)) errors[at("look")] = "INVALID_VALUE";
     if (o.label !== null && (typeof o.label !== "string" || o.label.length > LANDSCAPE_LIMITS.label)) errors[at("label")] = "TOO_LONG";
+    if (o.labelSize !== undefined && o.labelSize !== null && (!Number.isInteger(o.labelSize) || (o.labelSize as number) < LABEL_SIZE_MIN || (o.labelSize as number) > LABEL_SIZE_MAX)) {
+      errors[at("labelSize")] = "OUT_OF_RANGE";
+    }
+    if (o.labelColor !== undefined && o.labelColor !== null && (typeof o.labelColor !== "string" || !COLOR.test(o.labelColor))) errors[at("labelColor")] = "INVALID";
     const st = o.style;
     if (!isObj(st) || (st.fill !== null && (typeof st.fill !== "string" || !COLOR.test(st.fill)))
       || (st.stroke !== null && (typeof st.stroke !== "string" || !COLOR.test(st.stroke))) || !num(st.opacity) || st.opacity < 0 || st.opacity > 1) {

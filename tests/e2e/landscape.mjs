@@ -67,8 +67,19 @@ await check("editor: draw a house, link it to House 01, autosave; it is there af
   await pa.getByLabel("Booking link").selectOption("dev_house_01");
   await pa.getByLabel("Name / text").fill("Sakura");
   await pa.getByLabel("Name / text").press("Enter");
+  // Text size (A+ twice = 120 %) and colour.
+  await pa.getByRole("button", { name: "Bigger text" }).click();
+  await pa.getByRole("button", { name: "Bigger text" }).click();
+  await pa.getByText("Text size: 120%").waitFor();
+  const colourBox = pa.locator(".lse-textstyle .lse-color");
+  await colourBox.getByRole("checkbox").uncheck();
+  await pa.locator("#lse-textcolor").fill("#d32f2f");
   await saved();
   const doc = (await layout()).draft;
+  const styled = doc.objects.find((o) => o.kind === "HOUSE");
+  assert(styled.labelSize === 120 && styled.labelColor === "#d32f2f", `text style ${styled.labelSize} ${styled.labelColor}`);
+  const fill = await pa.locator(".lse-canvas svg text", { hasText: "Sakura" }).evaluate((el) => getComputedStyle(el).fill);
+  assert(fill === "rgb(211, 47, 47)", `text colour drawn ${fill}`);
   const house = doc.objects.find((o) => o.kind === "HOUSE");
   assert(house && house.link?.unitId === "dev_house_01" && house.label === "Sakura", JSON.stringify(doc.objects));
   assert(Math.abs(house.shape.x - 40) < 1 && Math.abs(house.shape.w - 30) < 1, `metres ${JSON.stringify(house.shape)}`);
