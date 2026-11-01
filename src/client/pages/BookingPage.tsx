@@ -16,6 +16,7 @@ import { Link } from "../router/Router.tsx";
 import { defaultStay, fetchAvailability, useAccommodations, type StayQuery } from "../accommodation/data.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill, StayPrice, UnitCard, type Availability } from "../accommodation/UnitCard.tsx";
+import { PromoList } from "../booking/Promotions.tsx";
 import {
   bookingErrorText,
   cartToSelections,
@@ -336,7 +337,7 @@ export function BookingPage() {
   // A unit too small for the whole group can still be one of several stays: free is enough here.
   const availabilityFor = (unit: PublicUnitDto): Availability => {
     const a = availability?.units.find((u) => u.unitId === unit.id);
-    return a ? { available: a.available, fitsGuests: true, nightlyPricesSatang: a.nightlyPricesSatang } : null;
+    return a ? { available: a.available, fitsGuests: true, nightlyPricesSatang: a.nightlyPricesSatang, listPricesSatang: a.listPricesSatang, promotions: a.promotions } : null;
   };
 
   // ------------------------------------------------------------------ confirmation
@@ -553,7 +554,8 @@ export function BookingPage() {
                 <>
                   {data.camping.description && <p className="prose">{data.camping.description}</p>}
                   <StayPrice base={data.camping.pricePerAdultNightSatang} nightly={availability?.camping.nightlyPricePerAdultSatang}
-                    per={t.accommodation.perAdultPerNight} totalSuffix={t.accommodation.perAdult} />
+                    list={availability?.camping.listPricePerAdultSatang} per={t.accommodation.perAdultPerNight} totalSuffix={t.accommodation.perAdult} />
+                  <PromoList promotions={availability?.camping.promotions} />
                   <p className="unit-card__meta">{fill(t.accommodation.childrenFree, { age: data.camping.childFreeUnderAge })}</p>
                   <CampingBooker camping={data.camping} initial={campingPick ? { ...(searched ?? query), adults: campingPick.adults, children: campingPick.children, tents: campingPick.tents } : searched ?? query}
                     initialTarp={campingPick ? campingPick.kind === "CAMPING" && campingPick.tarp : campingTarp}

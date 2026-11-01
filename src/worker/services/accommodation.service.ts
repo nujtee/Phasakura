@@ -12,7 +12,10 @@ import type {
   UnitType,
 } from "../../shared/accommodation-types.ts";
 import { storedDepositPercent, type PaymentMode } from "../../shared/booking-rules.ts";
-import { DEFAULT_TIMEZONE, todayIn } from "../../shared/dates.ts";
+import { PROMOTION_LOOKAHEAD_DAYS } from "../../shared/accommodation-types.ts";
+import { addDays, DEFAULT_TIMEZONE, todayIn } from "../../shared/dates.ts";
+import { PricingRepository } from "../repositories/pricing.repository.ts";
+import { promotionBriefs } from "./quote.service.ts";
 import { DEFAULT_LOCALE_CODE, parseLocale, type Locale, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike, R2BucketLike } from "../env.ts";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors.ts";
@@ -102,7 +105,16 @@ export class AccommodationService {
     if (!unit) throw new NotFoundError("Accommodation not found", "ACCOMMODATION_NOT_FOUND");
     const [dto] = await this.toPublic([unit], locale.code);
     if (!dto) throw new NotFoundError("Accommodation not found", "ACCOMMODATION_NOT_FOUND");
-    return dto;
+    const promotions = await this.upcomingPromotions(unit);
+    return promotions.length ? { ...dto, promotions } : dto;
+  }
+
+  /** Promotions of this house / VIP tent from today on (the nights their rule prices). */
+  private async upcomingPromotions(unit: UnitRow) {
+    const today = todayIn((await this.inventory.siteTimezone()) ?? DEFAULT_TIMEZONE, this.clock());
+    const nights = Array.from({ length: PROMOTION_LOOKAHEAD_DAYS }, (_, i) => addDays(today, i));
+    const rules = await new PricingRepository(this.db).activeRules({ unitId: unit.id, unitType: unit.unit_type }, nights[0]!, nights.at(-1)!);
+    return promotionBriefs(rules, nights);
   }
 
   private async toPublic(units: UnitRow[], lang: LocaleCode): Promise<PublicUnitDto[]> {

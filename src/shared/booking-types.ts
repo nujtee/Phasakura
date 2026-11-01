@@ -160,6 +160,29 @@ export interface CreateBookingRequest extends QuoteRequest {
 export interface NightPriceDto {
   date: string;
   priceSatang: number;
+  /** The rule's price before its promotion discount (migration 0055); absent = no discount that night. */
+  listPriceSatang?: number;
+}
+
+/**
+ * A promotion a stay gets from the price rule(s) of its nights (migration 0055): what it saves and what is free.
+ * In a booking it is frozen at booking time.
+ */
+export interface StayPromotionDto {
+  ruleId: string | null;
+  /** The owner's text for guests (may be empty: the benefits below speak for themselves). */
+  text: string | null;
+  roomDiscountSatang: number;
+  extraBedFreeSatang: number;
+  petsFreeSatang: number;
+  foodFreeSatang: number;
+  /** What the promotion offers (quotes only): discount, free extra beds / pets, free food options. */
+  discount?: { kind: "PERCENT" | "AMOUNT"; value: number } | null;
+  freeExtraBed?: boolean;
+  freePets?: boolean;
+  freeFoodOptionIds?: string[];
+  /** Nights of this stay the promotion covers (quotes only). */
+  dates?: string[];
 }
 
 export interface QuoteItemDto {
@@ -180,6 +203,8 @@ export interface QuoteItemDto {
   extraBeds?: ExtraBedLineDto | null;
   /** Pets brought to this house / VIP tent (migration 0044); part of the stay's money and of its deposit. */
   pets?: PetLineDto | null;
+  /** Promotions of this stay's nights (migration 0055). */
+  promotions?: StayPromotionDto[];
   /** A booking's stay (not in a quote): its id, and whether staff cancelled it. */
   id?: string;
   status?: "ACTIVE" | "CANCELLED";
@@ -193,6 +218,8 @@ export interface TarpLineDto {
   pricePerNightSatang: number;
   nights: number;
   subtotalSatang: number;
+  /** Extra beds: nights free by a promotion (migration 0055; quotes only — not part of `nights`). */
+  freeNights?: number;
 }
 
 /** Extra beds (ที่นอนเสริม) of one house / VIP tent: beds × price per bed per night × nights. */
@@ -219,6 +246,8 @@ export interface PetLineDto {
   chargePer: PetChargePer;
   /** Nights (per night) or 1 (per stay). */
   chargedUnits: number;
+  /** Nights / stays free by a promotion (migration 0055; quotes only). */
+  freeUnits?: number;
   maxWeightKg: number;
   subtotalSatang: number;
 }
@@ -272,6 +301,8 @@ export interface FoodLineDto {
   includedQuantity: number;
   unitPriceSatang: number;
   subtotalSatang: number;
+  /** Portions free by a promotion (migration 0055); counted in includedQuantity and left out of subtotalSatang. */
+  promoFreeQuantity?: number;
 }
 
 export interface QuoteDto {
@@ -294,6 +325,8 @@ export interface QuoteDto {
   accommodationSubtotalSatang: number;
   foodSubtotalSatang: number;
   discountSatang: number;
+  /** What promotions take off this quote / booking (room discounts, free extra beds / pets / food; migration 0055). */
+  promotionSavingsSatang?: number;
   totalSatang: number;
   currency: string;
   /**
@@ -533,8 +566,22 @@ export interface PricingRuleDto {
   payNowPercent: number | null;
   /** targetType UNITS: the chosen houses / VIP tents. */
   unitIds?: string[];
+  /** Promotion (migration 0055): room discount — PERCENT 1–90 or AMOUNT in satang per night (≤ the price). */
+  discountKind?: "PERCENT" | "AMOUNT" | null;
+  discountValue?: number | null;
+  /** Extra beds / pets are free on the nights this rule prices. */
+  freeExtraBed?: boolean;
+  freePets?: boolean;
+  /** Food options free when the guest picks them (up to the guests of the stay). */
+  freeFoodOptionIds?: string[];
+  /** What guests read about the promotion. */
+  promoText?: string | null;
   updatedAt: string;
 }
+
+export const MAX_PROMO_TEXT = 300;
+export const MAX_FREE_FOODS = 30;
+export const MAX_DISCOUNT_PERCENT = 90;
 
 export type PricingRuleInput = Omit<PricingRuleDto, "id" | "updatedAt">;
 

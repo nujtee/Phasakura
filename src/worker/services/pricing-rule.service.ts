@@ -1,4 +1,4 @@
-import type { PricingRuleDto, PricingRuleInput } from "../../shared/booking-types.ts";
+import { MAX_DISCOUNT_PERCENT, type PricingRuleDto, type PricingRuleInput } from "../../shared/booking-types.ts";
 import type { D1DatabaseLike } from "../env.ts";
 import { NotFoundError, ValidationError } from "../http/errors.ts";
 import type { AccommodationRepository } from "../repositories/accommodation.repository.ts";
@@ -33,6 +33,7 @@ export class PricingRuleService {
   async create(actor: AuthContext, input: PricingRuleInput, meta: RequestMeta): Promise<PricingRuleDto> {
     await this.authz.requirePermission(actor, "pricing.edit", meta);
     await this.checkTarget(input);
+    await this.checkPromotion(input);
     const now = iso(this.clock());
     if (input.targetType === "UNITS") {
       // A group: one UNIT rule per house, sharing the group id (the price engine reads them like any UNIT rule).
@@ -43,6 +44,7 @@ export class PricingRuleService {
           this.repo.insertRuleStatement(row, actor.userId, now),
           this.repo.setGroupStatement(row.id, groupId),
           ...(row.pay_now_percent !== null ? [this.repo.setPayNowStatement(row.id, row.pay_now_percent ?? null)] : []),
+          ...this.promoStatements(row.id, input, null),
           this.historyStatement(row.id, null, row.price_satang, actor.userId, now, "create"),
         ];
       });
@@ -53,6 +55,7 @@ export class PricingRuleService {
     await this.db.batch([
       this.repo.insertRuleStatement(row, actor.userId, now),
       ...(row.pay_now_percent !== null ? [this.repo.setPayNowStatement(row.id, row.pay_now_percent ?? null)] : []),
+      ...this.promoStatements(row.id, input, null),
       this.historyStatement(row.id, null, row.price_satang, actor.userId, now, "create"),
       this.log.auditStatement(actor.userId, "CREATE_PRICING_RULE", "pricing", row.id, null, input, meta),
     ]);
@@ -75,12 +78,14 @@ export class PricingRuleService {
     if (merged.targetType !== "UNIT_TYPE") merged.unitType = null;
     if (merged.dateTo < merged.dateFrom) throw new ValidationError({ dateTo: "BEFORE_START" });
     await this.checkTarget(merged);
+    await this.checkPromotion(merged);
     const row = toRow(id, merged);
     const now = iso(this.clock());
     const statements = [
       this.repo.updateRuleStatement(row, now),
       // Only when it changes, so other edits keep working before migration 0049.
       ...((row.pay_now_percent ?? null) !== (current.pay_now_percent ?? null) ? [this.repo.setPayNowStatement(id, row.pay_now_percent ?? null)] : []),
+      ...this.promoStatements(id, merged, current),
       this.log.auditStatement(actor.userId, "UPDATE_PRICING_RULE", "pricing", id, omitMeta(before), merged, meta),
     ];
     if (row.price_satang !== current.price_satang) {
@@ -100,6 +105,7 @@ export class PricingRuleService {
     const merged: PricingRuleInput = { ...before, ...patch, targetType: "UNITS", unitId: null, unitType: null };
     if (merged.dateTo < merged.dateFrom) throw new ValidationError({ dateTo: "BEFORE_START" });
     await this.checkTarget(merged);
+    await this.checkPromotion(merged);
     const now = iso(this.clock());
     const wanted = new Set(merged.unitIds!);
     const statements = [];
@@ -108,6 +114,7 @@ export class PricingRuleService {
         const row = toRow(m.id, { ...merged, targetType: "UNIT", unitId: m.unit_id });
         statements.push(this.repo.updateRuleStatement(row, now));
         if ((row.pay_now_percent ?? null) !== (m.pay_now_percent ?? null)) statements.push(this.repo.setPayNowStatement(m.id, row.pay_now_percent ?? null));
+        statements.push(...this.promoStatements(m.id, merged, m));
         if (row.price_satang !== m.price_satang) statements.push(this.historyStatement(m.id, m.price_satang, row.price_satang, actor.userId, now, "update"));
       } else {
         statements.push(this.repo.updateRuleStatement({ ...stripMeta(m), status: "INACTIVE" }, now), this.repo.setGroupStatement(m.id, null));
@@ -121,12 +128,35 @@ export class PricingRuleService {
         this.repo.insertRuleStatement(row, actor.userId, now),
         this.repo.setGroupStatement(row.id, groupId),
         ...(row.pay_now_percent !== null ? [this.repo.setPayNowStatement(row.id, row.pay_now_percent ?? null)] : []),
+        ...this.promoStatements(row.id, merged, null),
         this.historyStatement(row.id, null, row.price_satang, actor.userId, now, "create"),
       );
     }
     statements.push(this.log.auditStatement(actor.userId, "UPDATE_PRICING_RULE", "pricing", groupId, omitMeta(before), merged, meta));
     await this.db.batch(statements);
     return groupDtos(await this.repo.groupRules(groupId))[0]!;
+  }
+
+  /** Promotion fields (migration 0055): a discount needs both its kind and value; foods must exist. */
+  private async checkPromotion(input: PricingRuleInput): Promise<void> {
+    const kind = input.discountKind ?? null;
+    const value = input.discountValue ?? null;
+    if ((kind === null) !== (value === null)) throw new ValidationError({ discountValue: kind ? "REQUIRED" : "KIND_REQUIRED" });
+    if (kind === "PERCENT" && (value! < 1 || value! > MAX_DISCOUNT_PERCENT)) throw new ValidationError({ discountValue: "PERCENT_RANGE" });
+    if (kind === "AMOUNT" && (value! < 100 || value! % 100 !== 0 || value! > input.priceSatang)) throw new ValidationError({ discountValue: "AMOUNT_RANGE" });
+    const foods = input.freeFoodOptionIds ?? [];
+    if (foods.length) {
+      const known = new Set((await this.repo.allFoodOptionIds()));
+      if (!foods.every((f) => known.has(f))) throw new ValidationError({ freeFoodOptionIds: "UNKNOWN_FOOD" });
+    }
+  }
+
+  /** Writes the promotion only when it differs (or a rule is new and has one), so rules work before migration 0055. */
+  private promoStatements(id: string, input: PricingRuleInput, current: PricingRuleRow | null) {
+    const want = promoOf(input);
+    const have = current ? promoOfRow(current) : promoOf({} as PricingRuleInput);
+    if (JSON.stringify(want) === JSON.stringify(have)) return [];
+    return this.repo.promotionStatements(id, { ...want, freeFoodIds: want.freeFoodIds });
   }
 
   private async checkTarget(input: PricingRuleInput): Promise<void> {
@@ -188,8 +218,28 @@ function toDto(r: PricingRuleRow): PricingRuleDto {
     priority: r.priority,
     status: r.status,
     payNowPercent: r.pay_now_percent ?? null,
+    discountKind: r.discount_kind ?? null,
+    discountValue: r.discount_value ?? null,
+    freeExtraBed: r.free_extra_bed === 1,
+    freePets: r.free_pets === 1,
+    freeFoodOptionIds: r.free_food_ids ?? [],
+    promoText: r.promo_text ?? null,
     updatedAt: r.updated_at,
   };
+}
+
+function promoOf(r: Partial<PricingRuleInput>) {
+  return {
+    discountKind: r.discountKind ?? null, discountValue: r.discountKind ? r.discountValue ?? null : null,
+    freeExtraBed: !!r.freeExtraBed, freePets: !!r.freePets, promoText: r.promoText ?? null, freeFoodIds: [...(r.freeFoodOptionIds ?? [])].sort(),
+  };
+}
+
+function promoOfRow(r: PricingRuleRow) {
+  return promoOf({
+    discountKind: r.discount_kind ?? null, discountValue: r.discount_value ?? null, freeExtraBed: r.free_extra_bed === 1,
+    freePets: r.free_pets === 1, promoText: r.promo_text ?? null, freeFoodOptionIds: r.free_food_ids ?? [],
+  });
 }
 
 function omitMeta(d: PricingRuleDto): PricingRuleInput {
@@ -198,7 +248,7 @@ function omitMeta(d: PricingRuleDto): PricingRuleInput {
 }
 
 function stripMeta(r: PricingRuleRow): Omit<PricingRuleRow, "created_at" | "updated_at"> {
-  const { created_at: _c, updated_at: _u, group_id: _g, ...rest } = r;
+  const { created_at: _c, updated_at: _u, group_id: _g, discount_kind: _dk, discount_value: _dv, free_extra_bed: _fe, free_pets: _fp, promo_text: _pt, free_food_ids: _ff, ...rest } = r;
   return rest;
 }
 

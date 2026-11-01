@@ -8,6 +8,7 @@ import type { FoodCart } from "./api.ts";
 import type { Pick } from "./StayPicks.tsx";
 import { useDateText } from "./Summary.tsx";
 import { useBookingT } from "./useBookingT.ts";
+import { freeFoodOn, usePromo } from "./Promotions.tsx";
 
 /** − value + control. Buttons are 44px targets; the value is announced politely. */
 export function Stepper({ label, caption, value, min, max, onChange }: {
@@ -64,7 +65,11 @@ export function FoodStep({
 }) {
   const { locale } = useI18n();
   const bt = useBookingT();
+  const promo = usePromo();
   const dateText = useDateText();
+  // Promotions (migration 0055): the quote of the chosen stays says which nights give free extra beds / pets / food.
+  const itemOf = (unitId: string) => quote?.items.find((it) => it.unitId === unitId);
+  const promoFree = (unitId: string, what: "freeExtraBed" | "freePets") => !!itemOf(unitId)?.promotions?.some((p) => p[what]);
   const baht = (s: number) => formatBaht(s, locale.code);
   const adults = quote?.adults ?? 1;
   const children = quote?.children ?? 0;
@@ -98,9 +103,11 @@ export function FoodStep({
             <div key={p.unit.id} className="food-option extra-beds__row">
               <div className="food-option__info">
                 <strong>{p.unit.name}</strong>
+                {promoFree(p.unit.id, "freeExtraBed") && <span className="promo__badge promo__badge--free">{promo.freeExtraBed}</span>}
                 {(p.extraBeds ?? 0) > 0 && offer.pricePerNightSatang > 0 && quote && (
                   <span className="food-option__price">
-                    {fill(bt.extraBedNights, { n: p.extraBeds ?? 0, nights: quote.nights })} = {baht((p.extraBeds ?? 0) * offer.pricePerNightSatang * quote.nights)}
+                    {fill(bt.extraBedNights, { n: p.extraBeds ?? 0, nights: quote.nights })} = {baht(itemOf(p.unit.id)?.extraBeds?.subtotalSatang ?? (p.extraBeds ?? 0) * offer.pricePerNightSatang * quote.nights)}
+                    {itemOf(p.unit.id)?.extraBeds?.freeNights ? ` (${fill(promo.freeNights, { n: itemOf(p.unit.id)!.extraBeds!.freeNights! })})` : ""}
                   </span>
                 )}
               </div>
@@ -135,9 +142,10 @@ export function FoodStep({
               <div key={p.unit.id} className="food-option extra-beds__row">
                 <div className="food-option__info">
                   <strong>{p.unit.name}</strong>
+                  {promoFree(p.unit.id, "freePets") && <span className="promo__badge promo__badge--free">{promo.freePets}</span>}
                   {n > 0 && pet.priceSatang > 0 && quote && (
                     <span className="food-option__price">
-                      {pet.chargePer === "STAY" ? fill(bt.petStay, { n }) : fill(bt.petNights, { n, nights: quote.nights })} = {baht(n * pet.priceSatang * times)}
+                      {pet.chargePer === "STAY" ? fill(bt.petStay, { n }) : fill(bt.petNights, { n, nights: quote.nights })} = {baht(itemOf(p.unit.id)?.pets?.subtotalSatang ?? n * pet.priceSatang * times)}
                     </span>
                   )}
                 </div>
@@ -216,12 +224,13 @@ export function FoodStep({
                   const key = `${o.id}|${d.date}`;
                   const v = cart[key] ?? { adults: 0, children: 0, quantity: 0 };
                   const headroom = d.remaining === null ? Infinity : d.remaining - usedHere;
+                  const free = freeFoodOn(quote?.items, o.id, d.date);
                   return (
                     <div key={o.id} className={`food-option${o.image ? " food-option--image" : ""}`}>
                       {o.image && <ResponsiveImage image={o.image} sizes={IMAGE_SIZES.thumb} className="food-option__img" alt="" />}
                       <div className="food-option__info">
-                        <strong>{o.name}</strong>
-                        <span className="food-option__price">{priceText(o, bt, baht)}</span>
+                        <strong>{o.name}{free && <> <span className="promo__badge promo__badge--free">{promo.free}</span></>}</strong>
+                        <span className="food-option__price">{free ? <><s>{priceText(o, bt, baht)}</s> · {promo.freeFoodHint}</> : priceText(o, bt, baht)}</span>
                         {o.description && <span className="food-option__desc">{o.description}</span>}
                         {o.allergens && <span className="food-option__desc">⚠ {o.allergens}</span>}
                       </div>

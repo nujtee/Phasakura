@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getPromoMessages } from "../../shared/i18n/promo-messages.ts";
 import { createPortal } from "react-dom";
 import type { PublicBookingDto } from "../../shared/booking-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
@@ -42,6 +43,7 @@ interface BillProps {
 export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClose }: BillProps) {
   const bt = getBookingMessages(lang);
   const m = bt.bill;
+  const pm = getPromoMessages(lang as Parameters<typeof getPromoMessages>[0]);
   const baht = (s: number) => formatBaht(s, lang);
   const day = new Intl.DateTimeFormat(lang, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   const date = (d: string) => day.format(new Date(`${d}T00:00:00Z`));
@@ -55,7 +57,17 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
       qty: [fillText(m.nights, { n: b.nights }), x.type === "OWN_TENT" ? fillText(bt.tentsLine, { n: x.quantity }) : null,
         x.pricingType === "PER_ADULT_NIGHT" ? fillText(m.perAdult, { n: x.adults }) : null].filter(Boolean).join(" · "),
       amount: baht(x.subtotalSatang),
-    }, ...(x.extraBeds ? [{
+    }, ...(x.promotions ?? []).filter((p) => p.text || p.roomDiscountSatang + p.extraBedFreeSatang + p.petsFreeSatang + p.foodFreeSatang > 0).map((p) => ({
+      // Promotion (migration 0055): what it gave; the amounts above are already after it.
+      name: `${pm.badge}${p.text ? ` · ${p.text}` : ""}`,
+      qty: [
+        p.roomDiscountSatang ? `${pm.roomDiscount} −${baht(p.roomDiscountSatang)}` : null,
+        p.extraBedFreeSatang ? `${pm.extraBedFree} −${baht(p.extraBedFreeSatang)}` : null,
+        p.petsFreeSatang ? `${pm.petsFree} −${baht(p.petsFreeSatang)}` : null,
+        p.foodFreeSatang ? `${pm.foodFree} −${baht(p.foodFreeSatang)}` : null,
+      ].filter(Boolean).join(" · "),
+      amount: "",
+    })), ...(x.extraBeds ? [{
       name: live.length > 1 ? `${m.extraBed} · ${x.name}` : m.extraBed,
       qty: `${x.extraBeds.quantity} × ${fillText(m.nights, { n: x.extraBeds.nights })}`,
       amount: x.extraBeds.subtotalSatang === 0 ? bt.free : baht(x.extraBeds.subtotalSatang),
@@ -113,6 +125,9 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
           <tfoot>
             {b.discountSatang > 0 && <tr><th scope="row" colSpan={2}>{m.discount}</th><td className="bill__num">−{baht(b.discountSatang)}</td></tr>}
             <tr className="bill__total"><th scope="row" colSpan={2}>{m.total}</th><td className="bill__num">{baht(b.totalSatang)}</td></tr>
+            {(b.promotionSavingsSatang ?? 0) > 0 && (
+              <tr><th scope="row" colSpan={2}>{pm.savings}</th><td className="bill__num">{baht(b.promotionSavingsSatang!)}</td></tr>
+            )}
             <tr><th scope="row" colSpan={2}>{m.paid}</th><td className="bill__num">{baht(b.paidSatang)}</td></tr>
             <tr className="bill__due"><th scope="row" colSpan={2}>{m.balance}</th><td className="bill__num">{baht(Math.max(0, b.balanceSatang))}</td></tr>
           </tfoot>

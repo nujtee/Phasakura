@@ -109,7 +109,8 @@ describe("Phase 13 dictionaries (SEO, search, translation coverage)", () => {
   it("SEO descriptions and search texts: TH, EN and ZH-CN have identical keys and no empty strings", async () => {
     const { seoTh, seoEn, seoZhCN } = await import("../../src/shared/i18n/seo-messages.ts");
     const { searchTh, searchEn, searchZhCN } = await import("../../src/shared/i18n/search-messages.ts");
-    for (const [ref, others] of [[seoTh, [seoEn, seoZhCN]], [searchTh, [searchEn, searchZhCN]]] as const) {
+    const { promoTh, promoEn, promoZhCN } = await import("../../src/shared/i18n/promo-messages.ts");
+    for (const [ref, others] of [[seoTh, [seoEn, seoZhCN]], [searchTh, [searchEn, searchZhCN]], [promoTh, [promoEn, promoZhCN]]] as const) {
       for (const dict of others) {
         assert.deepEqual(keys(dict).sort(), keys(ref).sort());
         assert.ok(values(dict).every((v) => v.trim().length > 0));

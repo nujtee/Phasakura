@@ -9,7 +9,8 @@ import { defaultStay, fetchAvailability, type StayQuery } from "../accommodation
 import { unitItem } from "../analytics/booking-events.ts";
 import { track } from "../analytics/tracker.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
-import { fill } from "../accommodation/UnitCard.tsx";
+import { fill, StayPrice } from "../accommodation/UnitCard.tsx";
+import { PromoList, usePromo } from "../booking/Promotions.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
 import { NotFoundPage } from "./NotFoundPage.tsx";
 import { IMAGE_SIZES } from "../../shared/media-types.ts";
@@ -26,6 +27,7 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
   const [active, setActive] = useState(0);
   const [checked, setChecked] = useState<StayQuery | null>(null);
   const bt = useBookingT();
+  const promo = usePromo();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -106,6 +108,7 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
             <strong>{formatBaht(unit.priceSatang, locale.code)}</strong> <span>{t.accommodation.perNight}</span>
           </p>
           <p className="unit-card__meta">{fill(t.accommodation.upToGuests, { n: unit.maxGuests })}</p>
+          <PromoList promotions={unit.promotions} withDates title={promo.upcoming} />
           <h2 id="book-h" className="section-title section-title--small">{t.accommodation.checkAvailability}</h2>
           <StaySearch initial={{ ...defaultStay(), adults: Math.min(2, unit.maxGuests) }} busy={busy} error={searchError}
             showTents={false} onSearch={(q) => void check(q)} />
@@ -114,6 +117,7 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
               {!mine.available ? t.accommodation.unavailable : !mine.fitsGuests ? t.accommodation.tooManyGuests : t.accommodation.available}
             </p>
           )}
+          {mine && <StayPrice base={unit.priceSatang} nightly={mine.nightlyPricesSatang} list={mine.listPricesSatang} per={t.accommodation.perNight} />}
           {mine?.available && mine.fitsGuests && checked && (
             <Link className="button button--primary detail__book" to={`${pagePath(locale, "booking")}?${new URLSearchParams({
               unit: unit.slug, checkIn: checked.checkIn, checkOut: checked.checkOut, adults: String(checked.adults), children: String(checked.children),

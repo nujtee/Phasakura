@@ -426,6 +426,63 @@ await check("guest changes the dates from the booking page: Booking ID + phone, 
   assert(off.ok(), `switch off ${off.status()}`);
 });
 
+await check("promotions: staff add a discount, free extra bed and free dinner to a price rule; guests see them on the cards, food step, summary and house page", async () => {
+  const ci = day(100), co = day(102);
+  await pa.goto(`${BASE}/en/admin/pricing`);
+  await pa.getByRole("button", { name: "+ Add price rule" }).click();
+  await pa.getByLabel("Applies to").selectOption("UNIT");
+  await pa.locator("#pr-unit").selectOption("dev_house_01");
+  await pa.getByLabel("Rule name").fill("e2e rainy deal");
+  await pa.getByLabel("From night").fill(ci);
+  await pa.getByLabel("To night (inclusive)").fill(day(101));
+  await pa.getByLabel("Price (THB)").fill("4000");
+  await pa.getByLabel("Room discount").selectOption("PERCENT");
+  await pa.getByLabel("Percent off (1–90)").fill("20");
+  await pa.getByText("Price after discount ฿3,200 / night").waitFor();
+  await pa.getByLabel("Free extra bed").check();
+  await pa.locator(".adm-promo__foods").getByRole("checkbox", { name: /Dinner A/ }).check();
+  await pa.getByLabel("Promotion details (shown to guests)").fill("โปรหน้าฝน ลด 20% ฟรีที่นอนเสริมและอาหารเย็น");
+  if (SHOTS) await pa.locator("form.adm-card").screenshot({ path: `${SHOTS}/promo-admin-form.png` });
+  await pa.getByRole("button", { name: "Save" }).click();
+  const row = pa.locator("tr", { hasText: "e2e rainy deal" });
+  await row.getByText(/20% off · Free extra bed · 1 free dishes/).waitFor();
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/promo-admin-list.png`, fullPage: true });
+
+  await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: true, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
+  await pg.locator("form.stay-search button[type=submit]").click();
+  const card = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /House 01/ }) });
+  await card.locator(".promo__badge").getByText("โปรโมชั่น").waitFor();
+  await card.getByText("โปรหน้าฝน ลด 20% ฟรีที่นอนเสริมและอาหารเย็น").waitFor();
+  await card.getByText("฿6,400").waitFor();
+  await card.locator(".unit-card__was").getByText("฿8,000").waitFor();
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/promo-card.png` });
+  await card.getByRole("button", { name: "เลือกหลังนี้" }).click();
+  await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  const beds = pg.locator(".extra-beds");
+  await beds.getByText("ฟรีที่นอนเสริม").waitFor();
+  await beds.getByRole("group", { name: "ที่นอนเสริม" }).getByRole("button", { name: /^เพิ่ม / }).click();
+  const summary = pg.locator(".summary");
+  await summary.getByText(/ที่นอนเสริม 1 × 2 คืน/).waitFor();
+  const dinner = pg.locator(".food-option", { hasText: "อาหารเย็น A" }).first();
+  await dinner.locator(".promo__badge").getByText("ฟรี").waitFor();
+  await dinner.getByRole("group", { name: /อาหารเย็น A · ผู้ใหญ่/ }).getByRole("button", { name: /^เพิ่ม / }).click();
+  await summary.getByText("ฟรี 1").waitFor();
+  await summary.getByText("ประหยัดจากโปรโมชั่น").waitFor();
+  const overflow = await pg.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 1, `horizontal scroll ${overflow}px`);
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/promo-food-step.png`, fullPage: true });
+
+  // The house page lists the promotion with its dates.
+  await pg.goto(`${BASE}/th/accommodation/house-sakura`);
+  const promoOnPage = pg.locator(".detail__aside .promo");
+  await promoOnPage.getByText("โปรโมชั่นของที่พักนี้").waitFor();
+  await promoOnPage.getByText("โปรหน้าฝน ลด 20% ฟรีที่นอนเสริมและอาหารเย็น").waitFor();
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/promo-house-page.png`, fullPage: true });
+  await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
+});
+
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
   assert(!bad.length, bad.join("\n"));

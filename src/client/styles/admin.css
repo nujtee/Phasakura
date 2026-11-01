@@ -3966,3 +3966,17 @@
   font-weight: 600;
   margin-bottom: 4px;
 }
+
+/* Promotion of a price rule (migration 0055) */
+.adm-promo {
+  margin: 16px 0;
+  padding: 12px 16px 16px;
+  border: 1px solid var(--adm-border, #e2e2e2);
+  border-radius: 10px;
+  min-width: 0;
+}
+.adm-promo__checks { flex-wrap: wrap; gap: 8px 24px; margin: 8px 0; }
+.adm-promo__foods { border: 0; padding: 0; margin: 8px 0; min-width: 0; }
+.adm-promo__foodgroup + .adm-promo__foodgroup { margin-top: 8px; }
+.adm-promo textarea { width: 100%; box-sizing: border-box; }
+.adm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

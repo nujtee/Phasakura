@@ -18,7 +18,7 @@ import { openDepositBookings } from "../repositories/deposit-bookings.ts";
 import type { InventoryRepository } from "../repositories/inventory.repository.ts";
 import type { MediaRepository } from "../repositories/media.repository.ts";
 import type { PricingRepository } from "../repositories/pricing.repository.ts";
-import { nightPrice } from "./quote.service.ts";
+import { searchPrices } from "./quote.service.ts";
 import { newId } from "../security/tokens.ts";
 import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
@@ -97,22 +97,30 @@ export class AvailabilityService {
       checkIn: input.checkIn,
       checkOut: input.checkOut,
       nights: nights.length,
-      units: units.map((u) => ({
-        unitId: u.id,
-        slug: u.slug,
-        unitType: u.unit_type,
-        available: !lockedUnits.has(u.id),
-        fitsGuests: input.guests === undefined || input.guests <= u.max_guests,
-        // The price of each night of this search, with the time-based rules (same as the quote).
-        nightlyPricesSatang: nights.map((date) => nightPrice(
+      units: units.map((u) => {
+        // The price of each night of this search, with the time-based rules and their promotions (same as the quote).
+        const p = searchPrices(
           unitRules.filter((r) => (r.target_type === "UNIT" && r.unit_id === u.id) || (r.target_type === "UNIT_TYPE" && r.unit_type === u.unit_type)),
-          date, u.base_price_satang)),
-      })),
+          nights, u.base_price_satang);
+        return {
+          unitId: u.id,
+          slug: u.slug,
+          unitType: u.unit_type,
+          available: !lockedUnits.has(u.id),
+          fitsGuests: input.guests === undefined || input.guests <= u.max_guests,
+          nightlyPricesSatang: p.prices,
+          ...(p.list ? { listPricesSatang: p.list } : {}),
+          ...(p.promotions ? { promotions: p.promotions } : {}),
+        };
+      }),
       camping: {
         enabled,
         remaining,
         nights: camping.map((n) => ({ date: n.date, remaining: enabled ? n.remaining : 0 })),
-        nightlyPricePerAdultSatang: nights.map((date) => nightPrice(campingRules, date, settings?.price_per_adult_night_satang ?? 0)),
+        ...(() => {
+          const p = searchPrices(campingRules, nights, settings?.price_per_adult_night_satang ?? 0);
+          return { nightlyPricePerAdultSatang: p.prices, ...(p.list ? { listPricePerAdultSatang: p.list } : {}), ...(p.promotions ? { promotions: p.promotions } : {}) };
+        })(),
         fitsTents: input.tents === undefined ? null : enabled && reason === null,
         reason,
         shortNights,

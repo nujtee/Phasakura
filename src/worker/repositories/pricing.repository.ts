@@ -17,6 +17,13 @@ export interface PricingRuleRow {
   pay_now_percent?: number | null;
   /** Several houses edited as one rule (migration 0051); null = a rule on its own. */
   group_id?: string | null;
+  /** Promotion (migration 0055): room discount on this rule's price, free extra beds / pets / food, text for guests. */
+  discount_kind?: "PERCENT" | "AMOUNT" | null;
+  discount_value?: number | null;
+  free_extra_bed?: number;
+  free_pets?: number;
+  promo_text?: string | null;
+  free_food_ids?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -128,7 +135,55 @@ export class PricingRepository {
       ),
     );
     const extra = new Map(rows.map((r) => [r.id, r]));
-    return rules.map((r) => ({ ...r, pay_now_percent: extra.get(r.id)?.pay_now_percent ?? null, group_id: extra.get(r.id)?.group_id ?? null }));
+    return this.withPromotions(rules.map((r) => ({ ...r, pay_now_percent: extra.get(r.id)?.pay_now_percent ?? null, group_id: extra.get(r.id)?.group_id ?? null })));
+  }
+
+  /**
+   * Adds each rule's promotion (migration 0055): discount, free extra beds / pets, text and free food options. Read on
+   * its own (none before the migration), so prices never depend on the new columns during a deploy.
+   */
+  async withPromotions(rules: PricingRuleRow[]): Promise<PricingRuleRow[]> {
+    if (!rules.length) return rules;
+    type Promo = { id: string; discount_kind: "PERCENT" | "AMOUNT" | null; discount_value: number | null; free_extra_bed: number; free_pets: number; promo_text: string | null };
+    const ids = JSON.stringify(rules.map((r) => r.id));
+    const [promos, foods] = await withFallback(
+      async () => Promise.all([
+        this.db.prepare(`SELECT id, discount_kind, discount_value, free_extra_bed, free_pets, promo_text FROM pricing_settings
+                          WHERE id IN (SELECT value FROM json_each(?1))
+                            AND (discount_kind IS NOT NULL OR free_extra_bed = 1 OR free_pets = 1 OR promo_text IS NOT NULL
+                              OR EXISTS (SELECT 1 FROM pricing_rule_free_foods f WHERE f.rule_id = pricing_settings.id))`)
+          .bind(ids).all<Promo>().then((r) => r.results),
+        this.db.prepare("SELECT rule_id, option_id FROM pricing_rule_free_foods WHERE rule_id IN (SELECT value FROM json_each(?1)) ORDER BY option_id")
+          .bind(ids).all<{ rule_id: string; option_id: string }>().then((r) => r.results),
+      ]),
+      async () => [[] as Promo[], [] as { rule_id: string; option_id: string }[]] as const,
+    );
+    if (!promos.length) return rules;
+    const byId = new Map(promos.map((p) => [p.id, p]));
+    return rules.map((r) => {
+      const p = byId.get(r.id);
+      if (!p) return r;
+      const discountOk = (p.discount_kind === "PERCENT" || p.discount_kind === "AMOUNT") && (p.discount_value ?? 0) > 0;
+      return {
+        ...r,
+        discount_kind: discountOk ? p.discount_kind : null,
+        discount_value: discountOk ? p.discount_value : null,
+        free_extra_bed: p.free_extra_bed,
+        free_pets: p.free_pets,
+        promo_text: p.promo_text,
+        free_food_ids: foods.filter((f) => f.rule_id === r.id).map((f) => f.option_id),
+      };
+    });
+  }
+
+  /** Writes a rule's promotion (migration 0055): the columns, then its free food options (replaced). */
+  promotionStatements(id: string, p: { discountKind: "PERCENT" | "AMOUNT" | null; discountValue: number | null; freeExtraBed: boolean; freePets: boolean; promoText: string | null; freeFoodIds: string[] }): D1PreparedStatementLike[] {
+    return [
+      this.db.prepare("UPDATE pricing_settings SET discount_kind = ?2, discount_value = ?3, free_extra_bed = ?4, free_pets = ?5, promo_text = ?6 WHERE id = ?1")
+        .bind(id, p.discountKind, p.discountValue, p.freeExtraBed ? 1 : 0, p.freePets ? 1 : 0, p.promoText),
+      this.db.prepare("DELETE FROM pricing_rule_free_foods WHERE rule_id = ?1").bind(id),
+      ...p.freeFoodIds.map((optionId) => this.db.prepare("INSERT INTO pricing_rule_free_foods (rule_id, option_id) VALUES (?1, ?2)").bind(id, optionId)),
+    ];
   }
 
   /** Every rule of a group (none before migration 0051). */
@@ -165,7 +220,8 @@ export class PricingRepository {
       )
       .bind(toInclusive, from)
       .all<PricingRuleRow>();
-    return results;
+    // Discounts change the price (migration 0055).
+    return this.withPromotions(results);
   }
 
   async listRules(filter: { targetType?: string; unitId?: string; status?: string }): Promise<PricingRuleRow[]> {
@@ -208,6 +264,12 @@ export class PricingRepository {
   }
 
   // ------------------------------------------------------------------ food
+
+  /** Every food option id (any status), to check the free foods of a promotion. */
+  async allFoodOptionIds(): Promise<string[]> {
+    const { results } = await this.db.prepare("SELECT id FROM food_options").all<{ id: string }>();
+    return results.map((r) => r.id);
+  }
 
   async activeFoodCategories(): Promise<FoodCategoryRow[]> {
     const { results } = await this.db

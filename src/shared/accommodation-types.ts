@@ -112,7 +112,12 @@ export interface PublicUnitDto {
   cover: PublicImageDto | null;
   images: PublicImageDto[];
   amenities: { code: string; icon: string | null; name: string }[];
+  /** Unit page only: promotions of the next months (migration 0055). */
+  promotions?: PromotionBriefDto[];
 }
+
+/** How far ahead the unit page lists promotions. */
+export const PROMOTION_LOOKAHEAD_DAYS = 180;
 
 export interface PublicCampingDto {
   enabled: boolean;
@@ -145,18 +150,38 @@ export interface CampingNightDto {
 }
 
 /** GET /api/public/availability */
+/** A promotion of a price rule as guests see it (migration 0055). */
+export interface PromotionBriefDto {
+  text: string | null;
+  discount: { kind: "PERCENT" | "AMOUNT"; value: number } | null;
+  freeExtraBed: boolean;
+  freePets: boolean;
+  /** Food options free when picked. */
+  freeFoodOptionIds: string[];
+  /** First and last date the promotion prices (within what was asked). */
+  dateFrom: string;
+  dateTo: string;
+}
+
 export interface AvailabilityDto {
   checkIn: string;
   checkOut: string;
   nights: number;
   /** nightlyPricesSatang: one price per night of the search, time-based rules applied. */
-  units: { unitId: string; slug: string; unitType: UnitType; available: boolean; fitsGuests: boolean; nightlyPricesSatang: number[] }[];
+  units: {
+    unitId: string; slug: string; unitType: UnitType; available: boolean; fitsGuests: boolean; nightlyPricesSatang: number[];
+    /** Promotions (migration 0055): each night's price before the discount, when one night has a discount. */
+    listPricesSatang?: number[];
+    promotions?: PromotionBriefDto[];
+  }[];
   camping: {
     enabled: boolean;
     remaining: number;
     nights: { date: string; remaining: number }[];
     /** Price per adult for each night of the search, time-based rules applied. */
     nightlyPricePerAdultSatang: number[];
+    listPricePerAdultSatang?: number[];
+    promotions?: PromotionBriefDto[];
     /** Can the requested tents (and guests) be booked for every night? null when no tents were asked. */
     fitsTents: boolean | null;
     /** Why not: FULL (some night lacks space), TOO_FEW_TENTS (guests need more tents), TOO_MANY_TENTS (per-booking limit). */
