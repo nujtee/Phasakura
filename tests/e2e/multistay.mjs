@@ -511,6 +511,9 @@ await check("child age: staff set it in booking rules; the booking page and the 
   await pg.goto(`${BASE}/th/booking`);
   await pg.getByText("เด็ก (อายุต่ำกว่า 10 ปี)").first().waitFor();
   if (SHOTS) await pg.locator("form.stay-search").screenshot({ path: `${SHOTS}/child-age-booking.png` });
+  // The camping section follows the same age.
+  await pg.getByText("เด็กอายุต่ำกว่า 10 ปี พักฟรี").waitFor();
+  if (SHOTS) await pg.locator(".camping-card").screenshot({ path: `${SHOTS}/child-age-camping.png` });
   await pg.goto(`${BASE}/th/accommodation/house-sakura`);
   await pg.getByText("เด็ก (อายุต่ำกว่า 10 ปี)").first().waitFor();
   const put = await req.put(`${BASE}/api/admin/booking-settings`, { headers: H, data: { ...(await (await req.get(`${BASE}/api/admin/booking-settings`)).json()).data, updatedAt: undefined, childUnderAge: null } });
