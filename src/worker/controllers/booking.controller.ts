@@ -1,5 +1,5 @@
 import type { BookingStatus, FoodSelection, MassageSelection, PaymentStatus, PricingRuleInput } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_MASSAGE_LINES, MAX_MASSAGE_QUANTITY, MAX_PETS_PER_UNIT, MAX_FREE_FOODS, MAX_PROMO_TEXT, MAX_RULE_UNITS, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, IDEMPOTENCY_KEY_PATTERN, MAX_EXTRA_BEDS_PER_UNIT, MAX_MASSAGE_LINES, MAX_MASSAGE_QUANTITY, MAX_PETS_PER_UNIT, MAX_FREE_FOODS, MAX_PROMO_TEXT, MAX_RULE_PERKS, MAX_RULE_UNITS, MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
 import { MAX_PRICE_SATANG, PAY_NOW_PERCENTS } from "../../shared/booking-rules.ts";
 import { BALANCE_METHODS, type BalanceMethod } from "../../shared/payment-types.ts";
 import { isIsoDate } from "../../shared/dates.ts";
@@ -15,6 +15,7 @@ import { currentConsent, metaBrowserIds } from "../../shared/consent.ts";
 import type { Services } from "../container.ts";
 import type { Attribution } from "../repositories/marketing.repository.ts";
 import { sanitizeCampaign } from "../../shared/campaign.ts";
+import { namesMap } from "./accommodation.controller.ts";
 import type { RequestMeta } from "../services/auth-context.ts";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -186,7 +187,7 @@ function parseQuote(body: Record<string, unknown>, v: Validator): QuoteInput {
 
 function parseRule(body: Record<string, unknown>, partial: boolean): Partial<PricingRuleInput> {
   const v = new Validator(body).allowOnly(["targetType", "unitId", "unitType", "name", "dateFrom", "dateTo", "daysOfWeek", "priceSatang", "priority", "status", "payNowPercent", "unitIds",
-    "discountKind", "discountValue", "freeExtraBed", "freePets", "freeFoodOptionIds", "promoText"]);
+    "discountKind", "discountValue", "freeExtraBed", "freePets", "freeFoodOptionIds", "promoText", "perkIds"]);
   const out: Partial<PricingRuleInput> = {};
   const want = (k: string) => !partial || v.has(k);
   if (want("targetType")) out.targetType = v.oneOf("targetType", TARGET_TYPES, { required: true });
@@ -227,6 +228,11 @@ function parseRule(body: Record<string, unknown>, partial: boolean): Partial<Pri
     const ids = body.freeFoodOptionIds ?? [];
     if (!Array.isArray(ids) || ids.length > MAX_FREE_FOODS || !ids.every((x) => typeof x === "string" && ID_PATTERN.test(x))) v.errors.freeFoodOptionIds = "INVALID_VALUE";
     else out.freeFoodOptionIds = [...new Set(ids as string[])].sort();
+  }
+  if (v.has("perkIds") || !partial) {
+    const ids = body.perkIds ?? [];
+    if (!Array.isArray(ids) || ids.length > MAX_RULE_PERKS || !ids.every((x) => typeof x === "string" && ID_PATTERN.test(x))) v.errors.perkIds = "INVALID_VALUE";
+    else out.perkIds = [...new Set(ids as string[])].sort();
   }
   if (v.has("promoText") || !partial) {
     const t = body.promoText;
@@ -499,6 +505,29 @@ export function bookingController(services: ServicesFor) {
       if (!ID_PATTERN.test(ruleId)) throw new ValidationError({ id: "INVALID_ID" });
       const patch = parseRule(await readJsonObject(ctx.request), true);
       return jsonOk(await services(ctx).pricingRules.update(auth, ruleId, patch, requestMeta(ctx)));
+    }),
+
+    // ------------------------------------------------------------------ promotion perks (migration 0056)
+    perks: withPermission("accommodation.view", services, async (ctx, auth) => jsonOk(await services(ctx).pricingRules.listPerks(auth, requestMeta(ctx)))),
+
+    createPerk: withPermission("pricing.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request);
+      new Validator(body).allowOnly(["names"]).assertValid();
+      return jsonOk(await services(ctx).pricingRules.createPerk(auth, namesMap(body.names, true), requestMeta(ctx)), { status: 201 });
+    }),
+
+    updatePerk: withPermission("pricing.edit", services, async (ctx, auth) => {
+      const perkId = ctx.params.id ?? "";
+      if (!ID_PATTERN.test(perkId)) throw new ValidationError({ id: "INVALID_ID" });
+      const body = await readJsonObject(ctx.request);
+      new Validator(body).allowOnly(["names"]).assertValid();
+      return jsonOk(await services(ctx).pricingRules.updatePerk(auth, perkId, namesMap(body.names, true), requestMeta(ctx)));
+    }),
+
+    removePerk: withPermission("pricing.edit", services, async (ctx, auth) => {
+      const perkId = ctx.params.id ?? "";
+      if (!ID_PATTERN.test(perkId)) throw new ValidationError({ id: "INVALID_ID" });
+      return jsonOk(await services(ctx).pricingRules.removePerk(auth, perkId, requestMeta(ctx)));
     }),
   };
 }

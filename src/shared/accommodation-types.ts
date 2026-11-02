@@ -158,6 +158,8 @@ export interface PromotionBriefDto {
   freePets: boolean;
   /** Food options free when picked. */
   freeFoodOptionIds: string[];
+  /** Extra perks (migration 0056), names per language. */
+  perks?: { id: string; names: Partial<Record<"th" | "en" | "zh-CN", string>> }[];
   /** First and last date the promotion prices (within what was asked). */
   dateFrom: string;
   dateTo: string;

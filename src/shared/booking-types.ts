@@ -181,6 +181,8 @@ export interface StayPromotionDto {
   freeExtraBed?: boolean;
   freePets?: boolean;
   freeFoodOptionIds?: string[];
+  /** Extra perks (migration 0056); a booking keeps the names it was made with. */
+  perks?: PerkNamesDto[];
   /** Nights of this stay the promotion covers (quotes only). */
   dates?: string[];
 }
@@ -576,7 +578,25 @@ export interface PricingRuleDto {
   freeFoodOptionIds?: string[];
   /** What guests read about the promotion. */
   promoText?: string | null;
+  /** Extra perks from the shared list (migration 0056): drinking water, a bottle of wine… */
+  perkIds?: string[];
   updatedAt: string;
+}
+
+/** Most perks one price rule can give. */
+export const MAX_RULE_PERKS = 30;
+
+/** A perk of promotions as guests read it: its names per language (the page picks its own, else Thai). */
+export interface PerkNamesDto {
+  id: string;
+  names: Partial<Record<"th" | "en" | "zh-CN", string>>;
+}
+
+/** GET /api/admin/promotion-perks — the shared list of promotion perks (migration 0056). */
+export interface PromotionPerkDto extends PerkNamesDto {
+  status: "ACTIVE" | "INACTIVE";
+  /** Active price rules that give it. */
+  ruleCount: number;
 }
 
 export const MAX_PROMO_TEXT = 300;

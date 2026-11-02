@@ -1,4 +1,5 @@
-import { MAX_DISCOUNT_PERCENT, type PricingRuleDto, type PricingRuleInput } from "../../shared/booking-types.ts";
+import { MAX_DISCOUNT_PERCENT, type PricingRuleDto, type PricingRuleInput, type PromotionPerkDto } from "../../shared/booking-types.ts";
+import { PromotionPerkRepository, type PromotionPerkRow } from "../repositories/promotion-perk.repository.ts";
 import type { D1DatabaseLike } from "../env.ts";
 import { NotFoundError, ValidationError } from "../http/errors.ts";
 import type { AccommodationRepository } from "../repositories/accommodation.repository.ts";
@@ -144,6 +145,11 @@ export class PricingRuleService {
     if ((kind === null) !== (value === null)) throw new ValidationError({ discountValue: kind ? "REQUIRED" : "KIND_REQUIRED" });
     if (kind === "PERCENT" && (value! < 1 || value! > MAX_DISCOUNT_PERCENT)) throw new ValidationError({ discountValue: "PERCENT_RANGE" });
     if (kind === "AMOUNT" && (value! < 100 || value! % 100 !== 0 || value! > input.priceSatang)) throw new ValidationError({ discountValue: "AMOUNT_RANGE" });
+    const perkIds = input.perkIds ?? [];
+    if (perkIds.length) {
+      const active = new Set((await this.perks.list()).map((p) => p.id));
+      if (!perkIds.every((p) => active.has(p))) throw new ValidationError({ perkIds: "UNKNOWN_PERK" });
+    }
     const foods = input.freeFoodOptionIds ?? [];
     if (foods.length) {
       const known = new Set((await this.repo.allFoodOptionIds()));
@@ -155,8 +161,60 @@ export class PricingRuleService {
   private promoStatements(id: string, input: PricingRuleInput, current: PricingRuleRow | null) {
     const want = promoOf(input);
     const have = current ? promoOfRow(current) : promoOf({} as PricingRuleInput);
-    if (JSON.stringify(want) === JSON.stringify(have)) return [];
-    return this.repo.promotionStatements(id, { ...want, freeFoodIds: want.freeFoodIds });
+    // Perks (migration 0056) on their own: only written when they change, so rules work before that migration.
+    const perksWant = [...new Set(input.perkIds ?? [])].sort();
+    const perksHave = (current?.perks ?? []).map((p) => p.id).sort();
+    return [
+      ...(JSON.stringify(want) === JSON.stringify(have) ? [] : this.repo.promotionStatements(id, { ...want, freeFoodIds: want.freeFoodIds })),
+      ...(JSON.stringify(perksWant) === JSON.stringify(perksHave) ? [] : this.repo.perkStatements(id, perksWant)),
+    ];
+  }
+
+  // ================================================================ promotion perks (migration 0056)
+
+  private get perks(): PromotionPerkRepository {
+    return new PromotionPerkRepository(this.db);
+  }
+
+  async listPerks(actor: AuthContext, meta: RequestMeta): Promise<PromotionPerkDto[]> {
+    await this.authz.requirePermission(actor, "accommodation.view", meta);
+    return (await this.perks.list()).map(toPerkDto);
+  }
+
+  async createPerk(actor: AuthContext, names: Record<string, string>, meta: RequestMeta): Promise<PromotionPerkDto> {
+    await this.authz.requirePermission(actor, "pricing.edit", meta);
+    const id = newId();
+    const now = iso(this.clock());
+    await this.db.batch([
+      this.perks.insertStatement(id, await this.perks.nextSortOrder(), now),
+      ...this.perks.namesStatements(id, names, now),
+      this.log.auditStatement(actor.userId, "CREATE_PROMOTION_PERK", "pricing", id, null, { names }, meta),
+    ]);
+    return toPerkDto((await this.perks.list()).find((p) => p.id === id)!);
+  }
+
+  async updatePerk(actor: AuthContext, id: string, names: Record<string, string>, meta: RequestMeta): Promise<PromotionPerkDto> {
+    await this.authz.requirePermission(actor, "pricing.edit", meta);
+    const current = (await this.perks.list()).find((p) => p.id === id);
+    if (!current) throw new NotFoundError("Perk not found", "PERK_NOT_FOUND");
+    const now = iso(this.clock());
+    await this.db.batch([
+      ...this.perks.namesStatements(id, names, now),
+      this.log.auditStatement(actor.userId, "UPDATE_PROMOTION_PERK", "pricing", id, { names: current.names }, { names }, meta),
+    ]);
+    return toPerkDto((await this.perks.list()).find((p) => p.id === id)!);
+  }
+
+  /** Off every price rule and out of the list; bookings already made keep the name on their bill. */
+  async removePerk(actor: AuthContext, id: string, meta: RequestMeta): Promise<{ removed: true; rules: number }> {
+    await this.authz.requirePermission(actor, "pricing.edit", meta);
+    const current = (await this.perks.list()).find((p) => p.id === id);
+    if (!current) throw new NotFoundError("Perk not found", "PERK_NOT_FOUND");
+    await this.db.batch([
+      ...this.perks.removeStatements(id, iso(this.clock())),
+      this.log.auditStatement(actor.userId, "DELETE_PROMOTION_PERK", "pricing", id, { names: current.names }, null, meta),
+    ]);
+    return { removed: true, rules: current.rule_count };
   }
 
   private async checkTarget(input: PricingRuleInput): Promise<void> {
@@ -224,6 +282,7 @@ function toDto(r: PricingRuleRow): PricingRuleDto {
     freePets: r.free_pets === 1,
     freeFoodOptionIds: r.free_food_ids ?? [],
     promoText: r.promo_text ?? null,
+    perkIds: (r.perks ?? []).map((p) => p.id),
     updatedAt: r.updated_at,
   };
 }
@@ -248,7 +307,7 @@ function omitMeta(d: PricingRuleDto): PricingRuleInput {
 }
 
 function stripMeta(r: PricingRuleRow): Omit<PricingRuleRow, "created_at" | "updated_at"> {
-  const { created_at: _c, updated_at: _u, group_id: _g, discount_kind: _dk, discount_value: _dv, free_extra_bed: _fe, free_pets: _fp, promo_text: _pt, free_food_ids: _ff, ...rest } = r;
+  const { created_at: _c, updated_at: _u, group_id: _g, discount_kind: _dk, discount_value: _dv, free_extra_bed: _fe, free_pets: _fp, promo_text: _pt, free_food_ids: _ff, perks: _pk, ...rest } = r;
   return rest;
 }
 
@@ -276,4 +335,8 @@ export function groupDtos(rows: PricingRuleRow[]): PricingRuleDto[] {
     const lead = [...members].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]!;
     return { ...toDto(lead), id: entry, targetType: "UNITS" as const, unitId: null, unitType: null, unitIds: members.map((m) => m.unit_id!).sort() };
   });
+}
+
+function toPerkDto(p: PromotionPerkRow): PromotionPerkDto {
+  return { id: p.id, names: p.names, status: p.status, ruleCount: p.rule_count };
 }

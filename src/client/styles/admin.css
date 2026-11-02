@@ -3980,3 +3980,5 @@
 .adm-promo__foodgroup + .adm-promo__foodgroup { margin-top: 8px; }
 .adm-promo textarea { width: 100%; box-sizing: border-box; }
 .adm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.adm-promo__perks { border: 0; padding: 0; margin: 12px 0; min-width: 0; }
+.adm-promo__perks .adm-subform { margin-top: 8px; }

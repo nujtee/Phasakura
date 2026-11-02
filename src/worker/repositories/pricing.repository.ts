@@ -1,6 +1,12 @@
 import { withFallback } from "./schema-fallback.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 
+/** A perk of a promotion as stored for a rule: its id and names per language (migration 0056). */
+export interface PerkRef {
+  id: string;
+  names: Record<string, string>;
+}
+
 export interface PricingRuleRow {
   id: string;
   target_type: "UNIT" | "UNIT_TYPE" | "CAMPING";
@@ -24,6 +30,8 @@ export interface PricingRuleRow {
   free_pets?: number;
   promo_text?: string | null;
   free_food_ids?: string[];
+  /** Extra perks of the promotion (migration 0056), from the shared list, with their names per language. */
+  perks?: PerkRef[];
   created_at: string;
   updated_at: string;
 }
@@ -158,11 +166,13 @@ export class PricingRepository {
       ]),
       async () => [[] as Promo[], [] as { rule_id: string; option_id: string }[]] as const,
     );
-    if (!promos.length) return rules;
+    const perks = await this.rulePerks(ids);
+    if (!promos.length && !perks.size) return rules;
     const byId = new Map(promos.map((p) => [p.id, p]));
     return rules.map((r) => {
       const p = byId.get(r.id);
-      if (!p) return r;
+      const rp = perks.get(r.id);
+      if (!p) return rp ? { ...r, perks: rp } : r;
       const discountOk = (p.discount_kind === "PERCENT" || p.discount_kind === "AMOUNT") && (p.discount_value ?? 0) > 0;
       return {
         ...r,
@@ -172,8 +182,42 @@ export class PricingRepository {
         free_pets: p.free_pets,
         promo_text: p.promo_text,
         free_food_ids: foods.filter((f) => f.rule_id === r.id).map((f) => f.option_id),
+        ...(rp ? { perks: rp } : {}),
       };
     });
+  }
+
+  /** The perks of these rules (migration 0056; none before it), in the shared list's order, with their names. */
+  private async rulePerks(idsJson: string): Promise<Map<string, PerkRef[]>> {
+    type Row = { rule_id: string; perk_id: string; language_code: string | null; name: string | null };
+    const rows = await withFallback(
+      async () => (await this.db
+        .prepare(`SELECT rp.rule_id, rp.perk_id, t.language_code, t.name
+                    FROM pricing_rule_perks rp
+                    JOIN promotion_perks p ON p.id = rp.perk_id AND p.status = 'ACTIVE'
+                    LEFT JOIN promotion_perk_translations t ON t.perk_id = rp.perk_id
+                   WHERE rp.rule_id IN (SELECT value FROM json_each(?1))
+                   ORDER BY p.sort_order, p.created_at, p.id`)
+        .bind(idsJson).all<Row>()).results,
+      async () => [] as Row[],
+    );
+    const out = new Map<string, PerkRef[]>();
+    for (const r of rows) {
+      const list = out.get(r.rule_id) ?? [];
+      let perk = list.find((x) => x.id === r.perk_id);
+      if (!perk) { perk = { id: r.perk_id, names: {} }; list.push(perk); }
+      if (r.language_code && r.name) perk.names[r.language_code] = r.name;
+      out.set(r.rule_id, list);
+    }
+    return out;
+  }
+
+  /** Replaces a rule's perks (migration 0056). */
+  perkStatements(ruleId: string, perkIds: string[]): D1PreparedStatementLike[] {
+    return [
+      this.db.prepare("DELETE FROM pricing_rule_perks WHERE rule_id = ?1").bind(ruleId),
+      ...perkIds.map((perkId) => this.db.prepare("INSERT INTO pricing_rule_perks (rule_id, perk_id) VALUES (?1, ?2)").bind(ruleId, perkId)),
+    ];
   }
 
   /** Writes a rule's promotion (migration 0055): the columns, then its free food options (replaced). */

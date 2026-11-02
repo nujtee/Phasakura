@@ -741,7 +741,7 @@ export function nightPriceDto(rules: PricingRuleRow[], date: string, base: numbe
 
 /** Whether a rule is a promotion (migration 0055): anything a guest gets or reads beyond the price. */
 export function isPromotion(r: PricingRuleRow): boolean {
-  return !!(r.discount_kind || r.free_extra_bed === 1 || r.free_pets === 1 || r.promo_text || r.free_food_ids?.length);
+  return !!(r.discount_kind || r.free_extra_bed === 1 || r.free_pets === 1 || r.promo_text || r.free_food_ids?.length || r.perks?.length);
 }
 
 /** The promotions of a stay's nights, one per rule, with what the room discount saves (benefits added later). */
@@ -750,10 +750,11 @@ export function stayPromotions(rules: PricingRuleRow[], nightly: NightPriceDto[]
   for (const n of nightly) {
     const r = winningRule(rules, n.date);
     if (!r || !isPromotion(r)) continue;
-    const p = out.get(r.id) ?? {
+    const p: StayPromotionDto = out.get(r.id) ?? {
       ruleId: r.id, text: r.promo_text ?? null, roomDiscountSatang: 0, extraBedFreeSatang: 0, petsFreeSatang: 0, foodFreeSatang: 0,
       discount: r.discount_kind ? { kind: r.discount_kind, value: r.discount_value ?? 0 } : null,
-      freeExtraBed: r.free_extra_bed === 1, freePets: r.free_pets === 1, freeFoodOptionIds: r.free_food_ids ?? [], dates: [],
+      freeExtraBed: r.free_extra_bed === 1, freePets: r.free_pets === 1, freeFoodOptionIds: r.free_food_ids ?? [], dates: [] as string[],
+      ...(r.perks?.length ? { perks: r.perks } : {}),
     };
     p.roomDiscountSatang += ((n.listPriceSatang ?? n.priceSatang) - n.priceSatang) * factor;
     p.dates!.push(n.date);
@@ -841,6 +842,7 @@ export function promotionBriefs(rules: PricingRuleRow[], nights: string[]): Prom
     out.set(r.id, {
       text: r.promo_text ?? null, discount: r.discount_kind ? { kind: r.discount_kind, value: r.discount_value ?? 0 } : null,
       freeExtraBed: r.free_extra_bed === 1, freePets: r.free_pets === 1, freeFoodOptionIds: r.free_food_ids ?? [], dateFrom: date, dateTo: date,
+      ...(r.perks?.length ? { perks: r.perks } : {}),
     });
   }
   return [...out.values()];
