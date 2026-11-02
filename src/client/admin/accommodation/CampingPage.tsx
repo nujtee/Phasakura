@@ -113,7 +113,7 @@ function SettingsForm({ settings, canEdit, onSaved, onError }: {
           <Field label={t.acc.pricePerAdult} inputMode="decimal" required value={f.price} disabled={!can("pricing.edit")}
             hint={!can("pricing.edit") ? t.acc.needsPricing : undefined}
             onChange={(e) => setF({ ...f, price: e.target.value })} error={errors.pricePerAdultNightSatang} />
-          <Field label={t.acc.childFreeUnderAge} type="number" min={0} max={18} required value={f.childFreeUnderAge}
+          <Field label={t.acc.childFreeUnderAge} hint={t.acc.childFreeUnderAgeHint} type="number" min={0} max={18} required value={f.childFreeUnderAge}
             onChange={(e) => setF({ ...f, childFreeUnderAge: e.target.value })} />
           <Field label={t.acc.maxGuestsPerTent} type="number" min={1} max={50} value={f.maxGuestsPerTent}
             onChange={(e) => setF({ ...f, maxGuestsPerTent: e.target.value })} />

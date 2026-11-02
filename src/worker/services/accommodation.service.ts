@@ -83,9 +83,10 @@ export class AccommodationService {
     const coverFocal = this.images && camping?.cover_asset_id ? (await this.images.focals([camping.cover_asset_id])).get(camping.cover_asset_id) ?? null : null;
     const coverSrcset = coverRenditions && camping?.cover_asset_id
       ? this.images!.srcset(coverRenditions.get(camping.cover_asset_id), { key: camping.cover_key, width: camping.cover_width }) : null;
+    const childUnderAge = await this.childUnderAge(camping?.child_free_under_age);
     return {
       language: locale.code,
-      childUnderAge: await this.childUnderAge(camping?.child_free_under_age),
+      childUnderAge,
       houses: dtos.filter((u) => u.unitType === "HOUSE"),
       vipTents: dtos.filter((u) => u.unitType === "VIP_TENT"),
       camping: {
@@ -93,7 +94,8 @@ export class AccommodationService {
         name: ct?.name ?? null,
         description: ct?.description ?? null,
         pricePerAdultNightSatang: camping?.price_per_adult_night_satang ?? 0,
-        childFreeUnderAge: camping?.child_free_under_age ?? 12,
+        // One child age on the whole site: the one set in booking rules wins over the camping one (migration 0057).
+        childFreeUnderAge: childUnderAge,
         maxGuestsPerTent: camping?.max_guests_per_tent ?? null,
         maxTentsPerNight: camping?.max_tents_per_night ?? 0,
         cover: coverUrl ? { url: coverUrl, alt: ct?.name ?? "", caption: null, width: camping?.cover_width ?? null, height: camping?.cover_height ?? null, srcset: coverSrcset, ...(coverFocal ? { focal: coverFocal } : {}) } : null,

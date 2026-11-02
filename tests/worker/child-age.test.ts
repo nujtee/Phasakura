@@ -25,6 +25,8 @@ describe("child age (booking rules)", () => {
     assert.equal(saved.data.childUnderAge, 7);
     assert.equal(await pub(), 7);
     assert.equal(await unit(), 7);
+    // The camping section (booking page) follows it too.
+    assert.equal((await h.api<PublicAccommodationsDto>("GET", "/api/public/accommodations?lang=th")).data.camping.childFreeUnderAge, 7);
 
     for (const bad of [0, 19, "7", 7.5]) {
       assert.equal((await h.api("PUT", "/api/admin/booking-settings", { token: root, body: { ...base, childUnderAge: bad } })).status, 422, String(bad));
