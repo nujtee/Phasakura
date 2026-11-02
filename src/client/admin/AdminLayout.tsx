@@ -105,7 +105,10 @@ export function AdminLayout({ currentPath, children }: { currentPath: string; ch
                     aria-controls={listId}
                     onClick={() => toggleGroup(group.id)}
                   >
-                    <span>{label}</span>
+                    <span className="adm-nav__label">
+                      {group.icon && <span className="adm-nav__icon" aria-hidden="true">{group.icon}</span>}
+                      {label}
+                    </span>
                     <svg className="adm-nav__chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
                       <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -119,8 +122,8 @@ export function AdminLayout({ currentPath, children }: { currentPath: string; ch
                         className={`adm-nav__link ${label ? "adm-nav__link--sub" : "adm-nav__link--top"} ${item.ready ? "" : "adm-nav__link--soon"}`}
                         aria-current={currentPath === item.path ? "page" : undefined}
                       >
-                        {label && <span className="adm-nav__dash" aria-hidden="true">-</span>}
-                        {item.label(t)}
+                        <span className="adm-nav__icon" aria-hidden="true">{item.icon}</span>
+                        <span className="adm-nav__text">{item.label(t)}</span>
                       </Link>
                     </li>
                   ))}
@@ -129,7 +132,10 @@ export function AdminLayout({ currentPath, children }: { currentPath: string; ch
             );
           })}
           <div className="adm-nav__group">
-            <a className="adm-nav__link" href={pagePath(locale, "home")} target="_blank" rel="noopener">{t.nav.viewSite} ↗</a>
+            <a className="adm-nav__link" href={pagePath(locale, "home")} target="_blank" rel="noopener">
+              <span className="adm-nav__icon" aria-hidden="true">🔗</span>
+              <span className="adm-nav__text">{t.nav.viewSite} ↗</span>
+            </a>
           </div>
         </nav>
         {/* Mobile only: account actions + language (the top bar is too narrow). */}
