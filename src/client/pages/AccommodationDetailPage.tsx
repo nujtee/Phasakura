@@ -111,7 +111,7 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
           <PromoList promotions={unit.promotions} withDates title={promo.upcoming} />
           <h2 id="book-h" className="section-title section-title--small">{t.accommodation.checkAvailability}</h2>
           <StaySearch initial={{ ...defaultStay(), adults: Math.min(2, unit.maxGuests) }} busy={busy} error={searchError}
-            showTents={false} onSearch={(q) => void check(q)} />
+            childAge={unit.childUnderAge} showTents={false} onSearch={(q) => void check(q)} />
           {mine && (
             <p className={`unit-card__badge-inline ${mine.available && mine.fitsGuests ? "is-ok" : "is-bad"}`} role="status">
               {!mine.available ? t.accommodation.unavailable : !mine.fitsGuests ? t.accommodation.tooManyGuests : t.accommodation.available}

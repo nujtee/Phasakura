@@ -591,6 +591,19 @@ export class BookingRepository {
       .first();
   }
 
+  /** The child age set in Admin (migration 0057): null = not set; undefined = before the migration. */
+  async childMaxAge(): Promise<number | null | undefined> {
+    return withFallback(
+      async () => (await this.db.prepare("SELECT child_max_age FROM booking_settings WHERE id = 1").first<{ child_max_age: number | null }>())?.child_max_age ?? null,
+      async () => undefined,
+    );
+  }
+
+  /** Written on its own, after the row exists (migration 0057). */
+  childMaxAgeStatement(age: number | null): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE booking_settings SET child_max_age = ?1 WHERE id = 1").bind(age);
+  }
+
   saveSettingsStatement(s: { holdMinutes: number; maxNights: number; maxAdvanceDays: number; maxTentsPerBooking: number }, actorId: string, now: string): D1PreparedStatementLike {
     return this.db
       .prepare(

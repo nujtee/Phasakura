@@ -493,6 +493,30 @@ await check("promotions: staff add a discount, free extra bed and free dinner to
   await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
 });
 
+await check("child age: staff set it in booking rules; the booking page and the house page say it", async () => {
+  await pa.goto(`${BASE}/en/admin/settings-website`);
+  const age = pa.getByLabel("Child age (children are under …)");
+  await age.fill("10");
+  await age.locator("xpath=ancestor::form").getByRole("button", { name: "Save" }).click();
+  await pa.getByText("Saved").first().waitFor().catch(() => undefined);
+  await (async () => {
+    for (let i = 0; i < 20; i++) {
+      const d = (await (await req.get(`${BASE}/api/admin/booking-settings`)).json()).data;
+      if (d.childUnderAge === 10) return;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    throw new Error("child age not saved");
+  })();
+  if (SHOTS) await age.locator("xpath=ancestor::form").screenshot({ path: `${SHOTS}/child-age-admin.png` });
+  await pg.goto(`${BASE}/th/booking`);
+  await pg.getByText("เด็ก (อายุต่ำกว่า 10 ปี)").first().waitFor();
+  if (SHOTS) await pg.locator("form.stay-search").screenshot({ path: `${SHOTS}/child-age-booking.png` });
+  await pg.goto(`${BASE}/th/accommodation/house-sakura`);
+  await pg.getByText("เด็ก (อายุต่ำกว่า 10 ปี)").first().waitFor();
+  const put = await req.put(`${BASE}/api/admin/booking-settings`, { headers: H, data: { ...(await (await req.get(`${BASE}/api/admin/booking-settings`)).json()).data, updatedAt: undefined, childUnderAge: null } });
+  assert(put.ok(), `reset ${put.status()} ${await put.text()}`);
+});
+
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
   assert(!bad.length, bad.join("\n"));
