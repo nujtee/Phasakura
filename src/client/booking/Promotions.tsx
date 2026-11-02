@@ -12,14 +12,22 @@ export function usePromo(): PromoMessages {
 
 const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k: string) => String(v[k] ?? ""));
 
-/** What a promotion offers, in short words ("ลด 20%", "ฟรีที่นอนเสริม"…). */
-export function promoPerks(p: Pick<PromotionBriefDto, "discount" | "freeExtraBed" | "freePets" | "freeFoodOptionIds">, m: PromoMessages, baht: (n: number) => string): string[] {
+type PerkNames = { names: Partial<Record<string, string>> }[] | undefined;
+
+/** A perk's name in this language, else Thai. */
+export function perkNames(perks: PerkNames, lang: string): string[] {
+  return (perks ?? []).map((k) => k.names[lang] ?? k.names.th ?? "").filter(Boolean);
+}
+
+/** What a promotion offers, in short words ("ลด 20%", "ฟรีที่นอนเสริม", "น้ำดื่ม 4 ขวด"…). */
+export function promoPerks(p: Pick<PromotionBriefDto, "discount" | "freeExtraBed" | "freePets" | "freeFoodOptionIds" | "perks">, m: PromoMessages, baht: (n: number) => string, lang = "th"): string[] {
   return [
     p.discount?.kind === "PERCENT" ? fill(m.percentOff, { v: p.discount.value }) : null,
     p.discount?.kind === "AMOUNT" ? fill(m.amountOff, { v: baht(p.discount.value) }) : null,
     p.freeExtraBed ? m.freeExtraBed : null,
     p.freePets ? m.freePets : null,
     p.freeFoodOptionIds?.length ? m.freeFood : null,
+    ...perkNames(p.perks, lang),
   ].filter((x): x is string => !!x);
 }
 
@@ -43,7 +51,7 @@ export function PromoList({ promotions, withDates = false, title }: { promotions
             <span className="promo__badge">{m.badge}</span>
             <span className="promo__body">
               {p.text && <span className="promo__text">{p.text}</span>}
-              {promoPerks(p, m, baht).length > 0 && <span className="promo__perks">{promoPerks(p, m, baht).join(" · ")}</span>}
+              {promoPerks(p, m, baht, locale.code).length > 0 && <span className="promo__perks">{promoPerks(p, m, baht, locale.code).join(" · ")}</span>}
               {withDates && (
                 <span className="promo__dates">
                   {p.dateFrom === p.dateTo ? fill(m.oneDate, { from: d(p.dateFrom) }) : fill(m.dates, { from: d(p.dateFrom), to: d(p.dateTo) })}
@@ -71,6 +79,7 @@ export function PromoBillRows({ promotions }: { promotions?: StayPromotionDto[] 
           p.extraBedFreeSatang ? `${m.extraBedFree} −${baht(p.extraBedFreeSatang)}` : null,
           p.petsFreeSatang ? `${m.petsFree} −${baht(p.petsFreeSatang)}` : null,
           p.foodFreeSatang ? `${m.foodFree} −${baht(p.foodFreeSatang)}` : null,
+          ...perkNames(p.perks, locale.code),
         ].filter(Boolean);
         if (!p.text && !parts.length) return null;
         return (

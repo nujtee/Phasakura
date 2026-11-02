@@ -8,11 +8,12 @@ import { useAdmin } from "../AdminContext.tsx";
 import { unitName } from "../accommodation/UnitsPage.tsx";
 import { Alert, Button, Field, fieldErrors } from "../ui.tsx";
 import { useStayDate } from "./shared.tsx";
+import { PromotionPerks } from "./PromotionPerks.tsx";
 
 const EMPTY: PricingRuleInput = {
   targetType: "UNIT_TYPE", unitId: null, unitType: "HOUSE", name: "", dateFrom: "", dateTo: "",
   daysOfWeek: "0123456", priceSatang: 0, priority: 0, status: "ACTIVE", payNowPercent: null,
-  discountKind: null, discountValue: null, freeExtraBed: false, freePets: false, freeFoodOptionIds: [], promoText: null,
+  discountKind: null, discountValue: null, freeExtraBed: false, freePets: false, freeFoodOptionIds: [], promoText: null, perkIds: [],
 };
 
 type Editing = { id: string | null; input: PricingRuleInput; price: string; discount: string };
@@ -100,6 +101,7 @@ export function PricingRulesPage() {
     r.freeExtraBed ? t.pricing.promoBed : null,
     r.freePets ? t.pricing.promoPet : null,
     r.freeFoodOptionIds?.length ? format(t.pricing.promoFood, { n: r.freeFoodOptionIds.length }) : null,
+    r.perkIds?.length ? format(t.pricing.promoPerks, { n: r.perkIds.length }) : null,
     r.promoText ? `“${r.promoText}”` : null,
   ].filter(Boolean).join(" · ");
 
@@ -337,6 +339,7 @@ function PromotionFields({ editing, setEditing, foods, errors }: {
         ))}
         {errors.freeFoodOptionIds && <p className="adm-field__error">{errors.freeFoodOptionIds}</p>}
       </fieldset>
+      <PromotionPerks selected={input.perkIds ?? []} onChange={(ids) => set({ perkIds: ids })} editable />
       <div className="adm-field">
         <label htmlFor="pr-promo-text">{t.pricing.promoText}</label>
         <textarea id="pr-promo-text" rows={2} maxLength={MAX_PROMO_TEXT} value={input.promoText ?? ""} aria-describedby="pr-promo-text-hint"

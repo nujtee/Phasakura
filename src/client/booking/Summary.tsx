@@ -80,7 +80,7 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
                 </dd>
               </div>
             )),
-            (x.promotions ?? []).some((p) => p.text || p.roomDiscountSatang || p.extraBedFreeSatang || p.petsFreeSatang || p.foodFreeSatang) && (
+            (x.promotions ?? []).some((p) => p.text || p.perks?.length || p.roomDiscountSatang || p.extraBedFreeSatang || p.petsFreeSatang || p.foodFreeSatang) && (
               <div key={`${k}|promo`} className="summary__line summary__line--sub summary__line--promo">
                 <dt><ul className="promo__list"><PromoBillRows promotions={x.promotions} /></ul></dt>
                 <dd />

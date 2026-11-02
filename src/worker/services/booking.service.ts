@@ -289,7 +289,7 @@ export class BookingService {
       }));
 
       // Promotions this stay got (migration 0055): what the bill shows; the prices above already include them.
-      for (const promo of (item.promotions ?? []).filter((pr) => pr.text || promotionSaving(pr) > 0)) statements.push(this.promoRepo.insertStatement(newId(), bookingId, itemId, promo, at));
+      for (const promo of (item.promotions ?? []).filter((pr) => pr.text || pr.perks?.length || promotionSaving(pr) > 0)) statements.push(this.promoRepo.insertStatement(newId(), bookingId, itemId, promo, at));
 
       // Included meals snapshot (spec §20).
       for (const m of stay.included) {

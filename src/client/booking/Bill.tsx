@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getPromoMessages } from "../../shared/i18n/promo-messages.ts";
+import { perkNames } from "./Promotions.tsx";
 import { createPortal } from "react-dom";
 import type { PublicBookingDto } from "../../shared/booking-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
@@ -57,7 +58,7 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
       qty: [fillText(m.nights, { n: b.nights }), x.type === "OWN_TENT" ? fillText(bt.tentsLine, { n: x.quantity }) : null,
         x.pricingType === "PER_ADULT_NIGHT" ? fillText(m.perAdult, { n: x.adults }) : null].filter(Boolean).join(" · "),
       amount: baht(x.subtotalSatang),
-    }, ...(x.promotions ?? []).filter((p) => p.text || p.roomDiscountSatang + p.extraBedFreeSatang + p.petsFreeSatang + p.foodFreeSatang > 0).map((p) => ({
+    }, ...(x.promotions ?? []).filter((p) => p.text || p.perks?.length || p.roomDiscountSatang + p.extraBedFreeSatang + p.petsFreeSatang + p.foodFreeSatang > 0).map((p) => ({
       // Promotion (migration 0055): what it gave; the amounts above are already after it.
       name: `${pm.badge}${p.text ? ` · ${p.text}` : ""}`,
       qty: [
@@ -65,6 +66,7 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
         p.extraBedFreeSatang ? `${pm.extraBedFree} −${baht(p.extraBedFreeSatang)}` : null,
         p.petsFreeSatang ? `${pm.petsFree} −${baht(p.petsFreeSatang)}` : null,
         p.foodFreeSatang ? `${pm.foodFree} −${baht(p.foodFreeSatang)}` : null,
+        ...perkNames(p.perks, lang),
       ].filter(Boolean).join(" · "),
       amount: "",
     })), ...(x.extraBeds ? [{

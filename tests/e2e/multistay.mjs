@@ -441,11 +441,20 @@ await check("promotions: staff add a discount, free extra bed and free dinner to
   await pa.getByText("Price after discount ฿3,200 / night").waitFor();
   await pa.getByLabel("Free extra bed").check();
   await pa.locator(".adm-promo__foods").getByRole("checkbox", { name: /Dinner A/ }).check();
+  // Extra perks (migration 0056): a shared list like the amenities — add one, it is ticked for this rule.
+  const perks = pa.locator(".adm-promo__perks");
+  await perks.getByRole("button", { name: "+ Add new item" }).click();
+  await perks.getByLabel("Name (ไทย) *").fill("น้ำดื่ม 4 ขวด");
+  await perks.getByLabel("Name (English)").fill("4 bottles of water");
+  await perks.getByRole("button", { name: "Add", exact: true }).click();
+  // The admin (English) sees the English name; guests on the Thai site the Thai one.
+  await perks.getByRole("checkbox", { name: /4 bottles of water/ }).waitFor();
+  assert(await perks.getByRole("checkbox", { name: /4 bottles of water/ }).isChecked(), "new perk ticked");
   await pa.getByLabel("Promotion details (shown to guests)").fill("โปรหน้าฝน ลด 20% ฟรีที่นอนเสริมและอาหารเย็น");
   if (SHOTS) await pa.locator("form.adm-card").screenshot({ path: `${SHOTS}/promo-admin-form.png` });
   await pa.getByRole("button", { name: "Save" }).click();
   const row = pa.locator("tr", { hasText: "e2e rainy deal" });
-  await row.getByText(/20% off · Free extra bed · 1 free dishes/).waitFor();
+  await row.getByText(/20% off · Free extra bed · 1 free dishes · 1 extra perks/).waitFor();
   if (SHOTS) await pa.screenshot({ path: `${SHOTS}/promo-admin-list.png`, fullPage: true });
 
   await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: true, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
@@ -456,6 +465,7 @@ await check("promotions: staff add a discount, free extra bed and free dinner to
   await card.getByText("โปรหน้าฝน ลด 20% ฟรีที่นอนเสริมและอาหารเย็น").waitFor();
   await card.getByText("฿6,400").waitFor();
   await card.locator(".unit-card__was").getByText("฿8,000").waitFor();
+  await card.getByText(/น้ำดื่ม 4 ขวด/).waitFor();
   if (SHOTS) await card.screenshot({ path: `${SHOTS}/promo-card.png` });
   await card.getByRole("button", { name: "เลือกหลังนี้" }).click();
   await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();

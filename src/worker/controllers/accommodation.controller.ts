@@ -513,7 +513,7 @@ export function accommodationController(services: ServicesFor) {
   };
 }
 
-function namesMap(raw: unknown, requireDefault: boolean): Partial<Record<LocaleCode, string>> {
+export function namesMap(raw: unknown, requireDefault: boolean): Partial<Record<LocaleCode, string>> {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new ValidationError({ names: "EXPECTED_OBJECT" });
   const out: Partial<Record<LocaleCode, string>> = {};
   for (const [code, value] of Object.entries(raw)) {

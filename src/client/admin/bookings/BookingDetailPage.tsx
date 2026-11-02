@@ -133,6 +133,7 @@ export function BookingDetailPage({ code }: { code: string }) {
                     p.extraBedFreeSatang ? `${t.pricing.freeExtraBed} −${formatBaht(p.extraBedFreeSatang, locale.code)}` : null,
                     p.petsFreeSatang ? `${t.pricing.freePets} −${formatBaht(p.petsFreeSatang, locale.code)}` : null,
                     p.foodFreeSatang ? `${t.pricing.promoFoodFree} −${formatBaht(p.foodFreeSatang, locale.code)}` : null,
+                    ...(p.perks ?? []).map((k) => k.names[locale.code] ?? k.names.th ?? ""),
                   ].filter(Boolean).join(" · ")}
                 </div>
               </li>

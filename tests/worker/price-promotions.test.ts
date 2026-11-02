@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AvailabilityDto, PublicUnitDto } from "../../src/shared/accommodation-types.ts";
-import type { PricingRuleDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
+import type { PricingRuleDto, PromotionPerkDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
 import { discountedPrice } from "../../src/worker/services/quote.service.ts";
 import { Harness } from "../helpers/harness.ts";
 
@@ -158,5 +158,46 @@ describe("price rule promotions", () => {
     assert.equal(g.data.discountValue, 10);
     const rows = h.db.all<{ discount_value: number; promo_text: string }>("SELECT discount_value, promo_text FROM pricing_settings WHERE group_id IS NOT NULL");
     assert.deepEqual(rows.map((r) => [r.discount_value, r.promo_text]), [[10, "Group deal"], [10, "Group deal"]]);
+  });
+
+  it("extra perks: a shared list (add, rename, delete); a rule gives them; guests see them; the bill keeps their names", async () => {
+    const { h, admin, rule, quote } = await setup();
+    const perk = (method: string, path: string, body?: unknown) => h.api<PromotionPerkDto>(method, `/api/admin/promotion-perks${path}`, { token: admin, body });
+    assert.equal((await perk("POST", "", { names: { en: "Water" } })).status, 422, "Thai name required");
+    const water = await perk("POST", "", { names: { th: "น้ำดื่ม 4 ขวด", en: "4 bottles of water" } });
+    assert.equal(water.status, 201, JSON.stringify(water.body));
+    const wine = (await perk("POST", "", { names: { th: "ไวน์ผลไม้ 1 ขวด" } })).data;
+    assert.equal((await rule({ perkIds: ["nope_perk"] })).error?.details?.perkIds, "UNKNOWN_PERK");
+    const made = await rule({ perkIds: [water.data.id, wine.id], promoText: "พัก 2 คืน รับของแถม" });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.deepEqual([...made.data.perkIds!].sort(), [water.data.id, wine.id].sort());
+    const list = (await h.api<PromotionPerkDto[]>("GET", "/api/admin/promotion-perks", { token: admin })).data;
+    assert.deepEqual(list.map((p) => [p.names.th, p.ruleCount]), [["น้ำดื่ม 4 ขวด", 1], ["ไวน์ผลไม้ 1 ขวด", 1]]);
+
+    const q = await quote();
+    assert.deepEqual(q.data.items[0]!.promotions![0]!.perks!.map((p) => p.names.th), ["น้ำดื่ม 4 ขวด", "ไวน์ผลไม้ 1 ขวด"]);
+    const search = await h.api<AvailabilityDto>("GET", "/api/public/availability?checkIn=2027-02-05&checkOut=2027-02-07");
+    assert.equal(search.data.units.find((u) => u.unitId === "dev_house_01")!.promotions![0]!.perks![0]!.names.en, "4 bottles of water");
+
+    const booked = await h.api<PublicBookingDto>("POST", "/api/public/bookings", {
+      body: { checkIn: "2027-02-05", checkOut: "2027-02-07", stays: [{ kind: "UNIT", unitId: "dev_house_01", adults: 2, children: 0 }], food: [], lang: "th",
+        customer: { name: "Guest", phone: "0812345678" }, privacyAccepted: true, expectedTotalSatang: q.data.totalSatang, idempotencyKey: key() },
+    });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+
+    // Renamed and deleted later: off the rule, out of the list; the booking keeps the names it was made with.
+    assert.equal((await perk("PATCH", `/${water.data.id}`, { names: { th: "น้ำดื่ม 6 ขวด" } })).data.names.th, "น้ำดื่ม 6 ขวด");
+    assert.equal((await perk("DELETE", `/${wine.id}`)).status, 200);
+    const after = (await h.api<PricingRuleDto[]>("GET", "/api/admin/pricing-rules", { token: admin })).data.find((r) => r.id === made.data.id)!;
+    assert.deepEqual(after.perkIds, [water.data.id]);
+    assert.equal((await h.api<PromotionPerkDto[]>("GET", "/api/admin/promotion-perks", { token: admin })).data.length, 1);
+    const lookup = await h.api<PublicBookingDto>("POST", "/api/public/bookings/lookup", { body: { bookingCode: booked.data.bookingCode, phone: "0812345678" } });
+    assert.deepEqual(lookup.data.items[0]!.promotions![0]!.perks!.map((p) => p.names.th), ["น้ำดื่ม 4 ขวด", "ไวน์ผลไม้ 1 ขวด"]);
+    assert.equal(h.audits("DELETE_PROMOTION_PERK").length, 1);
+
+    // Staff who may only view prices cannot change the list.
+    const viewer = await h.login(await h.user({ id: `perk_viewer_${seq}` }));
+    h.grant(`perk_viewer_${seq}`, "accommodation.view");
+    assert.equal((await h.api("POST", "/api/admin/promotion-perks", { token: viewer, body: { names: { th: "x" } } })).status, 403);
   });
 });
