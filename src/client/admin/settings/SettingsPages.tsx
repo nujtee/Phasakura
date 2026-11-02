@@ -98,7 +98,7 @@ export function WebsiteSettingsPage() {
     }])));
   }, [s.data]);
   useEffect(() => {
-    if (rules.data) setRuleForm(Object.fromEntries(Object.entries(rules.data).filter(([k]) => k !== "updatedAt").map(([k, v]) => [k, String(v)])));
+    if (rules.data) setRuleForm(Object.fromEntries(Object.entries(rules.data).filter(([k]) => k !== "updatedAt").map(([k, v]) => [k, v === null ? "" : String(v)])));
   }, [rules.data]);
 
   const submit = (e: FormEvent) => {
@@ -153,7 +153,8 @@ export function WebsiteSettingsPage() {
 
       <form className="adm-card" onSubmit={(e) => {
         e.preventDefault();
-        void rules.save(Object.fromEntries(Object.entries(ruleForm).map(([k, v]) => [k, Number(v)])));
+        // Child age: empty = not set (null); the other rules are numbers.
+        void rules.save(Object.fromEntries(Object.entries(ruleForm).map(([k, v]) => [k, k === "childUnderAge" && !v.trim() ? null : Number(v)])));
       }}>
         <h2 className="adm-h2">{c.bset.title}</h2>
         <p className="adm-field__hint">{c.bset.note}</p>
@@ -165,6 +166,12 @@ export function WebsiteSettingsPage() {
               <Field key={k} label={c.bset[k]} type="number" min={1} value={ruleForm[k] ?? ""} error={rules.errors[k]}
                 onChange={(e) => { const v = e.currentTarget.value; setRuleForm((cur) => ({ ...cur, [k]: v })); }} />
             ))}
+            {/* Shown once the site has migration 0057 (the settings then say childUnderAge, even when not set). */}
+            {rules.data && "childUnderAge" in rules.data && (
+              <Field label={c.bset.childUnderAge} hint={c.bset.childUnderAgeHint} type="number" min={1} max={18} inputMode="numeric"
+                value={ruleForm.childUnderAge ?? ""} error={rules.errors.childUnderAge}
+                onChange={(e) => { const v = e.currentTarget.value; setRuleForm((cur) => ({ ...cur, childUnderAge: v })); }} />
+            )}
           </div>
           <Button type="submit" busy={rules.busy}>{t.common.save}</Button>
         </fieldset>

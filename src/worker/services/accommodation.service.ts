@@ -19,6 +19,7 @@ import { promotionBriefs } from "./quote.service.ts";
 import { DEFAULT_LOCALE_CODE, parseLocale, type Locale, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike, R2BucketLike } from "../env.ts";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors.ts";
+import { withFallback } from "../repositories/schema-fallback.ts";
 import { openDepositBookings } from "../repositories/deposit-bookings.ts";
 import type { AccommodationRepository, UnitImageRow, UnitRow, UnitTranslationRow } from "../repositories/accommodation.repository.ts";
 import type { InventoryRepository } from "../repositories/inventory.repository.ts";
@@ -84,6 +85,7 @@ export class AccommodationService {
       ? this.images!.srcset(coverRenditions.get(camping.cover_asset_id), { key: camping.cover_key, width: camping.cover_width }) : null;
     return {
       language: locale.code,
+      childUnderAge: await this.childUnderAge(camping?.child_free_under_age),
       houses: dtos.filter((u) => u.unitType === "HOUSE"),
       vipTents: dtos.filter((u) => u.unitType === "VIP_TENT"),
       camping: {
@@ -105,8 +107,20 @@ export class AccommodationService {
     if (!unit) throw new NotFoundError("Accommodation not found", "ACCOMMODATION_NOT_FOUND");
     const [dto] = await this.toPublic([unit], locale.code);
     if (!dto) throw new NotFoundError("Accommodation not found", "ACCOMMODATION_NOT_FOUND");
-    const promotions = await this.upcomingPromotions(unit);
-    return promotions.length ? { ...dto, promotions } : dto;
+    const [promotions, childUnderAge] = await Promise.all([
+      this.upcomingPromotions(unit),
+      this.inventory.campingSettings().then((c) => this.childUnderAge(c?.child_free_under_age)),
+    ]);
+    return { ...dto, childUnderAge, ...(promotions.length ? { promotions } : {}) };
+  }
+
+  /** The child age guests see: set in Admin booking rules (migration 0057), else the camping one, else 12. */
+  private async childUnderAge(campingAge: number | undefined): Promise<number> {
+    const set = await withFallback(
+      async () => (await this.db.prepare("SELECT child_max_age FROM booking_settings WHERE id = 1").first<{ child_max_age: number | null }>())?.child_max_age ?? null,
+      async () => null,
+    );
+    return set ?? campingAge ?? 12;
   }
 
   /** Promotions of this house / VIP tent from today on (the nights their rule prices). */

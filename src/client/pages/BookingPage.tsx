@@ -505,7 +505,7 @@ export function BookingPage() {
       </div>
       {onlineOpen === false && <p className="notice notice--error" role="alert">{bt.onlineClosed}</p>}
 
-      <StaySearch initial={query} busy={busy} error={searchError} childAge={data?.camping.childFreeUnderAge} showTents={false}
+      <StaySearch initial={query} busy={busy} error={searchError} childAge={data?.childUnderAge ?? data?.camping.childFreeUnderAge} showTents={false}
         onSearch={(q) => {
           // Other dates: what was picked may not be free then.
           if (searched && (q.checkIn !== searched.checkIn || q.checkOut !== searched.checkOut)) setPicks([]);

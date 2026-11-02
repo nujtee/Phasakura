@@ -112,6 +112,8 @@ export interface PublicUnitDto {
   cover: PublicImageDto | null;
   images: PublicImageDto[];
   amenities: { code: string; icon: string | null; name: string }[];
+  /** Unit page only: guests under this age count as children (see PublicAccommodationsDto). */
+  childUnderAge?: number;
   /** Unit page only: promotions of the next months (migration 0055). */
   promotions?: PromotionBriefDto[];
 }
@@ -134,6 +136,8 @@ export interface PublicCampingDto {
 
 export interface PublicAccommodationsDto {
   language: LocaleCode;
+  /** Guests under this age count as children (Admin booking rules, migration 0057; else the camping age, else 12). */
+  childUnderAge?: number;
   houses: PublicUnitDto[];
   vipTents: PublicUnitDto[];
   camping: PublicCampingDto;

@@ -210,6 +210,11 @@ export interface BookingSettingsDto {
   maxNights: number;
   maxAdvanceDays: number;
   maxTentsPerBooking: number;
+  /**
+   * Guests under this age count as children (migration 0057); null = not set: the camping "children under … stay free"
+   * age is used, else 12. Absent before the migration.
+   */
+  childUnderAge?: number | null;
   updatedAt: string | null;
 }
 

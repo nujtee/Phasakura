@@ -670,12 +670,13 @@ export class BookingService {
 
   async getSettings(actor: AuthContext, meta: RequestMeta): Promise<BookingSettingsDto> {
     if (!this.authz.can(actor, "bookings.view")) await this.authz.requirePermission(actor, "settings.website", meta);
-    const s = await this.repo.settings();
+    const [s, childAge] = await Promise.all([this.repo.settings(), this.repo.childMaxAge()]);
     return {
       holdMinutes: s?.hold_minutes ?? 60,
       maxNights: s?.max_nights ?? 30,
       maxAdvanceDays: s?.max_advance_days ?? 365,
       maxTentsPerBooking: s?.max_tents_per_booking ?? 10,
+      ...(childAge !== undefined ? { childUnderAge: childAge } : {}),
       updatedAt: s?.updated_at ?? null,
     };
   }
@@ -683,13 +684,15 @@ export class BookingService {
   /** Changes apply to new bookings only; existing holds keep their deadline. */
   async saveSettings(
     actor: AuthContext,
-    input: { holdMinutes: number; maxNights: number; maxAdvanceDays: number; maxTentsPerBooking: number },
+    input: { holdMinutes: number; maxNights: number; maxAdvanceDays: number; maxTentsPerBooking: number; childUnderAge?: number | null },
     meta: RequestMeta,
   ): Promise<BookingSettingsDto> {
     await this.authz.requirePermission(actor, "settings.website", meta);
     const before = await this.getSettings(actor, meta);
     await this.db.batch([
       this.repo.saveSettingsStatement(input, actor.userId, iso(this.clock())),
+      // Child age (migration 0057): only when sent, so the rest saves before that migration.
+      ...(input.childUnderAge !== undefined ? [this.repo.childMaxAgeStatement(input.childUnderAge)] : []),
       this.log.auditStatement(actor.userId, "UPDATE_BOOKING_SETTINGS", "settings", "booking_settings",
         { ...before, updatedAt: undefined }, input, meta),
     ]);

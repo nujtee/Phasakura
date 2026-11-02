@@ -323,6 +323,7 @@ const th = {
     maxNights: "จำนวนคืนสูงสุดต่อการจอง",
     maxAdvanceDays: "จองล่วงหน้าได้สูงสุด (วัน)",
     maxTentsPerBooking: "เต็นท์สูงสุดต่อการจอง",
+    childUnderAge: "อายุเด็ก (ต่ำกว่ากี่ปีนับเป็นเด็ก)", childUnderAgeHint: "เช่น 12 = เด็กอายุต่ำกว่า 12 ปี · แสดงในหน้าจองและหน้าที่พัก · เว้นว่าง = ใช้ค่าของลานกางเต็นท์ (หรือ 12)",
     note: "มีผลกับการจองใหม่เท่านั้น การจองที่รอชำระอยู่ใช้เวลาเดิม",
   },
   food: {
@@ -783,6 +784,7 @@ const en: AdminCmsMessages = {
   bset: {
     title: "Booking rules", holdMinutes: "Payment hold (minutes)", maxNights: "Maximum nights per booking",
     maxAdvanceDays: "Book up to (days ahead)", maxTentsPerBooking: "Maximum tents per booking",
+    childUnderAge: "Child age (children are under …)", childUnderAgeHint: "e.g. 12 = children under 12 · shown on the booking and unit pages · empty = the camping setting (or 12)",
     note: "Applies to new bookings only; holds already waiting keep their deadline.",
   },
   food: {
@@ -1035,7 +1037,8 @@ const zhCN: AdminCmsMessages = {
   },
   bset: {
     title: "预订规则", holdMinutes: "付款保留时间（分钟）", maxNights: "每笔预订最多晚数", maxAdvanceDays: "最多提前预订（天）",
-    maxTentsPerBooking: "每笔预订最多帐篷数", note: "仅适用于新预订；正在等待付款的预订保持原截止时间。",
+    maxTentsPerBooking: "每笔预订最多帐篷数",
+    childUnderAge: "儿童年龄（低于几岁算儿童）", childUnderAgeHint: "例如 12 = 12 岁以下 · 显示在预订页和住宿页 · 留空 = 使用露营设置（或 12）", note: "仅适用于新预订；正在等待付款的预订保持原截止时间。",
   },
   food: {
     title: "菜单", options: "菜品", categories: "类别", included: "住宿含餐", capacity: "每日数量", newOption: "添加菜品",
