@@ -224,6 +224,30 @@
   color: var(--color-muted);
 }
 
+/* Menu pictures (emoji): a fixed box so the labels line up whatever the emoji's width. */
+.adm-nav__link,
+.adm-nav__label {
+  gap: 10px;
+}
+.adm-nav__label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.adm-nav__icon {
+  flex: none;
+  display: inline-flex;
+  justify-content: center;
+  width: 1.5em;
+  font-size: 1.05rem;
+  line-height: 1;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-weight: 400;
+}
+.adm-nav__text {
+  min-width: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .adm-nav__chevron {
     transition: none;

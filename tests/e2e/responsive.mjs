@@ -265,7 +265,7 @@ await check("admin on a phone: the side menu is reachable and closes after choos
   await page.close();
 });
 
-await check("admin side menu: bold headings, indented \"-\" sub-pages, a heading click opens and a second click closes", async () => {
+await check("admin side menu: bold headings, a picture per entry, indented sub-pages, a heading click opens and a second click closes", async () => {
   // A fresh browser: nothing remembered about which groups were open.
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 }, locale: "en-US", storageState: await adminCtx.storageState() });
   await ctx.addInitScript(() => { if (!sessionStorage.getItem("pk_e2e_nav")) { localStorage.removeItem("pk_admin_nav_open"); sessionStorage.setItem("pk_e2e_nav", "1"); } });
@@ -286,13 +286,16 @@ await check("admin side menu: bold headings, indented \"-\" sub-pages, a heading
   await calendar.waitFor();
   assert(await weight(calendar) < 700, "sub-page is regular weight");
   const box = async (loc) => (await loc.boundingBox());
-  const dash = calendar.locator(".adm-nav__dash");
-  assert(await dash.innerText() === "-", "sub-page starts with -");
-  assert(await dash.getAttribute("aria-hidden") === "true", "the dash is not read out");
-  const textLeft = await calendar.evaluate((el) => { const r = document.createRange(); r.selectNodeContents(el.lastChild); return r.getBoundingClientRect().left; });
-  const headingTextLeft = await heading.locator("span").evaluate((el) => el.getBoundingClientRect().left);
+  // Each entry starts with a picture (emoji), not read out; sub-pages sit indented under their heading.
+  const icon = calendar.locator(".adm-nav__icon");
+  assert(await icon.innerText() === "📅", "sub-page starts with its picture");
+  assert(await icon.getAttribute("aria-hidden") === "true", "the picture is not read out");
+  assert(await heading.locator(".adm-nav__icon").innerText() === "🗓️", "the heading has its picture too");
+  const textLeft = await calendar.locator(".adm-nav__text").evaluate((el) => el.getBoundingClientRect().left);
+  const headingTextLeft = await heading.locator(".adm-nav__icon").evaluate((el) => el.getBoundingClientRect().left);
   assert(textLeft > headingTextLeft + 20, `sub-page indented (${textLeft} vs ${headingTextLeft})`);
-  assert((await box(dash)).x > headingTextLeft + 8, "dash sits to the right of the heading text");
+  assert((await box(icon)).x > headingTextLeft + 8, "sub-page picture sits to the right of the heading picture");
+  if (SHOTS) await page.locator("#adm-sidebar").screenshot({ path: `${SHOTS}/admin-nav-icons.png` });
 
   await heading.click();
   assert(await heading.getAttribute("aria-expanded") === "false", "second click closes");
