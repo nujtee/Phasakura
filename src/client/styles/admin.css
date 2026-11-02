@@ -4006,3 +4006,32 @@
 .adm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .adm-promo__perks { border: 0; padding: 0; margin: 12px 0; min-width: 0; }
 .adm-promo__perks .adm-subform { margin-top: 8px; }
+
+/* Dashboard: the OTA tile opens a table (a button that looks like the other tiles). */
+.adm-kpi--toggle { padding: 0; }
+.adm-kpi__button {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 12px 36px 12px 14px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.adm-kpi__button:hover { background: color-mix(in srgb, var(--color-primary) 6%, transparent); }
+.adm-kpi--open { border-color: var(--color-primary); }
+.adm-kpi__chevron {
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  color: var(--color-muted);
+  transition: transform var(--transition-fast);
+}
+.adm-kpi--open .adm-kpi__chevron { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .adm-kpi__chevron { transition: none; } }
+.adm-nowrap { white-space: nowrap; }

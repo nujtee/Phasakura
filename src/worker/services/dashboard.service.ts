@@ -3,7 +3,7 @@ import { parseStays } from "../repositories/stay-sql.ts";
 import { stayActions } from "../../shared/stay.ts";
 import { balanceDue } from "../../shared/booking-rules.ts";
 import type { BookingStatus, PaymentStatus } from "../../shared/booking-types.ts";
-import type { CalendarDto, DashboardDto, RevenueDto, StayRowDto } from "../../shared/dashboard-types.ts";
+import type { CalendarDto, DashboardDto, OtaStayDto, RevenueDto, StayRowDto } from "../../shared/dashboard-types.ts";
 import { CALENDAR_MAX_DAYS } from "../../shared/dashboard-types.ts";
 import { addDays, diffDays, isIsoDate, monthRange, todayIn, utcOffsetMinutes, DEFAULT_TIMEZONE } from "../../shared/dates.ts";
 import type { LocaleCode } from "../../shared/i18n/locales.ts";
@@ -86,10 +86,21 @@ export class DashboardService {
 
     let arrivals: StayRowDto[] | null = null;
     let departures: StayRowDto[] | null = null;
+    let ota: DashboardDto["ota"] = null;
     if (seesBookings) {
-      const [a, d] = await Promise.all([this.repo.arrivals(today), this.repo.departures(today)]);
+      const [a, d, ical, channex] = await Promise.all([
+        this.repo.arrivals(today), this.repo.departures(today),
+        // A stay that began before today and goes on still shows (its first night is looked for up to 60 days back).
+        this.repo.icalNights(addDays(today, -60)), this.repo.channexStays(today),
+      ]);
       arrivals = a.map((r) => stayRow(r, today));
       departures = d.map((r) => stayRow(r, today));
+      const stays = [...icalStays(ical), ...channex.map((o): OtaStayDto => ({
+        source: "CHANNEX", channel: o.ota_name, label: null, units: o.units ?? "", checkIn: o.arrival_date, checkOut: o.departure_date,
+        nights: diffDays(o.arrival_date, o.departure_date), guestName: o.guest_name, bookingCode: o.booking_code,
+        amountMinor: o.amount_minor, currency: o.currency, status: o.status as OtaStayDto["status"],
+      }))].filter((s) => s.checkOut > today).sort((x, y) => x.checkIn.localeCompare(y.checkIn) || x.units.localeCompare(y.units));
+      ota = { stays, tonight: stays.filter((s) => s.status === "ACTIVE" && s.checkIn <= today && s.checkOut > today).length };
     }
 
     let money: DashboardDto["money"] = null;
@@ -132,6 +143,7 @@ export class DashboardService {
         vip: { total: units("VIP_TENT").total, available: units("VIP_TENT").available },
         camping: { enabled: campingEnabled, max: campingMax, used: campingUsed, remaining: Math.max(0, campingMax - campingUsed) },
       },
+      ota,
       arrivals,
       departures,
       money,
@@ -248,4 +260,24 @@ function stayRow(r: BookingItemListRow, today: string): StayRowDto {
 
 function revenue(r: RevenueRow): RevenueDto {
   return { bookings: r.bookings, accommodationSatang: r.accommodation, foodSatang: r.food, totalSatang: r.total };
+}
+
+/** iCal nights (ordered by unit, feed, date) joined into stays: consecutive nights of one unit from one OTA. */
+export function icalStays(rows: { unit_id: string; unit_code: string; unit_name: string | null; channel: string; label: string | null; stay_date: string }[]): OtaStayDto[] {
+  const out: (OtaStayDto & { key: string })[] = [];
+  for (const r of rows) {
+    const key = `${r.unit_id}|${r.channel}|${r.label ?? ""}`;
+    const last = out[out.length - 1];
+    if (last && last.key === key && last.checkOut === r.stay_date) {
+      last.checkOut = addDays(r.stay_date, 1);
+      last.nights += 1;
+      continue;
+    }
+    out.push({
+      key, source: "ICAL", channel: r.channel, label: r.label, units: r.unit_name ? `${r.unit_code} · ${r.unit_name}` : r.unit_code,
+      checkIn: r.stay_date, checkOut: addDays(r.stay_date, 1), nights: 1, guestName: null, bookingCode: null, amountMinor: null, currency: null,
+      status: "ACTIVE",
+    });
+  }
+  return out.map(({ key: _k, ...s }) => s);
 }

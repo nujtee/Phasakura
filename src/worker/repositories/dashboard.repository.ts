@@ -110,6 +110,54 @@ export class DashboardRepository {
     }, async () => ({ bookings: 0, satang: 0 }));
   }
 
+  /**
+   * Nights OTAs hold through an imported iCal calendar (migration 0033), from `from` on, in unit / feed / date order:
+   * the dashboard joins consecutive nights into stays. Empty before that migration.
+   */
+  async icalNights(from: string): Promise<{ unit_id: string; unit_code: string; unit_name: string | null; channel: string; label: string | null; stay_date: string }[]> {
+    type Row = { unit_id: string; unit_code: string; unit_name: string | null; channel: string; label: string | null; stay_date: string };
+    return withFallback(
+      async () => (await this.db
+        .prepare(
+          `SELECT n.unit_id, u.unit_code,
+                  (SELECT t.name FROM accommodation_translations t WHERE t.unit_id = u.id AND t.language_code = 'th') AS unit_name,
+                  f.channel, f.label, n.stay_date
+             FROM booking_unit_nights n
+             JOIN ical_feeds f ON f.id = n.ical_feed_id
+             JOIN accommodation_units u ON u.id = n.unit_id
+            WHERE n.booking_id IS NULL AND n.stay_date >= ?1
+            ORDER BY u.unit_code, f.id, n.stay_date
+            LIMIT 2000`,
+        )
+        .bind(from).all<Row>()).results,
+      async () => [] as Row[],
+    );
+  }
+
+  /** Bookings from OTAs through Channex (migration 0036) not over yet; empty before that migration. */
+  async channexStays(today: string): Promise<{
+    ota_name: string; status: string; arrival_date: string; departure_date: string; amount_minor: number; currency: string;
+    guest_name: string | null; booking_code: string | null; units: string | null; problem: string | null;
+  }[]> {
+    type Row = { ota_name: string; status: string; arrival_date: string; departure_date: string; amount_minor: number; currency: string;
+      guest_name: string | null; booking_code: string | null; units: string | null; problem: string | null };
+    return withFallback(
+      async () => (await this.db
+        .prepare(
+          `SELECT o.ota_name, o.status, o.arrival_date, o.departure_date, o.amount_minor, o.currency, o.guest_name, o.problem,
+                  b.booking_code,
+                  (SELECT group_concat(u.unit_code, ', ') FROM booking_items i JOIN accommodation_units u ON u.id = i.unit_id
+                    WHERE i.booking_id = b.id) AS units
+             FROM ota_bookings o LEFT JOIN bookings b ON b.id = o.booking_id
+            WHERE o.departure_date > ?1 AND o.status IN ('ACTIVE', 'CONFLICT', 'UNMAPPED')
+            ORDER BY o.arrival_date, o.created_at
+            LIMIT 200`,
+        )
+        .bind(today).all<Row>()).results,
+      async () => [] as Row[],
+    );
+  }
+
   async inventoryTonight(today: string) {
     const units = await this.db
       .prepare(
