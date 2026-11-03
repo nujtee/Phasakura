@@ -33,7 +33,7 @@ import { MoveStayLauncher } from "../booking/MoveStay.tsx";
 import { BookingSummary, useDateText } from "../booking/Summary.tsx";
 import { CampingBooker } from "../booking/CampingBooker.tsx";
 import { LandscapeMap } from "../booking/LandscapeMap.tsx";
-import { guestsForNewUnit, pickKey, pickProblem, PicksBar, StayPicks, type Pick } from "../booking/StayPicks.tsx";
+import { guestsForNewUnit, pickKey, pickProblem, PicksBar, StayPicks, withAutoBeds, type Pick } from "../booking/StayPicks.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
 import { IMAGE_SIZES } from "../../shared/media-types.ts";
 import { ResponsiveImage } from "../content/ResponsiveImage.tsx";
@@ -245,6 +245,12 @@ export function BookingPage() {
       .then(setCatalogue)
       .catch(() => setCatalogue({ checkIn: q.checkIn, checkOut: q.checkOut, categories: [] }));
   }
+
+  // More guests than a house's usual number: its extra beds are added on their own (when the property offers them).
+  useEffect(() => {
+    if (!catalogue?.extraBed) return;
+    setPicks((cur) => withAutoBeds(cur, catalogue.extraBed));
+  }, [catalogue, picks]);
 
   useEffect(() => {
     if (step !== "food" || !catalogue || sent.current.viewFood) return;

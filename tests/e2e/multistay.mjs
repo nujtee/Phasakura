@@ -549,6 +549,31 @@ await check("booking page search asks dates only; a house picked gets its usual 
   if (SHOTS) await pg.screenshot({ path: `${SHOTS}/booking-search-dates.png` });
 });
 
+await check("house page: guests never above what the house takes; more than its usual number adds extra beds on their own", async () => {
+  await pg.goto(`${BASE}/th/accommodation/house-sakura`);
+  const aside = pg.locator(".detail__aside");
+  await aside.getByText("หลังนี้รองรับสูงสุด 4 ท่าน (รวมเด็ก)").waitFor();
+  const adults = aside.getByLabel("ผู้ใหญ่");
+  await adults.fill("9");
+  assert(await adults.inputValue() === "4", `adults capped ${await adults.inputValue()}`);
+  const kids = aside.getByLabel(/^เด็ก/);
+  await kids.fill("3");
+  assert(await kids.inputValue() === "0", `children capped ${await kids.inputValue()}`);
+
+  // Extra beds on: 3 guests in a house for 2 → one extra bed is already in the booking.
+  const on = await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: true, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
+  assert(on.ok(), `extra beds on ${on.status()}`);
+  const ci = day(120), co = day(121);
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=3&children=0&unit=house-sakura`);
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  const beds = pg.locator(".extra-beds").getByRole("group", { name: "ที่นอนเสริม" }).locator("output");
+  await beds.waitFor();
+  await pg.waitForFunction(() => document.querySelector(".extra-beds .stepper output")?.textContent === "1", null, { timeout: 8000 });
+  await pg.locator(".summary").getByText(/ที่นอนเสริม 1 × 1 คืน/).waitFor();
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/auto-extra-bed.png`, fullPage: true });
+  await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
+});
+
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
   assert(!bad.length, bad.join("\n"));
