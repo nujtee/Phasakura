@@ -121,6 +121,11 @@
     grid-template-columns: 1fr 1fr 96px 128px auto;
   }
 
+  /* Booking page: dates only (guests are set per stay once chosen). */
+  .stay-search--no-tents.stay-search--dates {
+    grid-template-columns: 1fr 1fr auto;
+  }
+
   .detail__aside .stay-search {
     grid-template-columns: 1fr 1fr;
   }

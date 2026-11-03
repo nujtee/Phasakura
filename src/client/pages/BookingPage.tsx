@@ -50,9 +50,9 @@ interface Details {
 }
 
 /** ?checkIn=&checkOut=&adults=&children=&unit=<slug> — deep link from an accommodation page. */
-function initialFromUrl(): { query: StayQuery; unitSlug: string | null } {
+function initialFromUrl(): { query: StayQuery; unitSlug: string | null; guestsGiven: boolean } {
   const base = defaultStay();
-  if (typeof window === "undefined") return { query: base, unitSlug: null };
+  if (typeof window === "undefined") return { query: base, unitSlug: null, guestsGiven: false };
   const p = new URLSearchParams(window.location.search);
   const int = (k: string, min: number, fallback: number) => {
     const n = Number(p.get(k));
@@ -70,6 +70,7 @@ function initialFromUrl(): { query: StayQuery; unitSlug: string | null } {
       tents: int("tents", 1, base.tents),
     },
     unitSlug: valid ? p.get("unit") : null,
+    guestsGiven: p.has("adults") || p.has("children"),
   };
 }
 
@@ -219,7 +220,11 @@ export function BookingPage() {
       return;
     }
     track({ name: "select_accommodation", item: unitItem(unit) });
-    setPicks((cur) => [...cur.filter((p) => pickKey(p) !== unit.id), { kind: "UNIT", unit, ...guestsForNewUnit(unit, searched ?? query, cur) }]);
+    // Guests: the ones a link brought (e.g. from a house page), split over the stays; else the house's usual number
+    // (the search asks dates only) — changed per stay in the list.
+    const guests = initial.guestsGiven ? guestsForNewUnit(unit, searched ?? query, picks)
+      : { adults: Math.max(1, Math.min(unit.standardGuests, unit.maxAdults ?? unit.maxGuests, unit.maxGuests)), children: 0 };
+    setPicks((cur2) => [...cur2.filter((p) => pickKey(p) !== unit.id), { kind: "UNIT", unit, ...guests }]);
   }
 
   /** Start the booking steps with these stays. */
@@ -507,7 +512,7 @@ export function BookingPage() {
       </div>
       {onlineOpen === false && <p className="notice notice--error" role="alert">{bt.onlineClosed}</p>}
 
-      <StaySearch initial={query} busy={busy} error={searchError} childAge={data?.childUnderAge ?? data?.camping.childFreeUnderAge} showTents={false}
+      <StaySearch initial={query} busy={busy} error={searchError} showGuests={false} showTents={false}
         onSearch={(q) => {
           // Other dates: what was picked may not be free then.
           if (searched && (q.checkIn !== searched.checkIn || q.checkOut !== searched.checkOut)) setPicks([]);
