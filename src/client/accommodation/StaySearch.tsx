@@ -3,6 +3,7 @@ import { useI18n } from "../i18n/I18nProvider.tsx";
 import { useBookingT } from "../booking/useBookingT.ts";
 import { fill } from "./UnitCard.tsx";
 import { nightsBetween, stayLimits, type StayQuery } from "./data.ts";
+import { Stepper } from "../booking/FoodStep.tsx";
 
 /** Date + guests search form. Native date inputs: accessible and mobile-friendly. */
 export function StaySearch({
@@ -60,24 +61,24 @@ export function StaySearch({
         <input id={`${id}-out`} type="date" required min={q.checkIn || limits.min} max={limits.max} value={q.checkOut}
           onChange={(e) => setQ({ ...q, checkOut: e.target.value })} />
       </div>
+      {/* Guests and tents: − / + only (no typing on phones; never above what the unit takes). */}
       {showGuests && <>
       <div className="stay-search__field stay-search__field--small">
-        <label htmlFor={`${id}-a`}>{bt.adults}</label>
-        <input id={`${id}-a`} type="number" inputMode="numeric" min={1} max={Math.max(1, Math.min(adultCap, cap - q.children))} required value={q.adults}
-          onChange={(e) => setQ(fit({ ...q, adults: Number(e.target.value) || 1, children: Math.min(q.children, cap - (Number(e.target.value) || 1)) }))} />
+        <span className="stay-search__label">{bt.adults}</span>
+        <Stepper label={bt.adults} value={q.adults} min={1} max={Math.max(1, Math.min(adultCap, cap - q.children))}
+          onChange={(n) => setQ(fit({ ...q, adults: n }))} />
       </div>
       <div className="stay-search__field stay-search__field--small">
-        <label htmlFor={`${id}-c`}>{childAge ? fill(bt.children, { age: childAge }) : bt.childrenShort}</label>
-        <input id={`${id}-c`} type="number" inputMode="numeric" min={0} max={Math.max(0, cap - q.adults)} required value={q.children}
-          onChange={(e) => setQ(fit({ ...q, children: Number(e.target.value) || 0 }))} />
+        <span className="stay-search__label">{childAge ? fill(bt.children, { age: childAge }) : bt.childrenShort}</span>
+        <Stepper label={childAge ? fill(bt.children, { age: childAge }) : bt.childrenShort} value={q.children} min={0}
+          max={Math.max(0, cap - q.adults)} onChange={(n) => setQ(fit({ ...q, children: n }))} />
       </div>
       {maxGuests !== undefined && <p className="stay-search__limit">{fill(bt.searchMaxGuests, { n: maxGuests })}</p>}
       </>}
       {showTents && (
         <div className="stay-search__field stay-search__field--small">
-          <label htmlFor={`${id}-t`}>{t.accommodation.tents}</label>
-          <input id={`${id}-t`} type="number" inputMode="numeric" min={1} max={50} required value={q.tents}
-            onChange={(e) => setQ({ ...q, tents: Math.max(1, Math.min(50, Number(e.target.value) || 1)) })} />
+          <span className="stay-search__label">{t.accommodation.tents}</span>
+          <Stepper label={t.accommodation.tents} value={q.tents} min={1} max={50} onChange={(n) => setQ({ ...q, tents: n })} />
         </div>
       )}
       <div className="stay-search__submit">

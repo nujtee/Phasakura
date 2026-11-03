@@ -553,12 +553,19 @@ await check("house page: guests never above what the house takes; more than its 
   await pg.goto(`${BASE}/th/accommodation/house-sakura`);
   const aside = pg.locator(".detail__aside");
   await aside.getByText("หลังนี้รองรับสูงสุด 4 ท่าน (รวมเด็ก)").waitFor();
-  const adults = aside.getByLabel("ผู้ใหญ่");
-  await adults.fill("9");
-  assert(await adults.inputValue() === "4", `adults capped ${await adults.inputValue()}`);
-  const kids = aside.getByLabel(/^เด็ก/);
-  await kids.fill("3");
-  assert(await kids.inputValue() === "0", `children capped ${await kids.inputValue()}`);
+  // − / + only (no typing): + stops at what the house takes.
+  assert((await aside.locator("input[type=number]").count()) === 0, "no typing of guests");
+  const adults = aside.getByRole("group", { name: "ผู้ใหญ่" });
+  for (let i = 0; i < 6; i++) {
+    const plus = adults.getByRole("button", { name: /^เพิ่ม / });
+    if (await plus.isDisabled()) break;
+    await plus.click();
+  }
+  assert(await adults.locator("output").textContent() === "4", `adults capped ${await adults.locator("output").textContent()}`);
+  assert(await adults.getByRole("button", { name: /^เพิ่ม / }).isDisabled(), "+ off at the limit");
+  const kids = aside.getByRole("group", { name: /^เด็ก/ });
+  assert(await kids.getByRole("button", { name: /^เพิ่ม / }).isDisabled(), "no room for a child");
+  if (SHOTS) await aside.screenshot({ path: `${SHOTS}/house-search-steppers.png` });
 
   // Extra beds on: 3 guests in a house for 2 → one extra bed is already in the booking.
   const on = await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: true, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
