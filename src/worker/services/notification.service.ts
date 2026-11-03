@@ -12,6 +12,7 @@ import type { ReportRepository } from "../repositories/report.repository.ts";
 import { addMs, iso, type Clock } from "./auth-context.ts";
 import type { CreditRepository } from "../repositories/credit.repository.ts";
 import { CREDIT_NOTICE_TYPES, creditNoticePath, renderCreditNotice } from "../credit/credit-notices.ts";
+import { OTA_BOOKING_NOTICE, otaNoticeLineText, renderOtaNotice, type OtaNoticePayload } from "../channels/ota-notice.ts";
 import { MARKETING_REPORT_NOTICE, renderReportNotice, reportNoticeLineText } from "../ai-marketing/report-notice.ts";
 import { AiMarketingRepository } from "../repositories/ai-marketing.repository.ts";
 import { creditLineText } from "../credit/credit-messages.ts";
@@ -34,6 +35,7 @@ const FLAG_OF: Record<string, RecipientFlag | null> = {
   PAYMENT_CONFIRMED: "notify_payment",
   NEW_BOOKING: "notify_booking",
   BOOKING_MOVE: "notify_booking",
+  OTA_BOOKING: "notify_booking",
   TEST: null,
 };
 
@@ -302,6 +304,13 @@ class RenderContext {
       const m = await renderCreditNotice(this.credits, row.notification_type, p, lang);
       if ("skip" in m) return m;
       return text(creditLineText(m, this.link(lang, (l) => `/${l.path}/admin/${creditNoticePath(m)}`)));
+    }
+
+    // A booking / nights from an OTA (iCal calendar or Channex).
+    if (row.notification_type === OTA_BOOKING_NOTICE) {
+      const n = renderOtaNotice(p as Partial<OtaNoticePayload>, lang);
+      if ("skip" in n) return n;
+      return text(otaNoticeLineText(n, this.link(lang, (l) => `/${l.path}/admin/${n.path}`)));
     }
 
     // Marketing report ready (AI Marketing A4).

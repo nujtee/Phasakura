@@ -31,6 +31,7 @@ export const NOTIFICATION_TYPES = [
   "CREDIT_TOPUP_REQUEST", // Super Admin (own LINE): a top-up waits for approval
   "CREDIT_TOPUP_RESULT", // the user who asked (own LINE): top-up approved / rejected
   "MARKETING_REPORT", // people who may read reports (own e-mail / own LINE): the automatic marketing report is ready
+  "OTA_BOOKING", // staff: a booking / nights came in or went from an OTA (iCal calendar or Channex)
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

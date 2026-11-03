@@ -150,6 +150,11 @@ export class EmailRepository {
       .bind(type, key, bookingId, payload === null ? null : JSON.stringify(payload), now, ...guardBinds);
   }
 
+  /** An OTA booking / nights (ota-notice.ts): staff addresses that want booking news. */
+  otaNoticeStatement(key: string, payload: unknown, now: string): D1PreparedStatementLike {
+    return this.staffOutbox("OTA_BOOKING", "notify_booking", `OTA_BOOKING:${key}:staff:`, null, payload, now, now, "1 = 1", []);
+  }
+
   /** New booking (marker: created_at = now): staff + guest. */
   bookingCreatedStatements(bookingId: string, now: string): D1PreparedStatementLike[] {
     return [

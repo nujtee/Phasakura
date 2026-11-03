@@ -2,6 +2,9 @@ import {
   ICAL_CHANNELS, ICAL_IMPORT_EVERY_MINUTES, ICAL_LABEL_MAX, icalChannelName,
   type CenterChannelsDto, type ChannelsDto, type IcalChannel, type IcalFeedDto,
 } from "../../shared/channel-types.ts";
+import { nightRuns, type OtaNoticePayload } from "../channels/ota-notice.ts";
+import { LineRepository } from "../repositories/line.repository.ts";
+import { EmailRepository } from "../repositories/email.repository.ts";
 import { STAY_RULES } from "../../shared/booking-rules.ts";
 import { addDays } from "../../shared/dates.ts";
 import type { LocaleCode } from "../../shared/i18n/locales.ts";
@@ -46,6 +49,9 @@ export type ChannelSwitches = { ical?: boolean; channex?: boolean };
  *    booked here is a double booking: kept in ical_conflicts, shown on the Channels page and raised as a CRITICAL
  *    security event (System status). It clears itself when either side frees the night.
  */
+/** Most "booking from an OTA" messages one calendar read sends (the rest of a big change shows on the calendar). */
+const OTA_NOTICES_PER_READ = 10;
+
 export class ChannelService {
   constructor(
     private readonly db: D1DatabaseLike,
@@ -303,18 +309,30 @@ export class ChannelService {
     const reason = `iCal · ${icalChannelName(feed.channel, feed.label)}`;
     const statements: D1PreparedStatementLike[] = [];
     const conflictNow = new Map<string, string>();
+    const added: string[] = [];
+    const removed: string[] = [];
     for (const d of wanted) {
       if (mine.has(d)) continue;
       const other = others.get(d);
-      if (!other) statements.push(this.repo.insertImportedNightStatement(feed.unit_id, d, feed.id, reason, now));
-      else if (other.booking_id) conflictNow.set(d, other.booking_id);
+      if (!other) {
+        statements.push(this.repo.insertImportedNightStatement(feed.unit_id, d, feed.id, reason, now));
+        added.push(d);
+      } else if (other.booking_id) conflictNow.set(d, other.booking_id);
       // Blocked here already (staff or the other OTA): nothing to do; it is taken once that block goes.
     }
-    for (const d of mine) if (!wanted.has(d)) statements.push(this.repo.deleteImportedNightStatement(feed.id, d));
+    for (const d of mine) {
+      if (!wanted.has(d)) {
+        statements.push(this.repo.deleteImportedNightStatement(feed.id, d));
+        removed.push(d);
+      }
+    }
 
     const known = new Set(await this.repo.feedConflictDates(feed.id));
     const fresh = [...conflictNow.keys()].filter((d) => !known.has(d)).sort();
     for (const d of fresh) statements.push(this.repo.insertConflictStatement(feed.id, d, conflictNow.get(d)!, summaries.get(d) ?? null, now));
+    // Staff hear about it (LINE + e-mail, booking news): new nights, nights given back, clashes. Not on the first read
+    // of a calendar (every night it already holds would look new), and a handful at most per read.
+    if (feed.last_import_nights !== null) statements.push(...(await this.otaNotices(feed, { added, removed, conflicts: fresh }, summaries, now)));
     for (const d of known) if (!conflictNow.has(d)) statements.push(this.repo.deleteConflictStatement(feed.id, d));
     statements.push(this.repo.importResultStatement(feed.id, "OK", null, wanted.size, now));
     if (fresh.length) {
@@ -332,6 +350,31 @@ export class ChannelService {
       return { ok: false, newConflicts: 0 };
     }
     return { ok: true, newConflicts: fresh.length };
+  }
+
+  /** LINE + e-mail outbox rows for the nights this read changed (ota-notice.ts). */
+  private async otaNotices(feed: IcalFeedRow, changes: { added: string[]; removed: string[]; conflicts: string[] },
+    summaries: Map<string, string | null>, now: string): Promise<D1PreparedStatementLike[]> {
+    const runs = [
+      ...nightRuns(changes.added).map((r) => ({ ...r, event: "NEW" as const })),
+      ...nightRuns(changes.removed).map((r) => ({ ...r, event: "CANCELLED" as const })),
+      ...nightRuns(changes.conflicts).map((r) => ({ ...r, event: "CONFLICT" as const })),
+    ].slice(0, OTA_NOTICES_PER_READ);
+    if (!runs.length) return [];
+    const rows = (await this.repo.units()).filter((u) => u.id === feed.unit_id);
+    const unit = rows[0];
+    const name = rows.find((u) => u.language_code === "th")?.name ?? rows.find((u) => u.name)?.name ?? null;
+    const units = unit ? (name ? `${unit.unit_code} · ${name}` : unit.unit_code) : "";
+    const line = new LineRepository(this.db);
+    const email = new EmailRepository(this.db);
+    return runs.flatMap((r) => {
+      const payload: OtaNoticePayload = {
+        event: r.event, source: "ICAL", channel: icalChannelName(feed.channel, feed.label), units,
+        checkIn: r.checkIn, checkOut: r.checkOut, nights: r.nights, summary: summaries.get(r.checkIn) ?? null,
+      };
+      const key = `ICAL:${feed.id}:${r.event}:${r.checkIn}:${r.checkOut}:${now}`;
+      return [line.otaNoticeStatement(key, payload, now), email.otaNoticeStatement(key, payload, now)];
+    });
   }
 
   private async download(url: string): Promise<string> {

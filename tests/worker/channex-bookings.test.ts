@@ -157,6 +157,43 @@ describe("Channex — OTA bookings come in (phase O4)", () => {
     assert.equal(res.data.status, "RESOLVED");
   });
 
+  it("staff hear about OTA bookings on LINE and by e-mail: new (with guest, amount, booking), cancelled, double booking", async () => {
+    const { h, token, feed, tick, booking } = await setup();
+    h.lineSecrets();
+    h.db.run("UPDATE line_settings SET enabled = 1");
+    await h.api("POST", "/api/admin/line/recipients", { token, body: { targetId: `C${"3d".repeat(16)}`, name: "Owners", language: "th", notifyBooking: true } });
+    h.emailKey();
+    await h.api("PUT", "/api/admin/email/settings", { token, body: { enabled: true, guestEnabled: true, fromEmail: "booking@phasakura.test" } });
+    await h.api("POST", "/api/admin/email/recipients", { token, body: { email: "owner@phasakura.test", name: "Owner", language: "en" } });
+    const notices = (table: string) => h.db.all<{ payload_json: string; recipient: string }>(
+      `SELECT payload_json, recipient FROM ${table} WHERE notification_type = 'OTA_BOOKING' ORDER BY created_at, idempotency_key`)
+      .map((r) => JSON.parse(r.payload_json) as Record<string, unknown>);
+    const B = uuid();
+    feed.push(revision({ booking_id: B, status: "new" }));
+    await tick();
+    const code = String(booking(B)!.booking_code);
+    const line = notices("notification_logs");
+    assert.deepEqual(line.map((p) => [p.event, p.channel, p.units, p.guestName, p.amountMinor, p.bookingCode]),
+      [["NEW", "Booking.com", "HOUSE-01 · House 01 — บ้านซากุระ", "Somchai Jaidee", 700000, code]]);
+    assert.equal(notices("email_logs").length, 1);
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM notification_logs WHERE notification_type = 'NEW_BOOKING'")!.n, 0, "one message, not two");
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM email_logs WHERE recipient LIKE 'guest:%'")!.n, 0, "the OTA talks to its guest");
+
+    feed.push(revision({ booking_id: B, status: "cancelled" }));
+    await tick();
+    h.db.run("INSERT INTO booking_unit_nights (unit_id, stay_date, block_reason) VALUES ('dev_house_01', '2027-03-02', 'Repair')");
+    feed.push(revision({ booking_id: uuid(), status: "new", arrival_date: "2027-03-01", departure_date: "2027-03-03",
+      rooms: [{ room_type_id: ROOM_H1, checkin_date: "2027-03-01", checkout_date: "2027-03-03", amount: "7000.00", occupancy: { adults: 2 }, days: {} }] }));
+    await tick();
+    assert.deepEqual(notices("notification_logs").map((p) => p.event), ["NEW", "CANCELLED", "CONFLICT"]);
+    await tick();
+    await tick();
+    const mail = h.resend.requests.find((r) => /New booking from Booking\.com/.test(String(r.json!.subject)));
+    assert.ok(mail, h.resend.requests.map((r) => r.json!.subject).join(" | "));
+    assert.match(String(mail!.json!.text), new RegExp(code));
+    assert.match(JSON.stringify(h.line.pushes), /ชนกับการจองในเว็บ/);
+  });
+
   it("a room type no unit is mapped to = UNMAPPED; a failing feed is not acknowledged and is read again", async () => {
     const ctx = await setup();
     const B = uuid();
