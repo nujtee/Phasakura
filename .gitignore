@@ -27,3 +27,4 @@ bootstrap*.sql
 backups/
 # Browser test screenshots / downloads (npm run test:e2e)
 tests/e2e/.output/
+center/wrangler.release.jsonc

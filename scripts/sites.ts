@@ -273,7 +273,17 @@ async function releaseCenter(registry: Registry): Promise<void> {
   summary(`### Center — ${center.domain}`);
   sh("npx", ["wrangler", "d1", "migrations", "apply", center.d1.name, "--remote", "--config", CENTER_CONFIG_PATH]);
   summary("- Migrations: applied (or none pending)");
-  sh("npx", ["wrangler", "deploy", "--config", CENTER_CONFIG_PATH]);
+  // A site that was added but never released has no Worker yet: Center's service binding to it would stop the deploy
+  // (Cloudflare 10143). Center goes out without it, and says so; release that site, then Center again.
+  const missing = await missingSiteWorkers(registry);
+  let config = CENTER_CONFIG_PATH;
+  if (missing.length) {
+    const generated = parseJsonc(readFileSync(join(ROOT, CENTER_CONFIG_PATH), "utf8")) as Obj;
+    config = "center/wrangler.release.jsonc";
+    writeFileSync(join(ROOT, config), JSON.stringify(withoutSites(generated, missing), null, 2));
+    summary(`- **Not linked yet** (no Worker — never released): ${missing.join(", ")}. Release ${missing.length > 1 ? "those sites" : "that site"} with \`center\` to link ${missing.length > 1 ? "them" : "it"}.`);
+  }
+  sh("npx", ["wrangler", "deploy", "--config", config]);
   summary("- Deploy: done");
   for (let attempt = 1; ; attempt++) {
     try {
@@ -291,6 +301,34 @@ async function releaseCenter(registry: Registry): Promise<void> {
       execFileSync("sleep", ["20"]);
     }
   }
+}
+
+/** Site slugs whose Worker does not exist in the Cloudflare account (empty when it cannot be checked). */
+async function missingSiteWorkers(registry: Registry): Promise<string[]> {
+  const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!account || !token) return [];
+  try {
+    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = (await res.json()) as { success?: boolean; result?: { id: string }[] };
+    if (!res.ok || !body.success || !Array.isArray(body.result)) return [];
+    const have = new Set(body.result.map((w) => w.id));
+    return registry.sites.map((s) => s.slug).filter((slug) => !have.has(slug));
+  } catch {
+    return []; // could not check: deploy as generated (wrangler says what is wrong)
+  }
+}
+
+/** Center's config without these sites: no service binding and not in CENTER_SITES (Center does not show them yet). */
+export function withoutSites(config: Obj, slugs: string[]): Obj {
+  const vars = (config.vars ?? {}) as Record<string, unknown>;
+  const sites = JSON.parse(String(vars.CENTER_SITES ?? "[]")) as { slug: string }[];
+  return {
+    ...config,
+    $schema: "../node_modules/wrangler/config-schema.json",
+    vars: { ...vars, CENTER_SITES: JSON.stringify(sites.filter((s) => !slugs.includes(s.slug))) },
+    services: ((config.services ?? []) as { service: string }[]).filter((s) => !slugs.includes(s.service)),
+  };
 }
 
 function fail(problems: string[]): never {
