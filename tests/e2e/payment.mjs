@@ -116,6 +116,13 @@ await check("guest (mobile, TH): booking flow ends on the payment step; PromptPa
   A = (await pg.locator(".confirmation__value").textContent()).trim();
   await pg.locator(".flow-steps [aria-current=step]", { hasText: "ชำระเงิน" }).waitFor();
   await pg.getByRole("group", { name: "เลือกช่องทางชำระเงิน" }).waitFor();
+  // Countdown to the payment deadline, ticking every second.
+  const timer = pg.getByRole("timer");
+  await timer.getByText("เหลือเวลาชำระเงิน").waitFor();
+  const clock = pg.locator(".pay-countdown__clock");
+  const first = (await clock.textContent()).trim();
+  assert(/^(\d+:)?\d\d:\d\d$/.test(first), `countdown ${first}`);
+  await pg.waitForFunction((t) => document.querySelector(".pay-countdown__clock")?.textContent?.trim() !== t, first, { timeout: 5000 });
   for (const label of ["พร้อมเพย์", "โอนเข้าบัญชี", "PayPal"]) await pg.getByRole("radio", { name: new RegExp(label) }).waitFor();
   const qr = pg.locator("svg.qr");
   await qr.waitFor();

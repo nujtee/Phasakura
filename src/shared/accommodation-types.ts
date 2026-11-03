@@ -138,6 +138,8 @@ export interface PublicAccommodationsDto {
   language: LocaleCode;
   /** Guests under this age count as children (Admin booking rules, migration 0057; else the camping age, else 12). */
   childUnderAge?: number;
+  /** The booking form asks for an e-mail address (migration 0058). */
+  requireEmail?: boolean;
   houses: PublicUnitDto[];
   vipTents: PublicUnitDto[];
   camping: PublicCampingDto;

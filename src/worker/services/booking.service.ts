@@ -128,6 +128,8 @@ export class BookingService {
   async create(input: CreateBookingInput, meta: RequestMeta): Promise<{ booking: PublicBookingDto; replayed: boolean }> {
     const phoneNormalized = normalizePhone(input.customer.phone);
     if (!phoneNormalized) throw new ValidationError({ "customer.phone": "INVALID_PHONE" });
+    // E-mail asked of every guest booking on the website (migration 0058, switchable in booking rules).
+    if (!input.customer.email && (await this.repo.requireEmail())) throw new ValidationError({ "customer.email": "REQUIRED" });
 
     // Same idempotency key → same booking (double click / network retry). A different phone means a reused key.
     const replay = await this.replay(input.idempotencyKey, phoneNormalized);
@@ -670,13 +672,14 @@ export class BookingService {
 
   async getSettings(actor: AuthContext, meta: RequestMeta): Promise<BookingSettingsDto> {
     if (!this.authz.can(actor, "bookings.view")) await this.authz.requirePermission(actor, "settings.website", meta);
-    const [s, childAge] = await Promise.all([this.repo.settings(), this.repo.childMaxAge()]);
+    const [s, childAge, requireEmail] = await Promise.all([this.repo.settings(), this.repo.childMaxAge(), this.repo.requireEmail()]);
     return {
       holdMinutes: s?.hold_minutes ?? 60,
       maxNights: s?.max_nights ?? 30,
       maxAdvanceDays: s?.max_advance_days ?? 365,
       maxTentsPerBooking: s?.max_tents_per_booking ?? 10,
       ...(childAge !== undefined ? { childUnderAge: childAge } : {}),
+      ...(requireEmail !== undefined ? { requireEmail } : {}),
       updatedAt: s?.updated_at ?? null,
     };
   }
@@ -684,7 +687,7 @@ export class BookingService {
   /** Changes apply to new bookings only; existing holds keep their deadline. */
   async saveSettings(
     actor: AuthContext,
-    input: { holdMinutes: number; maxNights: number; maxAdvanceDays: number; maxTentsPerBooking: number; childUnderAge?: number | null },
+    input: { holdMinutes: number; maxNights: number; maxAdvanceDays: number; maxTentsPerBooking: number; childUnderAge?: number | null; requireEmail?: boolean },
     meta: RequestMeta,
   ): Promise<BookingSettingsDto> {
     await this.authz.requirePermission(actor, "settings.website", meta);
@@ -693,6 +696,7 @@ export class BookingService {
       this.repo.saveSettingsStatement(input, actor.userId, iso(this.clock())),
       // Child age (migration 0057): only when sent, so the rest saves before that migration.
       ...(input.childUnderAge !== undefined ? [this.repo.childMaxAgeStatement(input.childUnderAge)] : []),
+      ...(input.requireEmail !== undefined ? [this.repo.requireEmailStatement(input.requireEmail)] : []),
       this.log.auditStatement(actor.userId, "UPDATE_BOOKING_SETTINGS", "settings", "booking_settings",
         { ...before, updatedAt: undefined }, input, meta),
     ]);

@@ -87,6 +87,10 @@ export class AccommodationService {
     return {
       language: locale.code,
       childUnderAge,
+      requireEmail: await withFallback(
+        async () => ((await this.db.prepare("SELECT require_email FROM booking_settings WHERE id = 1").first<{ require_email: number }>())?.require_email ?? 1) === 1,
+        async () => false,
+      ),
       houses: dtos.filter((u) => u.unitType === "HOUSE"),
       vipTents: dtos.filter((u) => u.unitType === "VIP_TENT"),
       camping: {

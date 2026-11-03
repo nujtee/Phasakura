@@ -158,7 +158,7 @@ function MovePay({ who, request, onDone }: { who: Who; request: GuestMoveRequest
   }
   return (
     <div className="move-pay">
-      <PaymentInstructions payment={request.paymentInstructions} expiresAt={request.expiresAt} bookingCode={who.bookingCode} phone={who.phone}
+      <PaymentInstructions payment={request.paymentInstructions} expiresAt={request.expiresAt} expiredText={bt.move.expired} bookingCode={who.bookingCode} phone={who.phone}
         labels={{ title: m.payTitle, amount: m.amount, intro: m.payIntro, afterTransfer: m.payAfter }}
         slip={(channel) => (
           <SlipUpload<{ outcome: string; move: GuestMoveStartDto }> bookingCode={who.bookingCode} phone={who.phone} channel={channel}

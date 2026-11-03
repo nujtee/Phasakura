@@ -599,6 +599,18 @@ export class BookingRepository {
     );
   }
 
+  /** Guests must give an e-mail address (migration 0058); undefined = before the migration (not asked). */
+  async requireEmail(): Promise<boolean | undefined> {
+    return withFallback(
+      async () => ((await this.db.prepare("SELECT require_email FROM booking_settings WHERE id = 1").first<{ require_email: number }>())?.require_email ?? 1) === 1,
+      async () => undefined,
+    );
+  }
+
+  requireEmailStatement(on: boolean): D1PreparedStatementLike {
+    return this.db.prepare("UPDATE booking_settings SET require_email = ?1 WHERE id = 1").bind(on ? 1 : 0);
+  }
+
   /** Written on its own, after the row exists (migration 0057). */
   childMaxAgeStatement(age: number | null): D1PreparedStatementLike {
     return this.db.prepare("UPDATE booking_settings SET child_max_age = ?1 WHERE id = 1").bind(age);

@@ -153,3 +153,7 @@ INSERT INTO seo_settings (id, page_key, language_code, seo_title, meta_descripti
   ('dev_seo_home_th', 'home', 'th', 'Phasakura (ตัวอย่าง)', 'คำอธิบายตัวอย่าง'),
   ('dev_seo_home_en', 'home', 'en', 'Phasakura (sample)', 'Sample description'),
   ('dev_seo_home_zh', 'home', 'zh-CN', 'Phasakura（示例）', '示例描述');
+
+-- Sample bookings in tests and local runs do not need an e-mail address (migration 0058; on for real sites).
+-- (The row from migration 0012 holds only defaults, so re-inserting it with this one value changes nothing else.)
+INSERT OR REPLACE INTO booking_settings (id, require_email) VALUES (1, 0);

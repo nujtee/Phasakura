@@ -42,6 +42,46 @@ function useTimeLeft(expiresAt: string | null): string | null | undefined {
   return minutes < 60 ? fill(bt.pay.leftMinutes, { n: minutes }) : fill(bt.pay.leftHours, { h: Math.floor(minutes / 60), m: minutes % 60 });
 }
 
+/** Seconds until the deadline, every second; null once passed, undefined without a deadline. */
+function useSecondsLeft(expiresAt: string | null): number | null | undefined {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!expiresAt) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [expiresAt]);
+  if (!expiresAt) return undefined;
+  const s = Math.floor((Date.parse(expiresAt) - now) / 1000);
+  return s > 0 ? s : null;
+}
+
+const two = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Big countdown to the payment deadline (mm:ss, or h:mm:ss): amber in the last 10 minutes, then a clear "time is up".
+ * Screen readers get the minutes (role="timer", not announced every second).
+ */
+function PayCountdown({ expiresAt, expiredText }: { expiresAt: string; expiredText?: string }) {
+  const bt = useBookingT();
+  const left = useSecondsLeft(expiresAt);
+  const minutesText = useTimeLeft(expiresAt);
+  if (left === null) {
+    return <p className="pay-countdown pay-countdown--over" role="alert">{expiredText ?? bt.pay.countdownExpired}</p>;
+  }
+  if (left === undefined) return null;
+  const h = Math.floor(left / 3600);
+  const m = Math.floor((left % 3600) / 60);
+  const s = left % 60;
+  const clock = h > 0 ? `${h}:${two(m)}:${two(s)}` : `${two(m)}:${two(s)}`;
+  return (
+    <div className={`pay-countdown${left < 600 ? " pay-countdown--soon" : ""}`} role="timer" aria-label={`${bt.pay.countdown} ${minutesText ?? ""}`}>
+      <span className="pay-countdown__label">{bt.pay.countdown}</span>
+      <strong className="pay-countdown__clock" aria-hidden="true" translate="no">{clock}</strong>
+      <span className="pay-countdown__hint">{bt.pay.countdownHint}</span>
+    </div>
+  );
+}
+
 const SLIP: readonly PaymentChannel[] = ["PROMPTPAY", "BANK_TRANSFER", "QR_CODE"];
 
 /**
@@ -51,8 +91,10 @@ const SLIP: readonly PaymentChannel[] = ["PROMPTPAY", "BANK_TRANSFER", "QR_CODE"
  * `slip(channel)` renders the slip form for the chosen slip channel.
  */
 export function PaymentInstructions({
-  payment, expiresAt, bookingCode, phone, slip, laterSatang = 0, labels,
+  payment, expiresAt, bookingCode, phone, slip, laterSatang = 0, labels, expiredText,
 }: {
+  /** What the countdown says once the time is up (default: the booking will be cancelled). */
+  expiredText?: string;
   payment: PaymentInstructionsDto;
   /** Other wording for the same panel, e.g. the rest of a deposit paid before the stay. */
   labels?: { title: string; amount: string; intro: string; afterTransfer: string };
@@ -71,7 +113,6 @@ export function PaymentInstructions({
   const [channel, setChannel] = useState<PaymentChannel>(channels[0]!);
   const [paypalBusy, setPaypalBusy] = useState(false);
   const [paypalError, setPaypalError] = useState<string | null>(null);
-  const left = useTimeLeft(expiresAt);
   const amount = formatBaht(payment.amountDueSatang, locale.code);
   const amountPlain = (payment.amountDueSatang / 100).toFixed(2);
   const current = channels.includes(channel) ? channel : channels[0]!;
@@ -98,6 +139,7 @@ export function PaymentInstructions({
   return (
     <section className="pay" aria-labelledby={`${id}-h`}>
       <h2 id={`${id}-h`} className="pay__title">{labels?.title ?? bt.payTitle}</h2>
+      {expiresAt && <PayCountdown expiresAt={expiresAt} expiredText={expiredText} />}
       {labels && <p className="pay__intro">{labels.intro}</p>}
       <p className="pay__amount">
         <span>{labels?.amount ?? (laterSatang > 0 ? bt.amountDueDeposit : bt.amountDue)}</span>
@@ -107,7 +149,6 @@ export function PaymentInstructions({
       {expiresAt && (
         <p className="pay__deadline">
           {fill(bt.pay.deadline, { time: timeText(expiresAt) })}
-          {left && <span className="pay__left"> · {fill(bt.pay.left, { time: left })}</span>}
         </p>
       )}
 

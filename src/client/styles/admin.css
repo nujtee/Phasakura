@@ -4036,3 +4036,5 @@
 @media (prefers-reduced-motion: reduce) { .adm-kpi__chevron { transition: none; } }
 .adm-nowrap { white-space: nowrap; }
 .adm-preline { white-space: pre-line; }
+.adm-check--block { grid-column: 1 / -1; align-items: flex-start; }
+.adm-check--block small { display: block; margin-top: 2px; }

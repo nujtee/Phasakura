@@ -241,6 +241,8 @@ export interface BookingSettingsDto {
    * age is used, else 12. Absent before the migration.
    */
   childUnderAge?: number | null;
+  /** Guests must give an e-mail address when booking on the website (migration 0058). Absent before it. */
+  requireEmail?: boolean;
   updatedAt: string | null;
 }
 
