@@ -410,7 +410,9 @@ export function BookingPage() {
                   error={fieldErrors.name} onChange={(v) => setDetails({ ...details, name: v })} />
                 <FormField id="bk-phone" label={bt.phone} required type="tel" inputMode="tel" autoComplete="tel" maxLength={24}
                   hint={bt.phoneHint} value={details.phone} error={fieldErrors.phone} onChange={(v) => setDetails({ ...details, phone: v })} />
-                <FormField id="bk-email" label={bt.email} type="email" autoComplete="email" maxLength={254} value={details.email}
+                {/* Required unless staff switched it off in booking rules (migration 0058). */}
+                <FormField id="bk-email" label={data?.requireEmail ? bt.emailRequired : bt.email} required={!!data?.requireEmail} type="email"
+                  inputMode="email" autoComplete="email" maxLength={254} value={details.email} hint={data?.requireEmail ? bt.emailHint : undefined}
                   error={fieldErrors.email} onChange={(v) => setDetails({ ...details, email: v })} />
                 <FormField id="bk-line" label={bt.lineId} maxLength={50} value={details.lineId} error={fieldErrors.lineId}
                   onChange={(v) => setDetails({ ...details, lineId: v })} />

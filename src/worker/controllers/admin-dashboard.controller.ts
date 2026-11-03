@@ -66,13 +66,14 @@ export function adminDashboardController(services: ServicesFor) {
 
     saveBookingSettings: withPermission("settings.website", services, async (ctx, auth) => {
       const body = await readJsonObject(ctx.request);
-      const v = new Validator(body).allowOnly(["holdMinutes", "maxNights", "maxAdvanceDays", "maxTentsPerBooking", "childUnderAge"]);
+      const v = new Validator(body).allowOnly(["holdMinutes", "maxNights", "maxAdvanceDays", "maxTentsPerBooking", "childUnderAge", "requireEmail"]);
       const input = {
         holdMinutes: intField(v, body, "holdMinutes", 5, 10_080),
         maxNights: intField(v, body, "maxNights", 1, 365),
         maxAdvanceDays: intField(v, body, "maxAdvanceDays", 1, 730),
         maxTentsPerBooking: intField(v, body, "maxTentsPerBooking", 1, 100),
         // Child age (migration 0057): 1–18, or null = not set (the camping setting, else 12).
+        ...(v.has("requireEmail") ? { requireEmail: v.boolean("requireEmail", true) } : {}),
         ...(v.has("childUnderAge") ? { childUnderAge: body.childUnderAge === null ? null : intField(v, body, "childUnderAge", 1, 18) } : {}),
       };
       v.assertValid();

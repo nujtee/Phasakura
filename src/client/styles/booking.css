@@ -1729,3 +1729,39 @@ button.button--secondary {
 .summary__line--promo dt { flex: 1 1 auto; min-width: 0; }
 .summary__was, .unit-card__was { color: var(--color-muted); font-weight: 400; }
 .summary__line--savings dt, .summary__line--savings dd { color: var(--color-success); font-weight: 600; }
+
+/* Payment step: countdown to the payment deadline */
+.pay-countdown {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin: 12px 0 16px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  border-radius: var(--radius-md, 12px);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  text-align: center;
+}
+.pay-countdown__label { font-weight: 600; color: var(--color-heading); }
+.pay-countdown__clock {
+  font-size: clamp(2.25rem, 9vw, 3rem);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--color-primary);
+}
+.pay-countdown__hint { font-size: 0.875rem; color: var(--color-muted); }
+.pay-countdown--soon {
+  border-color: color-mix(in srgb, var(--color-warning) 60%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
+}
+.pay-countdown--soon .pay-countdown__clock { color: var(--color-warning); }
+.pay-countdown--over {
+  margin: 12px 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md, 12px);
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface));
+  color: var(--color-error);
+  font-weight: 600;
+}
