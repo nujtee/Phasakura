@@ -45,6 +45,11 @@ describe("price rule promotions", () => {
     assert.equal((await bad({ freePets: "yes" }))?.freePets, "INVALID_VALUE");
     assert.equal((await bad({ freeFoodOptionIds: ["nope_food"] }))?.freeFoodOptionIds, "UNKNOWN_FOOD");
     assert.equal((await bad({ promoText: "x".repeat(301) }))?.promoText !== undefined, true);
+    // Several lines are fine (CR LF kept as one line break, extra empty lines folded); other control characters are not.
+    const lines = await rule({ promoText: "เค้กวันพ่อ 1 ปอนด์\r\nหมูกระทะ 1 ชุด  \n\n\n\nไวน์ 1 ขวด" });
+    assert.equal(lines.status, 201, JSON.stringify(lines.body));
+    assert.equal(lines.data.promoText, "เค้กวันพ่อ 1 ปอนด์\nหมูกระทะ 1 ชุด\n\nไวน์ 1 ขวด");
+    assert.equal((await bad({ promoText: "a\u0007b" }))?.promoText, "INVALID_CHARACTERS");
 
     const made = await rule({
       discountKind: "PERCENT", discountValue: 20, freeExtraBed: true, freePets: true,

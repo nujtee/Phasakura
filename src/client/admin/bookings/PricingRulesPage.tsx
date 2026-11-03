@@ -102,7 +102,7 @@ export function PricingRulesPage() {
     r.freePets ? t.pricing.promoPet : null,
     r.freeFoodOptionIds?.length ? format(t.pricing.promoFood, { n: r.freeFoodOptionIds.length }) : null,
     r.perkIds?.length ? format(t.pricing.promoPerks, { n: r.perkIds.length }) : null,
-    r.promoText ? `“${r.promoText}”` : null,
+    r.promoText ? `“${r.promoText.replace(/\n+/g, " / ")}”` : null,
   ].filter(Boolean).join(" · ");
 
   return (
@@ -342,7 +342,7 @@ function PromotionFields({ editing, setEditing, foods, errors }: {
       <PromotionPerks selected={input.perkIds ?? []} onChange={(ids) => set({ perkIds: ids })} editable />
       <div className="adm-field">
         <label htmlFor="pr-promo-text">{t.pricing.promoText}</label>
-        <textarea id="pr-promo-text" rows={2} maxLength={MAX_PROMO_TEXT} value={input.promoText ?? ""} aria-describedby="pr-promo-text-hint"
+        <textarea id="pr-promo-text" rows={4} maxLength={MAX_PROMO_TEXT} value={input.promoText ?? ""} aria-describedby="pr-promo-text-hint"
           onChange={(e) => set({ promoText: e.target.value })} />
         <p className="adm-field__hint" id="pr-promo-text-hint">{t.pricing.promoTextHint}</p>
         {errors.promoText && <p className="adm-field__error">{errors.promoText}</p>}

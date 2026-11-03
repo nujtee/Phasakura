@@ -1708,7 +1708,7 @@ button.button--secondary {
 .promo__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .promo__item { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
 .promo__body { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
-.promo__text { font-weight: 600; color: var(--color-heading); }
+.promo__text { font-weight: 600; color: var(--color-heading); white-space: pre-line; }
 .promo__perks, .promo__dates { font-size: 0.875rem; color: var(--color-muted); }
 .promo__badge {
   flex: none;

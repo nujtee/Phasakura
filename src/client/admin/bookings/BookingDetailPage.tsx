@@ -126,7 +126,7 @@ export function BookingDetailPage({ code }: { code: string }) {
           <ul className="adm-list">
             {(b.items ?? []).flatMap((x) => (x.promotions ?? []).map((p, i) => (
               <li key={`${x.id ?? x.name}|${i}`}>
-                <strong>{x.name}</strong>{p.text && <> · “{p.text}”</>}
+                <strong>{x.name}</strong>{p.text && <> · <span className="adm-preline">“{p.text}”</span></>}
                 <div className="adm-small adm-muted">
                   {[
                     p.roomDiscountSatang ? `${t.pricing.discount} −${formatBaht(p.roomDiscountSatang, locale.code)}` : null,

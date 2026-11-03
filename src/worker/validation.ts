@@ -10,6 +10,8 @@ interface StringOptions {
   pattern?: RegExp;
   /** Keep whitespace as-is (passwords). Default: trimmed. */
   raw?: boolean;
+  /** Line breaks allowed (CR LF / CR become LF; at most one empty line in a row); other control characters are not. */
+  multiline?: boolean;
 }
 
 /**
@@ -44,9 +46,10 @@ export class Validator {
       this.errors[key] = "EXPECTED_STRING";
       return undefined;
     }
-    const v = options.raw ? value : value.trim();
+    let v = options.raw ? value : value.trim();
+    if (options.multiline) v = v.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
     const length = [...v].length;
-    if (!options.raw && CONTROL_CHARS.test(v)) this.errors[key] = "INVALID_CHARACTERS";
+    if (!options.raw && CONTROL_CHARS.test(options.multiline ? v.replace(/\n/g, "") : v)) this.errors[key] = "INVALID_CHARACTERS";
     else if (options.required && length === 0) this.errors[key] = "REQUIRED";
     else if (options.min !== undefined && length < options.min) this.errors[key] = "TOO_SHORT";
     else if (options.max !== undefined && length > options.max) this.errors[key] = "TOO_LONG";

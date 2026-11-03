@@ -237,7 +237,8 @@ function parseRule(body: Record<string, unknown>, partial: boolean): Partial<Pri
   if (v.has("promoText") || !partial) {
     const t = body.promoText;
     if (t === null || t === undefined || (typeof t === "string" && !t.trim())) out.promoText = null;
-    else out.promoText = v.string("promoText", { max: MAX_PROMO_TEXT })?.trim() ?? null;
+    // Several lines are fine (one perk per line, as staff often write it).
+    else out.promoText = v.string("promoText", { max: MAX_PROMO_TEXT, multiline: true }) ?? null;
   }
   // Several chosen houses / VIP tents (migration 0051).
   if (v.has("unitIds")) {
