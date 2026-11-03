@@ -7,6 +7,7 @@ import {
   type ProviderResult, type SlipVerifier, type VerifiedSlip,
 } from "../../src/worker/slip/slip-verifier.ts";
 import type { MemoryBucket } from "../helpers/fake-env.ts";
+import { SLIP_LIMITS } from "../../src/worker/services/slip.service.ts";
 import { Harness } from "../helpers/harness.ts";
 import { pngBytes, svgBytes } from "../helpers/images.ts";
 
@@ -214,7 +215,6 @@ describe("auto verification (real service, fail-safe)", () => {
     ["wrong amount", { kind: "OK", slip: goodSlip({ amountSatang: 70000 }) }, "AMOUNT_MISMATCH"],
     ["paid to another account", { kind: "OK", slip: goodSlip({ receiverAccountMasked: "xxx-x-x9999-x" }) }, "RECEIVER_MISMATCH"],
     ["old transfer", { kind: "OK", slip: goodSlip({ transferredAt: "2026-12-01T00:00:00Z" }) }, "DATE_OUT_OF_RANGE"],
-    ["not a real slip", { kind: "NOT_A_SLIP", code: "SLIP_NOT_FOUND" }, "SLIP_NOT_FOUND"],
     ["provider down", { kind: "ERROR", code: "PROVIDER_TIMEOUT" }, "PROVIDER_TIMEOUT"],
   ] as const) {
     it(`${name} → left for staff (${code})`, async () => {
@@ -228,6 +228,41 @@ describe("auto verification (real service, fail-safe)", () => {
       assert.equal(h.db.get<{ failure_code: string }>("SELECT failure_code FROM slip_verifications")!.failure_code, code);
     });
   }
+
+  it("a picture that is not a slip is refused at upload and never stored", async () => {
+    const h = new Harness({ seed: true });
+    const fake = new FakeVerifier(async () => ({ kind: "NOT_A_SLIP", code: "QRCODE_NOT_FOUND" }));
+    h.verifier(fake);
+    const b = await book(h);
+    const res = await h.slip<SlipResult>(b.bookingCode, PHONE, slipImage(21));
+    assert.equal(res.status, 422, JSON.stringify(res.error ?? null));
+    assert.equal(res.error?.details?.file, "NOT_A_SLIP");
+    assert.equal(fake.calls, 1);
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM payments")!.n, 0, "no payment");
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM media_assets WHERE purpose = 'PAYMENT_SLIP'")!.n, 0, "no asset");
+    assert.equal((h.env.MEDIA_PRIVATE as MemoryBucket).objects.size, 0, "nothing in storage");
+    const row = h.db.get<{ booking_status: string; payment_status: string }>("SELECT booking_status, payment_status FROM bookings WHERE booking_code = ?", b.bookingCode)!;
+    assert.deepEqual({ ...row }, { booking_status: "PENDING", payment_status: "UNPAID" }, "the guest can still send the real slip");
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM security_events WHERE event_type = 'SLIP_NOT_A_SLIP'")!.n, 1);
+
+    // The real slip afterwards goes through, and the service is asked once for it.
+    const good = new FakeVerifier(async () => ({ kind: "OK", slip: goodSlip({ amountSatang: b.totalSatang }) }));
+    h.verifier(good);
+    const ok = await h.slip<SlipResult>(b.bookingCode, PHONE, slipImage(22));
+    assert.equal(ok.status, 201, JSON.stringify(ok.error ?? null));
+    assert.equal(ok.data.outcome, "VERIFIED");
+    assert.equal(good.calls, 1, "the upload-time answer is reused");
+  });
+
+  it("repeated non-slip pictures for one booking are throttled", async () => {
+    const h = new Harness({ seed: true });
+    h.verifier(new FakeVerifier(async () => ({ kind: "NOT_A_SLIP", code: "INVALID_IMAGE" })));
+    const b = await book(h);
+    for (let i = 0; i < SLIP_LIMITS.notASlipPerBookingPerHour; i++) {
+      assert.equal((await h.slip<SlipResult>(b.bookingCode, PHONE, slipImage(60 + i))).status, 422);
+    }
+    assert.equal((await h.slip<SlipResult>(b.bookingCode, PHONE, slipImage(70))).status, 429);
+  });
 
   it("slip service out of quota / plan expired: the booking waits for staff and never runs out of time", async () => {
     const h = new Harness({ seed: true });

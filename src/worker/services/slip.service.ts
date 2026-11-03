@@ -8,7 +8,7 @@ import { sniffImage } from "../media/image-sniff.ts";
 import type { PaymentRepository, SlipPaymentRow, VerificationRow } from "../repositories/payment.repository.ts";
 import type { PricingRepository } from "../repositories/pricing.repository.ts";
 import { newId } from "../security/tokens.ts";
-import { evaluateSlip, type SlipVerifier } from "../slip/slip-verifier.ts";
+import { evaluateSlip, type ProviderResult, type SlipVerifier } from "../slip/slip-verifier.ts";
 import { addMs, iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
 import type { BookingService } from "./booking.service.ts";
@@ -22,7 +22,12 @@ export const SLIP_LIMITS = {
   maxDimension: 10_000,
   perBookingPerDay: 5,
   perIpPerHour: 20,
+  /** Pictures refused as "not a slip" for one booking in an hour before the guest must wait. */
+  notASlipPerBookingPerHour: 5,
 } as const;
+
+/** Upload attempts counted by the per-IP limit: stored slips and pictures refused as not a slip. */
+const SLIP_ATTEMPT_EVENTS = ["SLIP_UPLOADED", "SLIP_NOT_A_SLIP"];
 
 const SLIP_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -88,6 +93,30 @@ export class SlipService {
   }
 
   /**
+   * Asks the verification service BEFORE anything is stored: a picture with no real bank transaction behind it
+   * (a photo, a screenshot of something else, an edited or made-up slip) is refused on the spot and never kept.
+   * When the service is down or answers oddly the slip is accepted as before and left for staff — a guest who
+   * really paid is never blocked by an outage. Returns the answer so it is not asked twice (null = ask again later).
+   */
+  private async precheck(bytes: Uint8Array, mime: string, bookingCode: string, meta: RequestMeta): Promise<ProviderResult | null> {
+    if (!this.verifier) return null;
+    if ((await this.log.countRecent(["SLIP_NOT_A_SLIP"], 60 * 60_000, { identifier: bookingCode })) >= SLIP_LIMITS.notASlipPerBookingPerHour) {
+      throw new TooManyRequestsError(30 * 60, "Too many attempts. Please contact us.");
+    }
+    let answer: ProviderResult;
+    try {
+      answer = await this.verifier.verify(bytes, mime);
+    } catch {
+      return null;
+    }
+    if (answer.kind === "NOT_A_SLIP") {
+      await this.log.event("SLIP_NOT_A_SLIP", "WARNING", meta, { identifier: bookingCode, details: { code: answer.code, size: bytes.length } });
+      throw new ValidationError({ file: "NOT_A_SLIP" }, "This picture is not a bank transfer slip");
+    }
+    return answer;
+  }
+
+  /**
    * The slip for moving the stay (migration 0045): the request goes under review in the same batch; then the
    * automatic check (when set up) verifies it — which moves the stay — or staff decide in Slips.
    */
@@ -98,10 +127,11 @@ export class SlipService {
     const now = this.clock();
     const at = iso(now);
     if (request.expires_at <= at) throw new ConflictError("The time to transfer for this move has passed", "MOVE_REQUEST_EXPIRED");
-    if (meta.ip && (await this.log.countRecent(["SLIP_UPLOADED"], 60 * 60_000, { ip: meta.ip })) >= SLIP_LIMITS.perIpPerHour) {
+    if (meta.ip && (await this.log.countRecent(SLIP_ATTEMPT_EVENTS, 60 * 60_000, { ip: meta.ip })) >= SLIP_LIMITS.perIpPerHour) {
       throw new TooManyRequestsError(15 * 60);
     }
     const { bytes, image, sha256 } = await this.slipImage_(file, booking.booking_code, meta);
+    const answer = await this.precheck(bytes, image.mime, booking.booking_code, meta);
     const assetId = newId();
     const paymentId = newId();
     const key = `slips/${at.slice(0, 4)}/${at.slice(5, 7)}/${assetId}.${image.extension}`;
@@ -120,7 +150,7 @@ export class SlipService {
       if (/UNIQUE constraint failed: payments\.slip_sha256/.test(String(error))) throw new ConflictError("This slip has already been submitted", "DUPLICATE_SLIP");
       throw error;
     }
-    const outcome = this.verifier ? await this.autoVerify(paymentId, bytes, image.mime) : "PENDING_REVIEW";
+    const outcome = this.verifier ? await this.autoVerify(paymentId, bytes, image.mime, answer) : "PENDING_REVIEW";
     return { requestId: request.id, outcome };
   }
 
@@ -141,28 +171,15 @@ export class SlipService {
     }
 
     const now = this.clock();
-    if (meta.ip && (await this.log.countRecent(["SLIP_UPLOADED"], 60 * 60_000, { ip: meta.ip })) >= SLIP_LIMITS.perIpPerHour) {
+    if (meta.ip && (await this.log.countRecent(SLIP_ATTEMPT_EVENTS, 60 * 60_000, { ip: meta.ip })) >= SLIP_LIMITS.perIpPerHour) {
       throw new TooManyRequestsError(15 * 60);
     }
     if ((await this.repo.paymentsSince(booking.id, iso(addMs(now, -24 * 60 * 60_000)))) >= SLIP_LIMITS.perBookingPerDay) {
       throw new TooManyRequestsError(60 * 60, "Too many slips for this booking. Please contact us.");
     }
 
-    if (file.size <= 0) throw new ValidationError({ file: "REQUIRED" });
-    if (file.size > SLIP_LIMITS.maxBytes) throw new HttpError(413, "FILE_TOO_LARGE", "Slip image must be 10 MB or smaller");
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const image = sniffImage(bytes);
-    if (!image || !SLIP_MIMES.has(image.mime)) {
-      await this.log.event("UPLOAD_REJECTED", "WARNING", meta, { identifier: booking.booking_code, details: { reason: "slip_not_an_image", size: file.size } });
-      throw new ValidationError({ file: "UNSUPPORTED_IMAGE" }, "Only JPEG, PNG or WebP images are allowed");
-    }
-    if (image.width > SLIP_LIMITS.maxDimension || image.height > SLIP_LIMITS.maxDimension) throw new ValidationError({ file: "IMAGE_TOO_LARGE_DIMENSIONS" });
-
-    const sha256 = await sha256Hex(bytes);
-    if (await this.repo.liveSlipExists(sha256)) {
-      await this.log.event("DUPLICATE_SLIP", "WARNING", meta, { identifier: booking.booking_code });
-      throw new ConflictError("This slip has already been submitted", "DUPLICATE_SLIP");
-    }
+    const { bytes, image, sha256 } = await this.slipImage_(file, booking.booking_code, meta);
+    const answer = await this.precheck(bytes, image.mime, booking.booking_code, meta);
 
     const at = iso(now);
     const assetId = newId();
@@ -202,7 +219,7 @@ export class SlipService {
       throw error;
     }
 
-    const outcome = this.verifier ? await this.autoVerify(paymentId, bytes, image.mime) : "PENDING_REVIEW";
+    const outcome = this.verifier ? await this.autoVerify(paymentId, bytes, image.mime, answer) : "PENDING_REVIEW";
     const fresh = await this.bookings.guestBookingById(booking.id);
     return { booking: await this.bookings.publicView(fresh), outcome };
   }
@@ -212,7 +229,7 @@ export class SlipService {
    * passes; in MANUAL mode (and on any failure) the result is recorded for staff, who are notified.
    * Never throws to the guest.
    */
-  private async autoVerify(paymentId: string, bytes: Uint8Array, mime: string): Promise<SlipUploadResultDto["outcome"]> {
+  private async autoVerify(paymentId: string, bytes: Uint8Array, mime: string, known: ProviderResult | null = null): Promise<SlipUploadResultDto["outcome"]> {
     const verifier = this.verifier!;
     const payment = await this.repo.findSlipPayment(paymentId);
     if (!payment) return "PENDING_REVIEW";
@@ -220,7 +237,7 @@ export class SlipService {
     const now = iso(this.clock());
     const base = { id: newId(), paymentId, method: "AUTO" as const, provider: verifier.provider, verifiedBy: null, now };
     try {
-      const answer = await verifier.verify(bytes, mime);
+      const answer = known ?? await verifier.verify(bytes, mime);
       if (answer.kind !== "OK") {
         await this.repo.insertVerificationStatement({
           ...base, result: answer.kind === "NOT_A_SLIP" ? "FAILED" : "ERROR", failureCode: answer.code, amount: null, transferredAt: null,
