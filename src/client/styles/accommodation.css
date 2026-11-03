@@ -60,7 +60,8 @@
   min-width: 0;
 }
 
-.stay-search__field label {
+.stay-search__field label,
+.stay-search__label {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-muted);
@@ -430,3 +431,6 @@
 }
 
 .stay-search__limit { grid-column: 1 / -1; margin: 0; font-size: 0.875rem; color: var(--color-muted); }
+
+/* Guests / tents steppers in the search (− value +) */
+.stay-search__field .stepper { min-height: 44px; }
