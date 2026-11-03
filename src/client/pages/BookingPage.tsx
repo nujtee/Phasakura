@@ -419,8 +419,11 @@ export function BookingPage() {
               <form id="details-form" className="flow-form" onSubmit={submitDetails} noValidate={false}>
                 <FormField id="bk-name" label={bt.name} required autoComplete="name" maxLength={100} value={details.name}
                   error={fieldErrors.name} onChange={(v) => setDetails({ ...details, name: v })} />
-                <FormField id="bk-phone" label={bt.phone} required type="tel" inputMode="tel" autoComplete="tel" maxLength={24}
-                  hint={bt.phoneHint} value={details.phone} error={fieldErrors.phone} onChange={(v) => setDetails({ ...details, phone: v })} />
+                {/* Exactly 10 digits: only digits are kept as the guest types (+66 becomes 0). */}
+                <FormField id="bk-phone" label={bt.phone} required type="tel" inputMode="numeric" autoComplete="tel" maxLength={10}
+                  pattern="0[0-9]{9}" title={bt.errors.PHONE_10_DIGITS}
+                  hint={bt.phoneHint10} value={details.phone} error={fieldErrors.phone}
+                  onChange={(v) => setDetails({ ...details, phone: v.replace(/^\+?66/, "0").replace(/\D/g, "").slice(0, 10) })} />
                 {/* Required unless staff switched it off in booking rules (migration 0058). */}
                 <FormField id="bk-email" label={data?.requireEmail ? bt.emailRequired : bt.email} required={!!data?.requireEmail} type="email"
                   inputMode="email" autoComplete="email" maxLength={254} value={details.email} hint={data?.requireEmail ? bt.emailHint : undefined}
@@ -600,7 +603,8 @@ function FormField({
   id, label, hint, error, value, onChange, ...input
 }: {
   id: string; label: string; hint?: string; error?: string; value: string; onChange: (v: string) => void;
-  required?: boolean; type?: string; inputMode?: "tel" | "email" | "text"; autoComplete?: string; maxLength?: number;
+  required?: boolean; type?: string; inputMode?: "tel" | "email" | "text" | "numeric"; autoComplete?: string; maxLength?: number;
+  pattern?: string; title?: string;
 }) {
   const describedBy = [hint ? `${id}-hint` : null, error ? `${id}-err` : null].filter(Boolean).join(" ") || undefined;
   return (
