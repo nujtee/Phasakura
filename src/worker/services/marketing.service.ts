@@ -40,6 +40,8 @@ export interface OutboxLike {
   balancePaid?(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
   /** A guest's move of the stay (migration 0045): asked, slip sent, moved, turned down or failed. */
   moveEvent?(requestId: string, bookingId: string, event: MoveEvent, now: string): Promise<D1PreparedStatementLike[]>;
+  /** The guest asked for their Booking ID again (lookup page). */
+  bookingCode?(bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
 }
 
 export type MoveEvent = "REQUESTED" | "SLIP" | "APPROVED" | "REJECTED" | "FAILED";
@@ -66,6 +68,9 @@ export class CompositeOutbox implements OutboxLike {
   }
   async balancePaid(paymentId: string, bookingId: string, now: string) {
     return (await Promise.all(this.parts.map((p) => p.balancePaid?.(paymentId, bookingId, now) ?? Promise.resolve([])))).flat();
+  }
+  async bookingCode(bookingId: string, now: string) {
+    return (await Promise.all(this.parts.map((p) => p.bookingCode?.(bookingId, now) ?? Promise.resolve([])))).flat();
   }
 }
 

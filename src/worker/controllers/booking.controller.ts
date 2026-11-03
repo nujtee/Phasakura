@@ -326,6 +326,25 @@ export function bookingController(services: ServicesFor) {
       return jsonOk(await services(ctx).bookings.lookup(bookingCode, phone, requestMeta(ctx)), { headers: NO_STORE });
     }) satisfies Handler,
 
+    /** POST /api/public/bookings/find { bookingCode } or { phone } — status and dates only (see BookingService.find). */
+    find: (async (ctx) => {
+      const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);
+      const bookingCode = v.string("bookingCode", { max: 40 });
+      const phone = v.string("phone", { max: 24 });
+      v.assertValid();
+      if (!bookingCode?.trim() && !phone?.trim()) throw new ValidationError({ bookingCode: "REQUIRED" });
+      return jsonOk(await services(ctx).bookings.find(bookingCode?.trim() || null, bookingCode?.trim() ? null : phone?.trim() || null, requestMeta(ctx)), { headers: NO_STORE });
+    }) satisfies Handler,
+
+    /** POST /api/public/bookings/forgot-code { phone } — e-mails the Booking IDs of this phone's bookings; same answer either way. */
+    forgotCode: (async (ctx) => {
+      const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["phone"]);
+      const phone = v.string("phone", { required: true, max: 24 });
+      v.assertValid();
+      await services(ctx).bookings.requestCode(phone, requestMeta(ctx));
+      return jsonOk({ ok: true }, { status: 202, headers: NO_STORE });
+    }) satisfies Handler,
+
     // ------------------------------------------------------------------ guest moves the stay (migration 0045)
     /** POST /api/public/bookings/move/start — { bookingCode, phone }: may this booking move, what it costs, the open request. */
     moveStart: (async (ctx) => {

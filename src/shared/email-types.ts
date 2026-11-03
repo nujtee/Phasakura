@@ -15,6 +15,7 @@ export const EMAIL_TYPES = [
   "GUEST_CONFIRMED", // guest: payment received, booking confirmed
   "GUEST_PAYMENT_REJECTED", // guest: payment not accepted (reason) — pay again
   "GUEST_CANCELLED", // guest: booking cancelled (reason)
+  "GUEST_BOOKING_CODE", // guest: asked for their Booking ID again ("forgot Booking ID" on the lookup page)
   "TEST", // staff: test message from the admin
   "CREDIT_LOW", // back-office users: app-usage credits below the low threshold (once a day)
   "CREDIT_EMPTY", // back-office users: not enough credit for one unit — online booking closed (twice a day)

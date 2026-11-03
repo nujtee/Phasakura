@@ -80,6 +80,10 @@ export class EmailOutbox implements OutboxLike {
   async bookingCancelled(bookingId: string, _wasConfirmed: boolean, now: string): Promise<D1PreparedStatementLike[]> {
     return (await this.on()) ? [this.repo.bookingCancelledStatement(bookingId, now)] : [];
   }
+
+  async bookingCode(bookingId: string, now: string): Promise<D1PreparedStatementLike[]> {
+    return (await this.on()) ? [this.repo.bookingCodeStatement(bookingId, now)] : [];
+  }
 }
 
 function toRecipient(r: EmailRecipientRow): EmailRecipientDto {
@@ -506,6 +510,12 @@ export class EmailService {
       case "GUEST_CANCELLED":
         if (!b || b.bookingStatus !== "CANCELLED") return { skip: "NOT_RELEVANT" };
         return fromLine("GUEST_CANCELLED", guestCancelledText(f, b, { siteName: null, phone: site.phone }), null);
+      case "GUEST_BOOKING_CODE": {
+        if (!b) return { skip: "NOT_RELEVANT" };
+        const body = [fillText(e.codeIntro, { name: b.customerName }), "", f.bookingBlock(b, { customer: false }), "", e.keepCode].join("\n");
+        return renderEmail({ lang, subject: subject("GUEST_BOOKING_CODE"), title: e.codeTitle, body, siteName: site.name,
+          button: lookup(b.code) ? { label: e.viewBooking, url: lookup(b.code)! } : null });
+      }
       case "TEST": {
         const r = await this.repo.recipient(row.recipient.slice(6));
         if (!r) return { skip: "RECIPIENT_INACTIVE" };

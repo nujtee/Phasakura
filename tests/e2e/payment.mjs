@@ -201,6 +201,29 @@ await check("slip review (Manual): banner, decline with a reason + cancel the bo
   await pg.getByText("การจองนี้ถูกยกเลิก — ไม่พบยอดเงินเข้าบัญชี กรุณาติดต่อเรา").waitFor();
 });
 
+await check("look-up with only the phone or only the Booking ID: status first, the other piece opens it", async () => {
+  const L = await book({ checkIn: day(50), checkOut: day(51), stay: { kind: "UNIT", unitId: "dev_house_02" } }, "0867777777");
+  await pg.goto(`${BASE}/th/booking/lookup`);
+  await pg.locator("#lk-phone").fill("086-777-7777");
+  await pg.locator(".lookup__form button[type=submit]").click();
+  const card = pg.locator(".lookup__brief").first();
+  await card.waitFor();
+  assert(!(await pg.locator(".lookup__found").innerText()).includes(L.bookingCode), "full Booking ID hidden");
+  await pg.screenshot({ path: `${SHOTS}/lookup-by-phone.png`, fullPage: true });
+  await card.locator("input").fill(L.bookingCode.slice(-4).toLowerCase());
+  await card.getByRole("button", { name: "ดูรายละเอียด" }).click();
+  await pg.locator(".lookup__result .confirmation__value", { hasText: L.bookingCode }).waitFor();
+
+  await pg.goto(`${BASE}/th/booking/lookup?code=${L.bookingCode}`);
+  await pg.locator(".lookup__form button[type=submit]").click();
+  const byCode = pg.locator(".lookup__brief").first();
+  await byCode.waitFor();
+  await pg.screenshot({ path: `${SHOTS}/lookup-by-code.png`, fullPage: true });
+  await byCode.locator("input").fill("0867777777");
+  await byCode.getByRole("button", { name: "ดูรายละเอียด" }).click();
+  await pg.locator(".lookup__result .confirmation__value", { hasText: L.bookingCode }).waitFor();
+});
+
 await check("approve: another slip is approved → confirmed, staff and guest told", async () => {
   const B = await book({ checkIn: day(24), checkOut: day(25), stay: { kind: "UNIT", unitId: "dev_house_02" } }, "0861111111", { email: "b@example.test" });
   await pg.goto(`${BASE}/th/booking/lookup?code=${B.bookingCode}`);
