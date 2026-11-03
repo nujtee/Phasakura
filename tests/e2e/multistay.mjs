@@ -534,6 +534,21 @@ await check("dashboard: the OTA bookings tile opens and closes its table", async
   await table.waitFor({ state: "detached" });
 });
 
+await check("booking page search asks dates only; a house picked gets its usual guests, changed in the list", async () => {
+  await pg.goto(`${BASE}/th/booking`);
+  const search = pg.locator("form.stay-search");
+  await search.locator("input[type=date]").first().waitFor();
+  assert((await search.locator("input[type=number]").count()) === 0, "no guest fields in the search");
+  await search.locator("button[type=submit]").click();
+  const card = pg.locator(".unit-pick", { has: pg.getByRole("heading", { name: /House 01/ }) });
+  await card.getByRole("button", { name: "เลือกหลังนี้" }).click();
+  const picks = pg.locator("#picks");
+  const adults = picks.getByRole("group", { name: /House 01.* · ผู้ใหญ่$/ }).locator("output");
+  await adults.waitFor();
+  assert(await adults.textContent() === "2", `standard guests ${await adults.textContent()}`);
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/booking-search-dates.png` });
+});
+
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
   assert(!bad.length, bad.join("\n"));

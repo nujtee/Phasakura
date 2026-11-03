@@ -10,6 +10,7 @@ export function StaySearch({
   busy,
   error,
   showTents = true,
+  showGuests = true,
   childAge,
   onSearch,
 }: {
@@ -19,6 +20,8 @@ export function StaySearch({
   busy: boolean;
   error: string | null;
   showTents?: boolean;
+  /** Booking page: dates only — guests are set per house / VIP tent once chosen (and in the camping form). */
+  showGuests?: boolean;
   onSearch: (q: StayQuery) => void;
 }) {
   const { t } = useI18n();
@@ -34,7 +37,7 @@ export function StaySearch({
   };
 
   return (
-    <form className={`stay-search${showTents ? "" : " stay-search--no-tents"}`} onSubmit={submit} aria-describedby={error ? `${id}-err` : undefined}>
+    <form className={`stay-search${showTents ? "" : " stay-search--no-tents"}${showGuests ? "" : " stay-search--dates"}`} onSubmit={submit} aria-describedby={error ? `${id}-err` : undefined}>
       <div className="stay-search__field">
         <label htmlFor={`${id}-in`}>{t.accommodation.checkIn}</label>
         <input id={`${id}-in`} type="date" required min={limits.min} max={limits.max} value={q.checkIn}
@@ -45,6 +48,7 @@ export function StaySearch({
         <input id={`${id}-out`} type="date" required min={q.checkIn || limits.min} max={limits.max} value={q.checkOut}
           onChange={(e) => setQ({ ...q, checkOut: e.target.value })} />
       </div>
+      {showGuests && <>
       <div className="stay-search__field stay-search__field--small">
         <label htmlFor={`${id}-a`}>{bt.adults}</label>
         <input id={`${id}-a`} type="number" inputMode="numeric" min={1} max={50} required value={q.adults}
@@ -55,6 +59,7 @@ export function StaySearch({
         <input id={`${id}-c`} type="number" inputMode="numeric" min={0} max={50} required value={q.children}
           onChange={(e) => setQ({ ...q, children: Math.max(0, Math.min(50, Number(e.target.value) || 0)) })} />
       </div>
+      </>}
       {showTents && (
         <div className="stay-search__field stay-search__field--small">
           <label htmlFor={`${id}-t`}>{t.accommodation.tents}</label>
