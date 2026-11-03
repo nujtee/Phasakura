@@ -66,6 +66,14 @@
       "d1": { "name": "lungtaihomestay-db", "id": "0c29ee9d-380a-4387-9789-733d13a40323" },
       "rateLimitBase": 8000,
       "wave": 1
+    },
+    {
+      "slug": "twoseasonscamp",
+      "name": "twoseasonscamp",
+      "domain": "twoseasonscamp.com",
+      "d1": { "name": "twoseasonscamp-db", "id": "ce4e70cc-1af2-4116-b90f-5c8931a8bc49" },
+      "rateLimitBase": 9000,
+      "wave": 1
     }
   ]
 }
