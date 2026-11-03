@@ -8,9 +8,9 @@ const pick = (adults: number, children = 0, extra: Partial<Extract<Pick, { kind:
 const offer = { maxPerUnit: 2 };
 
 describe("extra beds added on their own", () => {
-  it("guests beyond the usual number → that many beds, within the limit; none when not offered or off for the unit", () => {
+  it("adults beyond the usual number → that many beds, within the limit; none when not offered or off for the unit", () => {
     assert.equal(bedsNeeded(pick(2), offer), 0);
-    assert.equal(bedsNeeded(pick(2, 1), offer), 1, "children count too");
+    assert.equal(bedsNeeded(pick(2, 1), offer), 0, "a child under the child age shares a bed");
     assert.equal(bedsNeeded(pick(3), offer), 1);
     assert.equal(bedsNeeded({ ...pick(5), unit: unit({ maxGuests: 6 }) } as Pick, offer), 2, "limit per unit");
     assert.equal(bedsNeeded(pick(3), null), 0);

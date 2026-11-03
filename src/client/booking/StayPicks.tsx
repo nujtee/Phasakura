@@ -7,7 +7,7 @@ import { useBookingT } from "./useBookingT.ts";
 /** One stay the guest picked, with its own guests (several stays share the booking's dates). */
 export type Pick =
   | { kind: "UNIT"; unit: PublicUnitDto; adults: number; children: number; extraBeds?: number; pets?: number;
-      /** The guest count extra beds were last set for automatically (beds the guest changes by hand stay until it changes). */
+      /** The number of adults extra beds were last set for automatically (beds the guest changes by hand stay until it changes). */
       autoBedsFor?: number }
   | { kind: "CAMPING"; tents: number; tarp: boolean; adults: number; children: number };
 
@@ -140,12 +140,12 @@ export function PicksBar({ picks, onNext, ready }: { picks: Pick[]; ready: boole
 }
 
 /**
- * Extra beds a stay needs: guests beyond the unit's usual number (standard guests), up to what one unit may take,
- * when the property offers extra beds for this unit. 0 otherwise.
+ * Extra beds a stay needs: ADULTS beyond the unit's usual number (standard guests), up to what one unit may take,
+ * when the property offers extra beds for this unit. Children (under the child age) share a bed: they never add one.
  */
 export function bedsNeeded(p: Pick, offer: { maxPerUnit: number; offUnitIds?: string[] } | null | undefined): number {
   if (p.kind !== "UNIT" || !offer || offer.maxPerUnit < 1 || (offer.offUnitIds ?? []).includes(p.unit.id)) return 0;
-  return Math.max(0, Math.min(offer.maxPerUnit, p.adults + p.children - p.unit.standardGuests));
+  return Math.max(0, Math.min(offer.maxPerUnit, p.adults - p.unit.standardGuests));
 }
 
 /**
@@ -157,7 +157,8 @@ export function withAutoBeds(picks: Pick[], offer: { maxPerUnit: number; offUnit
   let changed = false;
   const next = picks.map((p) => {
     if (p.kind !== "UNIT" || !offer) return p;
-    const guests = p.adults + p.children;
+    // Keyed on adults: children do not change the extra beds.
+    const guests = p.adults;
     if (p.autoBedsFor === guests) return p;
     changed = true;
     return { ...p, extraBeds: bedsNeeded(p, offer), autoBedsFor: guests };
