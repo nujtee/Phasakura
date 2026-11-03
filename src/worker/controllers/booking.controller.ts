@@ -317,6 +317,24 @@ export function bookingController(services: ServicesFor) {
       return jsonOk(booking, { status: replayed ? 200 : 201, headers: NO_STORE });
     }) satisfies Handler,
 
+    /**
+     * POST /api/public/bookings/add-stays { bookingCode, phone, ...quote, expectedTotalSatang, idempotencyKey } — the guest
+     * adds stays to their own unpaid booking (same dates, same Booking ID and details).
+     */
+    addStays: (async (ctx) => {
+      await services(ctx).centerAdmin.assertOpenForBooking();
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly([...QUOTE_FIELDS, "bookingCode", "phone", "expectedTotalSatang", "idempotencyKey"]);
+      const input = parseQuote(body, v);
+      const bookingCode = v.string("bookingCode", { required: true, max: 40 });
+      const phone = v.string("phone", { required: true, max: 24 });
+      const expectedTotalSatang = int(v, body.expectedTotalSatang, "expectedTotalSatang", 0, MAX_PRICE_SATANG * 100);
+      const idempotencyKey = v.string("idempotencyKey", { required: true, pattern: IDEMPOTENCY_KEY_PATTERN })!;
+      v.assertValid();
+      const { booking, replayed } = await services(ctx).bookings.addStays(bookingCode, phone, { ...input, expectedTotalSatang, idempotencyKey }, requestMeta(ctx));
+      return jsonOk(booking, { status: replayed ? 200 : 201, headers: NO_STORE });
+    }) satisfies Handler,
+
     /** POST /api/public/bookings/lookup { bookingCode, phone } — POST keeps the phone out of URLs and logs. */
     lookup: (async (ctx) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["bookingCode", "phone"]);

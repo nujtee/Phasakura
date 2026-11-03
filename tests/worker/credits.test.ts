@@ -223,6 +223,29 @@ describe("app fee on bookings", () => {
     assert.deepEqual(account(), { balance: 500, held: 20, plan: "STANDARD" });
   });
 
+  it("a stay the guest adds before paying adds its fee to the hold (migration 0059)", async () => {
+    const { h, book, quote, account, hold } = await setup({ credits: 500 });
+    const b = await book([house1]);
+    assert.deepEqual(hold(b.data.bookingCode), { units: 1, amount: 20, status: "HELD" });
+    const q = await quote([camp2]);
+    const res = await h.api<PublicBookingDto>("POST", "/api/public/bookings/add-stays", {
+      body: { checkIn: "2027-02-01", checkOut: "2027-02-03", stays: [camp2], food: [], lang: "th", bookingCode: b.data.bookingCode, phone: PHONE, expectedTotalSatang: q.data.totalSatang, idempotencyKey: key() },
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.deepEqual(hold(b.data.bookingCode), { units: 3, amount: 60, status: "HELD" });
+    assert.deepEqual(account(), { balance: 500, held: 60, plan: "STANDARD" });
+    assert.equal(res.data.totalSatang, b.data.totalSatang + q.data.totalSatang);
+    // Not enough free credit: refused, nothing changes.
+    h.db.run("UPDATE credit_account SET balance = 61 WHERE id = 1");
+    const q2 = await quote([vip1]);
+    const refused = await h.api("POST", "/api/public/bookings/add-stays", {
+      body: { checkIn: "2027-02-01", checkOut: "2027-02-03", stays: [vip1], food: [], lang: "th", bookingCode: b.data.bookingCode, phone: PHONE, expectedTotalSatang: q2.data.totalSatang, idempotencyKey: key() },
+    });
+    assert.equal(refused.status, 409);
+    assert.equal(refused.error?.code, "CREDIT_INSUFFICIENT");
+    assert.deepEqual(hold(b.data.bookingCode), { units: 3, amount: 60, status: "HELD" });
+  });
+
   it("deposit plan: the fee is paid with the deposit", async () => {
     const { h, root, quote } = await setup({ credits: 500 });
     h.db.run("UPDATE accommodation_units SET payment_mode = 'DEPOSIT_50' WHERE id = 'dev_house_01'");

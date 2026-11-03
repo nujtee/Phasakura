@@ -18,6 +18,7 @@ import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill, StayPrice, UnitCard, type Availability } from "../accommodation/UnitCard.tsx";
 import { PromoList } from "../booking/Promotions.tsx";
 import {
+  addStaysToBooking,
   bookingErrorText,
   cartToSelections,
   createBooking,
@@ -102,6 +103,8 @@ export function BookingPage() {
   const [idemKey, setIdemKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [booking, setBooking] = useState<PublicBookingDto | null>(null);
+  /** "จองเพิ่ม" before paying: the unpaid booking the new stays will join (its dates are kept). */
+  const [addTo, setAddTo] = useState<PublicBookingDto | null>(null);
   /** Last tarp choice, kept when the guest goes back to change the stay. */
   const [campingTarp, setCampingTarp] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -258,7 +261,9 @@ export function BookingPage() {
     track({ name: "view_food" });
   }, [step, catalogue]);
 
-  function go(next: Step) {
+  function go(target: Step) {
+    // Adding to a booking: its guest details are kept, so no details step.
+    const next: Step = addTo && target === "details" ? (step === "review" ? "food" : "review") : target;
     if (next === "details" && quote && !sent.current.begin) {
       sent.current.begin = true;
       track({ name: "begin_checkout", value: quote.totalSatang / 100, items: quoteItems(quote) });
@@ -270,13 +275,27 @@ export function BookingPage() {
 
   async function confirm() {
     if (!picks.length || !searched || !quote || !idemKey) return;
-    if (!privacy) {
+    if (!privacy && !addTo) {
       setFieldErrors({ privacyAccepted: bt.errors.MUST_ACCEPT });
       return;
     }
     setSubmitting(true);
     setNotice(null);
     try {
+      if (addTo) {
+        const updated = await addStaysToBooking({
+          ...request(searched, picks, cart, massages),
+          bookingCode: addTo.bookingCode,
+          phone: details.phone,
+          expectedTotalSatang: quote.totalSatang,
+          idempotencyKey: idemKey,
+        });
+        setBooking(updated);
+        setAddTo(null);
+        setStep("done");
+        window.scrollTo({ top: 0 });
+        return;
+      }
       const created = await createBooking({
         ...request(searched, picks, cart, massages),
         customer: {
@@ -298,7 +317,10 @@ export function BookingPage() {
       window.scrollTo({ top: 0 });
     } catch (err) {
       const text = bookingErrorText(bt, err);
-      if (err instanceof ApiError && err.code === "PRICE_CHANGED") {
+      if (err instanceof ApiError && (err.code === "BOOKING_NOT_ADDABLE" || err.code === "BOOKING_NOT_FOUND")) {
+        // Paid, slip sent or time over meanwhile: nothing was added; back to the booking as it is.
+        setNotice(text);
+      } else if (err instanceof ApiError && err.code === "PRICE_CHANGED") {
         setNotice(bt.priceChanged);
         setQuote(await fetchQuote(request(searched, picks, cart, massages)).catch(() => quote));
         setIdemKey(newIdempotencyKey());
@@ -333,7 +355,33 @@ export function BookingPage() {
     }
   }
 
+  /** "จองเพิ่ม" on an unpaid booking: choose more stays on its dates; they join it (same Booking ID and details). */
+  function addMore(b: PublicBookingDto) {
+    setAddTo(b);
+    setStep("choose");
+    setPicks([]);
+    setQuote(null);
+    setCart({});
+    setMassages({});
+    setNotice(null);
+    const q = { ...(searched ?? query), checkIn: b.checkIn, checkOut: b.checkOut };
+    void search(q);
+    window.scrollTo({ top: 0 });
+  }
+
+  /** Back to the booking without adding anything. */
+  function leaveAdd() {
+    if (!addTo) return;
+    setBooking(addTo);
+    setAddTo(null);
+    setPicks([]);
+    setNotice(null);
+    setStep("done");
+    window.scrollTo({ top: 0 });
+  }
+
   function restart() {
+    setAddTo(null);
     setStep("choose");
     setPicks([]);
     setBooking(null);
@@ -355,14 +403,16 @@ export function BookingPage() {
   if (step === "done" && booking) {
     return (
       <div className="page container">
-        <Confirmation booking={booking} phone={details.phone} headingRef={headingRef} onNewBooking={restart} />
+        <Confirmation booking={booking} phone={details.phone} headingRef={headingRef} onNewBooking={restart} onAddMore={addMore} />
       </div>
     );
   }
 
   // ------------------------------------------------------------------ wizard
   if (step !== "choose" && picks.length && searched) {
-    const index = WIZARD.indexOf(step);
+    const wizard: Step[] = addTo ? ["food", "review"] : WIZARD;
+    const index = wizard.indexOf(step);
+    const stepLabels = addTo ? [bt.stepFood, bt.stepReview, bt.stepPay] : [bt.stepFood, bt.stepDetails, bt.stepReview, bt.stepPay];
     const titles: Record<string, string> = { food: bt.foodTitle, details: bt.stepDetails, review: bt.stepReview };
     const campingName = data?.camping.name ?? t.accommodation.camping;
     const submitDetails = (e: FormEvent) => {
@@ -373,9 +423,9 @@ export function BookingPage() {
 
     return (
       <div className="page container booking-flow">
-        <ol className="flow-steps" aria-label={fill(bt.progress, { n: index + 1, total: WIZARD.length + 1 })}>
+        <ol className="flow-steps" aria-label={fill(bt.progress, { n: index + 1, total: wizard.length + 1 })}>
           {/* The payment step follows on the confirmation page, once the booking holds the stay. */}
-          {[bt.stepFood, bt.stepDetails, bt.stepReview, bt.stepPay].map((label, i) => (
+          {stepLabels.map((label, i) => (
             <li key={label} className={i < index ? "is-done" : i === index ? "is-current" : undefined} aria-current={i === index ? "step" : undefined}>
               <span className="flow-steps__n" aria-hidden="true">{i + 1}</span> {label}
             </li>
@@ -401,6 +451,7 @@ export function BookingPage() {
         </section>
 
         <h1 className="page__title" tabIndex={-1} ref={headingRef}>{titles[step]}</h1>
+        {addTo && <AddingBanner booking={addTo} onCancel={leaveAdd} />}
         {notice && <p role="alert" className="notice notice--error">{notice}</p>}
         {!notice && quote?.bookingUnavailable && step !== "done" && <p role="alert" className="notice notice--error">{bt.bookingUnavailable}</p>}
 
@@ -437,7 +488,21 @@ export function BookingPage() {
               </form>
             )}
 
-            {step === "review" && quote && (
+            {step === "review" && quote && addTo && (
+              <div className="flow-review">
+                <dl className="review-contact">
+                  <div><dt>{bt.bookingCode}</dt><dd translate="no">{addTo.bookingCode}</dd></div>
+                  <div><dt>{bt.name}</dt><dd>{addTo.customerName}</dd></div>
+                  <div><dt>{bt.phone}</dt><dd>{addTo.customerPhoneMasked}</dd></div>
+                </dl>
+                <p className="notice" role="note">{bt.addReviewNote}</p>
+                <section className="add-existing" aria-labelledby="add-existing-h">
+                  <h2 id="add-existing-h" className="add-existing__title">{bt.addExistingTitle}</h2>
+                  <BookingSummary quote={addTo} headingLevel={3} />
+                </section>
+              </div>
+            )}
+            {step === "review" && quote && !addTo && (
               <div className="flow-review">
                 <dl className="review-contact">
                   <div><dt>{bt.name}</dt><dd>{details.name}</dd></div>
@@ -462,14 +527,21 @@ export function BookingPage() {
           </div>
 
           <aside className="flow-aside">
-            {quote ? <BookingSummary quote={quote} /> : <p role="status" className="summary">{bt.calculating}</p>}
+            {addTo && <h2 className="add-existing__title">{bt.addNewTitle}</h2>}
+            {quote ? <BookingSummary quote={quote} headingLevel={addTo ? 3 : 2} /> : <p role="status" className="summary">{bt.calculating}</p>}
+            {addTo && quote && (
+              <p className="add-total">
+                <span>{bt.addNewTotal}</span>
+                <strong>{formatBaht(addTo.totalSatang + quote.totalSatang, locale.code)}</strong>
+              </p>
+            )}
             {quoting && quote && <p className="flow-aside__busy" role="status">{bt.calculating}</p>}
           </aside>
         </div>
 
         <div className="flow-nav">
           <button type="button" className="button button--secondary"
-            onClick={() => (index === 0 ? setStep("choose") : go(WIZARD[index - 1]!))}>
+            onClick={() => (index === 0 ? setStep("choose") : go(wizard[index - 1]!))}>
             ← {bt.back}
           </button>
           {step === "food" && <button type="button" className="button button--primary" disabled={!quote || quoting || !!quote.bookingUnavailable} onClick={() => go("details")}>{bt.next} →</button>}
@@ -477,7 +549,9 @@ export function BookingPage() {
           {step === "review" && (
             <button type="button" className="button button--primary" disabled={!quote || quoting || submitting || !!quote.bookingUnavailable} aria-busy={submitting || undefined}
               onClick={() => void confirm()}>
-              {submitting ? bt.confirming : `${bt.confirm} · ${quote ? formatBaht(quote.totalSatang, locale.code) : ""}`}
+              {submitting ? bt.confirming : addTo
+                ? `${bt.addConfirm} · ${quote ? formatBaht(addTo.totalSatang + quote.totalSatang, locale.code) : ""}`
+                : `${bt.confirm} · ${quote ? formatBaht(quote.totalSatang, locale.code) : ""}`}
             </button>
           )}
         </div>
@@ -520,15 +594,17 @@ export function BookingPage() {
         <MoveStayLauncher />
       </div>
       {onlineOpen === false && <p className="notice notice--error" role="alert">{bt.onlineClosed}</p>}
+      {addTo && <AddingBanner booking={addTo} onCancel={leaveAdd} onSeparate={restart} />}
+      {addTo && searchError && <p role="alert" className="notice notice--error">{searchError}</p>}
 
-      <StaySearch initial={query} busy={busy} error={searchError} showGuests={false} showTents={false}
+      {!addTo && <StaySearch initial={query} busy={busy} error={searchError} showGuests={false} showTents={false}
         onSearch={(q) => {
           // Other dates: what was picked may not be free then.
           if (searched && (q.checkIn !== searched.checkIn || q.checkOut !== searched.checkOut)) setPicks([]);
           void search(q);
-        }} />
-      {!availability && <p className="notice" role="note">{bt.searchFirst}</p>}
-      <p className="lookup-link"><Link to={bookingLookupPath(locale)}>{bt.lookupLink} →</Link></p>
+        }} />}
+      {!availability && !addTo && <p className="notice" role="note">{bt.searchFirst}</p>}
+      {!addTo && <p className="lookup-link"><Link to={bookingLookupPath(locale)}>{bt.lookupLink} →</Link></p>}
       {notice === bt.errors.TOO_MANY_STAYS && <p role="alert" className="notice notice--error">{notice}</p>}
       {picks.length > 0 && (
         <StayPicks picks={picks} camping={data?.camping ?? null} campingName={data?.camping.name ?? t.accommodation.camping}
@@ -566,6 +642,8 @@ export function BookingPage() {
             <div className="camping-card__body">
               {!data.camping.enabled ? (
                 <p>{t.accommodation.campingDisabled}</p>
+              ) : addTo?.items.some((i) => i.type === "OWN_TENT") ? (
+                <p className="notice" role="note">{bt.addCampingAlready}</p>
               ) : (
                 <>
                   {data.camping.description && <p className="prose">{data.camping.description}</p>}
@@ -575,7 +653,7 @@ export function BookingPage() {
                   <p className="unit-card__meta">{fill(t.accommodation.childrenFree, { age: data.camping.childFreeUnderAge })}</p>
                   <CampingBooker camping={data.camping} initial={campingPick ? { ...(searched ?? query), adults: campingPick.adults, children: campingPick.children, tents: campingPick.tents } : searched ?? query}
                     initialTarp={campingPick ? campingPick.kind === "CAMPING" && campingPick.tarp : campingTarp}
-                    label={campingPick ? bt.campingUpdate : picks.length ? bt.campingAdd : undefined}
+                    label={campingPick ? bt.campingUpdate : picks.length ? bt.campingAdd : undefined} lockDates={!!addTo}
                     onCheck={(q) => search(q, true)} onPeek={peek}
                     onBook={(q, tarp) => {
                       setCampingTarp(tarp);
@@ -596,6 +674,28 @@ export function BookingPage() {
       )}
       {picks.length > 0 && <PicksBar picks={picks} ready={ready} onNext={() => start(picks)} />}
     </div>
+  );
+}
+
+/** Adding stays to an unpaid booking: which one, its dates (fixed), and the way back. */
+function AddingBanner({ booking, onCancel, onSeparate }: { booking: PublicBookingDto; onCancel: () => void; onSeparate?: () => void }) {
+  const bt = useBookingT();
+  const dateText = useDateText();
+  return (
+    <section className="add-banner" aria-label={bt.addBannerTitle}>
+      <p className="add-banner__title">
+        {fill(bt.addBannerTitleCode, { code: booking.bookingCode })}
+      </p>
+      <p className="add-banner__line">
+        {fill(bt.stayLine, { checkIn: dateText(booking.checkIn), checkOut: dateText(booking.checkOut), n: booking.nights })}
+        {" · "}{booking.customerName}
+      </p>
+      <p className="add-banner__hint">{bt.addBannerHint}</p>
+      <p className="add-banner__actions">
+        <button type="button" className="link-button" onClick={onCancel}>← {bt.addBack}</button>
+        {onSeparate && <button type="button" className="link-button" onClick={onSeparate}>{bt.addSeparate}</button>}
+      </p>
+    </section>
   );
 }
 

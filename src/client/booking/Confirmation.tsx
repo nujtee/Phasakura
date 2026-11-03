@@ -17,18 +17,27 @@ export function StatusPill({ status }: { status: PublicBookingDto["status"] }) {
   return <span className={`status-pill status-pill--${status.toLowerCase()}`}>{bt.statuses[status]}</span>;
 }
 
+/** Stays can join this booking while it waits for its first payment (no slip sent, time to pay not over). */
+export function canAddStays(booking: PublicBookingDto): boolean {
+  return booking.status === "PENDING" && booking.paymentStatus === "UNPAID" && booking.paidSatang === 0
+    && (!booking.expiresAt || Date.parse(booking.expiresAt) > Date.now());
+}
+
 /** Shown right after booking: the Booking ID is the thing to keep. */
 export function Confirmation({
   booking: initial,
   phone,
   headingRef,
   onNewBooking,
+  onAddMore,
 }: {
   booking: PublicBookingDto;
   /** The phone the guest just typed — proves ownership for the slip upload. */
   phone: string;
   headingRef: RefObject<HTMLHeadingElement | null>;
   onNewBooking: () => void;
+  /** Before any payment: "จองเพิ่ม" adds stays to this booking instead of starting another one. */
+  onAddMore?: (booking: PublicBookingDto) => void;
 }) {
   const [booking, setBooking] = useState(initial);
   useConfirmedBookingEvent(booking);
@@ -87,7 +96,11 @@ export function Confirmation({
 
       <div className="flow-nav">
         <Link to={bookingLookupPath(locale)} className="button button--secondary">{bt.checkBooking}</Link>
-        <button type="button" className="button button--ghost" onClick={onNewBooking}>{bt.newBooking}</button>
+        {onAddMore && canAddStays(booking) ? (
+          <button type="button" className="button button--ghost" onClick={() => onAddMore(booking)}>{bt.newBooking}</button>
+        ) : (
+          <button type="button" className="button button--ghost" onClick={onNewBooking}>{bt.newBooking}</button>
+        )}
       </div>
     </div>
   );
