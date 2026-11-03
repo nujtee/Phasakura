@@ -22,12 +22,14 @@ export function campingFits(a: AvailabilityDto, tarp: boolean): boolean {
  * to the booking steps when everything fits; otherwise it says what to change, right here.
  * With `onPeek`, the tent spots (and tarp areas) still free on the chosen dates show as soon as the dates are set.
  */
-export function CampingBooker({ camping, initial, initialTarp = false, label, onCheck, onPeek, onBook }: {
+export function CampingBooker({ camping, initial, initialTarp = false, label, lockDates = false, onCheck, onPeek, onBook }: {
   camping: PublicCampingDto;
   initial: StayQuery;
   initialTarp?: boolean;
   /** Button text when camping joins other stays of the booking (default: book camping). */
   label?: string;
+  /** Adding to a booking: its dates are fixed. */
+  lockDates?: boolean;
   onCheck: (q: StayQuery) => Promise<Check>;
   /** Live availability for the dates only (no side effects on the page): keep it stable (useCallback). */
   onPeek?: (q: StayQuery) => Promise<Check>;
@@ -113,12 +115,12 @@ export function CampingBooker({ camping, initial, initialTarp = false, label, on
       <div className="camping-form__dates">
         <div className="stay-search__field">
           <label htmlFor={`${id}-in`}>{t.accommodation.checkIn}</label>
-          <input id={`${id}-in`} type="date" required min={limits.min} max={limits.max} value={q.checkIn}
+          <input id={`${id}-in`} type="date" required readOnly={lockDates} aria-readonly={lockDates || undefined} min={limits.min} max={limits.max} value={q.checkIn}
             onChange={(e) => change({ checkIn: e.target.value })} />
         </div>
         <div className="stay-search__field">
           <label htmlFor={`${id}-out`}>{t.accommodation.checkOut}</label>
-          <input id={`${id}-out`} type="date" required min={q.checkIn || limits.min} max={limits.max} value={q.checkOut}
+          <input id={`${id}-out`} type="date" required readOnly={lockDates} aria-readonly={lockDates || undefined} min={q.checkIn || limits.min} max={limits.max} value={q.checkOut}
             onChange={(e) => change({ checkOut: e.target.value })} />
         </div>
       </div>

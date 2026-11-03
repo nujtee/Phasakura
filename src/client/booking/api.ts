@@ -38,6 +38,11 @@ export function findBookings(input: { bookingCode: string } | { phone: string })
   return apiRequest<BookingFindDto>("POST", "/api/public/bookings/find", input);
 }
 
+/** "จองเพิ่ม" before paying: the stays join the guest's own booking (same dates, Booking ID and details). */
+export function addStaysToBooking(body: QuoteRequest & { bookingCode: string; phone: string; expectedTotalSatang: number; idempotencyKey: string }) {
+  return apiRequest<PublicBookingDto>("POST", "/api/public/bookings/add-stays", body);
+}
+
 export function lookupBooking(bookingCode: string, phone: string) {
   return apiRequest<PublicBookingDto>("POST", "/api/public/bookings/lookup", { bookingCode, phone });
 }

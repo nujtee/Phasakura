@@ -587,6 +587,48 @@ await check("house page: guests never above what the house takes; more than its 
   await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
 });
 
+await check("จองเพิ่ม before paying: the new house joins the same Booking ID, details and dates", async () => {
+  const ci = day(60), co = day(61);
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}`);
+  await pg.locator("form.stay-search button[type=submit]").click();
+  const card = (name) => pg.locator(".unit-pick", { has: pg.getByRole("heading", { name }) });
+  await card(/House 01/).getByRole("button", { name: "เลือกหลังนี้" }).click();
+  await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  await pg.getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.locator("#bk-name").fill("จองเพิ่ม ทดสอบ");
+  await pg.locator("#bk-phone").fill("0868888888");
+  await pg.getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByLabel(/ข้าพเจ้ายอมรับนโยบายความเป็นส่วนตัว/).check();
+  await pg.getByRole("button", { name: /ยืนยันการจอง/ }).click();
+  await pg.getByRole("heading", { name: "จองเรียบร้อย" }).waitFor();
+  const code = (await pg.locator(".confirmation__value").first().textContent()).trim();
+  const before = (await (await req.get(`${BASE}/api/admin/bookings/${code}`)).json()).data;
+
+  await pg.getByRole("button", { name: "จองเพิ่ม" }).click();
+  const banner = pg.locator(".add-banner").first();
+  await banner.getByText(`กำลังเพิ่มที่พักในการจอง ${code}`).waitFor();
+  assert((await pg.locator("form.stay-search").count()) === 0, "dates are fixed: no date search");
+  await card(/House 02/).getByRole("button", { name: "เลือกหลังนี้" }).click();
+  await pg.screenshot({ path: `${SHOTS}/add-more-choose.png`, fullPage: true });
+  await pg.locator("#picks").getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  await pg.getByRole("button", { name: /ถัดไป/ }).click();
+  // No guest-details step: straight to the review, with the booking as it is and the new total.
+  await pg.getByRole("heading", { name: "การจองเดิม" }).waitFor();
+  assert((await pg.locator("#bk-name").count()) === 0, "details are kept");
+  await pg.screenshot({ path: `${SHOTS}/add-more-review.png`, fullPage: true });
+  await pg.getByRole("button", { name: /ยืนยันเพิ่มในการจอง/ }).click();
+  await pg.getByRole("heading", { name: "จองเรียบร้อย" }).waitFor();
+  assert((await pg.locator(".confirmation__value").first().textContent()).trim() === code, "same Booking ID");
+
+  const after = (await (await req.get(`${BASE}/api/admin/bookings/${code}`)).json()).data;
+  assert(after.items.length === 2, `stays ${after.items.length}`);
+  assert(after.totalSatang > before.totalSatang, "new total");
+  assert(after.customerName === "จองเพิ่ม ทดสอบ" && after.checkIn === ci && after.checkOut === co, "same guest and dates");
+  await pg.screenshot({ path: `${SHOTS}/add-more-done.png`, fullPage: true });
+});
+
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
   assert(!bad.length, bad.join("\n"));

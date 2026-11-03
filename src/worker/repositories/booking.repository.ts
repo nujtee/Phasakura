@@ -452,6 +452,55 @@ export class BookingRepository {
     ];
   }
 
+  /** Kitchen orders a booking already has (stays added later grow these instead of creating a second one). */
+  async foodOrdersOf(bookingId: string): Promise<{ id: string; food_category_id: string; service_date: string }[]> {
+    const { results } = await this.db
+      .prepare("SELECT id, food_category_id, service_date FROM food_orders WHERE booking_id = ?1")
+      .bind(bookingId)
+      .all<{ id: string; food_category_id: string; service_date: string }>();
+    return results;
+  }
+
+  /** More people / portions on an existing kitchen order (a cancelled one opens again). */
+  growFoodOrderStatement(orderId: string, persons: number, reserved: number, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `UPDATE food_orders SET total_persons = total_persons + ?2, capacity_reserved = capacity_reserved + ?3,
+           status = CASE WHEN status = 'CANCELLED' THEN 'PENDING' ELSE status END, updated_at = ?4
+          WHERE id = ?1`,
+      )
+      .bind(orderId, persons, reserved, now);
+  }
+
+  /**
+   * Guest adds stays before paying (migration 0059): the whole batch stops (BATCH_GUARD) unless the booking is
+   * exactly as read — still waiting for its first payment, not run out of time, no payment of any kind.
+   */
+  addStaysGuardStatement(bookingId: string, readAt: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO batch_guards (reason) SELECT 'ADD_STAYS'
+          WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE id = ?1 AND updated_at = ?2 AND booking_status = 'PENDING'
+                              AND payment_status = 'UNPAID' AND (expires_at IS NULL OR expires_at > ?3))
+             OR EXISTS (SELECT 1 FROM payments WHERE booking_id = ?1)`,
+      )
+      .bind(bookingId, readAt, now);
+  }
+
+  /** The booking's money and guests once the added stays are in (CHECKs: subtotal / total add up, deposit below total). */
+  addStaysBookingStatement(b: {
+    id: string; adults: number; children: number; accommodation: number; food: number; appFeeSatang: number; appFeeUnits: number;
+    total: number; deposit: number | null; now: string;
+  }): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `UPDATE bookings SET adults = ?2, children = ?3, accommodation_subtotal_satang = ?4, food_subtotal_satang = ?5,
+           app_fee_satang = ?6, app_fee_units = ?7, subtotal_satang = ?4 + ?5 + ?6, total_satang = ?8, deposit_satang = ?9, updated_at = ?10
+          WHERE id = ?1`,
+      )
+      .bind(b.id, b.adults, b.children, b.accommodation, b.food, b.appFeeSatang, b.appFeeUnits, b.total, b.deposit, b.now);
+  }
+
   insertFoodOrderStatement(o: {
     id: string; bookingId: string; categoryId: string; date: string; persons: number; reserved: number; now: string;
   }): D1PreparedStatementLike {

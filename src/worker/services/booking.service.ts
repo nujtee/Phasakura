@@ -15,7 +15,7 @@ import type {
   QuoteDto,
   QuoteItemDto,
 } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, isTenDigitPhone, maskBookingCode, maskGuestName, maskPhone, normalizeBookingCode, normalizePhone, type BookingBriefDto, type BookingFindDto, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, isTenDigitPhone, MAX_STAYS_PER_BOOKING, maskBookingCode, maskGuestName, maskPhone, normalizeBookingCode, normalizePhone, type BookingBriefDto, type BookingFindDto, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
 import type { BookingSettingsDto, StayAction } from "../../shared/dashboard-types.ts";
 import type { BalanceDueDto, BalanceMethod, PaymentInstructionsDto } from "../../shared/payment-types.ts";
 import { parseStays } from "../repositories/stay-sql.ts";
@@ -215,41 +215,89 @@ export class BookingService {
     return this.toPublic(existing);
   }
 
-  private createStatements(p: PreparedBooking, input: CreateBookingInput, phoneNormalized: string, code: string, bookingId: string, now: Date, meta: RequestMeta): D1PreparedStatementLike[] {
+  /**
+   * "จองเพิ่ม" before paying: the guest's new stays join their own booking — same Booking ID, guest details and dates.
+   * Only while the booking waits for its first payment (no slip sent, not run out of time). The added stays are priced
+   * on their own (what the guest saw), held in the same batch as the new total, deposit and app fee; the batch stops if
+   * the booking changed meanwhile. `idempotencyKey` makes a double click add the stays once.
+   */
+  async addStays(code: string, phone: string, input: QuoteInput & { expectedTotalSatang: number; idempotencyKey: string }, meta: RequestMeta): Promise<{ booking: PublicBookingDto; replayed: boolean }> {
+    const row = await this.expireIfDue(await this.guestBooking(code, phone, meta));
+    const marker = `add:${input.idempotencyKey}`;
+    const replayed = async () => ((await this.log.countRecent(["BOOKING_STAYS_ADDED"], 24 * 60 * 60_000, { identifier: marker })) > 0
+      ? { booking: await this.toPublic((await this.repo.findById(row.id))!), replayed: true } : null);
+    const again = await replayed();
+    if (again) return again;
+
+    if (row.booking_status !== "PENDING" || row.payment_status !== "UNPAID" || (await this.payments.payments(row.id)).length) {
+      throw new ConflictError("Stays can be added only before the booking is paid", "BOOKING_NOT_ADDABLE");
+    }
+    if (input.checkIn !== row.check_in || input.checkOut !== row.check_out) {
+      throw new ValidationError({ checkIn: "SAME_DATES_ONLY" }, "Added stays use the booking's dates");
+    }
+    const items = (await this.repo.items(row.id)).filter((i) => i.status === "ACTIVE");
+    if (items.length + input.stays.length > MAX_STAYS_PER_BOOKING) throw new ValidationError({ stays: "TOO_MANY_STAYS" });
+    if (input.stays.some((st) => st.kind === "CAMPING") && items.some((i) => i.item_type === "OWN_TENT")) {
+      throw new ConflictError("Camping is already part of this booking", "CAMPING_ALREADY_BOOKED");
+    }
+    if (input.stays.some((st) => st.kind === "UNIT" && items.some((i) => i.unit_id === st.unitId))) {
+      throw new ConflictError("This accommodation is already part of the booking", "UNIT_ALREADY_BOOKED");
+    }
+
+    const prepared = await this.quotes.prepare(input);
+    const q = prepared.quote;
+    if (q.bookingUnavailable) throw new ConflictError("Online booking is temporarily unavailable", "CREDIT_INSUFFICIENT");
+    if (q.totalSatang !== input.expectedTotalSatang) {
+      throw new HttpError(409, "PRICE_CHANGED", "The price has changed. Please review the new total.", { totalSatang: String(q.totalSatang) });
+    }
+
+    const now = this.clock();
+    const at = iso(now);
+    const total = row.total_satang + q.totalSatang;
+    const payLater = items.reduce((acc, i) => acc + i.pay_later_satang, 0) + q.items.reduce((acc, it) => acc + it.payLaterSatang, 0);
+    const statements = [
+      this.repo.addStaysGuardStatement(row.id, row.updated_at, at),
+      this.repo.addStaysBookingStatement({
+        id: row.id,
+        adults: row.adults + q.adults,
+        children: row.children + q.children,
+        accommodation: row.accommodation_subtotal_satang + q.accommodationSubtotalSatang,
+        food: row.food_subtotal_satang + q.foodSubtotalSatang + (q.massageSubtotalSatang ?? 0),
+        appFeeSatang: row.app_fee_satang + (q.appFee?.totalSatang ?? 0),
+        appFeeUnits: row.app_fee_units + (q.appFee?.units ?? 0),
+        total,
+        deposit: depositFor(total, payLater),
+        now: at,
+      }),
+      // Added stays list after the ones already booked.
+      ...this.contentStatements(prepared, row.id, now, await this.repo.foodOrdersOf(row.id), items.length + 1),
+      this.log.eventStatement("BOOKING_STAYS_ADDED", "INFO", meta, { identifier: marker, details: { bookingCode: row.booking_code, stays: q.items.length } }),
+      this.log.auditStatement(null, "ADD_STAYS", "bookings", row.id, { totalSatang: row.total_satang },
+        { bookingCode: row.booking_code, stays: q.items.map((it) => it.name), addedSatang: q.totalSatang, totalSatang: total }, meta),
+    ];
+    try {
+      await this.db.batch(statements);
+    } catch (error) {
+      if (/BATCH_GUARD/.test(String(error))) {
+        const winner = await replayed();
+        if (winner) return winner;
+        throw new ConflictError("The booking changed meanwhile, please check it again", "BOOKING_NOT_ADDABLE");
+      }
+      throw mapInventoryError(error);
+    }
+    return { booking: await this.toPublic((await this.repo.findById(row.id))!), replayed: false };
+  }
+
+  /**
+   * What a booking holds besides its own row: stays (items, nights / tents, extra beds, pets, tarp, price snapshots,
+   * promotions, included meals), massages and food. Used when the booking is made and when the guest adds stays to it
+   * before paying (`existingOrders`: kitchen orders it already has, which grow instead of being created again).
+   */
+  private contentStatements(p: PreparedBooking, bookingId: string, now: Date, existingOrders: { id: string; food_category_id: string; service_date: string }[] = [], itemsBefore = 0): D1PreparedStatementLike[] {
     const repo = this.repo;
     const at = iso(now);
     const q = p.quote;
-    const statements: D1PreparedStatementLike[] = [
-      repo.insertBookingStatement({
-        id: bookingId,
-        code,
-        lang: input.lang,
-        checkIn: q.checkIn,
-        checkOut: q.checkOut,
-        nights: q.nights,
-        adults: q.adults,
-        children: q.children,
-        name: input.customer.name,
-        phone: input.customer.phone,
-        phoneNormalized,
-        email: input.customer.email,
-        lineId: input.customer.lineId,
-        note: input.customer.note,
-        accommodationSubtotal: q.accommodationSubtotalSatang,
-        // Health massage (migration 0050) is paid in full now like food: stored with it, told apart by booking_massages.
-        foodSubtotal: q.foodSubtotalSatang + (q.massageSubtotalSatang ?? 0),
-        total: q.totalSatang,
-        deposit: q.depositSatang,
-        appFeeUnits: q.appFee?.units ?? 0,
-        appFeeSatang: q.appFee?.totalSatang ?? 0,
-        currency: q.currency,
-        expiresAt: iso(addMs(now, p.settings.hold_minutes * 60_000)),
-        idempotencyKey: input.idempotencyKey,
-        privacyAcceptedAt: at,
-        now: at,
-      }),
-    ];
-
+    const statements: D1PreparedStatementLike[] = [];
     // Health massage lines (migration 0050): snapshot; the trigger re-checks massage is on and the treatment listed.
     for (const line of q.massages ?? []) statements.push(this.massageRepo.insertStatement(newId(), bookingId, line, at));
 
@@ -260,7 +308,7 @@ export class BookingService {
       const itemId = itemIds[i]!;
       statements.push(repo.insertItemStatement({
         id: itemId, bookingId, type: item.type, unitId: item.unitId, quantity: item.quantity,
-        adults: item.adults, children: item.children, payLater: item.payLaterSatang, now: iso(addMs(now, i)),
+        adults: item.adults, children: item.children, payLater: item.payLaterSatang, now: iso(addMs(now, itemsBefore + i)),
       }));
 
       // Inventory: the database rejects the whole batch if a night or tent is gone.
@@ -324,12 +372,13 @@ export class BookingService {
     }
 
     // Kitchen orders: one per category × service date; extra portions take daily capacity.
-    const orders = new Map<string, { id: string; categoryId: string; date: string; persons: number; reserved: number; defaultMax: number | null }>();
+    const orders = new Map<string, { id: string; categoryId: string; date: string; persons: number; reserved: number; defaultMax: number | null; existing: boolean }>();
     for (const line of p.foodLines) {
       const key = `${line.category.id}|${line.dto.serviceDate}`;
+      const existing = existingOrders.find((o) => o.food_category_id === line.category.id && o.service_date === line.dto.serviceDate);
       const order = orders.get(key) ?? {
-        id: newId(), categoryId: line.category.id, date: line.dto.serviceDate, persons: 0, reserved: 0,
-        defaultMax: line.category.default_daily_capacity,
+        id: existing?.id ?? newId(), categoryId: line.category.id, date: line.dto.serviceDate, persons: 0, reserved: 0,
+        defaultMax: line.category.default_daily_capacity, existing: !!existing,
       };
       order.persons += line.persons;
       order.reserved += line.capacityQuantity;
@@ -337,7 +386,10 @@ export class BookingService {
     }
     for (const o of orders.values()) {
       if (o.reserved > 0 && o.defaultMax !== null) statements.push(...repo.reserveFoodStatements(o.categoryId, o.date, o.reserved, o.defaultMax, at));
-      statements.push(repo.insertFoodOrderStatement({ id: o.id, bookingId, categoryId: o.categoryId, date: o.date, persons: o.persons, reserved: o.reserved, now: at }));
+      // Stays added to a booking: the kitchen order for that meal and day may already exist (one per booking).
+      statements.push(o.existing
+        ? repo.growFoodOrderStatement(o.id, o.persons, o.reserved, at)
+        : repo.insertFoodOrderStatement({ id: o.id, bookingId, categoryId: o.categoryId, date: o.date, persons: o.persons, reserved: o.reserved, now: at }));
     }
     for (const line of p.foodLines) {
       const d = line.dto;
@@ -349,6 +401,46 @@ export class BookingService {
         itemId: line.stayIndex === undefined ? null : itemIds[line.stayIndex]!, now: at,
       }));
     }
+
+    return statements;
+  }
+
+  private createStatements(p: PreparedBooking, input: CreateBookingInput, phoneNormalized: string, code: string, bookingId: string, now: Date, meta: RequestMeta): D1PreparedStatementLike[] {
+    const repo = this.repo;
+    const at = iso(now);
+    const q = p.quote;
+    const statements: D1PreparedStatementLike[] = [
+      repo.insertBookingStatement({
+        id: bookingId,
+        code,
+        lang: input.lang,
+        checkIn: q.checkIn,
+        checkOut: q.checkOut,
+        nights: q.nights,
+        adults: q.adults,
+        children: q.children,
+        name: input.customer.name,
+        phone: input.customer.phone,
+        phoneNormalized,
+        email: input.customer.email,
+        lineId: input.customer.lineId,
+        note: input.customer.note,
+        accommodationSubtotal: q.accommodationSubtotalSatang,
+        // Health massage (migration 0050) is paid in full now like food: stored with it, told apart by booking_massages.
+        foodSubtotal: q.foodSubtotalSatang + (q.massageSubtotalSatang ?? 0),
+        total: q.totalSatang,
+        deposit: q.depositSatang,
+        appFeeUnits: q.appFee?.units ?? 0,
+        appFeeSatang: q.appFee?.totalSatang ?? 0,
+        currency: q.currency,
+        expiresAt: iso(addMs(now, p.settings.hold_minutes * 60_000)),
+        idempotencyKey: input.idempotencyKey,
+        privacyAcceptedAt: at,
+        now: at,
+      }),
+    ];
+
+    statements.push(...this.contentStatements(p, bookingId, now));
 
     // No PII in logs: booking code and amount only.
     // Payment account snapshot (spec §25): later account changes never touch this booking.
