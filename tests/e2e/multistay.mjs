@@ -571,6 +571,12 @@ await check("house page: guests never above what the house takes; more than its 
   await pg.waitForFunction(() => document.querySelector(".extra-beds .stepper output")?.textContent === "1", null, { timeout: 8000 });
   await pg.locator(".summary").getByText(/ที่นอนเสริม 1 × 1 คืน/).waitFor();
   if (SHOTS) await pg.screenshot({ path: `${SHOTS}/auto-extra-bed.png`, fullPage: true });
+  // 2 adults + 1 child: the child shares a bed — no extra bed added.
+  await pg.goto(`${BASE}/th/booking?checkIn=${day(122)}&checkOut=${day(123)}&adults=2&children=1&unit=house-sakura`);
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  await pg.locator(".extra-beds .stepper output").waitFor();
+  await pg.waitForTimeout(1500);
+  assert(await pg.locator(".extra-beds .stepper output").textContent() === "0", "no extra bed for a child");
   await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
 });
 
