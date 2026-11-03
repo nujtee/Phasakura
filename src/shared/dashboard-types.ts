@@ -38,6 +38,27 @@ export interface RevenueDto {
   totalSatang: number;
 }
 
+/** One OTA stay on the dashboard. */
+export interface OtaStayDto {
+  /** ICAL = nights held by the OTA's calendar (no guest details); CHANNEX = a booking that came through Channex. */
+  source: "ICAL" | "CHANNEX";
+  /** BOOKING / AGODA / AIRBNB / VRBO / OTHER for iCal (label = the name staff gave OTHER); the OTA's name for Channex. */
+  channel: string;
+  label: string | null;
+  /** Unit codes and (Thai) names; empty when a Channex booking could not be placed. */
+  units: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  /** Channex only. */
+  guestName: string | null;
+  bookingCode: string | null;
+  amountMinor: number | null;
+  currency: string | null;
+  /** Channex: ACTIVE, or CONFLICT / UNMAPPED (not placed here — staff must act). iCal: ACTIVE. */
+  status: "ACTIVE" | "CONFLICT" | "UNMAPPED";
+}
+
 export interface DashboardDto {
   /** Today in the property time zone. */
   date: string;
@@ -59,6 +80,11 @@ export interface DashboardDto {
     vip: { total: number; available: number };
     camping: { enabled: boolean; max: number; used: number; remaining: number };
   };
+  /**
+   * Stays booked on OTAs (Booking.com, Agoda, Airbnb…) that are not over yet: nights held through an imported
+   * iCal calendar and bookings that came through Channex. Only with `bookings.view` (guest names).
+   */
+  ota: { stays: OtaStayDto[]; tonight: number } | null;
   /** Arrivals / departures — only with `bookings.view` (customer names). */
   arrivals: StayRowDto[] | null;
   departures: StayRowDto[] | null;

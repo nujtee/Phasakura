@@ -520,6 +520,20 @@ await check("child age: staff set it in booking rules; the booking page and the 
   assert(put.ok(), `reset ${put.status()} ${await put.text()}`);
 });
 
+await check("dashboard: the OTA bookings tile opens and closes its table", async () => {
+  await pa.goto(`${BASE}/en/admin`);
+  const tile = pa.getByRole("button", { name: /OTA bookings/ });
+  await tile.waitFor();
+  assert(await tile.getAttribute("aria-expanded") === "false", "starts closed");
+  await tile.click();
+  const table = pa.getByTestId("ota-stays");
+  await table.getByRole("heading", { name: "OTA bookings not checked out yet" }).waitFor();
+  assert(await tile.getAttribute("aria-expanded") === "true", "open");
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/dashboard-ota.png`, fullPage: false });
+  await tile.click();
+  await table.waitFor({ state: "detached" });
+});
+
 await check("no CSP violations or page errors", async () => {
   const bad = consoleErrors.filter((e) => /Content Security Policy|Refused to|pageerror/i.test(e));
   assert(!bad.length, bad.join("\n"));
