@@ -6,7 +6,9 @@ import { useBookingT } from "./useBookingT.ts";
 
 /** One stay the guest picked, with its own guests (several stays share the booking's dates). */
 export type Pick =
-  | { kind: "UNIT"; unit: PublicUnitDto; adults: number; children: number; extraBeds?: number; pets?: number }
+  | { kind: "UNIT"; unit: PublicUnitDto; adults: number; children: number; extraBeds?: number; pets?: number;
+      /** The guest count extra beds were last set for automatically (beds the guest changes by hand stay until it changes). */
+      autoBedsFor?: number }
   | { kind: "CAMPING"; tents: number; tarp: boolean; adults: number; children: number };
 
 export const pickKey = (p: Pick) => (p.kind === "UNIT" ? p.unit.id : "camping");
@@ -135,4 +137,30 @@ export function PicksBar({ picks, onNext, ready }: { picks: Pick[]; ready: boole
       <button type="button" className="button button--primary" disabled={!ready} onClick={onNext}>{bt.next} →</button>
     </div>
   );
+}
+
+/**
+ * Extra beds a stay needs: guests beyond the unit's usual number (standard guests), up to what one unit may take,
+ * when the property offers extra beds for this unit. 0 otherwise.
+ */
+export function bedsNeeded(p: Pick, offer: { maxPerUnit: number; offUnitIds?: string[] } | null | undefined): number {
+  if (p.kind !== "UNIT" || !offer || offer.maxPerUnit < 1 || (offer.offUnitIds ?? []).includes(p.unit.id)) return 0;
+  return Math.max(0, Math.min(offer.maxPerUnit, p.adults + p.children - p.unit.standardGuests));
+}
+
+/**
+ * Sets the extra beds of each house / VIP tent whose guests changed since the last automatic set: more guests than
+ * its usual number → that many extra beds (within the limit). A number the guest changed by hand stays until the
+ * guests change again. Returns the same array when nothing changes.
+ */
+export function withAutoBeds(picks: Pick[], offer: { maxPerUnit: number; offUnitIds?: string[] } | null | undefined): Pick[] {
+  let changed = false;
+  const next = picks.map((p) => {
+    if (p.kind !== "UNIT" || !offer) return p;
+    const guests = p.adults + p.children;
+    if (p.autoBedsFor === guests) return p;
+    changed = true;
+    return { ...p, extraBeds: bedsNeeded(p, offer), autoBedsFor: guests };
+  });
+  return changed ? next : picks;
 }

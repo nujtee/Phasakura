@@ -428,3 +428,5 @@
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--color-border) 60%, var(--color-surface));
 }
+
+.stay-search__limit { grid-column: 1 / -1; margin: 0; font-size: 0.875rem; color: var(--color-muted); }
