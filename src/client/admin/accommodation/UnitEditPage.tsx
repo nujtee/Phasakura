@@ -146,11 +146,12 @@ function BasicsForm({ type, unit, canEdit, onCreated, onSaved, onError }: {
             </select>
             {errors.status && <p className="adm-field__error">{errors.status}</p>}
           </div>
-          <Field label={t.acc.standardGuests} type="number" min={1} max={50} required value={f.standardGuests} onChange={set("standardGuests")} error={errors.standardGuests} />
-          <Field label={t.acc.maxGuests} type="number" min={1} max={50} required value={f.maxGuests} onChange={set("maxGuests")} error={errors.maxGuests} />
-          <Field label={t.acc.maxAdults} type="number" min={1} max={50} value={f.maxAdults} onChange={set("maxAdults")} error={errors.maxAdults} />
+          <Field label={t.acc.standardGuests} hint={t.acc.standardGuestsHint} type="number" min={1} max={50} required value={f.standardGuests} onChange={set("standardGuests")} error={errors.standardGuests} />
+          <Field label={t.acc.maxGuests} hint={t.acc.maxGuestsHint} type="number" min={1} max={50} required value={f.maxGuests} onChange={set("maxGuests")} error={errors.maxGuests} />
+          <Field label={t.acc.maxAdults} hint={t.acc.maxAdultsHint} type="number" min={1} max={50} value={f.maxAdults} onChange={set("maxAdults")} error={errors.maxAdults} />
           <Field label={t.acc.sortOrder} type="number" min={0} value={f.sortOrder} onChange={set("sortOrder")} error={errors.sortOrder} />
         </div>
+        <GuestsPreview standard={Number(f.standardGuests)} max={Number(f.maxGuests)} maxAdults={f.maxAdults ? Number(f.maxAdults) : null} />
         {canEdit && <Button type="submit" busy={busy}>{busy ? t.common.saving : t.common.save}</Button>}
       </fieldset>
     </form>
@@ -643,6 +644,24 @@ function DeleteUnit({ unit, onDeleted, onError }: { unit: AdminUnitDto; onDelete
             onError(err);
           }
         }} />
+    </div>
+  );
+}
+
+/** What the booking page will allow with these numbers, in plain words (the three fields are easy to mix up). */
+function GuestsPreview({ standard, max, maxAdults }: { standard: number; max: number; maxAdults: number | null }) {
+  const { t } = useAdmin();
+  if (!(standard >= 1) || !(max >= 1)) return null;
+  const adults = Math.min(maxAdults ?? max, max);
+  const lines = [
+    format(t.acc.guestsPreviewAdults, { adults, max }),
+    adults > standard ? format(t.acc.guestsPreviewBeds, { from: standard + 1 }) : t.acc.guestsPreviewNoBeds,
+    ...(maxAdults !== null && maxAdults < standard ? [format(t.acc.guestsPreviewWarn, { standard, maxAdults })] : []),
+  ];
+  return (
+    <div className={`adm-guestspreview${maxAdults !== null && maxAdults < standard ? " adm-guestspreview--warn" : ""}`} role="note">
+      <strong>{t.acc.guestsPreviewTitle}</strong>
+      <ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul>
     </div>
   );
 }
