@@ -179,3 +179,6 @@
 .bill-link {
   margin: 12px 0;
 }
+
+/* Promotion texts may span several lines (one perk per line). */
+.bill__table td { white-space: pre-line; }
