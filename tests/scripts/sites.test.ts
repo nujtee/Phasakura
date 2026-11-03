@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { parseJsonc, preflight, type Finding } from "../../scripts/preflight.ts";
 import {
-  centerConfig, checkAll, checkTemplate, configPath, generatedText, loadRegistry, MAX_WAVES, parseBookmark, releasePlan, siteBinding, siteConfig, validateRegistry, type Registry,
+  centerConfig, checkAll, checkTemplate, configPath, generatedText, loadRegistry, MAX_WAVES, parseBookmark, releasePlan, siteBinding, siteConfig, validateRegistry, withoutSites, type Registry,
 } from "../../scripts/sites.ts";
 import { splitPhones } from "../../src/shared/phones.ts";
 import { siteLabel, siteMailDomain, siteSlug } from "../../src/shared/site-name.ts";
@@ -131,6 +131,17 @@ describe("Center config (phase C4: center/wrangler.jsonc)", () => {
     assert.equal(cfg.d1_databases[0]!.migrations_dir, "migrations");
     assert.ok(!registry.sites.some((s) => s.d1.id === registry.center!.d1.id), "never a site's database");
     assert.equal(siteBinding("chom-khao"), "SITE_CHOM_KHAO");
+  });
+
+  it("a site never released (no Worker yet) is left out of Center's deploy: no binding, not listed; the rest stay", () => {
+    const cfg = centerConfig(registry, parseJsonc(TEMPLATE) as Record<string, unknown>);
+    const slug = registry.sites.at(-1)!.slug;
+    const out = withoutSites(cfg, [slug]) as { services: { service: string }[]; vars: Record<string, string>; d1_databases: unknown[]; routes: unknown[] };
+    assert.ok(!out.services.some((s) => s.service === slug));
+    assert.equal(out.services.length, registry.sites.length - 1);
+    assert.ok(!JSON.parse(out.vars.CENTER_SITES!).some((s: { slug: string }) => s.slug === slug));
+    assert.deepEqual(out.d1_databases, (cfg as { d1_databases: unknown[] }).d1_databases);
+    assert.deepEqual(out.routes, (cfg as { routes: unknown[] }).routes);
   });
 
   it("release: \"all\" includes Center, \"center\" alone releases only Center; the slug is reserved", () => {
