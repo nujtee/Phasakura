@@ -650,6 +650,11 @@ export function normalizePhone(input: string): string | null {
   return digits;
 }
 
+/** A booking on the website: a Thai number of exactly 10 digits (0XXXXXXXXX; +66 is read as 0). */
+export function isTenDigitPhone(input: string): boolean {
+  return /^0\d{9}$/.test(normalizePhone(input) ?? "");
+}
+
 // ------------------------------------------------------------------ guest moves the stay (migration 0045)
 
 export type MoveRequestStatus = "AWAITING_PAYMENT" | "REVIEWING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED" | "FAILED";

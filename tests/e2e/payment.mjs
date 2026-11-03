@@ -107,6 +107,10 @@ await check("guest (mobile, TH): booking flow ends on the payment step; PromptPa
   await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0&unit=house-sakura`);
   await pg.getByRole("button", { name: "ถัดไป" }).click({ timeout: 15000 });
   await pg.locator("#bk-name").fill("สมชาย จ่ายเงิน");
+  // Phone: digits only, 10 at most; fewer than 10 is refused by the form.
+  await pg.locator("#bk-phone").fill("086-123-45");
+  assert(await pg.locator("#bk-phone").inputValue() === "08612345", `digits only: ${await pg.locator("#bk-phone").inputValue()}`);
+  assert(await pg.locator("#bk-phone").evaluate((el) => !el.checkValidity()), "9 digits or fewer is not valid");
   await pg.locator("#bk-phone").fill("0861234567");
   await pg.locator("#bk-email").fill("somchai@example.test");
   await pg.getByRole("button", { name: "ถัดไป" }).click();

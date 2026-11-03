@@ -40,6 +40,21 @@ describe("e-mail required when booking", () => {
     assert.equal((await h.api("PUT", "/api/admin/booking-settings", { token: root, body: { ...base, requireEmail: "yes" } })).status, 422);
   });
 
+  it("phone: exactly 10 digits (dashes / spaces / +66 are fine)", async () => {
+    const h = new Harness({ seed: true });
+    const stay = { checkIn: "2027-02-01", checkOut: "2027-02-02", stays: [{ kind: "UNIT", unitId: "dev_house_01", adults: 2, children: 0 }], food: [], lang: "th" };
+    const q = await h.api<QuoteDto>("POST", "/api/public/bookings/quote", { body: stay });
+    const book = (phone: string) => h.api<PublicBookingDto>("POST", "/api/public/bookings", {
+      body: { ...stay, customer: { name: "Guest", phone }, privacyAccepted: true, expectedTotalSatang: q.data.totalSatang,
+        idempotencyKey: `phone-10-${String(++seq).padStart(10, "0")}` },
+    });
+    for (const bad of ["081234567", "08123456789", "123456", "1234567890"]) {
+      assert.equal((await book(bad)).error?.details?.["customer.phone"], "PHONE_10_DIGITS", bad);
+    }
+    const ok = await book("+66 81-234-5678");
+    assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  });
+
   it("a fresh site (migrations only, no dev seed) asks for it", async () => {
     const h = new Harness();
     const row = h.db.get<{ require_email: number }>("SELECT require_email FROM booking_settings WHERE id = 1")!;

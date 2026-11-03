@@ -15,7 +15,7 @@ import type {
   QuoteDto,
   QuoteItemDto,
 } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, maskPhone, normalizeBookingCode, normalizePhone, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, isTenDigitPhone, maskPhone, normalizeBookingCode, normalizePhone, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
 import type { BookingSettingsDto, StayAction } from "../../shared/dashboard-types.ts";
 import type { BalanceDueDto, BalanceMethod, PaymentInstructionsDto } from "../../shared/payment-types.ts";
 import { parseStays } from "../repositories/stay-sql.ts";
@@ -128,6 +128,8 @@ export class BookingService {
   async create(input: CreateBookingInput, meta: RequestMeta): Promise<{ booking: PublicBookingDto; replayed: boolean }> {
     const phoneNormalized = normalizePhone(input.customer.phone);
     if (!phoneNormalized) throw new ValidationError({ "customer.phone": "INVALID_PHONE" });
+    // Website bookings: exactly 10 digits (a Thai mobile / landline with its leading 0).
+    if (!isTenDigitPhone(input.customer.phone)) throw new ValidationError({ "customer.phone": "PHONE_10_DIGITS" });
     // E-mail asked of every guest booking on the website (migration 0058, switchable in booking rules).
     if (!input.customer.email && (await this.repo.requireEmail())) throw new ValidationError({ "customer.email": "REQUIRED" });
 
