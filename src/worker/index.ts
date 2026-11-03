@@ -186,6 +186,8 @@ export function createApp(options: AppOptions = {}) {
     .post("/api/public/bookings/quote", book.quote)
     .post("/api/public/bookings", book.create)
     .post("/api/public/bookings/lookup", book.lookup)
+    .post("/api/public/bookings/find", book.find)
+    .post("/api/public/bookings/forgot-code", book.forgotCode)
     .post("/api/public/bookings/move/start", book.moveStart)
     .post("/api/public/bookings/move/calendar", book.moveCalendar)
     .post("/api/public/bookings/move/rooms", book.moveRoomsGuest)

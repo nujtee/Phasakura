@@ -375,6 +375,39 @@ export interface PublicBookingDto extends QuoteDto {
   moveCharges?: { toCheckIn: string; feeSatang: number; diffSatang: number }[];
 }
 
+/**
+ * A booking found with only ONE of Booking ID / phone: enough to see that it exists and where it stands,
+ * never enough to act on it. Details, payment, slips, moves and cancelling still need both.
+ */
+export interface BookingBriefDto {
+  /** The full Booking ID only when the guest typed it; found by phone it stays masked. */
+  bookingCode: string | null;
+  /** BK-YYYYMMDD-•••• */
+  bookingCodeMasked: string;
+  status: BookingStatus;
+  paymentStatus: PaymentStatus;
+  checkIn: string;
+  checkOut: string;
+  /** First letter of each word only. */
+  guestNameMasked: string;
+}
+
+export interface BookingFindDto {
+  /** What the guest gave: the other one opens the details. */
+  by: "CODE" | "PHONE";
+  bookings: BookingBriefDto[];
+}
+
+/** "BK-20270110-A7K2" → "BK-20270110-••••". */
+export function maskBookingCode(code: string): string {
+  return code.replace(/-[A-Z0-9]{4}$/, "-••••");
+}
+
+/** "สมชาย ใจดี" → "ส••• ใ•••": shows whose booking it is to its owner without giving the name away. */
+export function maskGuestName(name: string): string {
+  return name.trim().split(/\s+/).filter(Boolean).slice(0, 3).map((w) => `${Array.from(w)[0] ?? ""}•••`).join(" ");
+}
+
 /** A stay in admin lists: what it is and, for camping, how many tents. */
 export interface BookingStayBriefDto {
   type: BookingItemType;

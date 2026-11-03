@@ -15,7 +15,7 @@ import type {
   QuoteDto,
   QuoteItemDto,
 } from "../../shared/booking-types.ts";
-import { BOOKING_CODE_PATTERN, isTenDigitPhone, maskPhone, normalizeBookingCode, normalizePhone, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
+import { BOOKING_CODE_PATTERN, isTenDigitPhone, maskBookingCode, maskGuestName, maskPhone, normalizeBookingCode, normalizePhone, type BookingBriefDto, type BookingFindDto, type BookingMoveOptionsDto, type BookingMoveRoomsDto, type MoveDayState } from "../../shared/booking-types.ts";
 import type { BookingSettingsDto, StayAction } from "../../shared/dashboard-types.ts";
 import type { BalanceDueDto, BalanceMethod, PaymentInstructionsDto } from "../../shared/payment-types.ts";
 import { parseStays } from "../repositories/stay-sql.ts";
@@ -37,7 +37,7 @@ import type { PaymentRepository } from "../repositories/payment.repository.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import { availableChannels, toPaymentDto } from "./payment.service.ts";
 import { promptpayPayload } from "../../shared/promptpay.ts";
-import { newId } from "../security/tokens.ts";
+import { newId, sha256Hex } from "../security/tokens.ts";
 import { addMs, iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
 import type { PreparedBooking, QuoteInput, QuoteService } from "./quote.service.ts";
@@ -67,7 +67,26 @@ export const BOOKING_LIMITS = {
   lookupWindowMs: 15 * 60_000,
   codeAttempts: 5,
   expiryBatch: 50,
+  /** "Forgot Booking ID" requests: per IP and per phone number in an hour; bookings e-mailed per request. */
+  codeRequestsPerIpPerHour: 5,
+  codeRequestsPerPhonePerHour: 3,
+  codeRequestBookings: 5,
+  /** Look-ups with the phone number only (status and dates, no details): per IP and per phone in an hour. */
+  phoneFindsPerIpPerHour: 10,
+  phoneFindsPerPhonePerHour: 10,
 } as const;
+
+function toBrief(row: BookingRow, codeGiven: boolean): BookingBriefDto {
+  return {
+    bookingCode: codeGiven ? row.booking_code : null,
+    bookingCodeMasked: maskBookingCode(row.booking_code),
+    status: row.booking_status as BookingBriefDto["status"],
+    paymentStatus: row.payment_status as BookingBriefDto["paymentStatus"],
+    checkIn: row.check_in,
+    checkOut: row.check_out,
+    guestNameMasked: maskGuestName(row.customer_name),
+  };
+}
 
 const CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -353,6 +372,48 @@ export class BookingService {
   }
 
   /**
+   * Look-up with only ONE of Booking ID / phone. The answer shows where the booking stands (status, dates,
+   * first letters of the name) and nothing that acts on it: details, payment, slips, moves and cancelling still
+   * need both. Found by phone, the Booking ID stays masked. Throttled like the full look-up.
+   */
+  async find(bookingCode: string | null, phone: string | null, meta: RequestMeta): Promise<BookingFindDto> {
+    if (bookingCode) {
+      const code = normalizeBookingCode(bookingCode);
+      const windowMs = BOOKING_LIMITS.lookupWindowMs;
+      const valid = BOOKING_CODE_PATTERN.test(code);
+      const [ipFailures, codeFailures] = await Promise.all([
+        meta.ip ? this.log.countRecent(["BOOKING_LOOKUP_FAILED"], windowMs, { ip: meta.ip }) : 0,
+        valid ? this.log.countRecent(["BOOKING_LOOKUP_FAILED"], windowMs, { identifier: code }) : 0,
+      ]);
+      if (ipFailures >= BOOKING_LIMITS.lookupFailuresPerIp || codeFailures >= BOOKING_LIMITS.lookupFailuresPerCode) {
+        await this.log.event("BOOKING_LOOKUP_THROTTLED", "WARNING", meta, { identifier: valid ? code : null });
+        throw new TooManyRequestsError(windowMs / 1000);
+      }
+      const row = valid ? await this.repo.findByCode(code) : null;
+      if (!row) {
+        await this.log.event("BOOKING_LOOKUP_FAILED", "WARNING", meta, { identifier: valid ? code : null });
+        throw new NotFoundError("No booking matches this Booking ID", "BOOKING_NOT_FOUND");
+      }
+      return { by: "CODE", bookings: [toBrief(await this.expireIfDue(row), true)] };
+    }
+    const normalized = normalizePhone(phone ?? "");
+    if (!normalized) throw new ValidationError({ phone: "INVALID_FORMAT" });
+    const hour = 60 * 60_000;
+    const tag = `phone:${(await sha256Hex(normalized)).slice(0, 16)}`; // the number is logged only as a hash
+    const [byIp, byPhone] = await Promise.all([
+      meta.ip ? this.log.countRecent(["BOOKING_FIND_PHONE"], hour, { ip: meta.ip }) : 0,
+      this.log.countRecent(["BOOKING_FIND_PHONE"], hour, { identifier: tag }),
+    ]);
+    if (byIp >= BOOKING_LIMITS.phoneFindsPerIpPerHour || byPhone >= BOOKING_LIMITS.phoneFindsPerPhonePerHour) {
+      throw new TooManyRequestsError(30 * 60);
+    }
+    const ids = await this.repo.activeIdsByPhone(normalized, todayIn(await this.quotes.timezone(), this.clock()), BOOKING_LIMITS.codeRequestBookings);
+    await this.log.event("BOOKING_FIND_PHONE", "INFO", meta, { identifier: tag, details: { bookings: ids.length } });
+    const rows = (await Promise.all(ids.map((id) => this.repo.findById(id)))).filter((r): r is BookingRow => r !== null);
+    return { by: "PHONE", bookings: await Promise.all(rows.map(async (r) => toBrief(await this.expireIfDue(r), false))) };
+  }
+
+  /**
    * The guest's own booking, proven by Booking ID + phone. Shared by lookup and slip upload,
    * with the same enumeration throttle (failures per code and per IP).
    */
@@ -377,6 +438,34 @@ export class BookingService {
       throw new NotFoundError("No booking matches this Booking ID and phone number", "BOOKING_NOT_FOUND");
     }
     return this.expireIfDue(row);
+  }
+
+  /**
+   * "Forgot Booking ID": the Booking IDs of this phone's current and upcoming bookings are e-mailed to the
+   * address given on each booking — never shown on the page. The answer is the same whether or not anything
+   * matched, so the page cannot be used to learn whether a number has a booking.
+   */
+  async requestCode(phone: string, meta: RequestMeta): Promise<void> {
+    const normalized = normalizePhone(phone);
+    if (!normalized) throw new ValidationError({ phone: "INVALID_FORMAT" });
+    const hour = 60 * 60_000;
+    // The phone is logged only as a hash.
+    const tag = `phone:${(await sha256Hex(normalized)).slice(0, 16)}`;
+    const [byIp, byPhone] = await Promise.all([
+      meta.ip ? this.log.countRecent(["BOOKING_CODE_REQUESTED"], hour, { ip: meta.ip }) : 0,
+      this.log.countRecent(["BOOKING_CODE_REQUESTED"], hour, { identifier: tag }),
+    ]);
+    if (byIp >= BOOKING_LIMITS.codeRequestsPerIpPerHour || byPhone >= BOOKING_LIMITS.codeRequestsPerPhonePerHour) {
+      throw new TooManyRequestsError(30 * 60);
+    }
+    const now = this.clock();
+    const at = iso(now);
+    const ids = await this.repo.activeIdsByPhone(normalized, todayIn(await this.quotes.timezone(), now), BOOKING_LIMITS.codeRequestBookings);
+    const mails = this.outbox?.bookingCode ? (await Promise.all(ids.map((id) => this.outbox!.bookingCode!(id, at)))).flat() : [];
+    await this.db.batch([
+      this.log.eventStatement("BOOKING_CODE_REQUESTED", "INFO", meta, { identifier: tag, details: { bookings: ids.length } }),
+      ...mails,
+    ]);
   }
 
   /** Re-reads a booking the guest has already proven access to. */

@@ -203,6 +203,14 @@ export class EmailRepository {
       "b.booking_status = 'CANCELLED' AND b.cancelled_at = ?6", [now]);
   }
 
+  /**
+   * The guest asked for their Booking ID again (lookup page). At most one e-mail per booking per hour:
+   * the hour is part of the idempotency key.
+   */
+  bookingCodeStatement(bookingId: string, now: string): D1PreparedStatementLike {
+    return this.guestOutbox("GUEST_BOOKING_CODE", `GUEST_BOOKING_CODE:${bookingId}:${now.slice(0, 13)}`, bookingId, null, now, "1 = 1", []);
+  }
+
   /** A test may be retried twice by the cron (a passing network fault on the first try does not fail it). */
   insertTestStatement(id: string, recipientId: string, language: string, now: string): D1PreparedStatementLike {
     return this.db

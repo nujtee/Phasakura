@@ -161,6 +161,19 @@ export class BookingRepository {
     return this.readBooking("booking_code = ?1", code);
   }
 
+  /** Current and upcoming bookings made with this phone (for "forgot Booking ID": the code goes to the booking's e-mail). */
+  async activeIdsByPhone(phoneNormalized: string, today: string, limit: number): Promise<string[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT id FROM bookings
+          WHERE customer_phone_normalized = ?1 AND check_out >= ?2 AND booking_status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN')
+          ORDER BY check_in LIMIT ?3`,
+      )
+      .bind(phoneNormalized, today, limit)
+      .all<{ id: string }>();
+    return results.map((r) => r.id);
+  }
+
   findById(id: string): Promise<BookingRow | null> {
     return this.readBooking("id = ?1", id);
   }

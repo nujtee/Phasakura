@@ -2,7 +2,7 @@ import type {
   CreateBookingRequest,
   FoodCatalogueDto,
   FoodSelection,
-  PublicBookingDto,
+  BookingFindDto, PublicBookingDto,
   QuoteDto,
   QuoteRequest,
 } from "../../shared/booking-types.ts";
@@ -26,6 +26,16 @@ export function fetchQuote(body: QuoteRequest, signal?: AbortSignal) {
 
 export function createBooking(body: CreateBookingRequest) {
   return apiRequest<PublicBookingDto>("POST", "/api/public/bookings", body);
+}
+
+/** "Forgot Booking ID": the server e-mails it to the booking's address; the answer is the same either way. */
+export function requestBookingCode(phone: string) {
+  return apiRequest<{ ok: true }>("POST", "/api/public/bookings/forgot-code", { phone });
+}
+
+/** Only one of the two: status and dates, nothing that acts on the booking. */
+export function findBookings(input: { bookingCode: string } | { phone: string }) {
+  return apiRequest<BookingFindDto>("POST", "/api/public/bookings/find", input);
 }
 
 export function lookupBooking(bookingCode: string, phone: string) {
