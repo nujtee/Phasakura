@@ -42,6 +42,15 @@ export interface OutboxLike {
   moveEvent?(requestId: string, bookingId: string, event: MoveEvent, now: string): Promise<D1PreparedStatementLike[]>;
   /** The guest asked for their Booking ID again (lookup page). */
   bookingCode?(bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
+  /** Before paying, the guest added stays to their booking (inside that batch; marker: updated_at = now). */
+  staysAdded?(bookingId: string, key: string, payload: StaysAddedPayload, now: string): Promise<D1PreparedStatementLike[]>;
+}
+
+/** What was added, for the messages (the booking itself is read at send time). */
+export interface StaysAddedPayload {
+  stays: string[];
+  addedSatang: number;
+  previousTotalSatang: number;
 }
 
 export type MoveEvent = "REQUESTED" | "SLIP" | "APPROVED" | "REJECTED" | "FAILED";
@@ -71,6 +80,9 @@ export class CompositeOutbox implements OutboxLike {
   }
   async bookingCode(bookingId: string, now: string) {
     return (await Promise.all(this.parts.map((p) => p.bookingCode?.(bookingId, now) ?? Promise.resolve([])))).flat();
+  }
+  async staysAdded(bookingId: string, key: string, payload: StaysAddedPayload, now: string) {
+    return (await Promise.all(this.parts.map((p) => p.staysAdded?.(bookingId, key, payload, now) ?? Promise.resolve([])))).flat();
   }
 }
 

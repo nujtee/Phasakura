@@ -164,6 +164,15 @@ export class EmailRepository {
     ];
   }
 
+  /** Stays added before paying (same batch; marker: the booking's updated_at = now): staff + guest. One per addition. */
+  staysAddedStatements(bookingId: string, key: string, payload: unknown, now: string): D1PreparedStatementLike[] {
+    return [
+      this.staffOutbox("STAYS_ADDED", "notify_booking", `STAYS_ADDED:${bookingId}:${key}:staff:`, bookingId, payload, now, now,
+        "EXISTS (SELECT 1 FROM bookings b WHERE b.id = ?3 AND b.updated_at = ?7)", [now]),
+      this.guestOutbox("GUEST_STAYS_ADDED", `GUEST_STAYS_ADDED:${bookingId}:${key}`, bookingId, payload, now, "b.updated_at = ?6", [now]),
+    ];
+  }
+
   /** PENDING → CONFIRMED in this batch (marker: confirmed_at = now): staff + guest. */
   bookingConfirmedStatements(bookingId: string, now: string): D1PreparedStatementLike[] {
     return [

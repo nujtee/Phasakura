@@ -164,4 +164,54 @@ describe("guest adds stays to an unpaid booking", () => {
     assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM batch_guards")!.n, 0);
     void b;
   });
+
+  it("staff (LINE + e-mail) and the guest (e-mail) hear about the added stays, once", async () => {
+    const { h, book, add } = setup();
+    h.env.APP_BASE_URL = "https://phasakura.test";
+    const root = await h.login(await h.user({ id: "root_add_n", roles: ["SUPER_ADMIN"] }));
+    h.lineSecrets();
+    h.db.run("UPDATE line_settings SET enabled = 1");
+    assert.equal((await h.api("POST", "/api/admin/line/recipients", { token: root,
+      body: { targetId: `C${"7a".repeat(16)}`, name: "Owners", language: "th", notifyBooking: true } })).status, 201);
+    h.emailKey();
+    await h.api("PUT", "/api/admin/email/settings", { token: root, body: { enabled: true, guestEnabled: true, fromEmail: "booking@phasakura.test" } });
+    assert.equal((await h.api("POST", "/api/admin/email/recipients", { token: root, body: { email: "owner@phasakura.test", name: "Owner", language: "th" } })).status, 201);
+
+    const b = await book([house1]);
+    const idem = key();
+    const res = await add(b, [house2], {}, idem);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal((await add(b, [house2], {}, idem)).status, 200, "replayed");
+    const count = (table: string, type: string) => h.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE notification_type = ?`, type)!.n;
+    assert.equal(count("notification_logs", "STAYS_ADDED"), 1);
+    assert.equal(count("email_logs", "STAYS_ADDED"), 1);
+    assert.equal(count("email_logs", "GUEST_STAYS_ADDED"), 1);
+
+    h.advance(2 * 60_000);
+    await h.app.scheduled(h.env);
+    const pushed = JSON.stringify(h.line.pushes);
+    assert.match(pushed, /ลูกค้าเพิ่มที่พักในการจอง/);
+    assert.match(pushed, /House 02/);
+    assert.ok(pushed.includes(b.bookingCode));
+    const staffMail = h.resend.requests.find((r) => /ลูกค้าเพิ่มที่พักในการจอง/.test(String(r.json!.subject)));
+    assert.ok(staffMail, h.resend.requests.map((r) => r.json!.subject).join(" | "));
+    const guestMail = h.resend.requests.find((r) => /เพิ่มที่พักในการจอง .* แล้ว/.test(String(r.json!.subject)));
+    assert.ok(guestMail, h.resend.requests.map((r) => r.json!.subject).join(" | "));
+    assert.equal((guestMail!.json!.to as string[])[0], "somchai@example.test");
+    const text = String(guestMail!.json!.text);
+    assert.match(text, /House 01/);
+    assert.match(text, /House 02/);
+    assert.ok(text.includes((res.data.totalSatang / 100).toLocaleString("en-US")), "the new amount");
+  });
+
+  it("a refused addition sends nothing", async () => {
+    const { h, book, add } = setup();
+    const root = await h.login(await h.user({ id: "root_add_x", roles: ["SUPER_ADMIN"] }));
+    h.emailKey();
+    await h.api("PUT", "/api/admin/email/settings", { token: root, body: { enabled: true, guestEnabled: true, fromEmail: "booking@phasakura.test" } });
+    const b = await book([house1]);
+    await book([house2], "0899999999");
+    assert.equal((await add(b, [house2])).status, 409);
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM email_logs WHERE notification_type LIKE '%STAYS_ADDED'")!.n, 0);
+  });
 });

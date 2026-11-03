@@ -9,6 +9,8 @@ import type { LocaleCode } from "../../shared/i18n/locales.ts";
 const th = {
   subjects: {
     NEW_BOOKING: "การจองใหม่ {code} — {name}",
+    STAYS_ADDED: "ลูกค้าเพิ่มที่พักในการจอง {code} — {name}",
+    GUEST_STAYS_ADDED: "เพิ่มที่พักในการจอง {code} แล้ว — กรุณาชำระยอดใหม่",
     BOOKING_MOVE: "เลื่อนวันเข้าพัก {code} — {name}",
     PAYMENT_REVIEW: "การชำระเงินรอตรวจสอบ — {code}",
     PAYMENT_CONFIRMED: "ชำระเงินแล้ว — ยืนยันการจอง {code}",
@@ -20,6 +22,8 @@ const th = {
     TEST: "ทดสอบอีเมลแจ้งเตือน",
   } as Record<string, string>,
   createdTitle: "ได้รับการจองของคุณแล้ว",
+  addedTitle: "เพิ่มที่พักในการจองของคุณแล้ว",
+  addedIntro: "คุณ{name} ได้เพิ่มที่พักในการจองนี้แล้ว (Booking ID เดิม) ด้านล่างคือรายการทั้งหมดและยอดที่ต้องชำระใหม่ กรุณาชำระเงินเพื่อยืนยันการจอง",
   codeTitle: "Booking ID ของคุณ",
   codeIntro: "คุณ{name} ขอรับ Booking ID จากหน้าตรวจสอบการจอง นี่คือรายละเอียดการจองของคุณ หากคุณไม่ได้ขอ ไม่ต้องดำเนินการใด ๆ",
   createdIntro: "ขอบคุณคุณ{name} เราได้รับการจองแล้ว กรุณาชำระเงินเพื่อยืนยันการจอง",
@@ -40,6 +44,8 @@ type Texts = typeof th;
 const en: Texts = {
   subjects: {
     NEW_BOOKING: "New booking {code} — {name}",
+    STAYS_ADDED: "Guest added stays to booking {code} — {name}",
+    GUEST_STAYS_ADDED: "Stays added to booking {code} — please pay the new amount",
     BOOKING_MOVE: "Stay moved {code} — {name}",
     PAYMENT_REVIEW: "Payment to review — {code}",
     PAYMENT_CONFIRMED: "Paid — booking {code} confirmed",
@@ -51,6 +57,8 @@ const en: Texts = {
     TEST: "Test e-mail notification",
   },
   createdTitle: "We received your booking",
+  addedTitle: "Stays added to your booking",
+  addedIntro: "{name}, the stays you chose were added to this booking (same Booking ID). Below is everything it now holds and the new amount to pay. Please pay to confirm your booking.",
   codeTitle: "Your Booking ID",
   codeIntro: "{name}, you asked for your Booking ID on the booking check page. Here is your booking. If you did not ask, you can ignore this e-mail.",
   createdIntro: "Thank you, {name}. Your booking is reserved — please pay to confirm it.",
@@ -69,6 +77,8 @@ const en: Texts = {
 const zh: Texts = {
   subjects: {
     NEW_BOOKING: "新预订 {code} — {name}",
+    STAYS_ADDED: "客人在预订 {code} 中加订住宿 — {name}",
+    GUEST_STAYS_ADDED: "已在预订 {code} 中加订住宿 — 请支付新金额",
     BOOKING_MOVE: "改期 {code} — {name}",
     PAYMENT_REVIEW: "待审核付款 — {code}",
     PAYMENT_CONFIRMED: "已付款 — 预订 {code} 已确认",
@@ -80,6 +90,8 @@ const zh: Texts = {
     TEST: "测试邮件通知",
   },
   createdTitle: "已收到您的预订",
+  addedTitle: "已在您的预订中加订住宿",
+  addedIntro: "{name}，您选择的住宿已加入此预订（预订编号不变）。以下是全部内容和新的应付金额，请付款以确认预订。",
   codeTitle: "您的预订编号",
   codeIntro: "{name}，您在查询预订页面申请了预订编号。以下是您的预订。如非本人操作，请忽略此邮件。",
   createdIntro: "{name}，感谢您的预订。请付款以确认预订。",

@@ -9,7 +9,7 @@ import { ConflictError, NotFoundError, TooManyRequestsError } from "../http/erro
 import { emailTexts, fillText, renderEmail, type RenderedEmail } from "../email/email-templates.ts";
 import type { EmailSender } from "../email/sender.ts";
 import {
-  guestCancelledText, guestConfirmedText, guestPaymentRejectedText, LineFormatter, balanceReceivedText, guestBalanceRejectedText, stillDue, moveText, newBookingText, paymentConfirmedText, paymentReviewText,
+  guestCancelledText, guestConfirmedText, guestPaymentRejectedText, LineFormatter, balanceReceivedText, guestBalanceRejectedText, stillDue, moveText, newBookingText, staysAddedText, paymentConfirmedText, paymentReviewText,
   type MsgBooking,
 } from "../line/line-templates.ts";
 import type { EmailFlag, EmailLogListRow, EmailLogRow, EmailRecipientRow, EmailRepository, EmailSettingsRow } from "../repositories/email.repository.ts";
@@ -36,6 +36,7 @@ const SIMPLE_EMAIL = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{
 
 const FLAG_OF: Partial<Record<EmailType, EmailFlag>> = {
   NEW_BOOKING: "notify_booking",
+  STAYS_ADDED: "notify_booking",
   BOOKING_MOVE: "notify_booking",
   OTA_BOOKING: "notify_booking",
   PAYMENT_REVIEW: "notify_payment",
@@ -59,6 +60,10 @@ export class EmailOutbox implements OutboxLike {
 
   async bookingConfirmed(bookingId: string, now: string): Promise<D1PreparedStatementLike[]> {
     return (await this.on()) ? this.repo.bookingConfirmedStatements(bookingId, now) : [];
+  }
+
+  async staysAdded(bookingId: string, key: string, payload: unknown, now: string): Promise<D1PreparedStatementLike[]> {
+    return (await this.on()) ? this.repo.staysAddedStatements(bookingId, key, payload, now) : [];
   }
 
   async slipSubmitted(paymentId: string, bookingId: string, now: string): Promise<D1PreparedStatementLike[]> {
@@ -450,6 +455,27 @@ export class EmailService {
         const event = String(payload.event ?? "REQUESTED");
         return fromLine("BOOKING_MOVE", moveText(f, b, r, event, null),
           { label: e.openAdmin, url: this.link(lang, (l) => (event === "SLIP" ? `/${l.path}/admin/slips` : `/${l.path}/admin/bookings/${b.code}`)) });
+      }
+      case "STAYS_ADDED":
+        if (!b) return { skip: "NOT_RELEVANT" };
+        return fromLine("STAYS_ADDED", staysAddedText(f, b, payload, null), { label: e.openAdmin, url: this.link(lang, (l) => `/${l.path}/admin/bookings/${b.code}`) });
+      case "GUEST_STAYS_ADDED": {
+        // Only while the guest still has to pay (the booking as it is now: every stay and the new amount).
+        if (!b || b.bookingStatus !== "PENDING") return { skip: "NOT_RELEVANT" };
+        const fee = await this.lineRepo.bookingAppFee(row.booking_id!);
+        const body = [
+          fillText(e.addedIntro, { name: b.customerName }),
+          "",
+          f.bookingBlock(b, { customer: false }),
+          "",
+          ...(fee ? [`${fillText(e.appFee, { n: fee.units })}: ${f.money(fee.totalSatang)}`] : []),
+          `${e.amountDue}: ${f.money(b.depositSatang ?? b.totalSatang)}`,
+          ...(b.expiresAt ? [fillText(e.payBy, { time: f.dateTime(b.expiresAt) })] : []),
+          "",
+          e.keepCode,
+        ].join("\n");
+        return renderEmail({ lang, subject: subject("GUEST_STAYS_ADDED"), title: e.addedTitle, body, siteName: site.name,
+          button: lookup(b.code) ? { label: e.payNow, url: lookup(b.code)! } : null });
       }
       case "NEW_BOOKING":
         if (!b) return { skip: "NOT_RELEVANT" };

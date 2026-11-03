@@ -20,6 +20,7 @@ export const NOTIFICATION_TYPES = [
   "PAYMENT_REVIEW", // staff: a slip waits for manual review
   "PAYMENT_CONFIRMED", // staff: a booking is paid and confirmed
   "NEW_BOOKING", // staff: a guest made a booking (awaiting payment)
+  "STAYS_ADDED", // staff: before paying, a guest added stays to their booking (same Booking ID, new total)
   "BOOKING_MOVE", // staff: a guest moves the stay (asked / slip sent / moved / turned down / failed)
   "GUEST_CONFIRMED", // guest: payment received, booking confirmed
   "GUEST_PAYMENT_REJECTED", // guest: the slip was not accepted (with the reason) — pay again
