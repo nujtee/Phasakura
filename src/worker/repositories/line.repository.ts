@@ -403,6 +403,11 @@ export class LineRepository {
   }
 
   /** A guest booked (same batch as the booking insert; marker: created_at = now). */
+  /** An OTA booking / nights (ota-notice.ts): staff chats that want booking news. `key` makes it unique per event. */
+  otaNoticeStatement(key: string, payload: unknown, now: string): D1PreparedStatementLike {
+    return this.staffOutbox("OTA_BOOKING", "notify_booking", `OTA_BOOKING:${key}:staff:`, null, payload, now, now, "1 = 1", []);
+  }
+
   newBookingStatement(bookingId: string, now: string): D1PreparedStatementLike {
     return this.staffOutbox("NEW_BOOKING", "notify_booking", `NEW_BOOKING:${bookingId}:staff:`, bookingId, null, now, now,
       "EXISTS (SELECT 1 FROM bookings b WHERE b.id = ?3 AND b.created_at = ?7)", [now]);

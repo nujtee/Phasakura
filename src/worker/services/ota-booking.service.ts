@@ -11,6 +11,9 @@ import { newId } from "../security/tokens.ts";
 import { iso, type AuthContext, type Clock, type RequestMeta } from "./auth-context.ts";
 import type { AuthorizationService } from "./authorization.service.ts";
 import { generateBookingCode } from "./booking.service.ts";
+import { type OtaNoticePayload } from "../channels/ota-notice.ts";
+import { LineRepository } from "../repositories/line.repository.ts";
+import { EmailRepository } from "../repositories/email.repository.ts";
 /** Staff LINE only: no Meta Purchase event and no e-mail to the OTA guest (the OTA talks to its guest). */
 export interface OtaOutbox {
   bookingCreated(bookingId: string, now: string): Promise<D1PreparedStatementLike[]>;
@@ -126,7 +129,10 @@ export class OtaBookingService {
 
     if (rev.status === "cancelled") {
       const statements: D1PreparedStatementLike[] = [];
-      if (active) statements.push(...(await this.cancelStatements(active, `Cancelled on ${rev.otaName}`, now)));
+      if (active) {
+        statements.push(...(await this.cancelStatements(active, `Cancelled on ${rev.otaName}`, now)));
+        statements.push(...this.notice("CANCELLED", base, active.booking_code, await this.unitsText(rev.rooms.map((r) => r.roomTypeId))));
+      }
       statements.push(this.repo.upsertStatement({ ...base, bookingId: existing?.booking_id ?? null, status: "CANCELLED", problem: existing?.problem ?? null }));
       statements.push(this.log.auditStatement(null, "OTA_BOOKING_CANCELLED", "channels", base.id, existing ? { status: existing.status } : null,
         { ota: rev.otaName, code: rev.otaCode, booking: existing?.booking_code ?? null }, SYSTEM));
@@ -160,6 +166,8 @@ export class OtaBookingService {
       if (active) statements.push(...(await this.cancelStatements(active, `Changed on ${rev.otaName} (new booking ${code})`, now)));
       statements.push(...(await this.bookingStatements(rev, stays, bookingId, code, now)));
       statements.push(this.repo.upsertStatement({ ...base, bookingId, status: "ACTIVE", problem: null }));
+      // Staff hear about it on LINE and by e-mail (booking news).
+      statements.push(...this.notice("NEW", base, code, await this.unitsText(stays.map((s) => s.roomTypeId))));
       statements.push(this.log.auditStatement(null, active ? "OTA_BOOKING_MODIFIED" : "OTA_BOOKING_CREATED", "channels", base.id,
         active ? { booking: active.booking_code } : null, { ota: rev.otaName, code: rev.otaCode, booking: code }, SYSTEM));
       try {
@@ -180,12 +188,38 @@ export class OtaBookingService {
 
   // ================================================================ helpers
 
+  /** LINE + e-mail to staff who want booking news (ota-notice.ts); one per revision and event. */
+  private notice(event: OtaNoticePayload["event"], base: { revisionId: string; otaName: string; arrival: string; departure: string;
+    amountMinor: number; currency: string; guestName: string | null; now: string }, code: string | null, units: string): D1PreparedStatementLike[] {
+    const payload: OtaNoticePayload = {
+      event, source: "CHANNEX", channel: base.otaName, units, checkIn: base.arrival, checkOut: base.departure,
+      nights: Math.max(1, diffDays(base.arrival, base.departure)), guestName: base.guestName || null,
+      amountMinor: base.amountMinor, currency: base.currency, bookingCode: code,
+    };
+    const key = `CHANNEX:${base.revisionId}:${event}`;
+    return [new LineRepository(this.db).otaNoticeStatement(key, payload, base.now), new EmailRepository(this.db).otaNoticeStatement(key, payload, base.now)];
+  }
+
+  /** "HOUSE-01 · บ้านซากุระ, …" for the mapped room types. */
+  private async unitsText(roomTypeIds: (string | null | undefined)[]): Promise<string> {
+    const map = new Map((await this.channels.channexMap()).map((m) => [m.room_type_id, m.unit_id]));
+    const ids = [...new Set(roomTypeIds.map((r) => (r ? map.get(r) : undefined)).filter((x): x is string => !!x))];
+    if (!ids.length) return "";
+    const [names, units] = await Promise.all([this.repo.unitNames(ids), this.channels.channexUnits()]);
+    return ids.map((id) => {
+      const code = units.find((u) => u.id === id)?.unit_code;
+      const name = names.get(id);
+      return code && name && name !== code ? `${code} · ${name}` : (name ?? code ?? id);
+    }).join(", ");
+  }
+
   /** Keeps the revision as a problem; a booking already here stays as it was (staff decide). */
   private async problem(base: Omit<Parameters<OtaBookingRepository["upsertStatement"]>[0], "bookingId" | "status" | "problem">,
     existing: OtaBookingRow | null, active: OtaBookingRow | null, status: "CONFLICT" | "UNMAPPED", problem: string): Promise<OtaBookingStatus> {
     const text = active ? `${problem} — the booking ${active.booking_code} here is unchanged` : problem;
     await this.db.batch([
       this.repo.upsertStatement({ ...base, bookingId: active?.booking_id ?? existing?.booking_id ?? null, status, problem: text }),
+      ...this.notice("CONFLICT", base, active?.booking_code ?? null, ""),
       this.log.eventStatement("OTA_BOOKING_CONFLICT", "CRITICAL", SYSTEM, {
         identifier: `${base.otaName}:${base.otaCode ?? base.channexBookingId}`,
         details: { status, problem: text, arrival: base.arrival, departure: base.departure, guest: base.guestName },
@@ -252,7 +286,7 @@ export class OtaBookingService {
       );
     }
     if (paid) statements.push(this.repo.insertOtaPaymentStatement({ id: newId(), bookingId, amount: subtotal, reference: `${rev.otaName} ${rev.otaCode ?? ""}`.trim(), now }));
-    if (this.notifications) statements.push(...(await this.notifications.bookingCreated(bookingId, now)));
+    // Staff hear about it through the OTA notice (LINE + e-mail) written next to this booking, not the web-booking one.
     return statements;
   }
 }

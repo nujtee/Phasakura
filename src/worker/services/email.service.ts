@@ -23,6 +23,7 @@ import { REVIEW_DELAY_MS, RETRY_DELAYS_MIN, type SiteInfo } from "./notification
 import type { SecurityLogService } from "./security-log.service.ts";
 import type { CreditRepository } from "../repositories/credit.repository.ts";
 import { CREDIT_NOTICE_TYPES, creditNoticePath, renderCreditNotice } from "../credit/credit-notices.ts";
+import { OTA_BOOKING_NOTICE, renderOtaNotice, type OtaNoticePayload } from "../channels/ota-notice.ts";
 import { MARKETING_REPORT_NOTICE, renderReportNotice } from "../ai-marketing/report-notice.ts";
 import { AiMarketingRepository } from "../repositories/ai-marketing.repository.ts";
 
@@ -36,6 +37,7 @@ const SIMPLE_EMAIL = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{
 const FLAG_OF: Partial<Record<EmailType, EmailFlag>> = {
   NEW_BOOKING: "notify_booking",
   BOOKING_MOVE: "notify_booking",
+  OTA_BOOKING: "notify_booking",
   PAYMENT_REVIEW: "notify_payment",
   PAYMENT_CONFIRMED: "notify_payment",
 };
@@ -419,6 +421,14 @@ export class EmailService {
           const url = this.link(lang, (l) => `/${l.path}/admin/${creditNoticePath(m)}`);
           return url ? { label: m.linkLabel, url } : null;
         })() });
+    }
+
+    // A booking / nights from an OTA (iCal calendar or Channex).
+    if (row.notification_type === OTA_BOOKING_NOTICE) {
+      const n = renderOtaNotice(payload as Partial<OtaNoticePayload>, lang);
+      if ("skip" in n) return n;
+      const url = this.link(lang, (l) => `/${l.path}/admin/${n.path}`);
+      return renderEmail({ lang, subject: n.subject, title: n.title, body: n.body, siteName: site.name, button: url ? { label: n.linkLabel, url } : null });
     }
 
     // Marketing report ready (AI Marketing A4): totals + the link to the full report.
