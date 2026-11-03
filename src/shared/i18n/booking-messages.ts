@@ -341,6 +341,7 @@ const th = {
   errors: {
     SITE_SUSPENDED: "ขณะนี้ปิดรับจองออนไลน์ชั่วคราว กรุณาติดต่อที่พักโดยตรง",
     DUPLICATE_SLIP: "สลิปนี้ถูกส่งมาแล้ว",
+    NOT_A_SLIP: "รูปที่แนบไม่ใช่สลิปโอนเงิน กรุณาแนบสลิปจากแอปธนาคารที่มี QR Code ครบ (ไม่ครอปหรือแก้ไขรูป) หากโอนแล้วแต่ยังแนบไม่ผ่าน กรุณาติดต่อที่พัก",
     BOOKING_NOT_PAYABLE: "การจองนี้ไม่ได้รอชำระเงินแล้ว (หมดเวลา ยกเลิก หรือชำระแล้ว)",
     PAYPAL_NOT_CONFIGURED: "ขณะนี้ยังชำระด้วย PayPal ไม่ได้ กรุณาเลือกช่องทางอื่น",
     PAYPAL_NOT_OFFERED: "ขณะนี้ยังชำระด้วย PayPal ไม่ได้ กรุณาเลือกช่องทางอื่น",
@@ -743,6 +744,7 @@ const en: BookingMessages = {
   errors: {
     SITE_SUSPENDED: "Online booking is temporarily unavailable. Please contact the property directly.",
     DUPLICATE_SLIP: "This slip was already submitted.",
+    NOT_A_SLIP: "This picture is not a transfer slip. Please attach the slip from your banking app with its QR code fully visible (not cropped or edited). If you have paid and it still fails, please contact us.",
     BOOKING_NOT_PAYABLE: "This booking is no longer waiting for payment (expired, cancelled or already paid).",
     PAYPAL_NOT_CONFIGURED: "PayPal is not available right now. Please choose another way to pay.",
     PAYPAL_NOT_OFFERED: "PayPal is not available right now. Please choose another way to pay.",
@@ -1143,6 +1145,7 @@ const zhCN: BookingMessages = {
   errors: {
     SITE_SUSPENDED: "在线预订暂时不可用，请直接联系住宿。",
     DUPLICATE_SLIP: "此凭证已提交过。",
+    NOT_A_SLIP: "所附图片不是转账凭证。请上传银行 App 中带完整二维码的转账凭证（请勿裁剪或修改）。如已转账仍无法上传，请联系我们。",
     BOOKING_NOT_PAYABLE: "此预订已不再等待付款（已过期、已取消或已付款）。",
     PAYPAL_NOT_CONFIGURED: "暂时无法使用 PayPal，请选择其他付款方式。",
     PAYPAL_NOT_OFFERED: "暂时无法使用 PayPal，请选择其他付款方式。",
