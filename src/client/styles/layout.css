@@ -321,7 +321,8 @@
 
 @media (min-width: 768px) {
   .site-footer__inner {
-    grid-template-columns: 1.4fr 2fr auto;
+    /* The menu column wraps its links instead of growing (five links): name and contact keep their room. */
+    grid-template-columns: 1.4fr 2fr minmax(0, 1fr);
     align-items: start;
   }
 }
