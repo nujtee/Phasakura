@@ -19,7 +19,7 @@
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
 }
 
-@media (min-width: 900px) {
+@media (min-width: 1024px) {
   .search-toggle {
     border-color: transparent;
     background: transparent;

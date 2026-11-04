@@ -72,7 +72,7 @@ describe("i18n dictionaries", () => {
   });
 
   it("main menu labels follow the spec", () => {
-    assert.deepEqual(Object.values(getMessages("th").nav), ["หน้าหลัก", "คลังภาพ", "จองที่พัก", "เกี่ยวกับเรา"]);
+    assert.deepEqual(Object.values(getMessages("th").nav), ["หน้าหลัก", "คลังภาพ", "จองที่พัก", "เกี่ยวกับเรา", "ตรวจสอบการจอง"]);
     assert.equal(getMessages("en").nav.booking, "Booking");
     assert.equal(getMessages("zh-CN").nav.booking, "立即预订");
   });

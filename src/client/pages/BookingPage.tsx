@@ -4,7 +4,6 @@ import type { FoodCatalogueDto, PublicBookingDto, QuoteDto, QuoteRequest } from 
 import { MAX_STAYS_PER_BOOKING } from "../../shared/booking-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
 import { isIsoDate } from "../../shared/dates.ts";
-import { bookingLookupPath } from "../../shared/routes.ts";
 import { campingItem, foodChangeEvents, quoteItems, unitItem } from "../analytics/booking-events.ts";
 import { track } from "../analytics/tracker.ts";
 import { readCampaign } from "../analytics/campaign.ts";
@@ -12,7 +11,6 @@ import { useSite } from "../site/SiteProvider.tsx";
 import { ApiError } from "../api/client.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
-import { Link } from "../router/Router.tsx";
 import { defaultStay, fetchAvailability, useAccommodations, type StayQuery } from "../accommodation/data.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill, StayPrice, UnitCard, type Availability } from "../accommodation/UnitCard.tsx";
@@ -604,7 +602,6 @@ export function BookingPage() {
           void search(q);
         }} />}
       {!availability && !addTo && <p className="notice" role="note">{bt.searchFirst}</p>}
-      {!addTo && <p className="lookup-link"><Link to={bookingLookupPath(locale)}>{bt.lookupLink} →</Link></p>}
       {notice === bt.errors.TOO_MANY_STAYS && <p role="alert" className="notice notice--error">{notice}</p>}
       {picks.length > 0 && (
         <StayPicks picks={picks} camping={data?.camping ?? null} campingName={data?.camping.name ?? t.accommodation.camping}

@@ -29,6 +29,8 @@ const VIEWPORTS = [
   { name: "tablet-768", width: 768, height: 1024, mobile: true },
   { name: "laptop-1024", width: 1024, height: 768, mobile: false },
   { name: "desktop-1440", width: 1440, height: 900, mobile: false },
+  // Just below the full header menu (from 1024px): the menu button, nothing wraps or overflows.
+  { name: "small-laptop-900", width: 900, height: 700, mobile: false },
 ];
 const PUBLIC = ["/th/", "/en/gallery", "/th/booking", "/en/accommodation/house-sakura", "/zh-cn/history", "/th/booking/lookup", "/en/no-such-page"];
 const ADMIN = ["/en/admin", "/en/admin/bookings", "/en/admin/calendar", "/th/admin/payments", "/en/admin/settings-theme", "/en/admin/reports"];

@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect } from "react";
 import { getMessages } from "../shared/i18n/index.ts";
-import { resolveRoute, type PublicPage, type SitePage } from "../shared/routes.ts";
+import { resolveRoute, type SitePage } from "../shared/routes.ts";
 import { AdminApp } from "./admin/AdminApp.tsx";
 import { Layout } from "./components/Layout.tsx";
+import type { NavKey } from "./components/navigation.ts";
 import { I18nProvider } from "./i18n/I18nProvider.tsx";
 import { AccommodationDetailPage } from "./pages/AccommodationDetailPage.tsx";
 import { BookingLookupPage } from "./pages/BookingLookupPage.tsx";
@@ -37,7 +38,7 @@ export function App() {
   const page: SitePage | null = route.kind === "page" ? route.page : null;
   const slug = route.kind === "page" ? route.slug : undefined;
   // Accommodation details live under the Booking section of the menu.
-  const navPage: PublicPage | null = page === "accommodation" || page === "bookingLookup" ? "booking" : page === "privacy" ? null : page;
+  const navPage: NavKey | null = page === "accommodation" ? "booking" : page === "privacy" ? null : page;
   const title = page ? t.pages[page].title : t.pages.notFound.title;
 
   return (
