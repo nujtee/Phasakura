@@ -5,7 +5,7 @@ import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 import { createLineApi, packMessages, retryKeyFor, type FetchLike, type LineApi, type LineTextMessage } from "../line/line-api.ts";
 import {
   checkinDigestBlocks, foodOrderText, guestCancelledText, guestCheckinText, guestConfirmedText, guestPaymentRejectedText, kitchenDigestBlocks, balanceReceivedText, guestBalanceRejectedText, stillDue,
-  LineFormatter, moveText, newBookingText, paymentConfirmedText, paymentReviewText, testText, type KitchenDish,
+  LineFormatter, moveText, newBookingText, staysAddedText, paymentConfirmedText, paymentReviewText, testText, type KitchenDish,
 } from "../line/line-templates.ts";
 import type { LineRepository, LineSettingsRow, NotificationRow, RecipientFlag } from "../repositories/line.repository.ts";
 import type { ReportRepository } from "../repositories/report.repository.ts";
@@ -34,6 +34,7 @@ const FLAG_OF: Record<string, RecipientFlag | null> = {
   PAYMENT_REVIEW: "notify_payment",
   PAYMENT_CONFIRMED: "notify_payment",
   NEW_BOOKING: "notify_booking",
+  STAYS_ADDED: "notify_booking",
   BOOKING_MOVE: "notify_booking",
   OTA_BOOKING: "notify_booking",
   TEST: null,
@@ -70,6 +71,11 @@ export class Outbox {
   async bookingCancelled(bookingId: string, wasConfirmed: boolean, now: string): Promise<D1PreparedStatementLike[]> {
     if (!(await this.on())) return [];
     return [...(wasConfirmed ? [this.repo.bookingCancelledStatement(bookingId, now)] : []), this.repo.guestCancelledStatement(bookingId, now)];
+  }
+
+  /** Stays added before paying → staff chats that want booking news. */
+  async staysAdded(bookingId: string, key: string, payload: unknown, now: string): Promise<D1PreparedStatementLike[]> {
+    return (await this.on()) ? [this.repo.staysAddedStatement(bookingId, key, payload, now)] : [];
   }
 
   /** Every new booking → staff chats that want it. */
@@ -368,6 +374,11 @@ class RenderContext {
         }
         const paid = row.booking_id ? await this.repo.latestPaidMethod(row.booking_id) : null;
         return text(paymentConfirmedText(f, b, paid?.method ?? null, paid?.channel ?? null));
+      }
+      case "STAYS_ADDED": {
+        const b = await one();
+        if (!b) return { skip: "NOT_RELEVANT" };
+        return text(staysAddedText(f, b, p, this.link(lang, (l) => `/${l.path}/admin/bookings/${b.code}`)));
       }
       case "NEW_BOOKING": {
         const b = await one();

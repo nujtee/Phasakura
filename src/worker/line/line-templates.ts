@@ -151,6 +151,10 @@ const th = {
   movePayBy: "ต้องโอนภายใน",
   reasonLabel: "เหตุผล",
   newBookingTitle: "🆕 การจองใหม่ — รอชำระเงิน",
+  staysAddedTitle: "➕ ลูกค้าเพิ่มที่พักในการจอง — รอชำระเงิน",
+  staysAddedLine: "เพิ่ม: {stays} (+{amount})",
+  previousTotal: "ยอดเดิม",
+  newTotal: "ยอดรวมใหม่",
   payBy: "ชำระภายใน",
   autoPassed: "ตรวจสลิปอัตโนมัติ: ถูกต้อง — รอแอดมินอนุมัติ",
   autoFailed: "ตรวจสลิปอัตโนมัติไม่ผ่าน: {reason} — กรุณาตรวจสอบ",
@@ -260,6 +264,10 @@ const en: Texts = {
   movePayBy: "Transfer by",
   reasonLabel: "Reason",
   newBookingTitle: "🆕 New booking — awaiting payment",
+  staysAddedTitle: "➕ Guest added stays to a booking — awaiting payment",
+  staysAddedLine: "Added: {stays} (+{amount})",
+  previousTotal: "Was",
+  newTotal: "New total",
   payBy: "Pay by",
   autoPassed: "Automatic slip check: correct — waiting for your approval",
   autoFailed: "Automatic slip check failed: {reason} — please review",
@@ -367,6 +375,10 @@ const zh: Texts = {
   movePayBy: "转账截止",
   reasonLabel: "原因",
   newBookingTitle: "🆕 新预订 — 待付款",
+  staysAddedTitle: "➕ 客人在预订中加订住宿 — 待付款",
+  staysAddedLine: "加订：{stays}（+{amount}）",
+  previousTotal: "原金额",
+  newTotal: "新总额",
   payBy: "付款截止",
   autoPassed: "自动核验凭证：正确 — 等待管理员批准",
   autoFailed: "自动核验凭证未通过：{reason} — 请人工审核",
@@ -613,6 +625,25 @@ export function newBookingText(f: LineFormatter, b: MsgBooking, link: string | n
     t.newBookingTitle,
     f.bookingBlock(b, { contact: true }),
     `${t.total}: ${f.money(b.totalSatang)}`,
+    ...depositLines(f, b, false),
+    ...(b.expiresAt ? [`${t.payBy}: ${f.dateTime(b.expiresAt)}`] : []),
+    ...(link ? ["", `${t.openAdmin}:`, link] : []),
+  ].join("\n");
+}
+
+/** Staff: before paying, the guest added stays to their booking — what was added, the booking as it is now, the new total. */
+export function staysAddedText(f: LineFormatter, b: MsgBooking, p: { stays?: unknown; addedSatang?: unknown; previousTotalSatang?: unknown }, link: string | null): string {
+  const t = f.t;
+  const stays = Array.isArray(p.stays) ? p.stays.filter((x): x is string => typeof x === "string").slice(0, 20).join(", ") : "";
+  const added = typeof p.addedSatang === "number" ? p.addedSatang : null;
+  const before = typeof p.previousTotalSatang === "number" ? p.previousTotalSatang : null;
+  return [
+    t.staysAddedTitle,
+    ...(stays && added !== null ? [fill(t.staysAddedLine, { stays, amount: f.money(added) })] : []),
+    "",
+    f.bookingBlock(b, { contact: true }),
+    ...(before !== null ? [`${t.previousTotal}: ${f.money(before)}`] : []),
+    `${t.newTotal}: ${f.money(b.totalSatang)}`,
     ...depositLines(f, b, false),
     ...(b.expiresAt ? [`${t.payBy}: ${f.dateTime(b.expiresAt)}`] : []),
     ...(link ? ["", `${t.openAdmin}:`, link] : []),

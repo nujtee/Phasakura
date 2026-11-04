@@ -274,6 +274,10 @@ export class BookingService {
       this.log.eventStatement("BOOKING_STAYS_ADDED", "INFO", meta, { identifier: marker, details: { bookingCode: row.booking_code, stays: q.items.length } }),
       this.log.auditStatement(null, "ADD_STAYS", "bookings", row.id, { totalSatang: row.total_satang },
         { bookingCode: row.booking_code, stays: q.items.map((it) => it.name), addedSatang: q.totalSatang, totalSatang: total }, meta),
+      // Staff (LINE + e-mail) and the guest (e-mail) hear about it — only if this batch really added the stays.
+      ...(this.outbox?.staysAdded
+        ? await this.outbox.staysAdded(row.id, input.idempotencyKey, { stays: q.items.map((it) => it.name), addedSatang: q.totalSatang, previousTotalSatang: row.total_satang }, at)
+        : []),
     ];
     try {
       await this.db.batch(statements);

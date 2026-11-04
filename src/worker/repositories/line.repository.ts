@@ -408,6 +408,12 @@ export class LineRepository {
     return this.staffOutbox("OTA_BOOKING", "notify_booking", `OTA_BOOKING:${key}:staff:`, null, payload, now, now, "1 = 1", []);
   }
 
+  /** Stays added before paying (same batch; marker: the booking's updated_at = now). One message per addition. */
+  staysAddedStatement(bookingId: string, key: string, payload: unknown, now: string): D1PreparedStatementLike {
+    return this.staffOutbox("STAYS_ADDED", "notify_booking", `STAYS_ADDED:${bookingId}:${key}:staff:`, bookingId, payload, now, now,
+      "EXISTS (SELECT 1 FROM bookings b WHERE b.id = ?3 AND b.updated_at = ?7)", [now]);
+  }
+
   newBookingStatement(bookingId: string, now: string): D1PreparedStatementLike {
     return this.staffOutbox("NEW_BOOKING", "notify_booking", `NEW_BOOKING:${bookingId}:staff:`, bookingId, null, now, now,
       "EXISTS (SELECT 1 FROM bookings b WHERE b.id = ?3 AND b.created_at = ?7)", [now]);
