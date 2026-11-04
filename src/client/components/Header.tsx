@@ -1,10 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { pagePath, type PublicPage } from "../../shared/routes.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link, useRouter } from "../router/Router.tsx";
 import { Brand } from "./Brand.tsx";
 import { LanguageSwitcher } from "./LanguageSwitcher.tsx";
-import { MAIN_MENU } from "./navigation.ts";
+import { MAIN_MENU, type NavKey } from "./navigation.ts";
 import { SearchDialog } from "../search/SearchDialog.tsx";
 import { getSearchMessages } from "../../shared/i18n/search-messages.ts";
 
@@ -12,7 +11,7 @@ import { getSearchMessages } from "../../shared/i18n/search-messages.ts";
  * Desktop: Logo · Home · Gallery · Booking · History · Language
  * Mobile : Logo · Hamburger (menu panel with the same links + language)
  */
-export function Header({ currentPage }: { currentPage: PublicPage | null }) {
+export function Header({ currentPage }: { currentPage: NavKey | null }) {
   const { locale, t } = useI18n();
   const { pathname } = useRouter();
   const [open, setOpen] = useState(false);
@@ -58,12 +57,12 @@ export function Header({ currentPage }: { currentPage: PublicPage | null }) {
   const close = () => setOpen(false);
 
   const links = (onNavigate?: () => void) =>
-    MAIN_MENU.map(({ page, label }) => (
-      <li key={page}>
+    MAIN_MENU.map(({ key, href, label }) => (
+      <li key={key}>
         <Link
-          to={pagePath(locale, page)}
+          to={href(locale)}
           className="nav__link"
-          aria-current={currentPage === page ? "page" : undefined}
+          aria-current={currentPage === key ? "page" : undefined}
           onClick={onNavigate}
         >
           {label(t)}

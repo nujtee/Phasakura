@@ -22,11 +22,6 @@ button.button--secondary {
   cursor: not-allowed;
 }
 
-.lookup-link {
-  margin: -8px 0 24px;
-  font-size: 0.9375rem;
-}
-
 .unit-pick {
   display: flex;
   flex-direction: column;

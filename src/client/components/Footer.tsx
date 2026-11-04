@@ -1,17 +1,16 @@
-import { pagePath, type PublicPage } from "../../shared/routes.ts";
 import { useConsent } from "../consent/ConsentProvider.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
 import { useSite } from "../site/SiteProvider.tsx";
 import { FooterMap } from "./FooterMap.tsx";
 import { LanguageSwitcher } from "./LanguageSwitcher.tsx";
-import { MAIN_MENU } from "./navigation.ts";
+import { MAIN_MENU, type NavKey } from "./navigation.ts";
 import { PhoneLinks } from "./PhoneLinks.tsx";
 
 /**
  * Footer. Name, tagline, contact details and footer text come from D1 (Settings → Website).
  */
-export function Footer({ currentPage }: { currentPage: PublicPage | null }) {
+export function Footer({ currentPage }: { currentPage: NavKey | null }) {
   const { locale, t } = useI18n();
   const { site } = useSite();
   const { manageable, openSettings } = useConsent();
@@ -44,9 +43,9 @@ export function Footer({ currentPage }: { currentPage: PublicPage | null }) {
 
         <nav className="site-footer__nav" aria-label={t.footer.navigation}>
           <ul>
-            {MAIN_MENU.map(({ page, label }) => (
-              <li key={page}>
-                <Link to={pagePath(locale, page)} aria-current={currentPage === page ? "page" : undefined}>
+            {MAIN_MENU.map(({ key, href, label }) => (
+              <li key={key}>
+                <Link to={href(locale)} aria-current={currentPage === key ? "page" : undefined}>
                   {label(t)}
                 </Link>
               </li>

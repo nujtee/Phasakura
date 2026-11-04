@@ -11,6 +11,8 @@ export interface Messages {
     gallery: string;
     booking: string;
     history: string;
+    /** Guest booking look-up (Booking ID or phone). */
+    lookup: string;
   };
   header: {
     mainNavigation: string;
@@ -95,6 +97,7 @@ export const th: Messages = {
     gallery: "คลังภาพ",
     booking: "จองที่พัก",
     history: "เกี่ยวกับเรา",
+    lookup: "ตรวจสอบการจอง",
   },
   header: {
     mainNavigation: "เมนูหลัก",
@@ -187,6 +190,7 @@ export const en: Messages = {
     gallery: "Gallery",
     booking: "Booking",
     history: "History",
+    lookup: "Check booking",
   },
   header: {
     mainNavigation: "Main navigation",
@@ -279,6 +283,7 @@ export const zhCN: Messages = {
     gallery: "图库",
     booking: "立即预订",
     history: "历史沿革",
+    lookup: "查询预订",
   },
   header: {
     mainNavigation: "主导航",

@@ -1,6 +1,7 @@
 import { startWebVitals } from "../analytics/webVitals.ts";
 import { useEffect, useRef, type ReactNode } from "react";
-import type { PublicPage, SitePage } from "../../shared/routes.ts";
+import type { SitePage } from "../../shared/routes.ts";
+import type { NavKey } from "./navigation.ts";
 import { FloatingBookingCta } from "./FloatingBookingCta.tsx";
 import { LineButton } from "./LineButton.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
@@ -51,7 +52,7 @@ export function Layout({
   title,
   children,
 }: {
-  currentPage: PublicPage | null;
+  currentPage: NavKey | null;
   /** Exact page (for the floating booking button's page list). */
   sitePage?: SitePage | null;
   title: string;

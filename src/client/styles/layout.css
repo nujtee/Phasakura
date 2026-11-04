@@ -170,10 +170,15 @@
   border-top: 1px solid var(--color-border);
 }
 
-@media (min-width: 900px) {
+/* Full menu in the header from 1024px (five links + search + languages); the menu button below that. */
+@media (min-width: 1024px) {
   .nav--desktop,
   .lang-switcher--desktop {
     display: block;
+  }
+
+  .nav--desktop .nav__link {
+    white-space: nowrap;
   }
 
   .nav--desktop ul {
@@ -316,7 +321,8 @@
 
 @media (min-width: 768px) {
   .site-footer__inner {
-    grid-template-columns: 1.4fr 2fr auto;
+    /* The menu column wraps its links instead of growing (five links): name and contact keep their room. */
+    grid-template-columns: 1.4fr 2fr minmax(0, 1fr);
     align-items: start;
   }
 }
