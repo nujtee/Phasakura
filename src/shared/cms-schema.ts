@@ -46,6 +46,19 @@ export interface FieldDef {
   /** kind "code": A–Z and _ only, no digits (the database CHECK of that table). */
   lettersOnly?: boolean;
   default?: string | number | boolean | null;
+  /**
+   * kind "int": a year stored in the Common Era (ค.ศ.). A Buddhist Era year (พ.ศ., from BE_YEAR_FROM) may be typed
+   * instead: it is turned into the Common Era (− 543) by the form and by the server alike.
+   */
+  ceYear?: boolean;
+}
+
+/** Years from this number on are read as Buddhist Era (พ.ศ.): no Common Era year a site records is that late. */
+export const BE_YEAR_FROM = 2400;
+export const BE_OFFSET = 543;
+/** A year typed as either era, in the Common Era. */
+export function toCeYear(year: number): number {
+  return year >= BE_YEAR_FROM ? year - BE_OFFSET : year;
 }
 
 export interface EntityDef {
@@ -252,7 +265,7 @@ export const ENTITIES: Record<CmsEntityName, EntityDef> = {
     titleField: "title",
     requiredTranslation: "title",
     fields: [
-      { key: "year", kind: "int", min: 1000, max: 9999, required: true },
+      { key: "year", kind: "int", min: 1000, max: 9999, required: true, ceYear: true },
       { key: "mediaAssetId", kind: "asset", purpose: "HISTORY" },
       sortOrder,
     ],

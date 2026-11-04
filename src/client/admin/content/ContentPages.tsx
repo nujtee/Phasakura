@@ -162,7 +162,7 @@ export function HistoryPage() {
         <CmsManager key="sections" entity="historySection" newLabel={c.content.newSection}
           summary={(r) => `${enumLabel(c, "sectionType", r.sectionType as string)} · ${enumLabel(c, "layout", r.layout as string)}`} />
       ) : (
-        <CmsManager key="timeline" entity="historyTimeline" newLabel={c.content.newTimeline} summary={(r) => String(r.year)} />
+        <CmsManager key="timeline" entity="historyTimeline" newLabel={c.content.newTimeline} summary={(r) => `${r.year} · ${format(c.hints.yearBe, { be: Number(r.year) + 543 })}`} />
       )}
     </section>
   );

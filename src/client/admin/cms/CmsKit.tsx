@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { PermissionCode } from "../../../shared/auth-types.ts";
 import { formatBaht, parseBahtToSatang } from "../../../shared/booking-rules.ts";
-import { ENTITIES, normalizeSlug, typingSlug, type CmsEntityName, type CmsRecord, type FieldDef } from "../../../shared/cms-schema.ts";
+import { BE_OFFSET, ENTITIES, normalizeSlug, toCeYear, typingSlug, type CmsEntityName, type CmsRecord, type FieldDef } from "../../../shared/cms-schema.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import type { AdminCmsMessages } from "../../../shared/i18n/admin-cms-messages.ts";
 import { LOCALES, type LocaleCode } from "../../../shared/i18n/locales.ts";
@@ -188,7 +188,7 @@ function toPayload(f: FieldDef, raw: string): unknown {
   if (f.kind === "bool") return raw === "true";
   if (v === "") return null;
   switch (f.kind) {
-    case "int": return Number(v);
+    case "int": return f.ceYear && /^\d+$/.test(v) ? toCeYear(Number(v)) : Number(v);
     case "money": return parseBahtToSatang(v) ?? Number.NaN;
     case "enum": return f.values?.some((x) => typeof x === "number") ? Number(v) : v;
     case "datetime": return new Date(v).toISOString();
@@ -312,10 +312,15 @@ export function CmsForm({
             const v = e.currentTarget.value;
             set(f.key, f.kind === "code" ? v.toUpperCase().replace(/[\s-]+/g, "_") : f.kind === "slug" ? typingSlug(v) : v);
           }}
-          onBlur={f.kind === "slug" ? (e) => set(f.key, normalizeSlug(e.currentTarget.value)) : undefined} />
+          onBlur={f.kind === "slug" ? (e) => set(f.key, normalizeSlug(e.currentTarget.value))
+            // A Buddhist Era year becomes the Common Era as soon as the field is left, so the guest page and the form agree.
+            : f.ceYear ? (e) => { const n = Number(e.currentTarget.value); if (Number.isInteger(n) && n > 0) set(f.key, String(toCeYear(n))); } : undefined} />
       );
     }
-    const hint = f.kind === "link" ? c.hints.link : f.kind === "datetime" ? c.hints.datetime : f.kind === "slug" ? c.hints.slug
+    const yearNow = f.ceYear ? Number(values[f.key]) : Number.NaN;
+    const hint = f.ceYear ? (Number.isInteger(yearNow) && yearNow >= 1000
+      ? format(c.hints.yearShown, { ce: toCeYear(yearNow), be: toCeYear(yearNow) + BE_OFFSET }) : c.hints.year)
+      : f.kind === "link" ? c.hints.link : f.kind === "datetime" ? c.hints.datetime : f.kind === "slug" ? c.hints.slug
       : f.kind === "code" && !record ? (f.lettersOnly ? c.hints.codeLetters : c.hints.code) : undefined;
     return (
       <div key={f.key} className="adm-field">

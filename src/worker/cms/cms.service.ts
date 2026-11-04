@@ -1,7 +1,7 @@
 import type { FocalPoint } from "../../shared/focal-point.ts";
 import { loadFocals } from "../media/image-resolver.ts";
 import type { CmsEntityName, CmsRecord, EntityDef, FieldDef } from "../../shared/cms-schema.ts";
-import { CMS_TEXT, ENTITIES, isSafeLink, isSafePath, normalizeCode, normalizeSlug } from "../../shared/cms-schema.ts";
+import { CMS_TEXT, ENTITIES, isSafeLink, isSafePath, normalizeCode, normalizeSlug, toCeYear } from "../../shared/cms-schema.ts";
 import { MAX_PRICE_SATANG } from "../../shared/booking-rules.ts";
 import { DEFAULT_LOCALE_CODE, LOCALE_CODES, type LocaleCode } from "../../shared/i18n/locales.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
@@ -550,10 +550,12 @@ function parseValue(f: FieldDef, raw: unknown): Parsed {
     case "int":
     case "money": {
       if (typeof raw !== "number" || !Number.isInteger(raw)) return { error: "EXPECTED_INTEGER" };
+      // A year typed in the Buddhist Era (พ.ศ.) is kept in the Common Era (ค.ศ.), like every year in the database.
+      const n = f.ceYear ? toCeYear(raw) : raw;
       const max = f.kind === "money" ? MAX_PRICE_SATANG : f.max;
-      if ((f.min !== undefined && raw < f.min) || (max !== undefined && raw > max)) return { error: "OUT_OF_RANGE" };
-      if (f.values && !f.values.includes(raw)) return { error: "INVALID_VALUE" };
-      return raw;
+      if ((f.min !== undefined && n < f.min) || (max !== undefined && n > max)) return { error: "OUT_OF_RANGE" };
+      if (f.values && !f.values.includes(n)) return { error: "INVALID_VALUE" };
+      return n;
     }
     case "enum":
       if (typeof raw !== "string" || !f.values?.includes(raw)) return { error: "INVALID_VALUE" };

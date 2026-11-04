@@ -331,6 +331,18 @@ await check("history: hero heading is the page h1, Buddhist-era years in Thai, C
   assert(en[0] === "1967", `en years ${en}`);
 });
 
+await check("history admin: a year typed in พ.ศ. becomes ค.ศ.; the form says what the Thai page shows", async () => {
+  await pa.goto(`${BASE}/en/admin/content-history`);
+  await pa.getByRole("tab", { name: "Timeline" }).click();
+  await pa.getByRole("button", { name: "Add event" }).click();
+  const year = pa.getByLabel(/Year \(CE, or Thai BE\)/);
+  await year.fill("2495");
+  await year.blur();
+  assert((await year.inputValue()) === "1952", `converted: ${await year.inputValue()}`);
+  await pa.getByText("Kept as 1952 CE · the Thai site shows BE 2495").waitFor();
+  await pa.locator(".adm-field", { has: year }).screenshot({ path: `${SHOTS}/p12-timeline-year.png` });
+});
+
 // ------------------------------------------------------------------ booking flow images
 await check("booking page and dish step use responsive images", async () => {
   await pv.goto(`${BASE}/th/booking`);
