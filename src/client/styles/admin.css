@@ -4042,3 +4042,103 @@
 .adm-guestspreview { margin: 4px 0 16px; padding: 10px 14px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)); border: 1px solid var(--color-border); font-size: 0.875rem; }
 .adm-guestspreview ul { margin: 4px 0 0; padding-left: 18px; }
 .adm-guestspreview--warn { border-color: color-mix(in srgb, var(--color-warning) 60%, var(--color-border)); background: color-mix(in srgb, var(--color-warning) 8%, var(--color-surface)); }
+
+/* Booking add-ons in one folded bar with a tab per option (houses / VIP tents page). */
+.adm-extras { padding: 0; overflow: hidden; }
+.adm-extras__bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 64px;
+  padding: 14px 20px;
+  box-sizing: border-box;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.adm-extras__bar:hover { background: color-mix(in srgb, var(--color-primary) 4%, transparent); }
+.adm-extras__head { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.adm-extras__titleline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.adm-extras__title { font-family: var(--font-heading); font-size: 1.125rem; font-weight: 700; color: var(--color-heading); }
+.adm-extras__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.adm-extras__chip,
+.adm-extras__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.adm-extras__chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-muted) 12%, transparent);
+  color: var(--color-muted);
+}
+.adm-extras__chip.is-on {
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  color: var(--color-success);
+}
+.adm-extras__chip i,
+.adm-extras__tab i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-muted) 60%, transparent);
+  flex: 0 0 8px;
+}
+.adm-extras__chip.is-on i,
+.adm-extras__tab.is-on i { background: var(--color-success); }
+.adm-extras__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+.adm-extras__toggle svg { transition: transform 0.15s ease; }
+.adm-extras__toggle svg.is-open { transform: rotate(180deg); }
+.adm-extras__body {
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--color-border);
+}
+.adm-extras__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-muted) 9%, var(--color-surface));
+  overflow-x: auto;
+}
+.adm-extras__tab {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: max-content;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: none;
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--color-text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.adm-extras__tab:hover { background: color-mix(in srgb, var(--color-surface) 60%, transparent); }
+.adm-extras__tab.is-selected {
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.adm-extras__summary { margin: 14px 0 0; font-size: 0.875rem; color: var(--color-muted); }
+/* A card shown inside the panel: no frame and no head of its own (the tab and the summary say it). */
+.adm-extrabeds--embedded { border: 0; padding: 0; margin: 0; background: none; box-shadow: none; }
+.adm-extrabeds--embedded .adm-extrabeds__head { display: none; }

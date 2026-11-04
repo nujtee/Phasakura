@@ -217,12 +217,24 @@ await check("booking page: a date search shows the time-based price of those nig
 });
 
 console.log("console errors:", consoleErrors.length, consoleErrors.slice(0, 5));
+/** Houses page: open the folded "Booking add-ons" bar on the given tab; returns that tab's panel. */
+async function extrasTab(tab) {
+  const bar = pa.getByRole("button", { name: /Booking add-ons/ });
+  await bar.waitFor();
+  if ((await bar.getAttribute("aria-expanded")) !== "true") await bar.click();
+  await pa.getByRole("tab", { name: tab }).click();
+  return pa.getByRole("tabpanel", { name: tab });
+}
+const extrasSummary = () => pa.locator(".adm-extras__summary");
+
 await check("extra beds: staff switch them on (houses page), the guest adds one on the food step and the price follows", async () => {
   await pa.goto(`${BASE}/en/admin/houses`);
-  const card = pa.locator(".adm-extrabeds:not(.adm-pets):not(.adm-movesettings):not(.adm-massage)");
-  await card.getByRole("heading", { name: "Extra beds" }).waitFor();
-  await card.getByText("Guests cannot add them yet").waitFor();
-  await card.getByRole("button", { name: "Settings" }).click();
+  // Folded by default: one bar with the four add-ons and whether each is on.
+  await pa.locator(".adm-extras__chip", { hasText: "Extra beds" }).waitFor();
+  assert((await pa.locator(".adm-extras__body").isHidden()), "folded");
+  if (SHOTS) await pa.locator(".adm-extras").screenshot({ path: `${SHOTS}/extras-folded.png` });
+  const card = await extrasTab("Extra beds");
+  await extrasSummary().getByText("Guests cannot add them yet").waitFor();
   await card.getByLabel("Let guests add extra beds when booking").check();
   await card.getByLabel("Price per bed per night (THB)").fill("300");
   await card.getByLabel("Most per unit (beds)").fill("2");
@@ -237,9 +249,10 @@ await check("extra beds: staff switch them on (houses page), the guest adds one 
   await card.getByRole("checkbox", { name: /House 01/ }).uncheck();
   await card.getByRole("button", { name: "Save" }).click();
   await card.getByText("Extra beds settings saved").waitFor();
-  await card.getByText(/฿300 per bed per night · up to 2 per unit/).waitFor();
-  await card.getByText(`on for ${total - 1} of ${total} units`).waitFor();
-  if (SHOTS) await card.screenshot({ path: `${SHOTS}/extra-beds-admin.png` });
+  await extrasSummary().getByText(/฿300 per bed per night · up to 2 per unit/).waitFor();
+  await extrasSummary().getByText(`on for ${total - 1} of ${total} units`).waitFor();
+  await pa.locator(".adm-extras__chip.is-on", { hasText: "Extra beds" }).waitFor();
+  if (SHOTS) await pa.locator(".adm-extras").screenshot({ path: `${SHOTS}/extra-beds-admin.png` });
 
   const ci = day(70), co = day(72);
   await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
@@ -276,10 +289,8 @@ await check("extra beds: staff switch them on (houses page), the guest adds one 
 
 await check("pets: a separate switch next to extra beds; the guest adds a pet, sees the weight limit and the price", async () => {
   await pa.goto(`${BASE}/en/admin/houses`);
-  const card = pa.locator(".adm-pets");
-  await card.getByRole("heading", { name: "Pet fee" }).waitFor();
-  await card.getByText("Pets not allowed (guests cannot add them)").waitFor();
-  await card.getByRole("button", { name: "Settings" }).click();
+  const card = await extrasTab("Pet fee");
+  await extrasSummary().getByText("Pets not allowed (guests cannot add them)").waitFor();
   await card.getByLabel("Allow pets (guests add them when booking)").check();
   await card.getByLabel("Price per pet (THB)").fill("200");
   await card.getByLabel("Charged").selectOption("NIGHT");
@@ -287,10 +298,12 @@ await check("pets: a separate switch next to extra beds; the guest adds a pet, s
   await card.getByLabel("Most per unit (pets)").fill("2");
   await card.getByRole("button", { name: "Save" }).click();
   await card.getByText("Pet settings saved").waitFor();
-  await card.getByText(/฿200 per pet per night · up to 15 kg · up to 2 per unit/).waitFor();
+  await extrasSummary().getByText(/฿200 per pet per night · up to 15 kg · up to 2 per unit/).waitFor();
   // Extra beds keep their own switch (off).
-  await pa.locator(".adm-extrabeds:not(.adm-pets):not(.adm-movesettings):not(.adm-massage)").getByText("Guests cannot add them yet").waitFor();
-  if (SHOTS) await pa.locator(".adm-pets").screenshot({ path: `${SHOTS}/pets-admin.png` });
+  await extrasTab("Extra beds");
+  await extrasSummary().getByText("Guests cannot add them yet").waitFor();
+  await extrasTab("Pet fee");
+  if (SHOTS) await pa.locator(".adm-extras").screenshot({ path: `${SHOTS}/pets-admin.png` });
 
   const ci = day(80), co = day(82);
   await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
@@ -314,18 +327,16 @@ await check("pets: a separate switch next to extra beds; the guest adds a pet, s
 
 await check("health massage: off by default; staff switch it on and edit a price; the guest opens the list, picks one, the price follows", async () => {
   await pa.goto(`${BASE}/en/admin/houses`);
-  const card = pa.locator(".adm-massage");
-  await card.getByRole("heading", { name: "Health massage" }).waitFor();
-  await card.getByText("Off (guests do not see the massage list)").waitFor();
-  await card.getByRole("button", { name: "Settings" }).click();
+  const card = await extrasTab("Health massage");
+  await extrasSummary().getByText("Off (guests do not see the massage list)").waitFor();
   await card.getByLabel("Let guests add massage when booking (extras step)").check();
   const first = card.locator(".adm-massage__item").first();
   assert(await first.getByLabel("Treatment name (Thai)").inputValue() === "นวดแผนไทย", "sample menu");
   await first.locator(".adm-massage__option").first().getByLabel("Price (THB)").fill("380");
   await card.getByRole("button", { name: "Save" }).click();
   await card.getByText("Massage menu saved").waitFor();
-  await card.getByText(/Guests can add it when booking · 9 treatments · from ฿350/).waitFor();
-  if (SHOTS) await card.screenshot({ path: `${SHOTS}/massage-admin.png` });
+  await extrasSummary().getByText(/Guests can add it when booking · 9 treatments · from ฿350/).waitFor();
+  if (SHOTS) await pa.locator(".adm-extras").screenshot({ path: `${SHOTS}/massage-admin.png` });
 
   const ci = day(84), co = day(85);
   await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0`);
@@ -357,15 +368,13 @@ await check("health massage: off by default; staff switch it on and edit a price
 await check("guest changes the dates from the booking page: Booking ID + phone, calendar, fee QR, slip; staff verify → moved", async () => {
   // Staff switch it on (houses page card).
   await pa.goto(`${BASE}/en/admin/houses`);
-  const card = pa.locator(".adm-movesettings");
-  await card.getByRole("heading", { name: "Guests change their dates" }).waitFor();
-  await card.getByRole("button", { name: "Settings" }).click();
+  const card = await extrasTab("Guests change their dates");
   await card.getByLabel("Let guests change their dates from the booking page (Booking ID + phone)").check();
   await card.getByLabel("Date change fee (THB)").fill("300");
   await card.getByLabel("Up to how many days before check-in").fill("3");
   await card.getByRole("button", { name: "Save" }).click();
   await card.getByText("Date change settings saved").waitFor();
-  if (SHOTS) await card.screenshot({ path: `${SHOTS}/move-admin.png` });
+  if (SHOTS) await pa.locator(".adm-extras").screenshot({ path: `${SHOTS}/move-admin.png` });
 
   // A paid booking (House 01, in 90 days).
   const ci = day(90), co = day(92);

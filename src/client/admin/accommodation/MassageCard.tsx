@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import type { ExtrasEmbed } from "./ExtrasPanel.tsx";
 import type { MassageAdminItemDto, MassageSettingsDto } from "../../../shared/booking-types.ts";
 import { SATANG_PER_BAHT, formatBaht, parseBahtToSatang } from "../../../shared/booking-rules.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
@@ -18,12 +19,13 @@ const toDraft = (items: MassageAdminItemDto[]): DraftItem[] => items.map((i) => 
  * Health massage (migration 0050): off by default. The owner switches it on and edits the menu — treatments, their
  * lengths (minutes) and prices. Guests pick them on the booking page ("รายการเพิ่มเติม"); bookings keep their price.
  */
-export function MassageCard() {
+export function MassageCard({ embedded }: { embedded?: ExtrasEmbed } = {}) {
   const { t, can, locale } = useAdmin();
   const [s, setS] = useState<MassageSettingsDto | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [items, setItems] = useState<DraftItem[]>([]);
-  const [open, setOpen] = useState(false);
+  // Inside the extras panel (one tab each) the form is always shown.
+  const [open, setOpen] = useState(!!embedded);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -69,7 +71,7 @@ export function MassageCard() {
     try {
       show(await apiRequest<MassageSettingsDto>("PUT", "/api/admin/massage", { enabled, items: body }));
       setMessage({ kind: "success", text: t.acc.massageSaved });
-      setOpen(false);
+      if (!embedded) setOpen(false);
     } catch (err) {
       setErrors(fieldErrors(t, err));
       setMessage({ kind: "error", text: errorMessage(t, err) });
@@ -78,19 +80,21 @@ export function MassageCard() {
     }
   }
 
-  if (!s) return message ? <Alert kind="error">{message.text}</Alert> : null;
-  const listed = s.items.filter((i) => i.active && i.options.length);
+  const listed = (s?.items ?? []).filter((i) => i.active && i.options.length);
   const prices = listed.flatMap((i) => i.options.map((o) => o.priceSatang));
-  const state = s.enabled
+  const state = !s ? "" : s.enabled
     ? format(t.acc.massageOn, {
       n: listed.length,
       from: prices.length ? formatBaht(Math.min(...prices), locale.code) : "—",
     })
     : t.acc.massageOff;
+  // In the extras panel the bar shows each option's state (on / off and what it is set to).
+  useEffect(() => { embedded?.onStatus(s ? { on: s.enabled, summary: state } : null); }, [embedded, s, state]);
+  if (!s) return message ? <Alert kind="error">{message.text}</Alert> : null;
   const err = (k: string) => errors[k];
 
   return (
-    <section className="adm-card adm-extrabeds adm-massage" aria-labelledby="massage-h">
+    <section className={`adm-card adm-extrabeds adm-massage${embedded ? " adm-extrabeds--embedded" : ""}`} aria-labelledby="massage-h">
       <div className="adm-extrabeds__head">
         <div>
           <h2 className="adm-h2" id="massage-h">{t.acc.massageTitle}</h2>
@@ -175,7 +179,7 @@ export function MassageCard() {
           </fieldset>
           <div className="adm-row">
             <Button type="submit" busy={busy} disabled={!canEdit}>{busy ? t.common.saving : t.common.save}</Button>
-            <Button variant="secondary" onClick={() => { setOpen(false); show(s); setErrors({}); }}>{t.common.cancel}</Button>
+            <Button variant="secondary" onClick={() => { if (!embedded) setOpen(false); show(s); setErrors({}); setMessage(null); }}>{t.common.cancel}</Button>
           </div>
         </form>
       )}

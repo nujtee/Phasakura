@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import type { ExtrasEmbed } from "./ExtrasPanel.tsx";
 import type { MoveSettingsDto } from "../../../shared/booking-types.ts";
 import { SATANG_PER_BAHT, formatBaht, parseBahtToSatang } from "../../../shared/booking-rules.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
@@ -10,11 +11,12 @@ import { Alert, Button, errorMessage, Field, fieldErrors } from "../ui.tsx";
  * Guests change their own dates from the booking page (migration 0045): on / off, the fee, how close to the check-in,
  * how many times, how long the new nights are held while the guest transfers.
  */
-export function MoveSettingsCard() {
+export function MoveSettingsCard({ embedded }: { embedded?: ExtrasEmbed } = {}) {
   const { t, can, locale } = useAdmin();
   const [s, setS] = useState<MoveSettingsDto | null>(null);
   const [f, setF] = useState({ enabled: false, fee: "0", days: "3", max: "1", minutes: "60" });
-  const [open, setOpen] = useState(false);
+  // Inside the extras panel (one tab each) the form is always shown.
+  const [open, setOpen] = useState(!!embedded);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,7 +48,7 @@ export function MoveSettingsCard() {
         enabled: f.enabled, feeSatang: fee, minDaysBefore: Number(f.days), maxMoves: Number(f.max), payMinutes: Number(f.minutes),
       }));
       setMessage({ kind: "success", text: t.acc.moveSaved });
-      setOpen(false);
+      if (!embedded) setOpen(false);
     } catch (err) {
       setErrors(fieldErrors(t, err));
       setMessage({ kind: "error", text: errorMessage(t, err) });
@@ -55,13 +57,15 @@ export function MoveSettingsCard() {
     }
   }
 
-  if (!s) return message ? <Alert kind="error">{message.text}</Alert> : null;
-  const state = s.enabled
+  const state = !s ? "" : s.enabled
     ? format(t.acc.moveOn, { fee: formatBaht(s.feeSatang, locale.code), days: s.minDaysBefore, max: s.maxMoves, minutes: s.payMinutes })
     : t.acc.moveOff;
+  // In the extras panel the bar shows each option's state (on / off and what it is set to).
+  useEffect(() => { embedded?.onStatus(s ? { on: s.enabled, summary: state } : null); }, [embedded, s, state]);
+  if (!s) return message ? <Alert kind="error">{message.text}</Alert> : null;
 
   return (
-    <section className="adm-card adm-extrabeds adm-movesettings" aria-labelledby="move-settings-h">
+    <section className={`adm-card adm-extrabeds adm-movesettings${embedded ? " adm-extrabeds--embedded" : ""}`} aria-labelledby="move-settings-h">
       <div className="adm-extrabeds__head">
         <div>
           <h2 className="adm-h2" id="move-settings-h">{t.acc.moveTitle}</h2>
@@ -95,7 +99,7 @@ export function MoveSettingsCard() {
           </fieldset>
           <div className="adm-row">
             <Button type="submit" busy={busy} disabled={!canEdit}>{busy ? t.common.saving : t.common.save}</Button>
-            <Button variant="secondary" onClick={() => { setOpen(false); show(s); setErrors({}); }}>{t.common.cancel}</Button>
+            <Button variant="secondary" onClick={() => { if (!embedded) setOpen(false); show(s); setErrors({}); setMessage(null); }}>{t.common.cancel}</Button>
           </div>
         </form>
       )}
