@@ -144,7 +144,10 @@ await check("guest (mobile, TH): booking flow ends on the payment step; PromptPa
 await check("guest attaches the slip (bank transfer) → waiting for staff (Manual approve)", async () => {
   await pg.locator(".slip input[type=file]").setInputFiles(`${FIXTURES}/g1.png`);
   await pg.getByRole("button", { name: "ส่งสลิป" }).click();
-  await pg.getByText("ได้รับการชำระเงินแล้ว เจ้าหน้าที่กำลังตรวจสอบ", { exact: false }).waitFor();
+  await pg.getByText("ได้รับสลิปแล้ว — รอการตรวจสอบจาก admin", { exact: false }).waitFor();
+  // The status says it waits for admin, not for payment.
+  await pg.locator(".confirmation__status .status-pill", { hasText: "รอการตรวจสอบจาก admin" }).waitFor();
+  await pg.locator(".confirmation__status").screenshot({ path: `${SHOTS}/pay-status-admin-review.png` });
   const detail = await (await req.get(`${BASE}/api/admin/bookings/${A}`, { headers: H })).json();
   assert(detail.data.payments[0].channel === "BANK_TRANSFER" && detail.data.paymentStatus === "PENDING_VERIFICATION", JSON.stringify(detail.data.payments));
 });
@@ -232,7 +235,7 @@ await check("approve: another slip is approved → confirmed, staff and guest to
   await pg.getByRole("radio", { name: /โอนเข้าบัญชี/ }).check();
   await pg.locator(".slip input[type=file]").setInputFiles(`${FIXTURES}/g2.png`);
   await pg.getByRole("button", { name: "ส่งสลิป" }).click();
-  await pg.getByText("ได้รับการชำระเงินแล้ว", { exact: false }).waitFor();
+  await pg.getByText("ได้รับสลิปแล้ว — รอการตรวจสอบจาก admin", { exact: false }).waitFor();
   await pa.goto(`${BASE}/en/admin/slips`);
   const card = pa.locator(".adm-slip", { hasText: B.bookingCode });
   await card.getByRole("button", { name: "Approve" }).click();
@@ -251,7 +254,7 @@ await check("booking page: staff decline (pay again) then approve the slip witho
     await pg.getByRole("radio", { name: /โอนเข้าบัญชี/ }).check();
     await pg.locator(".slip input[type=file]").setInputFiles(file);
     await pg.getByRole("button", { name: "ส่งสลิป" }).click();
-    await pg.getByText("ได้รับการชำระเงินแล้ว", { exact: false }).waitFor();
+    await pg.getByText("ได้รับสลิปแล้ว — รอการตรวจสอบจาก admin", { exact: false }).waitFor();
   };
   await upload(`${FIXTURES}/g-sq.png`);
   await pa.goto(`${BASE}/en/admin/bookings/${E.bookingCode}`);

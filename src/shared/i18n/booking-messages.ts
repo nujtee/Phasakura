@@ -223,7 +223,7 @@ const th = {
     deposit: "มัดจำที่ชำระออนไลน์",
     print: "บันทึกเป็น PDF / พิมพ์",
     back: "กลับ",
-    statuses: { UNPAID: "ยังไม่ชำระ", PENDING_VERIFICATION: "รอตรวจสลิป", VERIFIED: "ชำระแล้ว", PAID: "ชำระแล้ว", REJECTED: "สลิปไม่ผ่าน", REFUNDED: "คืนเงินแล้ว" },
+    statuses: { UNPAID: "ยังไม่ชำระ", PENDING_VERIFICATION: "รอการตรวจสอบจาก admin", VERIFIED: "ชำระแล้ว", PAID: "ชำระแล้ว", REJECTED: "สลิปไม่ผ่าน", REFUNDED: "คืนเงินแล้ว" },
   },
   paidSoFar: "ชำระแล้ว",
   paidInFull: "ชำระครบแล้ว",
@@ -339,7 +339,7 @@ const th = {
     paypalProcessing: "PayPal ยังไม่ยืนยันผล ระบบจะตรวจสอบให้อัตโนมัติภายในไม่กี่นาที",
     paypalCancelled: "ยกเลิกการชำระด้วย PayPal แล้ว ยังไม่มีการตัดเงิน เลือกช่องทางชำระเงินได้อีกครั้ง",
     checkAgain: "ตรวจสอบอีกครั้ง",
-    reviewing: "ได้รับการชำระเงินแล้ว เจ้าหน้าที่กำลังตรวจสอบ เราจะแจ้งผลทันทีที่ยืนยันการจอง",
+    reviewing: "ได้รับสลิปแล้ว — รอการตรวจสอบจาก admin เราจะแจ้งผลทันทีที่ยืนยันการจอง",
   },
   line: {
     title: "รับการแจ้งเตือนทาง LINE",
@@ -354,6 +354,7 @@ const th = {
     stopped: "หยุดการแจ้งเตือนทาง LINE แล้ว",
     privacy: "เราใช้บัญชี LINE ของคุณเพื่อส่งข้อความเกี่ยวกับการจองนี้เท่านั้น และลบการเชื่อมต่อ 30 วันหลังเช็กเอาต์",
   },
+  statusAdminReview: "รอการตรวจสอบจาก admin",
   statuses: {
     PENDING: "รอชำระเงิน",
     CONFIRMED: "ยืนยันแล้ว",
@@ -655,7 +656,7 @@ const en: BookingMessages = {
     deposit: "Deposit paid online",
     print: "Save as PDF / print",
     back: "Back",
-    statuses: { UNPAID: "Unpaid", PENDING_VERIFICATION: "Slip being checked", VERIFIED: "Paid", PAID: "Paid", REJECTED: "Slip not accepted", REFUNDED: "Refunded" },
+    statuses: { UNPAID: "Unpaid", PENDING_VERIFICATION: "Awaiting admin review", VERIFIED: "Paid", PAID: "Paid", REJECTED: "Slip not accepted", REFUNDED: "Refunded" },
   },
   paidSoFar: "Paid",
   paidInFull: "Paid in full",
@@ -771,7 +772,7 @@ const en: BookingMessages = {
     paypalProcessing: "PayPal has not confirmed yet. We will check automatically within a few minutes.",
     paypalCancelled: "PayPal payment cancelled — nothing was charged. You can choose how to pay again.",
     checkAgain: "Check again",
-    reviewing: "Payment received — our staff are checking it. We will let you know as soon as your booking is confirmed.",
+    reviewing: "Slip received — awaiting admin review. We will let you know as soon as your booking is confirmed.",
   },
   line: {
     title: "Get updates on LINE",
@@ -786,6 +787,7 @@ const en: BookingMessages = {
     stopped: "LINE updates stopped.",
     privacy: "We use your LINE account only for messages about this booking and remove the link 30 days after check-out.",
   },
+  statusAdminReview: "Awaiting admin review",
   statuses: {
     PENDING: "Awaiting payment",
     CONFIRMED: "Confirmed",
@@ -1085,7 +1087,7 @@ const zhCN: BookingMessages = {
     deposit: "在线支付的定金",
     print: "保存为 PDF / 打印",
     back: "返回",
-    statuses: { UNPAID: "未付款", PENDING_VERIFICATION: "凭证审核中", VERIFIED: "已付款", PAID: "已付款", REJECTED: "凭证未通过", REFUNDED: "已退款" },
+    statuses: { UNPAID: "未付款", PENDING_VERIFICATION: "等待管理员审核", VERIFIED: "已付款", PAID: "已付款", REJECTED: "凭证未通过", REFUNDED: "已退款" },
   },
   paidSoFar: "已付",
   paidInFull: "已全额支付",
@@ -1201,7 +1203,7 @@ const zhCN: BookingMessages = {
     paypalProcessing: "PayPal 尚未确认，系统将在几分钟内自动核对。",
     paypalCancelled: "已取消 PayPal 付款，未产生任何费用。您可以重新选择付款方式。",
     checkAgain: "再次检查",
-    reviewing: "已收到付款，工作人员正在核对，预订确认后我们会立即通知您。",
+    reviewing: "已收到凭证 — 等待管理员审核，预订确认后我们会立即通知您。",
   },
   line: {
     title: "通过 LINE 接收通知",
@@ -1216,6 +1218,7 @@ const zhCN: BookingMessages = {
     stopped: "已停止 LINE 通知。",
     privacy: "我们仅使用您的 LINE 账号发送与此预订相关的消息，并在退房 30 天后删除连接。",
   },
+  statusAdminReview: "等待管理员审核",
   statuses: {
     PENDING: "待付款",
     CONFIRMED: "已确认",

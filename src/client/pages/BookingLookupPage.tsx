@@ -229,7 +229,7 @@ export function BookingLookupPage() {
       {booking && (
         <section className="lookup__result" aria-live="polite">
           <p className="confirmation__value" translate="no">{booking.bookingCode}</p>
-          <p className="confirmation__status">{bt.status}: <StatusPill status={booking.status} /></p>
+          <p className="confirmation__status">{bt.status}: <StatusPill status={booking.status} paymentStatus={booking.paymentStatus} /></p>
           <p className="summary__meta">{booking.customerName} · {booking.customerPhoneMasked}</p>
           <SlipStatus booking={booking} />
           {booking.paymentInstructions ? (
@@ -268,7 +268,7 @@ function BriefCard({ brief, by, busy, onOpen }: { brief: BookingBriefDto; by: Bo
     <article className="lookup__brief">
       <p className="lookup__brief-head">
         <span className="lookup__brief-code" translate="no">{brief.bookingCode ?? brief.bookingCodeMasked}</span>
-        <StatusPill status={brief.status} />
+        <StatusPill status={brief.status} paymentStatus={brief.paymentStatus} />
       </p>
       <p className="summary__meta">{dateText(brief.checkIn)} → {dateText(brief.checkOut)} · {brief.guestNameMasked}</p>
       <form className="lookup__brief-form" onSubmit={go}>

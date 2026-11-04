@@ -848,6 +848,11 @@ button.button--secondary {
   color: var(--color-success);
 }
 
+.status-pill--review {
+  background: color-mix(in srgb, var(--color-primary, var(--color-warning)) 12%, var(--color-surface));
+  color: var(--color-primary, var(--color-warning));
+}
+
 .status-pill--cancelled,
 .status-pill--expired,
 .status-pill--no_show {

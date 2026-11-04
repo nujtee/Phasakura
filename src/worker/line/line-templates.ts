@@ -131,7 +131,7 @@ const th = {
     CANCELLED: "ยกเลิก", EXPIRED: "หมดเวลา", NO_SHOW: "ไม่มาเข้าพัก",
   } as Record<string, string>,
   paymentStatus: {
-    UNPAID: "ยังไม่ชำระ", PENDING_VERIFICATION: "รอตรวจสลิป", VERIFIED: "ชำระแล้ว (ตรวจสลิปแล้ว)", PAID: "ชำระแล้ว",
+    UNPAID: "ยังไม่ชำระ", PENDING_VERIFICATION: "รอการตรวจสอบจาก admin", VERIFIED: "ชำระแล้ว (ตรวจสลิปแล้ว)", PAID: "ชำระแล้ว",
     REJECTED: "สลิปไม่ผ่าน รอชำระใหม่", REFUNDED: "คืนเงินแล้ว",
   } as Record<string, string>,
   methods: { BANK_TRANSFER: "โอนเงิน", PROMPTPAY: "พร้อมเพย์", CASH: "เงินสด", OTHER: "อื่น ๆ" } as Record<string, string>,
@@ -244,7 +244,7 @@ const en: Texts = {
     CANCELLED: "cancelled", EXPIRED: "expired", NO_SHOW: "no-show",
   },
   paymentStatus: {
-    UNPAID: "Unpaid", PENDING_VERIFICATION: "Slip under review", VERIFIED: "Paid (slip verified)", PAID: "Paid",
+    UNPAID: "Unpaid", PENDING_VERIFICATION: "Awaiting admin review", VERIFIED: "Paid (slip verified)", PAID: "Paid",
     REJECTED: "Slip rejected — awaiting payment", REFUNDED: "Refunded",
   },
   methods: { BANK_TRANSFER: "bank transfer", PROMPTPAY: "PromptPay", CASH: "cash", OTHER: "other" },
@@ -355,7 +355,7 @@ const zh: Texts = {
     CANCELLED: "已取消", EXPIRED: "已过期", NO_SHOW: "未入住",
   },
   paymentStatus: {
-    UNPAID: "未付款", PENDING_VERIFICATION: "凭证审核中", VERIFIED: "已付款（凭证已核实）", PAID: "已付款",
+    UNPAID: "未付款", PENDING_VERIFICATION: "等待管理员审核", VERIFIED: "已付款（凭证已核实）", PAID: "已付款",
     REJECTED: "凭证未通过 — 待重新付款", REFUNDED: "已退款",
   },
   methods: { BANK_TRANSFER: "银行转账", PROMPTPAY: "PromptPay", CASH: "现金", OTHER: "其他" },
