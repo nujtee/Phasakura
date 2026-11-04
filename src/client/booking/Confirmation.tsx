@@ -12,8 +12,12 @@ import { LineUpdates } from "./LineUpdates.tsx";
 import { GuestBillButton } from "./Bill.tsx";
 import { paymentSubmittedEvent, useConfirmedBookingEvent } from "../analytics/booking-events.ts";
 
-export function StatusPill({ status }: { status: PublicBookingDto["status"] }) {
+export function StatusPill({ status, paymentStatus }: { status: PublicBookingDto["status"]; paymentStatus?: PublicBookingDto["paymentStatus"] }) {
   const bt = useBookingT();
+  // A slip is in (the automatic check did not pass, or staff approve every slip): it waits for admin, not for payment.
+  if (status === "PENDING" && paymentStatus === "PENDING_VERIFICATION") {
+    return <span className="status-pill status-pill--review">{bt.statusAdminReview}</span>;
+  }
   return <span className={`status-pill status-pill--${status.toLowerCase()}`}>{bt.statuses[status]}</span>;
 }
 
@@ -77,7 +81,7 @@ export function Confirmation({
       </div>
 
       <p className="confirmation__status">
-        {bt.status}: <StatusPill status={booking.status} />
+        {bt.status}: <StatusPill status={booking.status} paymentStatus={booking.paymentStatus} />
       </p>
       <SlipStatus booking={booking} />
       {booking.paymentInstructions ? (
