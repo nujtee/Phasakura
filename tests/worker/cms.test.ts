@@ -196,6 +196,16 @@ describe("history CMS (spec §11)", () => {
     assert.equal(pub.sections.at(-1)?.quoteAuthor, "ผู้ก่อตั้ง");
     assert.equal((await h.api("GET", "/api/public/history/timeline?lang=fr")).status, 400);
   });
+
+  it("a timeline year typed in the Buddhist Era (พ.ศ.) is kept in the Common Era", async () => {
+    const h = new Harness({ seed: true });
+    const editor = await staff(h, ["content.view", "content.history", "content.publish"]);
+    const be = await api(h, "POST", "historyTimeline", editor, { year: 2495, translations: { th: { title: "ผาซากุระเมื่อ 2495" } } });
+    assert.equal(be.data.year, 1952);
+    const ce = await api(h, "PATCH", `historyTimeline/${be.data.id}`, editor, { year: 1953 });
+    assert.equal(ce.data.year, 1953, "a Common Era year stays as typed");
+    assert.equal((await api(h, "PATCH", `historyTimeline/${be.data.id}`, editor, { year: 2538 })).data.year, 1995);
+  });
 });
 
 describe("food codes: optional, tidied, made by the server when empty", () => {
