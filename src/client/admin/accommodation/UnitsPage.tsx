@@ -4,13 +4,10 @@ import { formatBaht } from "../../../shared/booking-rules.ts";
 import { format } from "../../../shared/i18n/admin-messages.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
 import { Link } from "../../router/Router.tsx";
+import { ExtrasPanel } from "./ExtrasPanel.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, detailMessage, errorMessage } from "../ui.tsx";
 import { AvailabilityGrid } from "./AvailabilityGrid.tsx";
-import { ExtraBedsCard } from "./ExtraBedsCard.tsx";
-import { MassageCard } from "./MassageCard.tsx";
-import { PetsCard } from "./PetsCard.tsx";
-import { MoveSettingsCard } from "./MoveSettingsCard.tsx";
 
 export const TYPE_PATH: Record<UnitType, string> = { HOUSE: "houses", VIP_TENT: "vip-tents" };
 
@@ -86,10 +83,7 @@ export function UnitsPage({ type }: { type: UnitType }) {
         )}
       </div>
       {error && <Alert kind="error">{error}</Alert>}
-      <ExtraBedsCard />
-      <PetsCard />
-      <MassageCard />
-      <MoveSettingsCard />
+      <ExtrasPanel />
       {!units && !error && <p role="status">{t.common.loading}</p>}
       {units && units.length === 0 && <div className="adm-empty">{t.acc.empty}</div>}
       {units && units.length > 0 && (

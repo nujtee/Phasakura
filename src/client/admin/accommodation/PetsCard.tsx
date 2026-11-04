@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import type { ExtrasEmbed } from "./ExtrasPanel.tsx";
 import type { PetChargePer, PetSettingsDto } from "../../../shared/booking-types.ts";
 import { MAX_PET_WEIGHT_KG, MAX_PETS_PER_UNIT } from "../../../shared/booking-types.ts";
 import { SATANG_PER_BAHT, formatBaht, parseBahtToSatang } from "../../../shared/booking-rules.ts";
@@ -11,11 +12,12 @@ import { Alert, Button, errorMessage, Field, fieldErrors } from "../ui.tsx";
  * Pets (migration 0044): on / off on its own, price per pet (per night or per stay), heaviest pet allowed and pets per
  * house / VIP tent. The guest adds them on the booking page (add-ons step); bookings already made keep their price.
  */
-export function PetsCard() {
+export function PetsCard({ embedded }: { embedded?: ExtrasEmbed } = {}) {
   const { t, can, locale } = useAdmin();
   const [s, setS] = useState<PetSettingsDto | null>(null);
   const [f, setF] = useState({ enabled: false, price: "0", chargePer: "NIGHT" as PetChargePer, kg: "10", max: "2" });
-  const [open, setOpen] = useState(false);
+  // Inside the extras panel (one tab each) the form is always shown.
+  const [open, setOpen] = useState(!!embedded);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,7 +48,7 @@ export function PetsCard() {
         enabled: f.enabled, priceSatang: price, chargePer: f.chargePer, maxWeightKg: Number(f.kg), maxPerUnit: Number(f.max),
       }));
       setMessage({ kind: "success", text: t.acc.petsSaved });
-      setOpen(false);
+      if (!embedded) setOpen(false);
     } catch (err) {
       setErrors(fieldErrors(t, err));
       setMessage({ kind: "error", text: errorMessage(t, err) });
@@ -55,13 +57,15 @@ export function PetsCard() {
     }
   }
 
-  if (!s) return message ? <Alert kind="error">{message.text}</Alert> : null;
-  const state = s.enabled
+  const state = !s ? "" : s.enabled
     ? format(s.chargePer === "STAY" ? t.acc.petsOnStay : t.acc.petsOnNight, { price: formatBaht(s.priceSatang, locale.code), kg: s.maxWeightKg, max: s.maxPerUnit })
     : t.acc.petsOff;
+  // In the extras panel the bar shows each option's state (on / off and what it is set to).
+  useEffect(() => { embedded?.onStatus(s ? { on: s.enabled, summary: state } : null); }, [embedded, s, state]);
+  if (!s) return message ? <Alert kind="error">{message.text}</Alert> : null;
 
   return (
-    <section className="adm-card adm-extrabeds adm-pets" aria-labelledby="pets-h">
+    <section className={`adm-card adm-extrabeds adm-pets${embedded ? " adm-extrabeds--embedded" : ""}`} aria-labelledby="pets-h">
       <div className="adm-extrabeds__head">
         <div>
           <h2 className="adm-h2" id="pets-h">{t.acc.petsTitle}</h2>
@@ -102,7 +106,7 @@ export function PetsCard() {
           </fieldset>
           <div className="adm-row">
             <Button type="submit" busy={busy} disabled={!canEdit}>{busy ? t.common.saving : t.common.save}</Button>
-            <Button variant="secondary" onClick={() => { setOpen(false); show(s); setErrors({}); }}>{t.common.cancel}</Button>
+            <Button variant="secondary" onClick={() => { if (!embedded) setOpen(false); show(s); setErrors({}); setMessage(null); }}>{t.common.cancel}</Button>
           </div>
         </form>
       )}

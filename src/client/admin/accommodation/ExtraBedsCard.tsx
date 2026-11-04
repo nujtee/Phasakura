@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import type { ExtrasEmbed } from "./ExtrasPanel.tsx";
 import type { AdminUnitDto } from "../../../shared/accommodation-types.ts";
 import type { ExtraBedSettingsDto } from "../../../shared/booking-types.ts";
 import { MAX_EXTRA_BEDS_PER_UNIT } from "../../../shared/booking-types.ts";
@@ -13,13 +14,14 @@ import { Alert, Button, errorMessage, Field, fieldErrors } from "../ui.tsx";
  * the booking page (food step); bookings already made keep the price they were made at.
  * Houses can be switched on / off one by one, or all at once (migration 0047).
  */
-export function ExtraBedsCard() {
+export function ExtraBedsCard({ embedded }: { embedded?: ExtrasEmbed } = {}) {
   const { t, can, locale } = useAdmin();
   const [s, setS] = useState<ExtraBedSettingsDto | null>(null);
   const [f, setF] = useState({ enabled: false, price: "0", max: "1" });
   const [units, setUnits] = useState<AdminUnitDto[]>([]);
   const [off, setOff] = useState<Set<string>>(new Set());
-  const [open, setOpen] = useState(false);
+  // Inside the extras panel (one tab each) the form is always shown.
+  const [open, setOpen] = useState(!!embedded);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,7 +58,7 @@ export function ExtraBedsCard() {
         offUnitIds: [...off].filter((id) => units.some((u) => u.id === id)),
       }));
       setMessage({ kind: "success", text: t.acc.extraBedsSaved });
-      setOpen(false);
+      if (!embedded) setOpen(false);
     } catch (err) {
       setErrors(fieldErrors(t, err));
       setMessage({ kind: "error", text: errorMessage(t, err) });
@@ -65,12 +67,14 @@ export function ExtraBedsCard() {
     }
   }
 
-  if (!s) return message ? <Alert kind="error">{message.text}</Alert> : null;
-  const offSaved = units.filter((u) => (s.offUnitIds ?? []).includes(u.id)).length;
-  const state = s.enabled
+  const offSaved = units.filter((u) => (s?.offUnitIds ?? []).includes(u.id)).length;
+  const state = !s ? "" : s.enabled
     ? format(t.acc.extraBedsOn, { price: formatBaht(s.pricePerNightSatang, locale.code), max: s.maxPerUnit })
       + (units.length ? ` · ${format(t.acc.extraBedsUnitsCount, { on: units.length - offSaved, total: units.length })}` : "")
     : t.acc.extraBedsOff;
+  // In the extras panel the bar shows each option's state (on / off and what it is set to).
+  useEffect(() => { embedded?.onStatus(s ? { on: s.enabled, summary: state } : null); }, [embedded, s, state]);
+  if (!s) return message ? <Alert kind="error">{message.text}</Alert> : null;
   const toggle = (id: string, on: boolean) => setOff((prev) => {
     const next = new Set(prev);
     if (on) next.delete(id); else next.add(id);
@@ -78,7 +82,7 @@ export function ExtraBedsCard() {
   });
 
   return (
-    <section className="adm-card adm-extrabeds" aria-labelledby="extra-beds-h">
+    <section className={`adm-card adm-extrabeds${embedded ? " adm-extrabeds--embedded" : ""}`} aria-labelledby="extra-beds-h">
       <div className="adm-extrabeds__head">
         <div>
           <h2 className="adm-h2" id="extra-beds-h">{t.acc.extraBedsTitle}</h2>
@@ -128,7 +132,7 @@ export function ExtraBedsCard() {
           </fieldset>
           <div className="adm-row">
             <Button type="submit" busy={busy} disabled={!canEdit}>{busy ? t.common.saving : t.common.save}</Button>
-            <Button variant="secondary" onClick={() => { setOpen(false); show(s); setErrors({}); }}>{t.common.cancel}</Button>
+            <Button variant="secondary" onClick={() => { if (!embedded) setOpen(false); show(s); setErrors({}); setMessage(null); }}>{t.common.cancel}</Button>
           </div>
         </form>
       )}
