@@ -402,9 +402,12 @@ function SettingsTab() {
     }
   }
 
+  // Migration 0060: Center sends the shared settings; only on / off stays this site's.
+  const managed = s.managedByCenter;
   return (
     <form onSubmit={(e) => void save(e)} noValidate>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {managed && <Alert kind="info">{fill(m.admin.managedByCenter, { time: s.centerSyncedAt ? new Date(s.centerSyncedAt).toLocaleString() : "—" })}</Alert>}
       <fieldset className="adm-fieldset" disabled={busy}>
         <div className="adm-card">
           <h2 className="adm-h2">{m.admin.settingsTitle}</h2>
@@ -413,14 +416,17 @@ function SettingsTab() {
             <span>{m.admin.enabled}</span>
           </label>
           {d.enabled && <Alert kind="info">{m.admin.enabledWarn}</Alert>}
+          <fieldset className="adm-fieldset" disabled={managed}>
           <div className="adm-grid2">
             <Field label={m.admin.feePerUnit} inputMode="numeric" required value={d.feePerUnit} hint={m.admin.feeHint} error={errors.feePerUnit}
               onChange={(e) => set({ feePerUnit: e.target.value.replace(/[^0-9]/g, "").slice(0, 6) })} />
             <Field label={m.admin.lowThreshold} inputMode="numeric" required value={d.lowThreshold} error={errors.lowThreshold}
               onChange={(e) => set({ lowThreshold: e.target.value.replace(/[^0-9]/g, "").slice(0, 9) })} />
           </div>
+          </fieldset>
         </div>
 
+        <fieldset className="adm-fieldset" disabled={managed}>
         <div className="adm-card">
           <h2 className="adm-h2">{m.admin.plansTitle}</h2>
           <div className="adm-grid2">
@@ -481,6 +487,7 @@ function SettingsTab() {
           {!s.verifierConfigured && <p className="adm-field__hint">{m.admin.verifierOff}</p>}
           {errors.approvalMode && <p className="adm-field__error">{errors.approvalMode}</p>}
         </div>
+        </fieldset>
 
         <Button type="submit" busy={busy}>{m.admin.save}</Button>
       </fieldset>
@@ -508,7 +515,8 @@ function NoticesTab() {
           <span className={`adm-badge ${s.emailReady ? "adm-badge--active" : "adm-badge--suspended"}`}>{s.emailReady ? m.admin.emailOn : m.admin.emailOff}</span>{" "}
           <span className={`adm-badge ${s.lineReady ? "adm-badge--active" : "adm-badge--suspended"}`}>{s.lineReady ? m.admin.lineOn : m.admin.lineOff}</span>
         </p>
-        <fieldset className="adm-fieldset" disabled={busy}>
+        {s.managedByCenter && <Alert kind="info">{fill(m.admin.managedByCenter, { time: s.centerSyncedAt ? new Date(s.centerSyncedAt).toLocaleString() : "—" })}</Alert>}
+        <fieldset className="adm-fieldset" disabled={busy || s.managedByCenter}>
           <div className="adm-grid2">
             <Field label={m.admin.notifyEmail} type="email" maxLength={254} value={d.notifyEmail ?? ""} error={errors.notifyEmail}
               onChange={(e) => set({ notifyEmail: e.target.value })} />
@@ -519,7 +527,7 @@ function NoticesTab() {
             <Field label={m.admin.alertTime1} type="time" required value={d.alertTime1} error={errors.alertTime1} onChange={(e) => set({ alertTime1: e.target.value })} />
             <Field label={m.admin.alertTime2} type="time" required value={d.alertTime2} error={errors.alertTime2} onChange={(e) => set({ alertTime2: e.target.value })} />
           </div>
-          <Button type="submit" busy={busy}>{m.admin.save}</Button>
+          {!s.managedByCenter && <Button type="submit" busy={busy}>{m.admin.save}</Button>}
         </fieldset>
       </form>
       <div className="adm-card">

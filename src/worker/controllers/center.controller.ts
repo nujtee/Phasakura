@@ -9,8 +9,12 @@ import { LATEST_MIGRATION } from "../services/health.service.ts";
 import { Validator } from "../validation.ts";
 import { centerFeatures } from "../services/center-admin.service.ts";
 import { CENTER_FEATURES, type CenterFeature } from "../../shared/channel-types.ts";
+import type { CenterCreditQr } from "../../shared/credit-types.ts";
+import { parseCreditSettings } from "./credit.controller.ts";
 
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
+/** The credit settings call carries the QR picture (≤ 2 MB, base64). */
+export const CENTER_CREDITS_MAX_BODY = 3_200_000;
 
 /** `{ ical?: boolean, channex?: boolean }` — at least one. */
 export function switches(body: Record<string, unknown>): { ical?: boolean; channex?: boolean } {
@@ -116,6 +120,38 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       v.assertValid();
       const s = services(ctx);
       return jsonOk(await s.centerAdmin.setFeatures(req, change, { landscape: s.landscape, credits: s.credits }, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
+    /** Credit settings and where this site stands (migration 0060): for Center's credit page. */
+    getCredits: (async (ctx) => {
+      await verify(ctx);
+      return jsonOk(await services(ctx).credits.centerOverview(), NO_STORE);
+    }) satisfies Handler,
+
+    /**
+     * `{ settings, qr: { sha256, mime, data } | null, version }` — Center's shared credit settings (PLATFORM_OWNER, reason).
+     * The settings are checked exactly like the site's own form; on / off is not part of it.
+     */
+    setCredits: (async (ctx) => {
+      const req = await services(ctx).center.verify(ctx.request, ctx.url, requestMeta(ctx), CENTER_CREDITS_MAX_BODY);
+      const body = await readJsonObject(ctx.request, CENTER_CREDITS_MAX_BODY);
+      const v = new Validator(body).allowOnly(["settings", "qr", "version"]);
+      const raw = body.settings;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new ValidationError({ settings: "REQUIRED" });
+      const parsed = parseCreditSettings({ ...(raw as Record<string, unknown>), enabled: false, qrAssetId: null });
+      const { enabled: _e, qrAssetId: _q, ...settings } = parsed;
+      const version = v.string("version", { required: true, pattern: /^[A-Za-z0-9_.:-]{1,64}$/ })!;
+      let qr: CenterCreditQr | null = null;
+      if (body.qr !== null && body.qr !== undefined) {
+        const q = body.qr as Record<string, unknown>;
+        if (typeof q !== "object" || typeof q.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(q.sha256)
+          || typeof q.mime !== "string" || !/^image\/(png|jpeg|webp)$/.test(q.mime) || typeof q.data !== "string" || q.data.length > 3_000_000) {
+          v.errors.qr = "INVALID";
+        } else qr = { sha256: q.sha256, mime: q.mime, data: q.data };
+      }
+      v.assertValid();
+      const s = services(ctx);
+      return jsonOk(await s.centerAdmin.setCredits(req, s.credits, { settings, qr, version }, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
     /** Backups of this site's database in its private bucket (phase C8), newest first. */

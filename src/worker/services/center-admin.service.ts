@@ -12,6 +12,7 @@ import type { ChannelService } from "./channel.service.ts";
 import type { CenterChannelsDto, CenterFeature, CenterFeaturesDto } from "../../shared/channel-types.ts";
 import type { LandscapeService } from "./landscape.service.ts";
 import type { CreditService } from "./credit.service.ts";
+import type { CenterCreditOverviewDto, CenterCreditQr, CenterCreditSettings } from "../../shared/credit-types.ts";
 import { CENTER_SESSION_TTL_MS, type NewSession, type SessionService } from "./session.service.ts";
 
 /** How long an SSO ticket can be used (Center posts it straight away). */
@@ -204,6 +205,15 @@ export class CenterAdminService {
     if (change.landscape !== undefined) await targets.landscape.switchEnabled(change.landscape, caller.id, users(), meta, audit);
     if (change.credits !== undefined) await targets.credits.switchEnabled(change.credits, caller.id, users(), meta, audit);
     return centerFeatures(targets);
+  }
+
+  /** Center's shared credit settings (migration 0060) — PLATFORM_OWNER only, reason; audited as the Center user. */
+  async setCredits(req: CenterRequest, credits: CreditService, input: { settings: CenterCreditSettings; qr: CenterCreditQr | null; version: string }, meta: RequestMeta): Promise<CenterCreditOverviewDto> {
+    requireRole(req.actor, ["PLATFORM_OWNER"]);
+    const reason = requireReason(req.actor);
+    const caller = centerUser(req.actor);
+    return credits.applyFromCenter(input, caller.id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
+      { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
   }
 
   async listBackups(): Promise<BackupDto[]> {

@@ -11,6 +11,11 @@ import { SiteClient, signingKey } from "./site-client.ts";
 import { verifyLineSignature, createLineApi, type FetchLike } from "../worker/line/line-api.ts";
 import { ALERT_LABELS, lineWebhook, loadSettings, runChecks, securityAlert, sendTest, SETTING_TYPES, type SettingType } from "./monitor.ts";
 import { newRecoveryCodes, newTotpSecret, normalizeRecoveryCode, otpauthUri, qrSvg, verifyTotp } from "./totp.ts";
+import {
+  creditFormHtml, fromBase64, isQrMime, loadCredit, loadSync, newVersion, parseCreditForm, pushCredit, QR_MAX_BYTES, sha256Bytes,
+  siteTableHtml, sniffQr, toBase64, type CenterCreditRow, type SiteCreditView,
+} from "./credits.ts";
+import type { CenterCreditOverviewDto, CenterCreditSettings } from "../shared/credit-types.ts";
 
 const COOKIE = "__Host-csid";
 const HOUR = 3_600_000;
@@ -152,6 +157,15 @@ export function createCenterApp(options: CenterAppOptions = {}) {
         case "features": return changeFeature(ctx, me, slug);
         default: return downloadBackup(ctx, me, slug);
       }
+    }
+    // Credit settings for every site (Center migration 0006): everyone reads; the owner changes and sends.
+    if (key === "GET /credits") return creditsPage(ctx, me);
+    if (key === "GET /credits/qr") return creditQr(ctx);
+    if (url.pathname.startsWith("/credits") && request.method === "POST") {
+      if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "ตั้งค่าเครดิตได้เฉพาะเจ้าของแพลตฟอร์ม");
+      if (key === "POST /credits") return saveCredit(ctx, me);
+      if (key === "POST /credits/import") return importCredit(ctx, me);
+      if (key === "POST /credits/sync") return syncCredit(ctx, me);
     }
     if (key === "GET /releases") return releasesPage(ctx, me);
     if (key === "POST /releases") return requestRelease(ctx, me);
@@ -989,6 +1003,157 @@ ${runsCard}`,
     return sitePage(ctx, me, slug, { kind: "ok", text: `ตัด session ของ Center ใน ${site.name} แล้ว (${res.data?.revoked ?? 0} session)` });
   }
 
+  // ---------------------------------------------------------------- credits (one set for every site)
+
+  async function creditViews(ctx: Ctx, me: Me): Promise<SiteCreditView[]> {
+    const client = new SiteClient(ctx.env, 8000, clock);
+    const sync = await loadSync(ctx.repo.db);
+    const actor = actorOf(me);
+    return Promise.all(ctx.sites.map(async (site) => ({
+      site, res: await client.call<CenterCreditOverviewDto>(site, "GET", "/api/center/credits", actor), sync: sync.get(site.slug),
+    })));
+  }
+
+  async function creditsPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null, draft: CenterCreditSettings | null = null): Promise<Response> {
+    const canEdit = me.role === "PLATFORM_OWNER";
+    const [row, views] = await Promise.all([loadCredit(ctx.repo.db), creditViews(ctx, me)]);
+    const importable = views.filter((v) => v.res.status === 200);
+    const importForm = canEdit && importable.length
+      ? `<form method="post" action="/credits/import" class="inline"><label for="c-from" style="margin:0">นำค่าจากเว็บ</label>
+<select id="c-from" name="site">${importable.map((v) => `<option value="${esc(v.site.slug)}">${esc(v.site.name)}</option>`).join("")}</select>
+<button class="plain" type="submit">มาเป็นค่ากลาง (ยังไม่ส่ง)</button></form>` : "";
+    const head = row
+      ? `<p class="muted small">ค่ากลางล่าสุด ${esc(bkk(row.updated_at))} · รุ่น <span class="mono">${esc(row.version)}</span></p>`
+      : '<p class="warn">ยังไม่มีค่ากลาง — กรอกแล้วกด "บันทึกและส่งให้ทุกเว็บ" หรือนำค่าจากเว็บที่ตั้งไว้แล้วมาเป็นค่าตั้งต้น</p>';
+    return html(page({
+      title: "เครดิต", user: me, current: "credits", flash,
+      body: `<h1>เครดิตการใช้ App — ทุกเว็บ</h1>
+<p class="muted">ตั้งค่าครั้งเดียวที่นี่ แล้วส่งให้ทุกเว็บ (หน้า "จัดการเติมเครดิต → ตั้งค่า" ของแต่ละเว็บจะเป็นแบบอ่านอย่างเดียว) · เปิด / ปิดระบบเครดิตยังแยกรายเว็บ</p>
+<div class="card scroll"><h2 style="margin-top:0">ทุกเว็บ</h2>${siteTableHtml(views, row, canEdit)}
+${canEdit && row ? '<form method="post" action="/credits/sync" class="inline"><input type="hidden" name="site" value="all"><button class="plain" type="submit">ส่งค่ากลางให้ทุกเว็บอีกครั้ง</button></form>' : ""}</div>
+<div class="card">${head}${importForm}${creditFormHtml(row, canEdit, draft)}</div>`,
+    }), flash?.kind === "error" ? 422 : 200);
+  }
+
+  async function creditQr(ctx: Ctx): Promise<Response> {
+    const row = await loadCredit(ctx.repo.db);
+    if (!row?.qr_data || !isQrMime(row.qr_mime)) throw new HttpError(404, "ไม่มีรูป QR");
+    return new Response(fromBase64(row.qr_data) as BodyInit, { headers: { "Content-Type": row.qr_mime, "Content-Disposition": "inline" } });
+  }
+
+  /** Sends the set to every site (or one); audited once per send with the result of each site. */
+  async function sendCredit(ctx: Ctx, me: Me, row: CenterCreditRow, reason: string, only: CenterSite[] = ctx.sites): Promise<{ ok: string[]; failed: string[] }> {
+    const ok: string[] = [];
+    const failed: string[] = [];
+    await Promise.all(only.map(async (site) => {
+      const res = await pushCredit(ctx.env, site, row, { ...actorOf(me), reason }, ctx.now, clock);
+      if (res.status === 200) ok.push(site.name);
+      else failed.push(`${site.name} (${siteError(res.status, res.error?.code)})`);
+    }));
+    await audit(ctx, me.id, "CREDIT_SYNC", only.length === 1 ? only[0]!.slug : null, reason, { version: row.version, ok, failed }).run();
+    return { ok, failed };
+  }
+
+  function sendResult(r: { ok: string[]; failed: string[] }): { kind: "ok" | "error"; text: string } {
+    return r.failed.length
+      ? { kind: "error", text: `ส่งแล้ว ${r.ok.length} เว็บ · ไม่สำเร็จ: ${r.failed.join(", ")} — ระบบจะลองส่งซ้ำเองทุก 5 นาที` }
+      : { kind: "ok", text: `บันทึกและส่งให้ ${r.ok.length} เว็บแล้ว` };
+  }
+
+  async function saveCredit(ctx: Ctx, me: Me): Promise<Response> {
+    const form = await readMultipart(ctx.request);
+    const field = { get: (name: string) => { const v = form.get(name); return typeof v === "string" ? v : null; } };
+    const { settings, errors } = parseCreditForm(field);
+    const reason = (field.get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) errors.push("กรุณาระบุเหตุผล 3–300 ตัวอักษร");
+    const before = await loadCredit(ctx.repo.db);
+    let qr = before?.qr_data && before.qr_mime && before.qr_sha256 ? { data: before.qr_data, mime: before.qr_mime, sha256: before.qr_sha256 } : null;
+    if (field.get("qr_remove") === "1") qr = null;
+    const file = form.get("qr");
+    if (file && typeof file !== "string" && file.size > 0) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const mime = bytes.length <= QR_MAX_BYTES ? sniffQr(bytes) : null;
+      if (!mime) errors.push("รูป QR ต้องเป็น PNG / JPEG / WebP ไม่เกิน 2 MB");
+      else qr = { data: toBase64(bytes), mime, sha256: await sha256Bytes(bytes) };
+    }
+    if (!settings.accountNumber && !settings.promptpayNumber && !qr) errors.push("ใส่เลขบัญชี พร้อมเพย์ หรือรูป QR อย่างน้อยหนึ่งอย่าง");
+    if (errors.length) return creditsPage(ctx, me, { kind: "error", text: errors.join(" · ") }, settings);
+    const row: CenterCreditRow = {
+      fee_per_unit: settings.feePerUnit, low_threshold: settings.lowThreshold, approval_mode: settings.approvalMode,
+      standard_min: settings.standardMin, premium_min: settings.premiumMin, bank_name: settings.bankName, account_name: settings.accountName,
+      account_number: settings.accountNumber, promptpay_number: settings.promptpayNumber, qr_receiver: settings.qrReceiver ?? null,
+      qr_mime: qr?.mime ?? null, qr_data: qr?.data ?? null, qr_sha256: qr?.sha256 ?? null, notify_email: settings.notifyEmail,
+      alert_time_1: settings.alertTime1, alert_time_2: settings.alertTime2, version: newVersion(ctx.now), updated_by: me.id, updated_at: iso(ctx.now),
+    };
+    await ctx.repo.db.batch([
+      saveCreditStatement(ctx, row),
+      audit(ctx, me.id, "CREDIT_SETTINGS_SAVED", null, reason, { version: row.version, before: before ? { feePerUnit: before.fee_per_unit, lowThreshold: before.low_threshold, approvalMode: before.approval_mode } : null,
+        after: { ...settings, qr: row.qr_sha256 } }),
+    ]);
+    return creditsPage(ctx, me, sendResult(await sendCredit(ctx, me, row, reason)));
+  }
+
+  function saveCreditStatement(ctx: Ctx, r: CenterCreditRow): D1Statement {
+    return ctx.repo.db.prepare(
+      `INSERT INTO center_credit_settings (id, fee_per_unit, low_threshold, approval_mode, standard_min, premium_min, bank_name, account_name,
+         account_number, promptpay_number, qr_receiver, qr_mime, qr_data, qr_sha256, notify_email, alert_time_1, alert_time_2, version, updated_by, updated_at)
+       VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+       ON CONFLICT (id) DO UPDATE SET fee_per_unit = excluded.fee_per_unit, low_threshold = excluded.low_threshold, approval_mode = excluded.approval_mode,
+         standard_min = excluded.standard_min, premium_min = excluded.premium_min, bank_name = excluded.bank_name, account_name = excluded.account_name,
+         account_number = excluded.account_number, promptpay_number = excluded.promptpay_number, qr_receiver = excluded.qr_receiver, qr_mime = excluded.qr_mime,
+         qr_data = excluded.qr_data, qr_sha256 = excluded.qr_sha256, notify_email = excluded.notify_email, alert_time_1 = excluded.alert_time_1,
+         alert_time_2 = excluded.alert_time_2, version = excluded.version, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+    ).bind(r.fee_per_unit, r.low_threshold, r.approval_mode, r.standard_min, r.premium_min, r.bank_name, r.account_name, r.account_number,
+      r.promptpay_number, r.qr_receiver, r.qr_mime, r.qr_data, r.qr_sha256, r.notify_email, r.alert_time_1, r.alert_time_2, r.version, r.updated_by, r.updated_at);
+  }
+
+  /** A site's current settings (and QR) become Center's set — saved, not sent: the owner checks it, then sends. */
+  async function importCredit(ctx: Ctx, me: Me): Promise<Response> {
+    const slug = ((await readForm(ctx.request)).get("site") ?? "").trim();
+    const site = ctx.sites.find((x) => x.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    const res = await new SiteClient(ctx.env, 8000, clock).call<CenterCreditOverviewDto>(site, "GET", "/api/center/credits", { ...actorOf(me) });
+    if (res.status !== 200 || !res.data) return creditsPage(ctx, me, { kind: "error", text: `อ่านค่าจาก ${site.name} ไม่ได้: ${siteError(res.status, res.error?.code)}` });
+    const d = res.data;
+    let qr: { data: string; mime: string; sha256: string } | null = null;
+    if (d.qrUrl) qr = await fetchSiteQr(ctx, site, d.qrUrl);
+    const s = d.settings;
+    const row: CenterCreditRow = {
+      fee_per_unit: s.feePerUnit, low_threshold: s.lowThreshold, approval_mode: s.approvalMode, standard_min: s.standardMin, premium_min: s.premiumMin,
+      bank_name: s.bankName, account_name: s.accountName, account_number: s.accountNumber, promptpay_number: s.promptpayNumber, qr_receiver: s.qrReceiver ?? null,
+      qr_mime: qr?.mime ?? null, qr_data: qr?.data ?? null, qr_sha256: qr?.sha256 ?? null, notify_email: s.notifyEmail,
+      alert_time_1: s.alertTime1, alert_time_2: s.alertTime2, version: newVersion(ctx.now), updated_by: me.id, updated_at: iso(ctx.now),
+    };
+    await ctx.repo.db.batch([saveCreditStatement(ctx, row), audit(ctx, me.id, "CREDIT_IMPORTED", site.slug, null, { version: row.version, qr: row.qr_sha256 })]);
+    const lostQr = d.qrUrl && !qr ? " (อ่านรูป QR ไม่ได้ — อัปโหลดใหม่)" : "";
+    return creditsPage(ctx, me, { kind: "ok", text: `นำค่าจาก ${site.name} มาเป็นค่ากลางแล้ว${lostQr} — ตรวจแล้วกด "บันทึกและส่งให้ทุกเว็บ"` });
+  }
+
+  async function fetchSiteQr(ctx: Ctx, site: CenterSite, qrUrl: string): Promise<{ data: string; mime: string; sha256: string } | null> {
+    try {
+      const url = new URL(qrUrl, `https://${site.domain}`);
+      if (url.protocol !== "https:") return null;
+      // A path on the site goes through its binding; a media host is public.
+      const binding = ctx.env[site.binding] as { fetch(r: Request): Promise<Response> } | undefined;
+      const res = url.host === site.domain && binding ? await binding.fetch(new Request(url.toString())) : await globalThis.fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) return null;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      const mime = bytes.length <= QR_MAX_BYTES ? sniffQr(bytes) : null;
+      return mime ? { data: toBase64(bytes), mime, sha256: await sha256Bytes(bytes) } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function syncCredit(ctx: Ctx, me: Me): Promise<Response> {
+    const slug = ((await readForm(ctx.request)).get("site") ?? "").trim();
+    const row = await loadCredit(ctx.repo.db);
+    if (!row) return creditsPage(ctx, me, { kind: "error", text: "ยังไม่มีค่ากลาง" });
+    const only = slug === "all" ? ctx.sites : ctx.sites.filter((x) => x.slug === slug);
+    if (!only.length) throw new HttpError(404, "ไม่พบเว็บนี้");
+    return creditsPage(ctx, me, sendResult(await sendCredit(ctx, me, row, "ส่งค่าเครดิตกลางอีกครั้ง", only)));
+  }
+
   async function settingsPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
     const settings = await loadSettings(ctx.repo.db);
     const token = ctx.env.CENTER_LINE_TOKEN?.trim();
@@ -1247,6 +1412,7 @@ function sensitiveReturnPath(method: string, path: string): string | null {
   if (path === "/sites/new" || path.startsWith("/sites/new/")) return "/sites/new";
   if (path === "/users" || path.startsWith("/users/")) return "/users";
   if (path === "/settings") return "/settings";
+  if (path === "/credits" || path.startsWith("/credits/")) return "/credits";
   if (path === "/account/recovery-codes" || path === "/account/password") return "/account";
   return null;
 }
@@ -1314,6 +1480,17 @@ function readCookie(request: Request, name: string): string | null {
     if (k === name) return v.join("=") || null;
   }
   return null;
+}
+
+/** The credit form (it carries the QR picture): multipart, at most 3 MB. */
+async function readMultipart(request: Request): Promise<FormData> {
+  const type = request.headers.get("Content-Type") ?? "";
+  if (!/^multipart\/form-data\s*;/i.test(type)) throw new HttpError(415, "รูปแบบข้อมูลไม่ถูกต้อง");
+  const declared = Number(request.headers.get("Content-Length") ?? "0");
+  if (declared > 3 * 1024 * 1024) throw new HttpError(413, "ไฟล์ใหญ่เกินไป");
+  const body = await request.arrayBuffer();
+  if (body.byteLength > 3 * 1024 * 1024) throw new HttpError(413, "ไฟล์ใหญ่เกินไป");
+  return new Response(body, { headers: { "Content-Type": type } }).formData();
 }
 
 async function readForm(request: Request): Promise<URLSearchParams> {

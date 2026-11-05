@@ -1,4 +1,5 @@
 import { siteUser } from "./center.repository.ts";
+import type { CenterCreditSettings } from "../../shared/credit-types.ts";
 import type { CreditPlan, CreditSettingsInput } from "../../shared/credit-types.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../env.ts";
 
@@ -21,6 +22,11 @@ export interface CreditSettingsRow {
   alert_time_1: string;
   alert_time_2: string;
   updated_at: string;
+  /** Migration 0060 (undefined before it). */
+  center_managed?: number;
+  center_version?: string | null;
+  center_synced_at?: string | null;
+  qr_sha256?: string | null;
 }
 
 export interface CreditAccountRow {
@@ -98,7 +104,7 @@ export class CreditRepository {
   settings(): Promise<CreditSettingsRow | null> {
     return this.db
       .prepare(
-        `SELECT s.*, m.object_key AS qr_key FROM credit_settings s
+        `SELECT s.*, m.object_key AS qr_key, m.sha256 AS qr_sha256 FROM credit_settings s
            LEFT JOIN media_assets m ON m.id = s.qr_asset_id AND m.status = 'ACTIVE'
           WHERE s.id = 1`,
       )
@@ -112,6 +118,20 @@ export class CreditRepository {
   /** Center / Super Admin switch: the credit system on or off, nothing else changed. */
   setEnabledStatement(enabled: boolean, actorId: string | null, now: string): D1PreparedStatementLike {
     return this.db.prepare("UPDATE credit_settings SET enabled = ?1, updated_by = ?2, updated_at = ?3 WHERE id = 1").bind(enabled ? 1 : 0, actorId, now);
+  }
+
+  /** Center's shared settings (migration 0060): everything but on / off; marks the row as managed by Center. */
+  saveFromCenterStatement(s: CenterCreditSettings, qrAssetId: string | null, version: string, actorId: string, now: string): D1PreparedStatementLike {
+    return this.db
+      .prepare(
+        `UPDATE credit_settings SET fee_per_unit = ?1, low_threshold = ?2, approval_mode = ?3, standard_min = ?4, premium_min = ?5,
+           bank_name = ?6, account_name = ?7, account_number = ?8, promptpay_number = ?9, qr_asset_id = ?10, qr_receiver = ?11,
+           notify_email = ?12, alert_time_1 = ?13, alert_time_2 = ?14, center_managed = 1, center_version = ?15, center_synced_at = ?17,
+           updated_by = ?16, updated_at = ?17
+          WHERE id = 1`,
+      )
+      .bind(s.feePerUnit, s.lowThreshold, s.approvalMode, s.standardMin, s.premiumMin, s.bankName, s.accountName, s.accountNumber,
+        s.promptpayNumber, qrAssetId, s.qrReceiver ?? null, s.notifyEmail, s.alertTime1, s.alertTime2, version, actorId, now);
   }
 
   /** `withQrReceiver` false = before migration 0028 (the column does not exist yet). */

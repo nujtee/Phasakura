@@ -125,6 +125,9 @@ export interface CreditSettingsDto {
   emailReady: boolean;
   lineReady: boolean;
   updatedAt: string;
+  /** Migration 0060: Center sends these settings (every site the same); here they are read-only, on / off stays. */
+  managedByCenter: boolean;
+  centerSyncedAt: string | null;
 }
 
 export interface CreditSettingsInput {
@@ -178,4 +181,38 @@ export interface AppFeeDto {
   units: number;
   perUnitSatang: number;
   totalSatang: number;
+}
+
+// ------------------------------------------------------------------ credit settings from Center (migration 0060)
+
+/** The settings Center keeps once for every site (on / off stays per site; the QR travels on its own). */
+export type CenterCreditSettings = Omit<CreditSettingsInput, "enabled" | "qrAssetId">;
+
+/** The QR picture of where top-ups are paid, as Center sends it (base64). */
+export interface CenterCreditQr {
+  sha256: string;
+  mime: string;
+  data: string;
+}
+
+/** GET /api/center/credits — what Center shows per site. */
+export interface CenterCreditOverviewDto {
+  managed: boolean;
+  version: string | null;
+  syncedAt: string | null;
+  qrSha256: string | null;
+  /** The QR as stored on the site (for Center to take over a site's settings once); null when none. */
+  qrUrl: string | null;
+  settings: CenterCreditSettings;
+  status: {
+    enabled: boolean;
+    payeeSet: boolean;
+    balance: number;
+    held: number;
+    available: number;
+    state: CreditState;
+    plan: string | null;
+    verifierConfigured: boolean;
+    pendingTopups: number;
+  };
 }

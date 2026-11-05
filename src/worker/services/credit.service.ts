@@ -2,6 +2,7 @@ import {
   CREDIT_PLANS, MAX_CREDIT_AMOUNT, PREMIUM_ONLY_MENU_PATHS,
   type CreditLedgerEntryDto, type CreditPaymentInfoDto, type CreditPlan, type CreditRecipientDto, type CreditSettingsDto,
   type CreditSettingsInput, type CreditState, type CreditSummaryDto, type CreditTopupDto, type Page, type TopupResultDto,
+  type CenterCreditOverviewDto, type CenterCreditQr, type CenterCreditSettings,
 } from "../../shared/credit-types.ts";
 import { DEFAULT_TIMEZONE, localDateTimeIn } from "../../shared/dates.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike, R2BucketLike } from "../env.ts";
@@ -83,7 +84,12 @@ export interface CreditConfig {
   /** Notices can go out (switches on + provider keys present). */
   emailReady: () => Promise<boolean>;
   lineReady: () => Promise<boolean>;
+  /** Public media bucket: where a QR sent by Center is stored (migration 0060). */
+  publicBucket?: R2BucketLike;
 }
+
+/** Largest QR picture Center may send (base64 decoded). */
+export const CENTER_QR_MAX_BYTES = 2 * 1024 * 1024;
 
 /**
  * App-usage credits (migration 0027): balance, top-ups (manual or EasySlip), Super Admin adjustments and plan,
@@ -375,6 +381,7 @@ export class CreditService {
       qrReceiver: s?.qr_receiver ?? null,
       notifyEmail: s?.notify_email ?? null, alertTime1: s?.alert_time_1 ?? "09:00", alertTime2: s?.alert_time_2 ?? "17:00",
       verifierConfigured: this.verifier !== null, emailReady, lineReady, updatedAt: s?.updated_at ?? "",
+      managedByCenter: s?.center_managed === 1, centerSyncedAt: s?.center_synced_at ?? null,
     };
   }
 
@@ -385,6 +392,12 @@ export class CreditService {
 
   async saveSettings(actor: AuthContext, input: CreditSettingsInput, meta: RequestMeta): Promise<CreditSettingsDto> {
     await this.requireManage(actor, meta);
+    // Managed from Center (migration 0060): only on / off is this site's own; the rest comes from Center.
+    const current = await this.repo.settings();
+    if (current?.center_managed === 1) {
+      if ((current.enabled === 1) !== input.enabled) await this.switchEnabled(input.enabled, actor.userId, [], meta);
+      return this.settingsDto(await this.repo.settings());
+    }
     if (input.qrAssetId) {
       const asset = await this.media.findById(input.qrAssetId);
       if (!asset || asset.status !== "ACTIVE" || asset.purpose !== "PAYMENT_QR" || asset.parent_asset_id) throw new ValidationError({ qrAssetId: "INVALID_IMAGE" });
@@ -427,6 +440,83 @@ export class CreditService {
       this.repo.setEnabledStatement(enabled, userId, now),
       this.log.auditStatement(userId, enabled ? "CREDITS_ON" : "CREDITS_OFF", "credits", "settings", { enabled: before.enabled === 1 }, { enabled, ...audit }, meta),
     ]);
+  }
+
+  /** For Center's credit page (migration 0060): the shared settings as this site has them, and where it stands. */
+  async centerOverview(): Promise<CenterCreditOverviewDto> {
+    const { s, a } = await this.load();
+    const { state, available } = creditState(s, a);
+    const pending = await this.repo.pendingCount().catch(() => 0);
+    return {
+      managed: s?.center_managed === 1, version: s?.center_version ?? null, syncedAt: s?.center_synced_at ?? null,
+      qrSha256: s?.qr_asset_id ? s.qr_sha256 ?? null : null,
+      qrUrl: publicMediaUrl(s?.qr_key, this.config.mediaBaseUrl),
+      settings: {
+        feePerUnit: s?.fee_per_unit ?? 20, lowThreshold: s?.low_threshold ?? 500, approvalMode: s?.approval_mode ?? "MANUAL",
+        standardMin: s?.standard_min ?? null, premiumMin: s?.premium_min ?? null, bankName: s?.bank_name ?? null,
+        accountName: s?.account_name ?? null, accountNumber: s?.account_number ?? null, promptpayNumber: s?.promptpay_number ?? null,
+        qrReceiver: s?.qr_receiver ?? null, notifyEmail: s?.notify_email ?? null,
+        alertTime1: s?.alert_time_1 ?? "09:00", alertTime2: s?.alert_time_2 ?? "17:00",
+      },
+      status: {
+        enabled: s?.enabled === 1, payeeSet: !!(s?.account_number || s?.promptpay_number || s?.qr_asset_id),
+        balance: a?.balance ?? 0, held: a?.held ?? 0, available, state, plan: a?.plan ?? null,
+        verifierConfigured: this.verifier !== null, pendingTopups: pending,
+      },
+    };
+  }
+
+  /**
+   * Center's shared settings (migration 0060), audited as the Center user. The QR is stored once per picture (same
+   * SHA-256 = the one already here); null = no QR. On / off is not touched. EasySlip without a key on this site
+   * simply leaves top-ups for Super Admin (as the setting always did).
+   */
+  async applyFromCenter(input: { settings: CenterCreditSettings; qr: CenterCreditQr | null; version: string }, callerId: string,
+    extraStatements: D1PreparedStatementLike[], meta: RequestMeta, audit: Record<string, unknown>): Promise<CenterCreditOverviewDto> {
+    const before = await this.repo.settings();
+    if (!before) throw new ConflictError("Run the database migrations first", "SCHEMA_OUTDATED");
+    if (before.center_managed === undefined) throw new ConflictError("Run the database migrations first", "SCHEMA_OUTDATED");
+    const set = input.settings;
+    if (before.enabled === 1 && !set.accountNumber && !set.promptpayNumber && !input.qr) {
+      throw new ValidationError({ accountNumber: "ACCOUNT_OR_PROMPTPAY_REQUIRED" }, "Set where top-ups are paid first");
+    }
+    const now = this.clock();
+    const at = iso(now);
+    const statements: D1PreparedStatementLike[] = [...extraStatements];
+    let qrAssetId: string | null = null;
+    let stored: string | null = null;
+    if (input.qr) {
+      if (before.qr_asset_id && before.qr_sha256 === input.qr.sha256) qrAssetId = before.qr_asset_id;
+      else {
+        const bytes = decodeBase64(input.qr.data);
+        if (!bytes || bytes.length === 0 || bytes.length > CENTER_QR_MAX_BYTES) throw new ValidationError({ qr: "INVALID_IMAGE" });
+        const image = sniffImage(bytes);
+        if (!image || !SLIP_MIMES.has(image.mime)) throw new ValidationError({ qr: "UNSUPPORTED_IMAGE" });
+        if ((await sha256Hex(bytes)) !== input.qr.sha256) throw new ValidationError({ qr: "CHECKSUM_MISMATCH" });
+        if (!this.config.publicBucket) throw new ConflictError("No public media bucket", "MEDIA_UNAVAILABLE");
+        qrAssetId = newId();
+        stored = `payment-qr/${at.slice(0, 4)}/${at.slice(5, 7)}/${qrAssetId}.${image.extension}`;
+        await this.config.publicBucket.put(stored, bytes, { httpMetadata: { contentType: image.mime, cacheControl: "public, max-age=31536000, immutable" } });
+        statements.push(this.media.insertStatement({
+          id: qrAssetId, bucket: "PUBLIC", key: stored, purpose: "PAYMENT_QR", mime: image.mime, size: bytes.length,
+          width: image.width, height: image.height, sha256: input.qr.sha256, uploadedBy: callerId, now: at,
+        }));
+      }
+    }
+    statements.push(
+      this.repo.saveFromCenterStatement(set, qrAssetId, input.version, callerId, at),
+      this.log.auditStatement(callerId, "CENTER_CREDIT_SETTINGS", "credits", "settings", {
+        feePerUnit: before.fee_per_unit, lowThreshold: before.low_threshold, approvalMode: before.approval_mode,
+        standardMin: before.standard_min, premiumMin: before.premium_min, managed: before.center_managed === 1,
+      }, { ...set, qr: input.qr ? input.qr.sha256 : null, version: input.version, ...audit }, meta),
+    );
+    try {
+      await this.db.batch(statements);
+    } catch (error) {
+      if (stored) await this.config.publicBucket?.delete(stored).catch(() => undefined);
+      throw error;
+    }
+    return this.centerOverview();
   }
 
   /** For Center: is it on, can it be switched on, where does the balance stand. */
@@ -479,6 +569,19 @@ export class CreditService {
     }
     if (queued) console.log(JSON.stringify({ level: "info", message: "credit_notices_queued", state, available, unitsLeft, queued }));
     return queued;
+  }
+}
+
+/** Base64 (standard or URL-safe) → bytes; null when it is not base64. */
+function decodeBase64(text: string): Uint8Array | null {
+  if (!/^[A-Za-z0-9+/_-]*={0,2}$/.test(text)) return null;
+  try {
+    const bin = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
   }
 }
 
