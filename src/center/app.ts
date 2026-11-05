@@ -12,7 +12,7 @@ import { verifyLineSignature, createLineApi, type FetchLike } from "../worker/li
 import { ALERT_LABELS, lineWebhook, loadSettings, runChecks, securityAlert, sendTest, SETTING_TYPES, type SettingType } from "./monitor.ts";
 import { newRecoveryCodes, newTotpSecret, normalizeRecoveryCode, otpauthUri, qrSvg, verifyTotp } from "./totp.ts";
 import {
-  creditFormHtml, fromBase64, isQrMime, loadCredit, loadSync, newVersion, parseCreditForm, pushCredit, QR_MAX_BYTES, sha256Bytes,
+  creditFormHtml, creditPayeeNote, creditSwitchForm, fromBase64, hasPayee, isQrMime, loadCredit, loadSync, newVersion, parseCreditForm, pushCredit, QR_MAX_BYTES, sha256Bytes,
   siteTableHtml, sniffQr, toBase64, type CenterCreditRow, type SiteCreditView,
 } from "./credits.ts";
 import { CREDIT_PLANS, MAX_CREDIT_AMOUNT, type CenterCreditOverviewDto, type CenterCreditSettings, type CreditTopupDto } from "../shared/credit-types.ts";
@@ -162,6 +162,10 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     // Credit settings for every site (Center migration 0006): everyone reads; the owner changes and sends.
     if (key === "GET /credits") return creditsPage(ctx, me);
     if (key === "GET /credits/qr") return creditQr(ctx);
+    if (key === "POST /credits/switch") {
+      if (me.role !== "PLATFORM_OWNER" && me.role !== "OPERATOR") throw new HttpError(403, "บทบาทของคุณเปิด / ปิดระบบเครดิตไม่ได้");
+      return creditSwitch(ctx, me);
+    }
     if (url.pathname.startsWith("/credits") && request.method === "POST") {
       if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "ตั้งค่าเครดิตได้เฉพาะเจ้าของแพลตฟอร์ม");
       if (key === "POST /credits") return saveCredit(ctx, me);
@@ -521,6 +525,7 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
     if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
     const client = new SiteClient(ctx.env, 5000, clock);
     const actor = actorOf(me);
+    const sharedCredit = await loadCredit(ctx.repo.db);
     const [checks, alerts, log, suspension, users, backups, channels, features] = await Promise.all([
       ctx.repo.db.prepare("SELECT site, checked_at, http_status, schema_state, cron_state, errors_24h, slips_waiting, suspended, detail FROM center_site_checks WHERE site = ?1 ORDER BY checked_at DESC LIMIT 96").bind(slug).all<CheckRow>(),
       ctx.repo.db.prepare("SELECT type, open_since, detail FROM center_alert_states WHERE site = ?1 AND open_since IS NOT NULL").bind(slug).all<{ type: string; open_since: string; detail: string | null }>(),
@@ -628,8 +633,8 @@ ${!ft ? `<p class="warn">อ่านสถานะไม่ได้: ${esc(si
 ${ft.landscape ? `<br><span class="small">แผนผัง ${ft.landscape.layouts} แผน · ${ft.landscape.publicLayout ? `หน้าจองแสดง “${esc(ft.landscape.publicLayout)}” ฉบับที่ ${ft.landscape.publicVersion ?? "-"}` : "หน้าจองยังไม่แสดงแผนผัง"}</span>` : ""}</p>
 ${ft.landscape ? featureForm("landscape", ft.landscape.enabled, "แผนผังที่พัก", ft.landscape.enabled ? "เหตุผลที่ปิด" : "เหตุผลที่เปิด เช่น เจ้าของเว็บขอใช้แผนผัง") : ""}
 <p><strong>ระบบเครดิต (ค่าธรรมเนียมการใช้ App)</strong> — ${ft.credits ? stateHtml(ft.credits.enabled) : '<span class="muted">ไม่มีข้อมูล</span>'}
-${ft.credits ? `<br><span class="small">คงเหลือ ${ft.credits.balance.toLocaleString("en-US")} เครดิต · กันไว้ ${ft.credits.held.toLocaleString("en-US")} · แพ็กเกจ ${esc(ft.credits.plan ?? "-")}${ft.credits.payeeSet ? "" : ' · <span class="warn">ยังไม่ได้ตั้งบัญชีรับเงินเติมเครดิต (หลังบ้าน → จัดการเติมเครดิต → ตั้งค่า)</span>'}</span>` : ""}</p>
-${ft.credits && (ft.credits.enabled || ft.credits.payeeSet) ? featureForm("credits", ft.credits.enabled, "ระบบเครดิต", ft.credits.enabled ? "เหตุผลที่ปิด (การจองจะไม่ถูกหักเครดิต)" : "เหตุผลที่เปิด") : ""}
+${ft.credits ? `<br><span class="small">คงเหลือ ${ft.credits.balance.toLocaleString("en-US")} เครดิต · กันไว้ ${ft.credits.held.toLocaleString("en-US")} · แพ็กเกจ ${esc(ft.credits.plan ?? "-")}${ft.credits.payeeSet ? "" : ` · <span class="warn">${esc(creditPayeeNote(sharedCredit, me))}</span>`}</span>` : ""}</p>
+${ft.credits && canSwitch ? creditSwitchForm(`/sites/${slug}/features`, null, ft.credits.enabled, ft.credits.payeeSet, sharedCredit, me) : ""}
 ${canSwitch ? "" : '<p class="muted small">เปิด / ปิดได้เฉพาะเจ้าของแพลตฟอร์มและผู้ดูแลระบบ</p>'}
 <p class="small muted">Super Admin ของเว็บเปิด / ปิดเองได้เช่นกัน (หลังบ้าน → ที่พัก → แผนผังที่พัก / การเงิน → จัดการเติมเครดิต) ทุกครั้งถูกบันทึกทั้งใน Center และในเว็บ</p>`}</div>`;
 
@@ -699,6 +704,36 @@ ${revokeHtml}
   }
 
   /** Site plan / credit system on or off on one site (PLATFORM_OWNER / OPERATOR, reason; audited here and there). */
+  /**
+   * Switches a site's credit system on / off. Switching on a site that has nowhere for top-ups to be paid yet:
+   * the owner's click sends Center's shared settings to it first (when there are any), then switches it on.
+   */
+  async function switchCredits(ctx: Ctx, me: Me, site: CenterSite, on: boolean, reason: string): Promise<{ kind: "ok" | "error"; text: string }> {
+    const client = new SiteClient(ctx.env, 8000, clock);
+    const put = () => client.call<CenterFeaturesDto>(site, "PUT", "/api/center/features", { ...actorOf(me), reason }, { credits: on });
+    let res = await put();
+    let sent = false;
+    if (on && res.error?.code === "CREDIT_PAYEE_NOT_SET") {
+      const row = await loadCredit(ctx.repo.db);
+      if (row && hasPayee(row) && me.role === "PLATFORM_OWNER") {
+        const pushed = await sendCredit(ctx, me, row, reason, [site]);
+        if (pushed.ok.length) {
+          sent = true;
+          res = await put();
+        }
+      }
+    }
+    const ok = res.status === 200;
+    await audit(ctx, me.id, `FEATURE_CREDITS_${on ? "ON" : "OFF"}`, site.slug, reason, { ok, status: res.status, error: res.error?.code ?? null, sentShared: sent }).run();
+    if (ok) return { kind: "ok", text: `${on ? "เปิด" : "ปิด"}ระบบเครดิตของ ${site.name} แล้ว${sent ? " (ส่งค่ากลางให้ก่อนเปิด)" : ""}` };
+    if (res.error?.code === "CREDIT_PAYEE_NOT_SET") {
+      return { kind: "error", text: me.role === "PLATFORM_OWNER"
+        ? `${site.name} ยังไม่มีบัญชีรับเงินเติมเครดิต — ตั้งค่ากลางในเมนู "เครดิต" (เลขบัญชี พร้อมเพย์ หรือรูป QR) ก่อน`
+        : `${site.name} ยังไม่มีบัญชีรับเงินเติมเครดิต — ให้เจ้าของแพลตฟอร์มส่งค่ากลางจากเมนู "เครดิต" ก่อน` };
+    }
+    return { kind: "error", text: res.status === 404 ? `${site.name} ยังไม่รองรับ — Release เว็บนี้ก่อน` : `${site.name} ไม่รับคำสั่ง: ${siteError(res.status, res.error?.code)}` };
+  }
+
   async function changeFeature(ctx: Ctx, me: Me, slug: string): Promise<Response> {
     const site = ctx.sites.find((s) => s.slug === slug);
     if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
@@ -710,6 +745,7 @@ ${revokeHtml}
     if (!feature || (op !== "on" && op !== "off")) throw new HttpError(422, "คำสั่งไม่ถูกต้อง");
     if (reason.length < 3 || reason.length > 300) return sitePage(ctx, me, slug, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
     const on = op === "on";
+    if (feature === "credits") return sitePage(ctx, me, slug, await switchCredits(ctx, me, site, on, reason));
     const res = await new SiteClient(ctx.env, 8000, clock).call<CenterFeaturesDto>(site, "PUT", "/api/center/features", { ...actorOf(me), reason }, { [feature]: on });
     const ok = res.status === 200;
     const name = feature === "landscape" ? "แผนผังที่พัก" : "ระบบเครดิต";
@@ -1087,7 +1123,7 @@ ${runsCard}`,
       title: "เครดิต", user: me, current: "credits", flash,
       body: `<h1>เครดิตการใช้ App — ทุกเว็บ</h1>
 <p class="muted">ตั้งค่าครั้งเดียวที่นี่ แล้วส่งให้ทุกเว็บ (หน้า "จัดการเติมเครดิต → ตั้งค่า" ของแต่ละเว็บจะเป็นแบบอ่านอย่างเดียว) · เปิด / ปิดระบบเครดิตยังแยกรายเว็บ</p>
-<div class="card scroll"><h2 style="margin-top:0">ทุกเว็บ</h2>${siteTableHtml(views, row, canEdit)}
+<div class="card scroll"><h2 style="margin-top:0">ทุกเว็บ</h2>${siteTableHtml(views, row, canEdit, me.role === "PLATFORM_OWNER" || me.role === "OPERATOR" ? me.role : null)}
 ${canEdit && row ? '<form method="post" action="/credits/sync" class="inline"><input type="hidden" name="site" value="all"><button class="plain" type="submit">ส่งค่ากลางให้ทุกเว็บอีกครั้ง</button></form>' : ""}</div>
 <div class="card">${head}${importForm}${creditFormHtml(row, canEdit, draft)}</div>`,
     }), flash?.kind === "error" ? 422 : 200);
@@ -1201,6 +1237,17 @@ ${canEdit && row ? '<form method="post" action="/credits/sync" class="inline"><i
     } catch {
       return null;
     }
+  }
+
+  async function creditSwitch(ctx: Ctx, me: Me): Promise<Response> {
+    const form = await readForm(ctx.request);
+    const site = ctx.sites.find((x) => x.slug === (form.get("site") ?? "").trim());
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    const op = form.get("credits");
+    if (op !== "on" && op !== "off") throw new HttpError(422, "คำสั่งไม่ถูกต้อง");
+    const reason = (form.get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) return creditsPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    return creditsPage(ctx, me, await switchCredits(ctx, me, site, op === "on", reason));
   }
 
   async function syncCredit(ctx: Ctx, me: Me): Promise<Response> {

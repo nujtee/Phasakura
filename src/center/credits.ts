@@ -248,7 +248,30 @@ ${canEdit ? `<label for="c-reason">เหตุผล (บันทึกใน�
 </fieldset></form>`;
 }
 
-export function siteTableHtml(views: SiteCreditView[], row: CenterCreditRow | null, canEdit: boolean): string {
+export function hasPayee(row: CenterCreditRow | null): boolean {
+  return !!(row && (row.account_number || row.promptpay_number || row.qr_data));
+}
+
+/** What a site without a payee needs before credits can be switched on. */
+export function creditPayeeNote(row: CenterCreditRow | null, me: { role: string }): string {
+  if (!hasPayee(row)) return 'ยังไม่มีบัญชีรับเงินเติมเครดิต — ตั้งค่ากลางในเมนู "เครดิต" ก่อน';
+  return me.role === "PLATFORM_OWNER" ? "ยังไม่ได้รับค่ากลาง — กดเปิดแล้วระบบจะส่งค่ากลางให้ก่อน" : 'ยังไม่ได้รับค่ากลาง — ให้เจ้าของแพลตฟอร์มส่งจากเมนู "เครดิต" ก่อน';
+}
+
+/**
+ * The on / off switch (site page and the credits table). Off → on needs somewhere for top-ups to be paid: the
+ * site's own, or Center's shared settings that the owner's click sends first; otherwise the button is disabled.
+ */
+export function creditSwitchForm(action: string, site: string | null, on: boolean, payeeSet: boolean, row: CenterCreditRow | null, me: { role: string }, compact = false): string {
+  const blocked = !on && !payeeSet && (!hasPayee(row) || me.role !== "PLATFORM_OWNER");
+  const label = compact ? (on ? "ปิด" : "เปิด") : (on ? "ปิดระบบเครดิต" : "เปิดระบบเครดิต");
+  const why = on ? (compact ? "เหตุผลที่ปิด" : "เหตุผลที่ปิด (การจองจะไม่ถูกหักเครดิต)") : "เหตุผลที่เปิด";
+  return `<form method="post" action="${esc(action)}" class="inline">${site ? `<input type="hidden" name="site" value="${esc(site)}">` : ""}<input type="hidden" name="credits" value="${on ? "off" : "on"}">
+<input name="reason" required minlength="3" maxlength="300" placeholder="${why}" aria-label="${why}"${blocked ? " disabled" : ""}${compact ? ' style="width:180px"' : ""}>
+<button type="submit"${on ? ' class="danger"' : ""}${blocked ? " disabled" : ""}>${label}</button></form>`;
+}
+
+export function siteTableHtml(views: SiteCreditView[], row: CenterCreditRow | null, canEdit: boolean, switchRole: string | null = null): string {
   const rows = views.map(({ site, res, sync }) => {
     const d = res.status === 200 ? res.data : undefined;
     if (!d) {
@@ -257,7 +280,7 @@ export function siteTableHtml(views: SiteCreditView[], row: CenterCreditRow | nu
     }
     const st = d.status;
     return `<tr><td><a href="/sites/${esc(site.slug)}">${esc(site.name)}</a></td>
-<td>${st.enabled ? '<span class="ok">เปิด</span>' : '<span class="muted">ปิด</span>'}</td>
+<td>${st.enabled ? '<span class="ok">เปิด</span>' : '<span class="muted">ปิด</span>'}${!st.enabled && !st.payeeSet ? `<div class="warn small">${esc(creditPayeeNote(row, { role: switchRole ?? "" }))}</div>` : ""}${switchRole ? creditSwitchForm("/credits/switch", site.slug, st.enabled, st.payeeSet, row, { role: switchRole }, true) : ""}</td>
 <td class="${STATE_CLASS[st.state]}">${esc(STATE_LABEL[st.state])}</td>
 <td>${n(st.balance)}<div class="muted small">กันไว้ ${n(st.held)} · ใช้ได้ ${n(st.available)}</div></td>
 <td>${esc(st.plan ?? "—")}</td>
@@ -266,7 +289,7 @@ export function siteTableHtml(views: SiteCreditView[], row: CenterCreditRow | nu
   }).join("");
   return `<table><thead><tr><th>เว็บ</th><th>ระบบเครดิต</th><th>สถานะ</th><th>คงเหลือ</th><th>แพ็กเกจ</th><th>คำขอเติมรอตรวจ</th><th>ค่ากลาง</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="7" class="muted">ยังไม่มีเว็บ</td></tr>'}</tbody></table>
-<p class="muted small">เปิด / ปิดระบบเครดิตทีละเว็บที่หน้าเว็บนั้น (กดชื่อเว็บ) · ยอดและคำขอเติมอ่านจากเว็บทุกครั้งที่เปิดหน้านี้</p>`;
+<p class="muted small">เปิด / ปิดระบบเครดิตรายเว็บได้จากตารางนี้ (ต้องใส่เหตุผล บันทึกทั้งใน Center และในเว็บ) · ปิดแล้วการจองใหม่ไม่ถูกหักเครดิต · ยอดและคำขอเติมอ่านจากเว็บทุกครั้งที่เปิดหน้านี้</p>`;
 }
 
 function syncCell(row: CenterCreditRow | null, sync: SyncRow | undefined, d: CenterCreditOverviewDto | null): string {
