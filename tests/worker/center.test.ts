@@ -6,6 +6,7 @@ import {
 } from "../../src/shared/center-protocol.ts";
 import { LATEST_MIGRATION } from "../../src/worker/services/health.service.ts";
 import { Harness, ORIGIN } from "../helpers/harness.ts";
+import { pngBytes } from "../helpers/images.ts";
 
 /** Center Management phase C2: the CENTER level of access (Ed25519-signed requests to /api/center/*). */
 
@@ -520,5 +521,53 @@ describe("Center: features only a SUPER_ADMIN switches (landscape, credits)", ()
     assert.deepEqual([credits.data.credits?.enabled, credits.data.credits?.payeeSet], [true, true]);
     assert.equal(h.audits("CREDITS_ON")[0]!.user_id, "center_u_owner");
     assert.equal((await signed<F>("PUT", "/api/center/features", OWNER, { credits: false, landscape: false })).data.landscape?.enabled, false);
+  });
+});
+
+describe("Center: credit settings kept once in Center (site migration 0060)", () => {
+  const CENTRAL = {
+    feePerUnit: 25, lowThreshold: 400, approvalMode: "MANUAL", standardMin: 300, premiumMin: 1000,
+    bankName: "Kasikorn", accountName: "Platform Owner", accountNumber: "111-2-33333-4", promptpayNumber: null,
+    qrReceiver: null, notifyEmail: "owner@platform.test", alertTime1: "09:00", alertTime2: "17:00",
+  };
+  const qrOf = async (bytes: Uint8Array<ArrayBuffer>) => ({
+    sha256: [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join(""),
+    mime: "image/png", data: Buffer.from(bytes).toString("base64"),
+  });
+
+  it("PLATFORM_OWNER only, with a reason; stores the QR once; the site keeps only on / off", async () => {
+    const { h, signed } = await c3();
+    type O = { managed: boolean; version: string | null; qrSha256: string | null; settings: { feePerUnit: number }; status: { enabled: boolean; payeeSet: boolean } };
+    const first = await signed<O>("GET", "/api/center/credits", SUPPORT);
+    assert.equal(first.status, 200, JSON.stringify(first.error));
+    assert.equal(first.data.managed, false);
+
+    const qr = await qrOf(pngBytes(64, 64));
+    const body = { settings: CENTRAL, qr, version: "v1" };
+    assert.equal((await signed("PUT", "/api/center/credits", OPERATOR, body)).error?.code, "CENTER_ROLE_REQUIRED");
+    assert.equal((await signed("PUT", "/api/center/credits", { ...OWNER, reason: "" }, body)).status, 422);
+    assert.equal((await signed("PUT", "/api/center/credits", OWNER, { ...body, version: "bad version!" })).status, 422);
+    assert.equal((await signed("PUT", "/api/center/credits", OWNER, { ...body, qr: { ...qr, sha256: "0".repeat(64) } })).error?.details?.qr, "CHECKSUM_MISMATCH");
+    assert.equal((await signed("PUT", "/api/center/credits", OWNER, { ...body, settings: { ...CENTRAL, feePerUnit: 0 } })).status, 422);
+
+    const saved = await signed<O>("PUT", "/api/center/credits", OWNER, body);
+    assert.equal(saved.status, 200, JSON.stringify(saved.error));
+    assert.deepEqual([saved.data.managed, saved.data.version, saved.data.qrSha256, saved.data.settings.feePerUnit], [true, "v1", qr.sha256, 25]);
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM media_assets WHERE purpose = 'PAYMENT_QR'")!.n, 1);
+    assert.equal(h.audits("CENTER_CREDIT_SETTINGS")[0]!.user_id, "center_u_owner");
+    // The same picture again is not stored twice.
+    await signed("PUT", "/api/center/credits", OWNER, { ...body, version: "v2" });
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM media_assets WHERE purpose = 'PAYMENT_QR'")!.n, 1);
+
+    // The site's own settings page: read-only except on / off.
+    const token = await h.login("owner@site.test");
+    const page = await h.api<{ managedByCenter: boolean; feePerUnit: number; enabled: boolean }>("GET", "/api/admin/credit-admin/settings", { token });
+    assert.deepEqual([page.data.managedByCenter, page.data.feePerUnit], [true, 25]);
+    const own = { ...CENTRAL, enabled: true, feePerUnit: 99, qrAssetId: null };
+    const put = await h.api<{ enabled: boolean; feePerUnit: number }>("PUT", "/api/admin/credit-admin/settings", { token, body: own });
+    assert.equal(put.status, 200, JSON.stringify(put.error));
+    assert.deepEqual([put.data.enabled, put.data.feePerUnit], [true, 25], "switched on; the fee stays Center's");
+    const after = await signed<O>("GET", "/api/center/credits", SUPPORT);
+    assert.deepEqual([after.data.status.enabled, after.data.status.payeeSet], [true, true]);
   });
 });

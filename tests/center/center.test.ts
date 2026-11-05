@@ -1,6 +1,8 @@
 import { stepAt, totpCode } from "../../src/center/totp.ts";
 import { IP_MAX_FAILURES, IP_WINDOW_MS } from "../../src/center/app.ts";
 import { backupState } from "../../src/center/monitor.ts";
+import { retryCredit } from "../../src/center/credits.ts";
+import { pngBytes } from "../helpers/images.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -137,14 +139,14 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
     CENTER_GITHUB_TOKEN: "github-token",
     CENTER_CF_TOKEN: "cf-token",
   };
-  const req = async (method: string, path: string, opts: { form?: Record<string, string>; raw?: string; cookie?: string | null; headers?: Record<string, string> } = {}) => {
+  const req = async (method: string, path: string, opts: { form?: Record<string, string>; raw?: string; multipart?: FormData; cookie?: string | null; headers?: Record<string, string> } = {}) => {
     const headers: Record<string, string> = { "CF-Connecting-IP": "203.0.113.5", "User-Agent": "test" };
     if (method === "POST") Object.assign(headers, { Origin: CENTER, "Sec-Fetch-Site": "same-origin" });
     if (opts.form) headers["Content-Type"] = "application/x-www-form-urlencoded";
     if (opts.cookie) headers.Cookie = `__Host-csid=${opts.cookie}`;
     Object.assign(headers, opts.headers);
     for (const [k, v] of Object.entries(headers)) if (v === "") delete headers[k];
-    const res = await app.fetch(new Request(`${CENTER}${path}`, { method, headers, body: opts.raw ?? (opts.form ? new URLSearchParams(opts.form).toString() : undefined) }), env);
+    const res = await app.fetch(new Request(`${CENTER}${path}`, { method, headers, body: opts.multipart ?? opts.raw ?? (opts.form ? new URLSearchParams(opts.form).toString() : undefined) }), env);
     const text = await res.text();
     const cookie = res.headers.get("Set-Cookie")?.match(/__Host-csid=([A-Za-z0-9_-]*)/)?.[1] ?? null;
     return { status: res.status, text, headers: res.headers, cookie, location: res.headers.get("Location") };
@@ -1156,5 +1158,95 @@ describe("Center: the runtime's fetch is never called as a method", () => {
     } finally {
       globalThis.fetch = real;
     }
+  });
+});
+
+describe("Center: credit settings for every site (Center migration 0006 / site 0060)", () => {
+  const FORM = {
+    fee_per_unit: "25", low_threshold: "400", approval_mode: "MANUAL", standard_min: "300", premium_min: "1000",
+    bank_name: "Kasikorn", account_name: "Platform Owner", account_number: "111-2-33333-4", promptpay_number: "", qr_receiver: "",
+    notify_email: "owner@platform.test", alert_time_1: "09:00", alert_time_2: "17:00", reason: "ตั้งค่ากลางครั้งแรก",
+  };
+  const multipart = (fields: Record<string, string>, qr?: Uint8Array<ArrayBuffer>) => {
+    const f = new FormData();
+    for (const [k, v] of Object.entries(fields)) f.set(k, v);
+    if (qr) f.set("qr", new Blob([qr], { type: "image/png" }), "qr.png");
+    return f;
+  };
+
+  it("the owner saves once and every site gets it (QR included); the site's page is read-only; everyone else only reads", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const first = await ctx.req("GET", "/credits", { cookie: owner });
+    assert.equal(first.status, 200, first.text.slice(0, 300));
+    assert.match(first.text, /ยังไม่มีค่ากลาง/);
+    assert.match(first.text, /Phasakura/);
+
+    const bad = await ctx.req("POST", "/credits", { cookie: owner, multipart: multipart({ ...FORM, reason: "" }) });
+    assert.equal(bad.status, 422);
+    assert.match(bad.text, /กรุณาระบุเหตุผล/);
+    const notImage = await ctx.req("POST", "/credits", { cookie: owner, multipart: multipart(FORM, new TextEncoder().encode("not a picture")) });
+    assert.match(notImage.text, /รูป QR ต้องเป็น PNG/);
+    assert.equal(ctx.site.db.get<{ m: number }>("SELECT center_managed AS m FROM credit_settings")!.m, 0, "nothing sent on an error");
+
+    const saved = await ctx.req("POST", "/credits", { cookie: owner, multipart: multipart(FORM, pngBytes(64, 64)) });
+    assert.equal(saved.status, 200, saved.text.slice(0, 500));
+    assert.match(saved.text, /บันทึกและส่งให้ 1 เว็บแล้ว/);
+    assert.match(saved.text, /ตรงกับค่ากลาง/);
+    const site = ctx.site.db.get<{ m: number; fee: number; qr: string | null }>("SELECT center_managed AS m, fee_per_unit AS fee, qr_asset_id AS qr FROM credit_settings")!;
+    assert.deepEqual([site.m, site.fee, site.qr !== null], [1, 25, true]);
+    assert.equal(ctx.site.audits("CENTER_CREDIT_SETTINGS").length, 1);
+    assert.equal(ctx.audits("CREDIT_SETTINGS_SAVED")[0]!.reason, "ตั้งค่ากลางครั้งแรก");
+    assert.equal(ctx.audits("CREDIT_SYNC").length, 1);
+    const qr = await ctx.req("GET", "/credits/qr", { cookie: owner });
+    assert.equal(qr.headers.get("Content-Type"), "image/png");
+
+    // Saving again without a new file keeps the QR; the site does not store it twice.
+    await ctx.req("POST", "/credits", { cookie: owner, multipart: multipart({ ...FORM, fee_per_unit: "30", reason: "ปรับค่าธรรมเนียม" }) });
+    assert.equal(ctx.site.db.get<{ fee: number }>("SELECT fee_per_unit AS fee FROM credit_settings")!.fee, 30);
+    assert.equal(ctx.site.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM media_assets WHERE purpose = 'PAYMENT_QR'")!.n, 1);
+
+    // An OPERATOR reads the page but cannot change or send.
+    const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: "Ops", email: "ops@phasakura.com", role: "OPERATOR" } });
+    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1];
+    const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
+    const ops = await ctx.enroll(set.cookie!);
+    const read = await ctx.req("GET", "/credits", { cookie: ops });
+    assert.equal(read.status, 200);
+    assert.ok(!read.text.includes('action="/credits/sync"'), "no send button");
+    assert.equal((await ctx.req("POST", "/credits", { cookie: ops, multipart: multipart(FORM) })).status, 403);
+    assert.equal((await ctx.req("POST", "/credits/sync", { cookie: ops, form: { site: "all" } })).status, 403);
+  });
+
+  it("a site that cannot be reached is marked FAILED and sent again by the 5-minute check", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    ctx.setSiteDown(true);
+    const saved = await ctx.req("POST", "/credits", { cookie: owner, multipart: multipart(FORM) });
+    assert.equal(saved.status, 422);
+    assert.match(saved.text, /ไม่สำเร็จ: Phasakura/);
+    assert.equal(ctx.db.get<{ s: string }>("SELECT status AS s FROM center_credit_sync WHERE site = 'phasakura'")!.s, "FAILED");
+    assert.equal(await retryCredit(ctx.env, () => new Date(ctx.site.now)), 0, "still down");
+    assert.equal(ctx.db.get<{ a: number }>("SELECT attempts AS a FROM center_credit_sync")!.a, 2);
+    ctx.setSiteDown(false);
+    assert.equal(await retryCredit(ctx.env, () => new Date(ctx.site.now)), 1);
+    assert.equal(ctx.db.get<{ s: string }>("SELECT status AS s FROM center_credit_sync")!.s, "OK");
+    assert.equal(ctx.site.db.get<{ m: number }>("SELECT center_managed AS m FROM credit_settings")!.m, 1);
+    assert.equal(await retryCredit(ctx.env, () => new Date(ctx.site.now)), 0, "nothing left to send");
+  });
+
+  it("import: a site's own settings become Center's set (saved, not sent)", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    ctx.site.db.run("UPDATE credit_settings SET fee_per_unit = 35, account_number = '222-3-44444-5', bank_name = 'SCB' WHERE id = 1");
+    const res = await ctx.req("POST", "/credits/import", { cookie: owner, form: { site: "phasakura" } });
+    assert.equal(res.status, 200, res.text.slice(0, 400));
+    assert.match(res.text, /นำค่าจาก Phasakura มาเป็นค่ากลางแล้ว/);
+    assert.match(res.text, /value="35"/);
+    assert.match(res.text, /ยังไม่ได้รับค่าล่าสุด/);
+    assert.equal(ctx.site.db.get<{ m: number }>("SELECT center_managed AS m FROM credit_settings")!.m, 0, "not sent yet");
+    const sent = await ctx.req("POST", "/credits/sync", { cookie: owner, form: { site: "all" } });
+    assert.match(sent.text, /ตรงกับค่ากลาง/);
+    assert.equal((await ctx.req("POST", "/credits/import", { cookie: owner, form: { site: "nope" } })).status, 404);
   });
 });

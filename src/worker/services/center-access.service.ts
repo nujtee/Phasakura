@@ -43,7 +43,8 @@ export class CenterAccessService {
     return this.keys.size > 0;
   }
 
-  async verify(request: Request, url: URL, meta: RequestMeta): Promise<CenterRequest> {
+  /** `maxBodyBytes`: a larger body for the one call that carries a picture (credit QR, migration 0060). */
+  async verify(request: Request, url: URL, meta: RequestMeta, maxBodyBytes = MAX_BODY_BYTES): Promise<CenterRequest> {
     if (!this.enabled) throw new NotFoundError();
     const h = (name: string) => request.headers.get(name)?.trim() ?? "";
     const keyId = h(CENTER_HEADERS.keyId);
@@ -70,7 +71,7 @@ export class CenterAccessService {
     if (Math.abs(nowSeconds - Number(timeText)) > CENTER_MAX_SKEW_SECONDS) return refuse("CLOCK_SKEW");
 
     const body = new Uint8Array(await request.clone().arrayBuffer());
-    if (body.length > MAX_BODY_BYTES) return refuse("BODY_TOO_LARGE");
+    if (body.length > maxBodyBytes) return refuse("BODY_TOO_LARGE");
     const message = canonicalString({
       method: request.method, host: url.host, pathAndQuery: url.pathname + url.search, time: timeText, nonce, actor: actorHeader,
       bodySha256: await sha256Hex(body),

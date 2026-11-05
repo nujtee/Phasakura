@@ -254,6 +254,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
       const s = await new LineRepository(db).settings().catch(() => null);
       return !!env.LINE_CHANNEL_ACCESS_TOKEN?.trim() && s?.enabled === 1;
     },
+    publicBucket: env.MEDIA_PUBLIC,
   });
   const quotes = new QuoteService(pricing, units, inventory, availability, clock, images, env.PUBLIC_MEDIA_BASE_URL, () => credits.feeTerms(),
     new ExtraBedRepository(db), new PetRepository(db), new MassageRepository(db));
