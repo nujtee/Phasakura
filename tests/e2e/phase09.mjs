@@ -716,8 +716,14 @@ await check("camping: owner offers a tarp area; a guest books dates, 2 adults + 
   await box.getByLabel("Offer a tarp area").check();
   await box.getByLabel("Price / area / night (THB)").fill("150");
   await box.getByLabel("Tarp areas per night").fill("2");
-  await p.locator("form.adm-card").first().getByRole("button", { name: "Save" }).click();
+  // The camping ground photo (shown on the home page and the booking page).
+  const settingsForm = p.locator("form.adm-card").first();
+  await settingsForm.locator("input[type=file]").first().setInputFiles(`${DIR}/hero-a.png`);
+  await settingsForm.locator(".adm-imagefield__preview img").first().waitFor({ timeout: 30000 });
+  await settingsForm.getByRole("button", { name: "Save" }).click();
   await p.getByText("Saved").first().waitFor();
+  const camp = (await (await req.get(`${BASE}/api/public/accommodations?lang=th`)).json()).data.camping;
+  if (!camp.cover?.url) throw new Error("no camping photo on the public site");
   await p.getByRole("columnheader", { name: /Tarp/ }).waitFor();
   await p.close();
 

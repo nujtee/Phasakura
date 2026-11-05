@@ -6,6 +6,7 @@ import { LOCALES, type LocaleCode } from "../../../shared/i18n/locales.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
 import type { PaymentMode } from "../../../shared/booking-rules.ts";
 import { PaymentModeField } from "./PaymentModeField.tsx";
+import { ImageField } from "../cms/CmsKit.tsx";
 import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, errorMessage, Field, fieldErrors } from "../ui.tsx";
 
@@ -64,6 +65,8 @@ function SettingsForm({ settings, canEdit, onSaved, onError }: {
   }])) as Record<LocaleCode, { name: string; description: string }>);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // The photo on the camping card (home page, booking page).
+  const [cover, setCover] = useState<{ id: string | null; url: string | null }>({ id: settings.coverAssetId, url: settings.coverUrl ?? null });
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -82,7 +85,7 @@ function SettingsForm({ settings, canEdit, onSaved, onError }: {
         pricePerAdultNightSatang: price,
         childFreeUnderAge: Number(f.childFreeUnderAge),
         maxGuestsPerTent: f.maxGuestsPerTent ? Number(f.maxGuestsPerTent) : null,
-        coverAssetId: settings.coverAssetId,
+        coverAssetId: cover.id,
         tarpEnabled: f.tarpEnabled,
         tarpPricePerNightSatang: tarpPrice,
         maxTarpsPerNight: Number(f.maxTarpsPerNight || 0),
@@ -120,6 +123,9 @@ function SettingsForm({ settings, canEdit, onSaved, onError }: {
           <PaymentModeField id="camping-payment-mode" value={f.paymentMode} error={errors.paymentMode} deposits={settings.depositBookings}
             onChange={(paymentMode) => setF({ ...f, paymentMode })} />
         </div>
+        <ImageField label={t.acc.campingCover} purpose="ACCOMMODATION" url={cover.url} hint={t.acc.campingCoverHint}
+          error={errors.coverAssetId} disabled={!canEdit}
+          onChange={(a) => setCover(a ? { id: a.id, url: a.url } : { id: null, url: null })} />
         <fieldset className="adm-subform adm-tarp">
           <legend className="adm-h3">{t.acc.tarpTitle}</legend>
           <label className="adm-check">
