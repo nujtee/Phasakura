@@ -571,3 +571,56 @@ describe("Center: credit settings kept once in Center (site migration 0060)", ()
     assert.deepEqual([after.data.status.enabled, after.data.status.payeeSet], [true, true]);
   });
 });
+
+describe("Center: top-up requests decided in Center (central credits, stage 3)", () => {
+  it("lists pending; the slip and decisions are for PLATFORM_OWNER / OPERATOR with a reason; audited as the Center user", async () => {
+    const { h, key, signed } = await c3();
+    const token = await h.login("owner@site.test");
+    const settings = await h.api("PUT", "/api/admin/credit-admin/settings", { token, body: {
+      enabled: true, feePerUnit: 20, lowThreshold: 500, approvalMode: "MANUAL", standardMin: 300, premiumMin: 1000, bankName: "Kasikorn",
+      accountName: "Platform Owner", accountNumber: "111-2-33333-4", promptpayNumber: null, qrAssetId: null, notifyEmail: null, alertTime1: "09:00", alertTime2: "17:00",
+    } });
+    assert.equal(settings.status, 200, JSON.stringify(settings.error));
+    const send = (n: number) => h.multipart<{ topup: { id: string } }>(token, "/api/admin/credits/topups",
+      [["plan", "STANDARD"], ["amount", "500"], ["file", { bytes: pngBytes(600 + n, 800 + n), name: `t${n}.png`, type: "image/png" }]]);
+    const a = await send(1);
+    assert.equal(a.status, 201, JSON.stringify(a.error));
+    await send(2);
+
+    type L = { pending: { id: string; amountRequested: number; status: string }[]; recent: { id: string; status: string; amountCredited: number | null }[] };
+    const list = await signed<L>("GET", "/api/center/topups", SUPPORT);
+    assert.equal(list.status, 200, JSON.stringify(list.error));
+    assert.equal(list.data.pending.length, 2);
+    const [first, second] = list.data.pending.map((t) => t.id) as [string, string];
+
+    // The slip: not for SUPPORT; an image for OPERATOR, audited.
+    const slipAs = async (actor: CenterActor) => {
+      const url = `${ORIGIN}/api/center/topups/${first}/slip`;
+      const headers = await signCenterRequest({ privateKey: key.privateKey, keyId: "c1", method: "GET", url, actor, now: h.now });
+      return h.app.fetch(new Request(url, { headers: { ...headers, "CF-Connecting-IP": "198.51.100.7" } }), h.env);
+    };
+    assert.equal((await slipAs(SUPPORT)).status, 403);
+    const slip = await slipAs(OPERATOR);
+    assert.equal(slip.status, 200);
+    assert.equal(slip.headers.get("Content-Type"), "image/png");
+    assert.equal(h.audits("VIEW_TOPUP_SLIP")[0]!.user_id, "center_u_ops");
+
+    assert.equal((await signed("POST", `/api/center/topups/${first}/approve`, SUPPORT, {})).error?.code, "CENTER_ROLE_REQUIRED");
+    assert.equal((await signed("POST", `/api/center/topups/${first}/approve`, { ...OPERATOR, reason: "" }, {})).status, 422);
+    assert.equal((await signed("POST", `/api/center/topups/${first}/approve`, OPERATOR, { amount: 0 })).status, 422);
+    assert.equal((await signed("POST", `/api/center/topups/${first}/approve`, OPERATOR, { plan: "GOLD" })).status, 422);
+    assert.equal((await signed("POST", "/api/center/topups/bad id!/approve", OPERATOR, {})).status, 422);
+
+    const ok = await signed<{ status: string; amountCredited: number; decidedBy: { id: string } }>("POST", `/api/center/topups/${first}/approve`, OPERATOR, { amount: 480, plan: "PREMIUM" });
+    assert.equal(ok.status, 200, JSON.stringify(ok.error));
+    assert.deepEqual([ok.data.status, ok.data.amountCredited, ok.data.decidedBy.id], ["APPROVED", 480, "center_u_ops"]);
+    assert.deepEqual({ ...h.db.get<{ balance: number; plan: string }>("SELECT balance, plan FROM credit_account WHERE id = 1")! }, { balance: 480, plan: "PREMIUM" });
+    assert.match(String(h.audits("APPROVE_CREDIT_TOPUP")[0]!.new_value), /ตรวจการจองที่ค้าง/);
+    assert.equal((await signed("POST", `/api/center/topups/${first}/approve`, OWNER, {})).error?.code, "TOPUP_ALREADY_DECIDED");
+
+    const no = await signed<{ status: string; rejectReason: string }>("POST", `/api/center/topups/${second}/reject`, { ...OWNER, reason: "ยอดไม่เข้าบัญชี" });
+    assert.deepEqual([no.data.status, no.data.rejectReason], ["REJECTED", "ยอดไม่เข้าบัญชี"]);
+    const after = await signed<L>("GET", "/api/center/topups", SUPPORT);
+    assert.deepEqual([after.data.pending.length, after.data.recent.length], [0, 2]);
+  });
+});

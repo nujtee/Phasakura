@@ -9,7 +9,7 @@ import { SiteClient, type SiteResponse } from "./site-client.ts";
 export const ALERT_TYPES = ["site_down", "schema_outdated", "cron_stale", "server_errors", "config_errors", "backup_stale"] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
 /** "security" (phase C9): account locked, two-step reset, recovery code used, new platform owner, sign-in flood. */
-export const SETTING_TYPES = [...ALERT_TYPES, "recovered", "security"] as const;
+export const SETTING_TYPES = [...ALERT_TYPES, "recovered", "security", "topups"] as const;
 export type SettingType = (typeof SETTING_TYPES)[number];
 
 export const ALERT_LABELS: Record<SettingType, string> = {
@@ -21,6 +21,7 @@ export const ALERT_LABELS: Record<SettingType, string> = {
   backup_stale: "ไม่มีไฟล์สำรองข้อมูลใหม่",
   recovered: "แจ้งเมื่อกลับมาปกติ",
   security: "ความปลอดภัยของ Center (บัญชีถูกล็อก, รีเซ็ต 2 ขั้น, เจ้าของแพลตฟอร์มใหม่)",
+  topups: "คำขอเติมเครดิตใหม่ (รออนุมัติที่ Center)",
 };
 
 /** No backup newer than this = backup_stale (the daily one runs at 03:17 Bangkok). */

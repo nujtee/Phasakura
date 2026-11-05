@@ -12,7 +12,7 @@ import type { ChannelService } from "./channel.service.ts";
 import type { CenterChannelsDto, CenterFeature, CenterFeaturesDto } from "../../shared/channel-types.ts";
 import type { LandscapeService } from "./landscape.service.ts";
 import type { CreditService } from "./credit.service.ts";
-import type { CenterCreditOverviewDto, CenterCreditQr, CenterCreditSettings } from "../../shared/credit-types.ts";
+import type { CenterCreditOverviewDto, CenterCreditQr, CenterCreditSettings, CreditPlan, CreditTopupDto } from "../../shared/credit-types.ts";
 import { CENTER_SESSION_TTL_MS, type NewSession, type SessionService } from "./session.service.ts";
 
 /** How long an SSO ticket can be used (Center posts it straight away). */
@@ -214,6 +214,32 @@ export class CenterAdminService {
     const caller = centerUser(req.actor);
     return credits.applyFromCenter(input, caller.id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
       { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
+  }
+
+  /** Approve a top-up from Center (stage 3) — PLATFORM_OWNER / OPERATOR, reason; audited as the Center user. */
+  async approveTopup(req: CenterRequest, credits: CreditService, id: string, input: { amount: number | null; plan: CreditPlan | null }, meta: RequestMeta): Promise<CreditTopupDto> {
+    requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
+    const reason = requireReason(req.actor);
+    const caller = centerUser(req.actor);
+    return credits.decideApprove(caller.id, id, input, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
+      { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
+  }
+
+  /** Reject a top-up from Center — the reason is what the site's staff see. */
+  async rejectTopup(req: CenterRequest, credits: CreditService, id: string, meta: RequestMeta): Promise<CreditTopupDto> {
+    requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
+    const reason = requireReason(req.actor);
+    const caller = centerUser(req.actor);
+    return credits.decideReject(caller.id, id, reason, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
+      { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId } });
+  }
+
+  /** The slip picture for Center — PLATFORM_OWNER / OPERATOR; audited (who looked). */
+  async topupSlip(req: CenterRequest, credits: CreditService, id: string, meta: RequestMeta): Promise<Response> {
+    requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
+    const caller = centerUser(req.actor);
+    return credits.centerSlip(caller.id, id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
+      { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId } });
   }
 
   async listBackups(): Promise<BackupDto[]> {

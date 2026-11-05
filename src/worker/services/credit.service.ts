@@ -270,6 +270,28 @@ export class CreditService {
     return { items: page.map(toTopupDto), nextCursor: rows.length > q.limit ? page[page.length - 1]!.created_at : null };
   }
 
+  /** For Center (stage 3): every request still waiting, and the latest decided ones. */
+  async centerTopups(): Promise<{ pending: CreditTopupDto[]; recent: CreditTopupDto[] }> {
+    const [pending, all] = await Promise.all([
+      this.repo.topups({ status: "PENDING", userId: null, before: null, limit: 100 }),
+      this.repo.topups({ status: null, userId: null, before: null, limit: 40 }),
+    ]);
+    return { pending: pending.map(toTopupDto), recent: all.filter((t) => t.status !== "PENDING").slice(0, 20).map(toTopupDto) };
+  }
+
+  /** The slip for Center: audited as `callerId` in the same batch as `extraStatements`. */
+  async centerSlip(callerId: string, id: string, extraStatements: D1PreparedStatementLike[], meta: RequestMeta, audit: Record<string, unknown>): Promise<Response> {
+    const topup = await this.repo.topup(id);
+    if (!topup) throw new NotFoundError("Top-up not found", "TOPUP_NOT_FOUND");
+    if (!topup.slip_key || !topup.slip_mime) throw new NotFoundError("Slip not found", "SLIP_NOT_FOUND");
+    const object = await this.bucket.get(topup.slip_key);
+    if (!object) throw new NotFoundError("Slip not found", "SLIP_NOT_FOUND");
+    await this.db.batch([...extraStatements, this.log.auditStatement(callerId, "VIEW_TOPUP_SLIP", "credits", id, null, audit, meta)]);
+    return new Response(object.body, {
+      headers: { "Content-Type": topup.slip_mime, "Content-Length": String(object.size), "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" },
+    });
+  }
+
   /** The slip image: to Super Admin, or to the user who sent it. Private, audited. */
   async slipImage(actor: AuthContext, id: string, meta: RequestMeta): Promise<Response> {
     const topup = await this.repo.topup(id);
@@ -305,6 +327,15 @@ export class CreditService {
 
   async approve(actor: AuthContext, id: string, input: { amount: number | null; plan: CreditPlan | null }, meta: RequestMeta): Promise<CreditTopupDto> {
     await this.requireManage(actor, meta);
+    return this.decideApprove(actor.userId, id, input, [], meta, {});
+  }
+
+  /**
+   * Approves as `callerId` (a SUPER_ADMIN here, or a Center user via CenterAdminService — stage 3 of central
+   * credits). `extraStatements` run first in the same batch; `audit` is added to the audit row.
+   */
+  async decideApprove(callerId: string, id: string, input: { amount: number | null; plan: CreditPlan | null }, extraStatements: D1PreparedStatementLike[],
+    meta: RequestMeta, audit: Record<string, unknown>): Promise<CreditTopupDto> {
     const topup = await this.repo.topup(id);
     if (!topup) throw new NotFoundError("Top-up not found", "TOPUP_NOT_FOUND");
     if (topup.status !== "PENDING") throw new ConflictError("This top-up was already decided", "TOPUP_ALREADY_DECIDED");
@@ -313,26 +344,33 @@ export class CreditService {
     const plan = input.plan ?? topup.plan;
     const now = iso(this.clock());
     const results = await this.db.batch([
-      ...this.repo.approveStatements({ id, amount, plan, via: "STAFF", actorId: actor.userId, now }),
+      ...extraStatements,
+      ...this.repo.approveStatements({ id, amount, plan, via: "STAFF", actorId: callerId, now }),
       ...this.repo.topupResultStatements(id, topup.requested_by, now),
-      this.log.auditStatement(actor.userId, "APPROVE_CREDIT_TOPUP", "credits", id, { status: "PENDING", amountRequested: topup.amount_requested, plan: topup.plan },
-        { status: "APPROVED", amountCredited: amount, plan }, meta),
+      this.log.auditStatement(callerId, "APPROVE_CREDIT_TOPUP", "credits", id, { status: "PENDING", amountRequested: topup.amount_requested, plan: topup.plan },
+        { status: "APPROVED", amountCredited: amount, plan, ...audit }, meta),
     ]);
-    if (!results[0]?.results.length) throw new ConflictError("This top-up was already decided", "TOPUP_ALREADY_DECIDED");
+    if (!results[extraStatements.length]?.results.length) throw new ConflictError("This top-up was already decided", "TOPUP_ALREADY_DECIDED");
     return toTopupDto((await this.repo.topup(id))!);
   }
 
   async reject(actor: AuthContext, id: string, reason: string, meta: RequestMeta): Promise<CreditTopupDto> {
     await this.requireManage(actor, meta);
+    return this.decideReject(actor.userId, id, reason, [], meta, {});
+  }
+
+  async decideReject(callerId: string, id: string, reason: string, extraStatements: D1PreparedStatementLike[], meta: RequestMeta,
+    audit: Record<string, unknown>): Promise<CreditTopupDto> {
     const topup = await this.repo.topup(id);
     if (!topup) throw new NotFoundError("Top-up not found", "TOPUP_NOT_FOUND");
     const now = iso(this.clock());
     const results = await this.db.batch([
-      this.repo.rejectStatement(id, reason, actor.userId, now),
+      ...extraStatements,
+      this.repo.rejectStatement(id, reason, callerId, now),
       ...this.repo.topupResultStatements(id, topup.requested_by, now),
-      this.log.auditStatement(actor.userId, "REJECT_CREDIT_TOPUP", "credits", id, { status: topup.status }, { status: "REJECTED", reason }, meta),
+      this.log.auditStatement(callerId, "REJECT_CREDIT_TOPUP", "credits", id, { status: topup.status }, { status: "REJECTED", reason, ...audit }, meta),
     ]);
-    if (!results[0]?.results.length) throw new ConflictError("This top-up was already decided", "TOPUP_ALREADY_DECIDED");
+    if (!results[extraStatements.length]?.results.length) throw new ConflictError("This top-up was already decided", "TOPUP_ALREADY_DECIDED");
     return toTopupDto((await this.repo.topup(id))!);
   }
 

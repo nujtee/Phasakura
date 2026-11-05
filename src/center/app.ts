@@ -15,7 +15,8 @@ import {
   creditFormHtml, fromBase64, isQrMime, loadCredit, loadSync, newVersion, parseCreditForm, pushCredit, QR_MAX_BYTES, sha256Bytes,
   siteTableHtml, sniffQr, toBase64, type CenterCreditRow, type SiteCreditView,
 } from "./credits.ts";
-import type { CenterCreditOverviewDto, CenterCreditSettings } from "../shared/credit-types.ts";
+import { CREDIT_PLANS, MAX_CREDIT_AMOUNT, type CenterCreditOverviewDto, type CenterCreditSettings, type CreditTopupDto } from "../shared/credit-types.ts";
+import { topupsBody, type SiteTopups, type SiteTopupView } from "./topups.ts";
 
 const COOKIE = "__Host-csid";
 const HOUR = 3_600_000;
@@ -166,6 +167,14 @@ export function createCenterApp(options: CenterAppOptions = {}) {
       if (key === "POST /credits") return saveCredit(ctx, me);
       if (key === "POST /credits/import") return importCredit(ctx, me);
       if (key === "POST /credits/sync") return syncCredit(ctx, me);
+    }
+    // Top-up requests of every site (stage 3): everyone reads; owner / operator see the slip and decide.
+    if (key === "GET /topups") return topupsPage(ctx, me);
+    const topup = /^\/topups\/([a-z][a-z0-9-]{1,30})\/([A-Za-z0-9_-]{1,64})\/(slip|approve|reject)$/.exec(url.pathname);
+    if (topup) {
+      if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณดูสลิปหรืออนุมัติไม่ได้");
+      if (topup[3] === "slip" && request.method === "GET") return topupSlip(ctx, me, topup[1]!, topup[2]!);
+      if (topup[3] !== "slip" && request.method === "POST") return decideTopup(ctx, me, topup[1]!, topup[2]!, topup[3] as "approve" | "reject");
     }
     if (key === "GET /releases") return releasesPage(ctx, me);
     if (key === "POST /releases") return requestRelease(ctx, me);
@@ -772,6 +781,55 @@ ${revokeHtml}
         ...(res.headers.get("Content-Length") ? { "Content-Length": res.headers.get("Content-Length")! } : {}),
       },
     });
+  }
+
+  // ---------------------------------------------------------------- top-up requests (central credits, stage 3)
+
+  async function topupsPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
+    const client = new SiteClient(ctx.env, 8000, clock);
+    const actor = actorOf(me);
+    const views: SiteTopupView[] = await Promise.all(ctx.sites.map(async (site) => ({ site, res: await client.call<SiteTopups>(site, "GET", "/api/center/topups", actor) })));
+    return html(page({ title: "คำขอเติมเครดิต", user: me, current: "topups", flash, body: topupsBody(views, me.role !== "SUPPORT_READONLY") }), flash?.kind === "error" ? 422 : 200);
+  }
+
+  async function topupSlip(ctx: Ctx, me: Me, slug: string, id: string): Promise<Response> {
+    const site = ctx.sites.find((x) => x.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    const res = await new SiteClient(ctx.env, 8000, clock).raw(site, `/api/center/topups/${encodeURIComponent(id)}/slip`, actorOf(me));
+    const type = res?.headers.get("Content-Type") ?? "";
+    const ok = res?.status === 200 && /^image\/(png|jpeg|webp)$/.test(type);
+    await audit(ctx, me.id, "TOPUP_SLIP_VIEWED", site.slug, null, { topup: id, ok, status: res?.status ?? 0 }).run();
+    if (!ok || !res?.body) {
+      await res?.body?.cancel();
+      throw new HttpError(res?.status === 404 ? 404 : 502, `เปิดสลิปไม่ได้ (${res ? `HTTP ${res.status}` : "ติดต่อเว็บไม่ได้"})`);
+    }
+    return new Response(res.body, { headers: { "Content-Type": type, "Cache-Control": "private, no-store", "Content-Disposition": "inline" } });
+  }
+
+  async function decideTopup(ctx: Ctx, me: Me, slug: string, id: string, decision: "approve" | "reject"): Promise<Response> {
+    const site = ctx.sites.find((x) => x.slug === slug);
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    const form = await readForm(ctx.request);
+    const reason = (form.get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) return topupsPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    let body: { amount?: number; plan?: string } = {};
+    if (decision === "approve") {
+      const amount = Number((form.get("amount") ?? "").replace(/,/g, "").trim());
+      if (!Number.isInteger(amount) || amount < 1 || amount > MAX_CREDIT_AMOUNT) return topupsPage(ctx, me, { kind: "error", text: "จำนวนเครดิตต้องเป็นจำนวนเต็มมากกว่า 0" });
+      const plan = form.get("plan") ?? "";
+      if (!(CREDIT_PLANS as readonly string[]).includes(plan)) return topupsPage(ctx, me, { kind: "error", text: "เลือกแพ็กเกจ" });
+      body = { amount, plan };
+    }
+    const res = await new SiteClient(ctx.env, 8000, clock).call<CreditTopupDto>(site, "POST", `/api/center/topups/${encodeURIComponent(id)}/${decision}`, { ...actorOf(me), reason }, body);
+    const ok = res.status === 200;
+    await audit(ctx, me.id, decision === "approve" ? "TOPUP_APPROVED" : "TOPUP_REJECTED", site.slug, reason, { topup: id, ok, status: res.status, ...body }).run();
+    if (!ok) {
+      const why = res.error?.code === "TOPUP_ALREADY_DECIDED" ? "คำขอนี้ถูกตัดสินไปแล้ว" : siteError(res.status, res.error?.code);
+      return topupsPage(ctx, me, { kind: "error", text: `${site.name}: ${why}` });
+    }
+    return topupsPage(ctx, me, { kind: "ok", text: decision === "approve"
+      ? `อนุมัติแล้ว — ${site.name} ได้ ${(res.data?.amountCredited ?? 0).toLocaleString("en-US")} เครดิต`
+      : `ไม่อนุมัติคำขอของ ${site.name} แล้ว` });
   }
 
   // ---------------------------------------------------------------- release (phase C8)
@@ -1413,6 +1471,7 @@ function sensitiveReturnPath(method: string, path: string): string | null {
   if (path === "/users" || path.startsWith("/users/")) return "/users";
   if (path === "/settings") return "/settings";
   if (path === "/credits" || path.startsWith("/credits/")) return "/credits";
+  if (path.startsWith("/topups/")) return "/topups";
   if (path === "/account/recovery-codes" || path === "/account/password") return "/account";
   return null;
 }

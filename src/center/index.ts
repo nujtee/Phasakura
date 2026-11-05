@@ -2,6 +2,7 @@ import { createCenterApp } from "./app.ts";
 import type { CenterEnv } from "./env.ts";
 import { runChecks } from "./monitor.ts";
 import { retryCredit } from "./credits.ts";
+import { announceTopups } from "./topups.ts";
 
 /** Center Management console Worker (center/wrangler.jsonc). */
 const app = createCenterApp();
@@ -24,6 +25,13 @@ export default {
       if (sent) console.log(JSON.stringify({ level: "info", message: "center_credit_resent", sites: sent }));
     } catch (error) {
       console.error(JSON.stringify({ level: "error", message: "center_credit_retry_failed", error: String(error).slice(0, 300) }));
+    }
+    // New credit top-up requests of every site, announced once in the LINE group (stage 3).
+    try {
+      const fresh = await announceTopups(env);
+      if (fresh) console.warn(JSON.stringify({ level: "info", message: "center_topups_announced", count: fresh }));
+    } catch (error) {
+      console.error(JSON.stringify({ level: "error", message: "center_topups_announce_failed", error: String(error).slice(0, 300) }));
     }
   },
 };

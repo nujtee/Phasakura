@@ -9,7 +9,7 @@ import { LATEST_MIGRATION } from "../services/health.service.ts";
 import { Validator } from "../validation.ts";
 import { centerFeatures } from "../services/center-admin.service.ts";
 import { CENTER_FEATURES, type CenterFeature } from "../../shared/channel-types.ts";
-import type { CenterCreditQr } from "../../shared/credit-types.ts";
+import { CREDIT_PLANS, MAX_CREDIT_AMOUNT, type CenterCreditQr, type CreditPlan } from "../../shared/credit-types.ts";
 import { parseCreditSettings } from "./credit.controller.ts";
 
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
@@ -28,6 +28,13 @@ export function switches(body: Record<string, unknown>): { ical?: boolean; chann
   return out;
 }
 const ACTOR_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const TOPUP_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+function centerTopupId(ctx: RequestContext): string {
+  const id = ctx.params.id ?? "";
+  if (!TOPUP_ID.test(id)) throw new ValidationError({ id: "INVALID_ID" });
+  return id;
+}
 
 /**
  * /api/center/* — what Center Management may ask of a site. Every handler except `consumeSso` first verifies the
@@ -152,6 +159,41 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       v.assertValid();
       const s = services(ctx);
       return jsonOk(await s.centerAdmin.setCredits(req, s.credits, { settings, qr, version }, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
+    /** Top-up requests of this site (stage 3): every one waiting and the latest decided. */
+    getTopups: (async (ctx) => {
+      await verify(ctx);
+      return jsonOk(await services(ctx).credits.centerTopups(), NO_STORE);
+    }) satisfies Handler,
+
+    topupSlip: (async (ctx) => {
+      const req = await verify(ctx);
+      const s = services(ctx);
+      return s.centerAdmin.topupSlip(req, s.credits, centerTopupId(ctx), requestMeta(ctx));
+    }) satisfies Handler,
+
+    /** `{ amount?, plan? }` — the actor's reason is required and recorded. */
+    approveTopup: (async (ctx) => {
+      const req = await verify(ctx);
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["amount", "plan"]);
+      let amount: number | null = null;
+      if (body.amount !== undefined && body.amount !== null) {
+        if (typeof body.amount !== "number" || !Number.isInteger(body.amount) || body.amount < 1 || body.amount > MAX_CREDIT_AMOUNT) v.errors.amount = "OUT_OF_RANGE";
+        else amount = body.amount;
+      }
+      const plan = (v.oneOf("plan", CREDIT_PLANS) as CreditPlan | undefined) ?? null;
+      v.assertValid();
+      const s = services(ctx);
+      return jsonOk(await s.centerAdmin.approveTopup(req, s.credits, centerTopupId(ctx), { amount, plan }, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
+    /** No body: the actor's reason is the rejection reason the site's staff see. */
+    rejectTopup: (async (ctx) => {
+      const req = await verify(ctx);
+      const s = services(ctx);
+      return jsonOk(await s.centerAdmin.rejectTopup(req, s.credits, centerTopupId(ctx), requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
     /** Backups of this site's database in its private bucket (phase C8), newest first. */
