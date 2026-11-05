@@ -349,3 +349,80 @@
 /* Footer: white with a hairline. */
 :root[data-layout="BOUTIQUE"] .site-footer { background: var(--color-background); border-top: 1px solid var(--color-heading); }
 :root[data-layout="BOUTIQUE"] .site-footer__name { font-weight: 500; letter-spacing: 0.04em; }
+
+/* ============================================================ C · NIGHT */
+
+:root[data-layout="NIGHT"] { color-scheme: dark; }
+:root[data-layout="NIGHT"] .site-header { background: color-mix(in srgb, var(--color-background) 90%, transparent); border-bottom-color: var(--color-border); }
+:root[data-layout="NIGHT"] .site-header__inner { min-height: 84px; }
+:root[data-layout="NIGHT"] .brand__name { font-weight: 500; letter-spacing: 0.03em; }
+:root[data-layout="NIGHT"] .nav__link { font-weight: 400; background: none; border-radius: 0; color: var(--color-text); }
+:root[data-layout="NIGHT"] .nav__link:hover { background: none; color: var(--color-primary); }
+:root[data-layout="NIGHT"] .nav__link[aria-current="page"] { background: none; color: var(--color-primary); box-shadow: inset 0 -1px 0 var(--color-primary); }
+:root[data-layout="NIGHT"] .header-book { background: transparent; color: var(--color-heading); border: 1px solid var(--color-primary); font-weight: 500; letter-spacing: 0.04em; }
+:root[data-layout="NIGHT"] .header-book:hover { background: var(--color-primary); color: var(--color-primary-contrast); filter: none; }
+
+:root[data-layout="NIGHT"] .home h1,
+:root[data-layout="NIGHT"] .home h2,
+:root[data-layout="NIGHT"] .home h3 { font-weight: 500; letter-spacing: 0; }
+
+/* Hero: tall, words low on the left, gold eyebrow. */
+:root[data-layout="NIGHT"] .home--night .hero { height: clamp(600px, 92svh, 900px); background: var(--color-background); }
+:root[data-layout="NIGHT"] .home--night .hero__content { align-items: flex-end; justify-content: flex-start; text-align: left; padding-bottom: 96px; }
+:root[data-layout="NIGHT"] .home--night .hero__content .hero__actions { justify-content: flex-start; }
+:root[data-layout="NIGHT"] .home--night .hero__content .hero__description { margin-inline: 0; }
+:root[data-layout="NIGHT"] .home--night .hero__text { max-width: 44rem; }
+:root[data-layout="NIGHT"] .home--night .hero__title { font-size: clamp(2.5rem, 1.5rem + 4.4vw, 5rem); line-height: 1.14; }
+:root[data-layout="NIGHT"] .home--night .hero__subtitle { color: var(--color-primary); font-weight: 500; letter-spacing: 0.08em; }
+:root[data-layout="NIGHT"] .home--night .hero__button--ghost { border-color: color-mix(in srgb, var(--color-heading) 60%, transparent); background: transparent; }
+
+:root[data-layout="NIGHT"] .home .home-eyebrow { color: var(--color-primary); font-weight: 500; }
+:root[data-layout="NIGHT"] .home .home-section { padding-block: clamp(64px, 9vw, 120px) 0; }
+:root[data-layout="NIGHT"] .home .home-section__head { align-items: flex-end; margin-bottom: 32px; }
+:root[data-layout="NIGHT"] .home .home-section__title { font-size: clamp(2rem, 1.4rem + 2vw, 3rem); }
+:root[data-layout="NIGHT"] .home .home-section__more { color: var(--color-primary); }
+:root[data-layout="NIGHT"] .home .home-section__body { font-size: 1.0625rem; line-height: 1.85; color: var(--color-muted); }
+
+/* Stays: large framed cards, two to a row. */
+@media (min-width: 768px) {
+  :root[data-layout="NIGHT"] .home .postcards {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 24px;
+    margin: 8px 0 0;
+    padding: 0;
+    overflow: visible;
+  }
+}
+:root[data-layout="NIGHT"] .home .postcard__link { border-color: var(--color-border); border-radius: 0; background: transparent; padding: 20px; }
+:root[data-layout="NIGHT"] .home .postcard__img { aspect-ratio: 16 / 10; border-radius: 0; }
+:root[data-layout="NIGHT"] .home .postcard__text { flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; padding: 18px 0 0; }
+:root[data-layout="NIGHT"] .home .postcard__name { font-weight: 500; font-size: 1.375rem; }
+:root[data-layout="NIGHT"] .home .postcard__price { font-family: var(--font-heading); color: var(--color-primary); font-size: 1.125rem; }
+
+:root[data-layout="NIGHT"] .home .home-story__img { border-radius: 0; }
+:root[data-layout="NIGHT"] .home .mosaic__item,
+:root[data-layout="NIGHT"] .home .mosaic__img { border-radius: 0; }
+
+/* Date bar and the assurance band. */
+:root[data-layout="NIGHT"] .layout-bookbar { border-radius: 0; background: var(--color-surface); }
+:root[data-layout="NIGHT"] .layout-bookbar__submit { letter-spacing: 0.04em; }
+:root[data-layout="NIGHT"] .home--night .hero + .layout-bookbar-wrap { margin-top: -44px; }
+:root[data-layout="NIGHT"] .home--night .hero__controls { bottom: 64px; }
+:root[data-layout="NIGHT"] .home--night .hero__content { padding-bottom: 136px; }
+:root[data-layout="NIGHT"] .layout-trust { padding-top: 44px; }
+:root[data-layout="NIGHT"] .layout-trust ul { padding-bottom: 32px; border-bottom: 1px solid var(--color-border); }
+:root[data-layout="NIGHT"] .layout-trust__icon { color: var(--color-primary); }
+:root[data-layout="NIGHT"] .layout-trust strong { color: var(--color-primary); font-weight: 500; letter-spacing: 0.04em; }
+
+:root[data-layout="NIGHT"] .home .booking-band { background: var(--color-surface); border-block: 1px solid var(--color-border); }
+
+/* Footer: the night ground with a hairline. */
+:root[data-layout="NIGHT"] .site-footer { background: var(--color-background); border-top-color: var(--color-border); }
+:root[data-layout="NIGHT"] .site-footer__name { font-weight: 500; letter-spacing: 0.03em; }
+:root[data-layout="NIGHT"] .site-footer__heading { color: var(--color-primary); }
+
+/* Thai and Chinese letters must never be pulled apart: the spaced Latin labels above lose their tracking. */
+:root:is([lang="th"], [lang="zh-CN"])[data-layout] :is(.hero__subtitle, .layout-trust strong, .header-book, .layout-bookbar__submit, .button, .brand__name, .site-footer__name, .home-eyebrow) {
+  letter-spacing: 0 !important;
+}
