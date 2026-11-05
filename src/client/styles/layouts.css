@@ -1,0 +1,255 @@
+/*
+ * Theme layouts (Settings → Theme, migration 0061). <html data-layout> is set by SiteProvider from the published
+ * (or previewed) theme; CLASSIC adds nothing here, so the site looks exactly as before until an admin publishes
+ * another layout. Colours and fonts still come from the theme tokens.
+ *
+ * Display fonts are served by the website itself (font-src 'self'; nothing is fetched from a font CDN) and only
+ * download when a theme uses them. Noto Serif Thai and Prompt: SIL Open Font License 1.1.
+ */
+@font-face {
+  font-family: "PSK Serif Thai";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/noto-serif-thai/files/noto-serif-thai-thai-500-normal.woff2") format("woff2");
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "PSK Serif Thai";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/noto-serif-thai/files/noto-serif-thai-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "PSK Serif Thai";
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/noto-serif-thai/files/noto-serif-thai-thai-600-normal.woff2") format("woff2");
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "PSK Serif Thai";
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/noto-serif-thai/files/noto-serif-thai-latin-600-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "PSK Prompt";
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/prompt/files/prompt-thai-300-normal.woff2") format("woff2");
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "PSK Prompt";
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/prompt/files/prompt-latin-300-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "PSK Prompt";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/prompt/files/prompt-thai-400-normal.woff2") format("woff2");
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "PSK Prompt";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/prompt/files/prompt-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "PSK Prompt";
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/prompt/files/prompt-thai-500-normal.woff2") format("woff2");
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "PSK Prompt";
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url("../../../node_modules/@fontsource/prompt/files/prompt-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ============================================================ every layout except CLASSIC */
+
+.header-book { display: none; }
+
+.home-eyebrow {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+/* Spaced capitals suit Latin only: Thai and Chinese letters must not be pulled apart. */
+:root[lang="th"] .home-eyebrow,
+:root[lang="zh-CN"] .home-eyebrow { letter-spacing: 0.02em; font-size: 0.875rem; }
+
+/* Availability bar under the hero. */
+.layout-bookbar-wrap { position: relative; z-index: 2; margin-top: 24px; }
+.layout-bookbar {
+  display: grid;
+  grid-template-columns: 1fr;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.layout-bookbar__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+}
+.layout-bookbar__field input {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: 500 1.0625rem/1.3 var(--font-body);
+}
+.layout-bookbar__field input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 4px; }
+.layout-bookbar__submit {
+  min-height: 56px;
+  border: 0;
+  padding: 0 28px;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font: 600 1.0625rem var(--font-button);
+  cursor: pointer;
+}
+.layout-bookbar__submit:hover { filter: brightness(1.08); }
+.layout-bookbar__submit:focus-visible { outline: 3px solid var(--color-accent); outline-offset: -5px; }
+@media (min-width: 720px) {
+  .layout-bookbar { grid-template-columns: 1fr 1fr auto; }
+  .layout-bookbar__field { border-bottom: 0; border-right: 1px solid var(--color-border); }
+}
+
+/* "Book with confidence". */
+.layout-trust { padding-block: 36px 0; }
+.layout-trust ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px 28px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.layout-trust li { display: flex; gap: 12px; align-items: flex-start; }
+.layout-trust__icon { flex: none; color: var(--color-primary); }
+.layout-trust strong { display: block; color: var(--color-heading); font-size: 1rem; }
+.layout-trust li span span { color: var(--color-muted); font-size: 0.9375rem; }
+
+/* ============================================================ A · EDITORIAL */
+
+:root[data-layout="EDITORIAL"] .header-book { display: none; }
+@media (min-width: 1200px) {
+  :root[data-layout="EDITORIAL"] .header-book {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 22px;
+    border-radius: 999px;
+    background: var(--color-primary);
+    color: var(--color-primary-contrast);
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  :root[data-layout="EDITORIAL"] .header-book:hover { filter: brightness(1.1); }
+}
+
+:root[data-layout="EDITORIAL"] .site-header {
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
+}
+:root[data-layout="EDITORIAL"] .site-header__inner { min-height: 76px; }
+:root[data-layout="EDITORIAL"] .brand__name { font-weight: 600; }
+@media (min-width: 1024px) {
+  :root[data-layout="EDITORIAL"] .brand__name { font-size: 1.3rem; }
+}
+:root[data-layout="EDITORIAL"] .nav__link { background: none; border-radius: 0; }
+:root[data-layout="EDITORIAL"] .nav__link:hover { background: none; color: var(--color-primary); }
+:root[data-layout="EDITORIAL"] .nav__link[aria-current="page"] {
+  background: none;
+  color: var(--color-heading);
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+:root[data-layout="EDITORIAL"] .home h1,
+:root[data-layout="EDITORIAL"] .home h2,
+:root[data-layout="EDITORIAL"] .home h3 { font-weight: 600; letter-spacing: 0; }
+:root[data-layout="EDITORIAL"] .hero__title { line-height: 1.18; }
+:root[data-layout="EDITORIAL"] .home--editorial .hero + .layout-bookbar-wrap { margin-top: -48px; }
+:root[data-layout="EDITORIAL"] .home .home-section { padding-block: clamp(56px, 8vw, 104px) 0; }
+:root[data-layout="EDITORIAL"] .home .home-section__head { align-items: flex-end; margin-bottom: 24px; }
+:root[data-layout="EDITORIAL"] .home .home-section__title { font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.625rem); }
+:root[data-layout="EDITORIAL"] .home .home-section__body { font-size: 1.0625rem; line-height: 1.85; color: color-mix(in srgb, var(--color-text) 88%, var(--color-background)); }
+
+/* Stays: a grid of cards from tablet up (the scroller stays on phones). */
+@media (min-width: 768px) {
+  :root[data-layout="EDITORIAL"] .home .postcards {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 24px;
+    margin: 8px 0 0;
+    padding: 0;
+    overflow: visible;
+  }
+}
+:root[data-layout="EDITORIAL"] .home .postcard__link { border: 0; box-shadow: var(--shadow-sm); }
+:root[data-layout="EDITORIAL"] .home .postcard__img { aspect-ratio: 4 / 3; }
+:root[data-layout="EDITORIAL"] .home .postcard__text { padding: 18px 20px 22px; gap: 6px; }
+:root[data-layout="EDITORIAL"] .home .postcard__name { font-weight: 600; font-size: 1.25rem; }
+:root[data-layout="EDITORIAL"] .home .postcard__price { color: var(--color-primary); font-weight: 600; }
+
+/* Story: pictures with soft corners; every other one on the right. */
+:root[data-layout="EDITORIAL"] .home .home-story__img { aspect-ratio: 5 / 4; border-radius: var(--radius-xl); }
+@media (min-width: 768px) {
+  :root[data-layout="EDITORIAL"] .home .home-story--flip .home-story__img { order: 2; }
+}
+
+:root[data-layout="EDITORIAL"] .home .booking-band { background: var(--color-primary); color: var(--color-primary-contrast); }
+:root[data-layout="EDITORIAL"] .home .booking-band__title { color: inherit; }
+
+/* Footer: the primary colour, light text. */
+:root[data-layout="EDITORIAL"] .site-footer {
+  background: color-mix(in srgb, var(--color-primary) 92%, #000);
+  border-top: 0;
+  color: color-mix(in srgb, var(--color-primary-contrast) 82%, transparent);
+}
+:root[data-layout="EDITORIAL"] .site-footer a,
+:root[data-layout="EDITORIAL"] .site-footer .link-button { color: var(--color-primary-contrast); }
+:root[data-layout="EDITORIAL"] .site-footer__name { color: var(--color-primary-contrast); font-size: 1.375rem; font-weight: 600; }
+:root[data-layout="EDITORIAL"] .site-footer__tagline,
+:root[data-layout="EDITORIAL"] .site-footer__heading,
+:root[data-layout="EDITORIAL"] .site-footer__legal { color: color-mix(in srgb, var(--color-primary-contrast) 78%, transparent); }
+:root[data-layout="EDITORIAL"] .site-footer__legal { border-top-color: color-mix(in srgb, var(--color-primary-contrast) 18%, transparent); }
+:root[data-layout="EDITORIAL"] .site-footer .lang-switcher__link { color: var(--color-primary-contrast); }
+:root[data-layout="EDITORIAL"] .site-footer .lang-switcher__link[aria-current="true"] { background: color-mix(in srgb, var(--color-primary-contrast) 16%, transparent); }
+/* The date bar overlaps the bottom of the hero: lift the slide controls and text above it. */
+:root[data-layout="EDITORIAL"] .home--editorial .hero__controls { bottom: 68px; }
+:root[data-layout="EDITORIAL"] .home--editorial .hero__content { padding-bottom: 140px; }

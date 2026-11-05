@@ -38,6 +38,8 @@
     "db:reset:local": "node -e \"require('fs').rmSync('.wrangler/state/v3/d1',{recursive:true,force:true})\" && npm run db:migrate:local && npm run db:seed:local"
   },
   "dependencies": {
+    "@fontsource/noto-serif-thai": "^5.3.0",
+    "@fontsource/prompt": "^5.3.0",
     "jsqr": "1.4.0",
     "qrcode-generator": "^1.4.4",
     "react": "^19.2.0",

@@ -1,6 +1,6 @@
 /** Website settings, branding, theme, booking CTA, marketing and SEO (spec §36–39, §42–45). */
 import type { LocaleCode } from "./i18n/locales.ts";
-import type { ThemePreset, ThemeTokens } from "./theme.ts";
+import type { ThemeLayout, ThemePreset, ThemeTokens } from "./theme.ts";
 
 export interface SiteTextsDto {
   siteName: string | null;
@@ -35,6 +35,8 @@ export interface ThemeVersionDto {
   id: string;
   versionNumber: number;
   preset: ThemePreset;
+  /** Home page / header / footer layout (migration 0061). */
+  layout: ThemeLayout;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   tokens: ThemeTokens;
   note: string | null;

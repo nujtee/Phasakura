@@ -507,7 +507,7 @@ await check("branding: upload logo → public header shows it", async () => {
 
 await check("theme: Sakura preset → draft → publish → public colours", async () => {
   await pa.goto(`${BASE}/en/admin/settings-theme`);
-  await pa.getByRole("button", { name: "Sakura" }).click();
+  await pa.getByRole("button", { name: "Sakura", exact: true }).click();
   await pa.getByRole("button", { name: "Save draft" }).click();
   await pa.getByText("Saved").first().waitFor();
   await pa.screenshot({ path: `${SHOTS}/g-admin-theme.png`, fullPage: true });
@@ -526,7 +526,7 @@ await check("theme: Sakura preset → draft → publish → public colours", asy
 
 await check("theme preview mode on the live site (draft, admins only)", async () => {
   await pa.goto(`${BASE}/en/admin/settings-theme`);
-  await pa.getByRole("button", { name: "Dark" }).click();
+  await pa.getByRole("button", { name: "Dark", exact: true }).click();
   await pa.getByRole("button", { name: "Save draft" }).click();
   await pa.getByText("Saved").first().waitFor();
   const p3 = await admin.newPage(); watch(p3);

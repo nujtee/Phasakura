@@ -27,6 +27,10 @@ export const FONT_STACKS = {
   ROUNDED: 'ui-rounded, "SF Pro Rounded", "Noto Sans Thai", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
   SERIF: 'ui-serif, Georgia, "Noto Serif Thai", "Noto Serif SC", "Songti SC", "SimSun", Cambria, "Times New Roman", serif',
   MONO: 'ui-monospace, "SFMono-Regular", Menlo, Consolas, "Noto Sans Mono", "Noto Sans Thai", monospace',
+  /** Served by the website itself (layouts.css: Noto Serif Thai, SIL OFL) — never fetched from a font CDN. */
+  DISPLAY_SERIF: '"PSK Serif Thai", ui-serif, Georgia, "Noto Serif SC", "Songti SC", serif',
+  /** Served by the website itself (layouts.css: Prompt, SIL OFL). */
+  DISPLAY_SANS: '"PSK Prompt", "Noto Sans Thai", "Noto Sans SC", "PingFang SC", system-ui, sans-serif',
 } as const;
 export type FontStackKey = keyof typeof FONT_STACKS;
 
@@ -122,6 +126,19 @@ function preset(
   };
 }
 
+/**
+ * How the public site is laid out (home page, header, footer), chosen in Settings → Theme with the colours
+ * (migration 0061). CLASSIC = the site as it always was.
+ */
+export const THEME_LAYOUTS = ["CLASSIC", "EDITORIAL", "BOUTIQUE", "NIGHT"] as const;
+export type ThemeLayout = (typeof THEME_LAYOUTS)[number];
+/** The layouts the Theme page offers (the others are being built). */
+export const OFFERED_LAYOUTS: readonly ThemeLayout[] = ["CLASSIC", "EDITORIAL"];
+
+export function parseLayout(value: unknown): ThemeLayout {
+  return (THEME_LAYOUTS as readonly unknown[]).includes(value) ? value as ThemeLayout : "CLASSIC";
+}
+
 /** Starting points; the admin can change every token before publishing. */
 export const PRESET_TOKENS: Record<(typeof THEME_PRESETS)[number], Required<ThemeTokens>> = {
   DEFAULT: preset(["#2f5d50", "#ffffff", "#6b7f5e", "#c9785b", "#fbfaf7", "#ffffff", "#1f2622", "#121815", "#5b6660", "#e3e1da"], "SANS", "SANS", [6, 10, 16, 24], "SOFT"),
@@ -134,4 +151,22 @@ export const PRESET_TOKENS: Record<(typeof THEME_PRESETS)[number], Required<Them
   WARM: preset(["#a3542a", "#ffffff", "#c28b5a", "#4f7a5c", "#fdf7f1", "#ffffff", "#2b1f17", "#1d140e", "#6d5b4d", "#eedfd2"], "ROUNDED", "SERIF", [8, 12, 18, 26], "SOFT"),
   MODERN: preset(["#3446d6", "#ffffff", "#5f6c86", "#ff7a45", "#f6f7fb", "#ffffff", "#161a26", "#0b0e17", "#5a6275", "#dde1ec"], "SANS", "SANS", [8, 12, 16, 24], "STRONG"),
   DARK: preset(["#7cc4a1", "#0e1512", "#9bb59b", "#e7a46b", "#111614", "#1a211e", "#e3ebe6", "#f5faf7", "#a3b1aa", "#2c3632"], "SANS", "SANS", [6, 10, 16, 24], "STRONG"),
+};
+
+/** The colours and fonts each layout was designed with; picking a layout applies them (still editable). */
+export const LAYOUT_TOKENS: Record<ThemeLayout, Required<ThemeTokens>> = {
+  CLASSIC: PRESET_TOKENS.DEFAULT,
+  // Ivory, forest green and sakura blush; Thai serif headings.
+  EDITORIAL: {
+    ...preset(["#1f3a33", "#f7f3ee", "#6b7f5e", "#a2646c", "#f7f3ee", "#ffffff", "#2b2724", "#1f3a33", "#5f554e", "#e4dbd1"], "SANS", "DISPLAY_SERIF", [6, 10, 14, 24], "SOFT"),
+  },
+  // White, near-black and one rose accent; light Prompt headings, square corners.
+  BOUTIQUE: {
+    ...preset(["#16181a", "#ffffff", "#45494d", "#b3485c", "#ffffff", "#ffffff", "#16181a", "#16181a", "#5e6266", "#e3e3e1"], "SANS", "DISPLAY_SANS", [0, 0, 2, 4], "NONE"),
+    "--font-button": FONT_STACKS.DISPLAY_SANS,
+  },
+  // Night charcoal with champagne gold; Thai serif headings.
+  NIGHT: {
+    ...preset(["#d9be85", "#14191b", "#9aa59d", "#d9be85", "#0f1416", "#182024", "#e9e4da", "#f4efe6", "#b9b1a4", "#2e373b"], "SANS", "DISPLAY_SERIF", [0, 2, 4, 8], "STRONG"),
+  },
 };
