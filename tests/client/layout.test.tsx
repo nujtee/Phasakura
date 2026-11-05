@@ -23,6 +23,7 @@ function site(overrides: Partial<PublicSiteDto> = {}): PublicSiteDto {
       mobile: { url: "/media/branding/mobile.webp", alt: "Site From D1", width: 80, height: 80 },
     },
     theme: null,
+    layout: "CLASSIC",
     favicon: null,
     loginLogo: null,
     contact: { phone: null, email: null, lineOaUrl: null, mapUrl: null, address: null, coordinates: null },

@@ -13,15 +13,25 @@ import { usePublicData } from "../content/usePublicData.ts";
 import { useContentT } from "../content/useContentT.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
-import { useSite } from "../site/SiteProvider.tsx";
+import { useLayout, useSite } from "../site/SiteProvider.tsx";
+import { BookBar, TrustStrip } from "../content/LayoutBlocks.tsx";
+
+/** The stays block a theme layout adds when the admin has not placed one on the home page. */
+const AUTO_STAYS: PublicSectionDto = { id: "layout-stays", type: "ACCOMMODATION_HIGHLIGHTS", image: null, layout: null, title: null, subtitle: null, body: null, button: null };
 import { useYearLabel } from "./HistoryPage.tsx";
 import { PhoneLinks } from "../components/PhoneLinks.tsx";
 
 /** Heading row: section title on the left, "see all" on the right (when there is a page to go to). */
-function SectionHead({ id, title, more }: { id: string; title: string; more?: { to: string; label: string } }) {
+function SectionHead({ id, title, more, eyebrow }: { id: string; title: string; more?: { to: string; label: string }; eyebrow?: string }) {
+  // The theme layouts (migration 0061) put a small label above section titles; CLASSIC does not.
+  const layout = useLayout();
+  const showEyebrow = layout !== "CLASSIC" && !!eyebrow;
   return (
     <div className="home-section__head">
-      <h2 id={id} className="home-section__title">{title}</h2>
+      <div>
+        {showEyebrow && <p className="home-eyebrow" aria-hidden="true">{eyebrow}</p>}
+        <h2 id={id} className="home-section__title">{title}</h2>
+      </div>
       {more && <Link to={more.to} className="home-section__more">{more.label}</Link>}
     </div>
   );
@@ -44,7 +54,7 @@ function Accommodations({ s }: { s: PublicSectionDto }) {
   const id = `home-${s.id}`;
   return (
     <section className="home-section container" aria-labelledby={id}>
-      <SectionHead id={id} title={s.title ?? ct.home.accommodations} more={{ to: pagePath(locale, "booking"), label: ct.home.viewAll }} />
+      <SectionHead id={id} title={s.title ?? ct.home.accommodations} eyebrow={ct.layout.stayEyebrow} more={{ to: pagePath(locale, "booking"), label: ct.home.viewAll }} />
       <Text s={s} />
       <ul className="postcards" aria-busy={!data || undefined}>
         {!data && Array.from({ length: 3 }, (_, i) => <li key={i} className="postcard skeleton" />)}
@@ -84,7 +94,7 @@ function GalleryPreview({ s }: { s: PublicSectionDto }) {
   if (data && !images.length) return null;
   return (
     <section className="home-section container" aria-labelledby={id}>
-      <SectionHead id={id} title={s.title ?? ct.home.gallery} more={{ to: pagePath(locale, "gallery"), label: ct.home.viewAll }} />
+      <SectionHead id={id} title={s.title ?? ct.home.gallery} eyebrow={ct.layout.galleryEyebrow} more={{ to: pagePath(locale, "gallery"), label: ct.home.viewAll }} />
       <Text s={s} />
       <ul className={`mosaic mosaic--n${data ? images.length : 5}`} aria-busy={!data || undefined}>
         {!data && Array.from({ length: 5 }, (_, i) => <li key={i} className="mosaic__item skeleton" />)}
@@ -111,7 +121,7 @@ function HistoryPreview({ s }: { s: PublicSectionDto }) {
     <section className={`home-section container home-story${s.image ? " home-story--image" : ""}`} aria-labelledby={id}>
       {s.image && <ResponsiveImage image={s.image} sizes={IMAGE_SIZES.half} className="home-story__img" />}
       <div className="home-story__text">
-        <SectionHead id={id} title={s.title ?? ct.home.history} />
+        <SectionHead id={id} title={s.title ?? ct.home.history} eyebrow={ct.layout.storyEyebrow} />
         <Text s={s} />
         {items.length > 0 && (
           <ol className="mini-timeline">
@@ -218,10 +228,10 @@ function BookingBand({ s }: { s: PublicSectionDto }) {
 }
 
 /** INTRODUCTION / CUSTOM: words first, picture beside them when there is one. */
-function Story({ s }: { s: PublicSectionDto }) {
+function Story({ s, flip = false }: { s: PublicSectionDto; flip?: boolean }) {
   const id = `home-${s.id}`;
   return (
-    <section className={`home-section container home-story${s.image ? " home-story--image" : ""}`} aria-labelledby={s.title ? id : undefined}>
+    <section className={`home-section container home-story${s.image ? " home-story--image" : ""}${flip ? " home-story--flip" : ""}`} aria-labelledby={s.title ? id : undefined}>
       {s.image && <ResponsiveImage image={s.image} sizes={IMAGE_SIZES.half} className="home-story__img" />}
       <div className="home-story__text">
         {s.title && <h2 id={id} className="home-section__title">{s.title}</h2>}
@@ -232,7 +242,7 @@ function Story({ s }: { s: PublicSectionDto }) {
   );
 }
 
-function HomeSection({ s }: { s: PublicSectionDto }) {
+function HomeSection({ s, flip }: { s: PublicSectionDto; flip?: boolean }) {
   switch (s.type) {
     case "ACCOMMODATION_HIGHLIGHTS": return <Accommodations s={s} />;
     case "GALLERY_PREVIEW": return <GalleryPreview s={s} />;
@@ -241,7 +251,7 @@ function HomeSection({ s }: { s: PublicSectionDto }) {
     case "BOOKING_CTA": return <BookingBand s={s} />;
     case "LOCATION": return <Location s={s} />;
     case "CONTACT": return <Contact s={s} />;
-    default: return <Story s={s} />;
+    default: return <Story s={s} flip={flip} />;
   }
 }
 
@@ -249,6 +259,7 @@ function HomeSection({ s }: { s: PublicSectionDto }) {
 export function HomePage() {
   const { t, locale } = useI18n();
   const { site } = useSite();
+  const layout = useLayout();
   const { data, error, retry } = usePublicData<PublicHomeDto>(`/api/public/home?lang=${locale.path}`);
   const title = site?.siteName ?? t.pages.home.title;
 
@@ -263,8 +274,14 @@ export function HomePage() {
   if (!data) return <div className="hero hero--loading skeleton" aria-busy="true"><h1 className="visually-hidden">{title}</h1></div>;
 
   const hasSlides = data.slides.length > 0;
+  // Theme layouts (migration 0061): a date bar and the "book with confidence" strip under the hero, the stays
+  // when the admin has not placed them, and story sections alternating sides. CLASSIC is the page as it was.
+  const styled = layout !== "CLASSIC";
+  const sections = styled && !data.sections.some((s) => s.type === "ACCOMMODATION_HIGHLIGHTS")
+    ? [AUTO_STAYS, ...data.sections] : data.sections;
+  let stories = 0;
   return (
-    <div className="home">
+    <div className={`home${styled ? ` home--${layout.toLowerCase()}` : ""}`}>
       {hasSlides ? <HeroSlideshow slides={data.slides} title={title} /> : (
         <section className="page container home-intro" aria-labelledby="page-title">
           <h1 id="page-title" className="page__title">{title}</h1>
@@ -272,7 +289,13 @@ export function HomePage() {
           {!data.sections.length && <EmptyState />}
         </section>
       )}
-      {data.sections.map((s) => <HomeSection key={s.id} s={s} />)}
+      {styled && <BookBar />}
+      {styled && <TrustStrip />}
+      {sections.map((s) => {
+        const story = s.image !== null && !["ACCOMMODATION_HIGHLIGHTS", "GALLERY_PREVIEW", "FOOD_PREVIEW", "BOOKING_CTA", "CONTACT"].includes(s.type);
+        const flip = styled && story && stories++ % 2 === 1;
+        return <HomeSection key={s.id} s={s} flip={flip} />;
+      })}
     </div>
   );
 }

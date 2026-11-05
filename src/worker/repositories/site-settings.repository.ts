@@ -48,6 +48,8 @@ export interface SiteSettingsRecord {
   translations: SiteTranslationRecord[];
   branding: BrandingRecord | null;
   themeTokensJson?: string | null;
+  /** The published theme's layout (migration 0061). */
+  themeLayout?: string | null;
   cta?: CtaRecord | null;
   ctaLabels?: { language_code: string; label: string }[];
   /** Floating LINE button (Phase 11). */
@@ -187,6 +189,16 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
       if (!isMissingTableError(error)) throw error;
     }
 
+    // Migration 0061: the published theme's layout (no column before it → the classic site).
+    let themeLayout: string | null = null;
+    try {
+      themeLayout = (await this.db.prepare(
+        `SELECT v.layout FROM theme_settings s JOIN theme_versions v ON v.id = s.published_version_id AND v.status = 'PUBLISHED' WHERE s.id = 1`,
+      ).first<{ layout: string }>())?.layout ?? null;
+    } catch (error) {
+      if (!isMissingTableError(error) && !/no such column/i.test(String(error))) throw error;
+    }
+
     // Phase 14: tracking switches and the cookie banner (tables missing before migration 0019 → defaults).
     let marketing: SiteSettingsRecord["marketing"] = null;
     let privacy: SiteSettingsRecord["privacy"] = null;
@@ -224,6 +236,7 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
       translations,
       branding,
       themeTokensJson: (results[3]?.results[0] as { tokens_json: string } | undefined)?.tokens_json ?? null,
+      themeLayout,
       cta: (results[4]?.results[0] as CtaRecord | undefined) ?? null,
       ctaLabels: (results[5]?.results ?? []) as { language_code: string; label: string }[],
     };

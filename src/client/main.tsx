@@ -12,6 +12,7 @@ import "./styles/bill.css";
 import "./styles/content.css";
 import "./styles/search.css";
 import "./styles/consent.css";
+import "./styles/layouts.css";
 
 // Where this visit came from (migration 0052), before the router rewrites the URL.
 captureCampaign();

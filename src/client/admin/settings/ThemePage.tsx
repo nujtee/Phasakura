@@ -3,8 +3,8 @@ import { format } from "../../../shared/i18n/admin-messages.ts";
 import type { CustomFontDto } from "../../../shared/media-types.ts";
 import type { ThemeAdminDto } from "../../../shared/settings-types.ts";
 import {
-  COLOR_TOKENS, contrastRatio, customFontFamily, FONT_STACKS, FONT_TOKENS, PRESET_TOKENS, RADIUS_TOKENS, SHADOW_LEVELS, THEME_PRESETS,
-  type FontStackKey, type ShadowLevel, type ThemePreset, type ThemeToken, type ThemeTokens,
+  COLOR_TOKENS, contrastRatio, customFontFamily, FONT_STACKS, FONT_TOKENS, LAYOUT_TOKENS, OFFERED_LAYOUTS, PRESET_TOKENS, RADIUS_TOKENS,
+  SHADOW_LEVELS, THEME_PRESETS, type FontStackKey, type ShadowLevel, type ThemeLayout, type ThemePreset, type ThemeToken, type ThemeTokens,
 } from "../../../shared/theme.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
 import { applyTheme, loadFonts } from "../../site/SiteProvider.tsx";
@@ -37,6 +37,7 @@ export function ThemePage() {
   const dateTime = useDateFormatter();
   const [data, setData] = useState<ThemeAdminDto | null>(null);
   const [preset, setPreset] = useState<ThemePreset>("DEFAULT");
+  const [layout, setLayout] = useState<ThemeLayout>("CLASSIC");
   const [tokens, setTokens] = useState<ThemeTokens>(PRESET_TOKENS.DEFAULT);
   const [note, setNote] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -51,6 +52,7 @@ export function ThemePage() {
     setData(d);
     const base = d.draft ?? d.published;
     setPreset(base?.preset ?? "DEFAULT");
+    setLayout(base?.layout ?? "CLASSIC");
     setTokens({ ...PRESET_TOKENS.DEFAULT, ...(base?.tokens ?? {}) });
     setNote(d.draft?.note ?? "");
     setDirty(false);
@@ -97,7 +99,16 @@ export function ThemePage() {
     }
   }
 
-  const saveDraft = () => run(() => apiRequest("PUT", "/api/admin/theme/draft", { preset, tokens, note: note.trim() || null }), t.common.saved);
+  const saveDraft = () => run(() => apiRequest("PUT", "/api/admin/theme/draft", { preset, layout, tokens, note: note.trim() || null }), t.common.saved);
+  // A layout comes with the colours and fonts it was designed with (still editable afterwards).
+  const pickLayout = (l: ThemeLayout) => {
+    setLayout(l);
+    setTokens(LAYOUT_TOKENS[l]);
+    setPreset(l === "CLASSIC" ? "DEFAULT" : "CUSTOM");
+    setDirty(true);
+    setMessage({ kind: "success", text: c.theme.layoutApplied });
+  };
+  const offered = OFFERED_LAYOUTS.includes(layout) ? OFFERED_LAYOUTS : [...OFFERED_LAYOUTS, layout];
   const contrast = (a: ThemeToken, b: ThemeToken) => {
     const x = tokens[a];
     const y = tokens[b];
@@ -116,10 +127,34 @@ export function ThemePage() {
         <>
           <div className="adm-card">
             <div className="adm-row adm-row--wrap">
-              {data.published && <span>{c.theme.live}: <strong>{format(c.theme.version, { n: data.published.versionNumber })}</strong> ({PRESET_LABEL[data.published.preset] ?? c.theme.presetCUSTOM})</span>}
+              {data.published && <span>{c.theme.live}: <strong>{format(c.theme.version, { n: data.published.versionNumber })}</strong> ({c.theme.layouts[data.published.layout].name} · {PRESET_LABEL[data.published.preset] ?? c.theme.presetCUSTOM})</span>}
               {data.draft ? <span>· {c.theme.draft}: <strong>{format(c.theme.version, { n: data.draft.versionNumber })}</strong></span> : <span className="adm-muted">· {c.theme.noDraft}</span>}
               {dirty && <span className="adm-badge adm-badge--warning">{c.ui.unsaved}</span>}
             </div>
+          </div>
+
+          <div className="adm-card">
+            <h2 className="adm-h2">{c.theme.layoutTitle}</h2>
+            <p className="adm-field__hint">{c.theme.layoutHint}</p>
+            <ul className="thm-layouts">
+              {offered.map((l) => {
+                const k = LAYOUT_TOKENS[l];
+                return (
+                  <li key={l}>
+                    <button type="button" className="thm-layout-pick" aria-pressed={layout === l} onClick={() => pickLayout(l)}>
+                      <span className={`thm-layout-thumb thm-layout-thumb--${l.toLowerCase()}`} aria-hidden="true"
+                        style={{ background: k["--color-background"], color: k["--color-primary"], borderColor: k["--color-border"] }}>
+                        <i style={{ background: k["--color-surface"] }} />
+                        <b style={{ background: k["--color-primary"] }} />
+                        <em style={{ background: k["--color-accent"] }} />
+                      </span>
+                      <strong>{c.theme.layouts[l].name}</strong>
+                      <span className="adm-small adm-muted">{c.theme.layouts[l].text}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
 
           <div className="adm-card">
@@ -262,7 +297,7 @@ export function ThemePage() {
                   </span>
                   <div className="adm-cmsitem__body">
                     <div>
-                      <strong>{format(c.theme.version, { n: v.versionNumber })}</strong> · {PRESET_LABEL[v.preset] ?? c.theme.presetCUSTOM}
+                      <strong>{format(c.theme.version, { n: v.versionNumber })}</strong> · {c.theme.layouts[v.layout].name} · {PRESET_LABEL[v.preset] ?? c.theme.presetCUSTOM}
                       {v.note && <span className="adm-muted"> · {v.note}</span>}
                     </div>
                     <div className="adm-small adm-muted">{dateTime(v.publishedAt)}{v.publishedByName ? ` · ${v.publishedByName}` : ""}</div>

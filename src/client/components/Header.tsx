@@ -6,6 +6,9 @@ import { LanguageSwitcher } from "./LanguageSwitcher.tsx";
 import { MAIN_MENU, type NavKey } from "./navigation.ts";
 import { SearchDialog } from "../search/SearchDialog.tsx";
 import { getSearchMessages } from "../../shared/i18n/search-messages.ts";
+import { getContentMessages } from "../../shared/i18n/content-messages.ts";
+import { pagePath } from "../../shared/routes.ts";
+import { useLayout } from "../site/SiteProvider.tsx";
 
 /**
  * Desktop: Logo · Home · Gallery · Booking · History · Language
@@ -21,6 +24,8 @@ export function Header({ currentPage }: { currentPage: NavKey | null }) {
   const searchRef = useRef<HTMLButtonElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const sm = getSearchMessages(locale.code);
+  const layout = useLayout();
+  const ct = getContentMessages(locale.code);
 
   // "/" opens the search from anywhere except while typing.
   useEffect(() => {
@@ -88,6 +93,9 @@ export function Header({ currentPage }: { currentPage: NavKey | null }) {
         </button>
 
         <LanguageSwitcher className="lang-switcher--desktop" />
+
+        {/* Theme layouts (migration 0061) put "book" in the header on wide screens; CLASSIC has the floating button only. */}
+        {layout !== "CLASSIC" && <Link to={pagePath(locale, "booking")} className="header-book">{ct.layout.book}</Link>}
 
         <button
           ref={toggleRef}

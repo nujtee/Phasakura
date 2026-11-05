@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PublicSiteDto } from "../../src/shared/api-types.ts";
 import type { BookingCtaDto, BrandingDto, MarketingDto, SeoPageDto, ThemeAdminDto, WebsiteSettingsDto } from "../../src/shared/settings-types.ts";
-import { PRESET_TOKENS, validateThemeTokens } from "../../src/shared/theme.ts";
+import { LAYOUT_TOKENS, PRESET_TOKENS, validateThemeTokens } from "../../src/shared/theme.ts";
 import { Harness } from "../helpers/harness.ts";
 import { pngBytes } from "../helpers/images.ts";
 
@@ -129,6 +129,43 @@ describe("theme (spec §37–38): draft → preview → publish → rollback", (
     assert.equal(discarded.data.draft, null);
     const other = await staff(h, ["settings.branding"]);
     assert.equal((await h.api("GET", "/api/admin/theme", { token: other })).status, 403);
+  });
+});
+
+describe("theme layouts (migration 0061): versioned with the colours", () => {
+  it("CLASSIC until a draft with another layout is published; preview shows the draft's; rollback restores; history is frozen", async () => {
+    const h = new Harness({ seed: true });
+    const designer = await staff(h, ["settings.theme"]);
+    assert.equal((await site(h)).layout, "CLASSIC", "nothing changes until an admin publishes another layout");
+    assert.equal((await h.api("PUT", "/api/admin/theme/draft", { token: designer, body: { preset: "CUSTOM", layout: "FANCY", tokens: LAYOUT_TOKENS.EDITORIAL } })).status, 422);
+
+    const draft = await h.api<ThemeAdminDto>("PUT", "/api/admin/theme/draft", { token: designer, body: { preset: "CUSTOM", layout: "EDITORIAL", tokens: LAYOUT_TOKENS.EDITORIAL } });
+    assert.equal(draft.status, 200, JSON.stringify(draft.error));
+    assert.equal(draft.data.draft?.layout, "EDITORIAL");
+    assert.equal((await site(h)).layout, "CLASSIC", "a draft is not live");
+    const preview = await h.api<{ layout: string }>("GET", "/api/admin/theme/preview", { token: designer });
+    assert.equal(preview.data.layout, "EDITORIAL");
+
+    const live = await h.api<ThemeAdminDto>("POST", "/api/admin/theme/publish", { token: designer });
+    assert.equal(live.data.published?.layout, "EDITORIAL");
+    const pub = await site(h);
+    assert.deepEqual([pub.layout, pub.theme?.["--font-heading"]], ["EDITORIAL", LAYOUT_TOKENS.EDITORIAL["--font-heading"]]);
+    assert.match(String(h.audits("CREATE_THEME_DRAFT").at(-1)?.new_value), /EDITORIAL/);
+
+    const old = live.data.history.find((v) => v.status === "ARCHIVED")!;
+    assert.equal(old.layout, "CLASSIC");
+    assert.throws(() => h.db.run("UPDATE theme_versions SET layout = 'NIGHT' WHERE id = ?", old.id), /THEME_VERSION_IMMUTABLE/);
+    assert.throws(() => h.db.run("UPDATE theme_versions SET layout = 'FANCY' WHERE status = 'PUBLISHED'"), /CHECK|THEME_VERSION_IMMUTABLE/);
+    await h.api("POST", `/api/admin/theme/versions/${old.id}/rollback`, { token: designer });
+    assert.equal((await site(h)).layout, "CLASSIC");
+
+    // An older client that sends no layout keeps working (CLASSIC).
+    const noLayout = await h.api<ThemeAdminDto>("PUT", "/api/admin/theme/draft", { token: designer, body: { preset: "DARK", tokens: PRESET_TOKENS.DARK } });
+    assert.equal(noLayout.data.draft?.layout, "CLASSIC");
+  });
+
+  it("every layout's colours and fonts pass the theme rules", () => {
+    for (const [name, tokens] of Object.entries(LAYOUT_TOKENS)) assert.deepEqual(validateThemeTokens(tokens), {}, name);
   });
 });
 

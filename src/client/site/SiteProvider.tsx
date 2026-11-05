@@ -2,13 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { PublicSiteDto } from "../../shared/api-types.ts";
 import type { Locale } from "../../shared/i18n/index.ts";
 import type { PublicFontFaceDto } from "../../shared/media-types.ts";
-import { THEME_TOKENS, validateThemeTokens, type ThemeTokens } from "../../shared/theme.ts";
+import { parseLayout, THEME_TOKENS, validateThemeTokens, type ThemeLayout, type ThemeTokens } from "../../shared/theme.ts";
 import { apiGet } from "../api/client.ts";
 
-export type SiteState =
+export type SiteState = (
   | { status: "loading"; site: PublicSiteDto | null; retry: () => void; preview: boolean; exitPreview: () => void }
   | { status: "ready"; site: PublicSiteDto; retry: () => void; preview: boolean; exitPreview: () => void }
-  | { status: "error"; site: PublicSiteDto | null; retry: () => void; preview: boolean; exitPreview: () => void };
+  | { status: "error"; site: PublicSiteDto | null; retry: () => void; preview: boolean; exitPreview: () => void }
+) & { /** The draft's layout while an admin previews the theme. */ previewLayout?: ThemeLayout | null };
 
 const noop = () => {};
 const PREVIEW_KEY = "phasakura.themePreview";
@@ -72,6 +73,7 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
   const [preview, setPreview] = useState(false);
   const [previewTokens, setPreviewTokens] = useState<ThemeTokens | null>(null);
   const [previewFonts, setPreviewFonts] = useState<PublicFontFaceDto[] | null>(null);
+  const [previewLayout, setPreviewLayout] = useState<ThemeLayout | null>(null);
   const exitPreview = useCallback(() => {
     try {
       window.sessionStorage.removeItem(PREVIEW_KEY);
@@ -81,6 +83,7 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
     setPreview(false);
     setPreviewTokens(null);
     setPreviewFonts(null);
+    setPreviewLayout(null);
   }, []);
   const [state, setState] = useState<Omit<SiteState, "preview" | "exitPreview">>({ status: "loading", site: null, retry });
 
@@ -102,14 +105,21 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
   useEffect(() => {
     if (!readPreviewFlag()) return;
     const controller = new AbortController();
-    apiGet<{ tokens: ThemeTokens; fonts?: PublicFontFaceDto[] }>("/api/admin/theme/preview", controller.signal)
-      .then((res) => { setPreviewTokens(res.tokens); setPreviewFonts(res.fonts ?? []); setPreview(true); })
+    apiGet<{ tokens: ThemeTokens; layout?: string; fonts?: PublicFontFaceDto[] }>("/api/admin/theme/preview", controller.signal)
+      .then((res) => { setPreviewTokens(res.tokens); setPreviewFonts(res.fonts ?? []); setPreviewLayout(parseLayout(res.layout)); setPreview(true); })
       .catch(() => { if (!controller.signal.aborted) exitPreview(); });
     return () => controller.abort();
   }, [exitPreview]);
 
   const tokens = previewTokens ?? state.site?.theme ?? null;
   useEffect(() => applyTheme(tokens), [tokens]);
+
+  // <html data-layout>: the layout's styles (layouts.css) key off it.
+  const layout = previewLayout ?? state.site?.layout ?? "CLASSIC";
+  useEffect(() => {
+    document.documentElement.dataset.layout = layout;
+    return () => { delete document.documentElement.dataset.layout; };
+  }, [layout]);
 
   // Uploaded fonts the (published or previewed) theme uses.
   const fonts = previewFonts ?? state.site?.fonts ?? null;
@@ -128,9 +138,15 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
     return () => { if (previous !== null) link.setAttribute("href", previous); };
   }, [favicon]);
 
-  return <SiteContext.Provider value={{ ...state, preview, exitPreview } as SiteState}>{children}</SiteContext.Provider>;
+  return <SiteContext.Provider value={{ ...state, preview, exitPreview, previewLayout } as SiteState}>{children}</SiteContext.Provider>;
 }
 
 export function useSite(): SiteState {
   return useContext(SiteContext);
+}
+
+/** The layout the public site is shown in: the previewed draft's, else the published one's. */
+export function useLayout(): ThemeLayout {
+  const s = useContext(SiteContext);
+  return s.previewLayout ?? s.site?.layout ?? "CLASSIC";
 }

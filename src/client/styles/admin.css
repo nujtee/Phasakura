@@ -4142,3 +4142,53 @@
 /* A card shown inside the panel: no frame and no head of its own (the tab and the summary say it). */
 .adm-extrabeds--embedded { border: 0; padding: 0; margin: 0; background: none; box-shadow: none; }
 .adm-extrabeds--embedded .adm-extrabeds__head { display: none; }
+
+/* Theme → site layout (migration 0061): a small sketch of each layout in its own colours. */
+.thm-layouts {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.thm-layout-pick {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.thm-layout-pick[aria-pressed="true"] {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+.thm-layout-pick:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 2px; }
+.thm-layout-thumb {
+  position: relative;
+  display: block;
+  height: 96px;
+  border: 1px solid;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.thm-layout-thumb i,
+.thm-layout-thumb b,
+.thm-layout-thumb em { position: absolute; display: block; }
+/* header bar · hero · accent */
+.thm-layout-thumb i { left: 0; right: 0; top: 0; height: 14px; }
+.thm-layout-thumb b { left: 0; right: 0; top: 14px; height: 46px; opacity: 0.85; }
+.thm-layout-thumb em { left: 10px; bottom: 10px; width: 40%; height: 8px; border-radius: 4px; }
+.thm-layout-thumb--editorial b { opacity: 0.55; }
+.thm-layout-thumb--editorial em { left: 12%; right: 12%; width: auto; bottom: 26px; height: 14px; border-radius: 4px; background: #fff !important; box-shadow: 0 2px 6px rgb(0 0 0 / 0.2); }
+.thm-layout-thumb--boutique b { left: 52%; right: 6px; top: 20px; height: 70px; }
+.thm-layout-thumb--boutique em { top: 34px; bottom: auto; width: 34%; height: 10px; }
+.thm-layout-thumb--night b { top: 0; height: 74px; opacity: 0.35; }
