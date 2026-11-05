@@ -103,6 +103,10 @@ export function createApp(options: AppOptions = {}) {
     .put("/api/center/features", center.setFeatures)
     .get("/api/center/credits", center.getCredits)
     .put("/api/center/credits", center.setCredits)
+    .get("/api/center/topups", center.getTopups)
+    .get("/api/center/topups/:id/slip", center.topupSlip)
+    .post("/api/center/topups/:id/approve", center.approveTopup)
+    .post("/api/center/topups/:id/reject", center.rejectTopup)
     .post("/api/center/sso", center.issueSso)
     // Unsigned: the browser of the Center user posts the one-time ticket here (a form on center.phasakura.com).
     .post("/api/center/sso/consume", center.consumeSso)

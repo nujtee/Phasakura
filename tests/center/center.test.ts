@@ -2,6 +2,7 @@ import { stepAt, totpCode } from "../../src/center/totp.ts";
 import { IP_MAX_FAILURES, IP_WINDOW_MS } from "../../src/center/app.ts";
 import { backupState } from "../../src/center/monitor.ts";
 import { retryCredit } from "../../src/center/credits.ts";
+import { announceTopups } from "../../src/center/topups.ts";
 import { pngBytes } from "../helpers/images.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -185,7 +186,7 @@ async function setup(options: { siteKeys?: boolean; signingKey?: boolean; siteOw
   const audits = (action: string) => db.all<{ user_id: string; site: string | null; reason: string | null; detail_json: string | null }>("SELECT user_id, site, reason, detail_json FROM center_audit WHERE action = ? ORDER BY created_at, rowid", action);
   const check = () => runChecks(env, { clock: () => new Date(now), lineFetch });
   return {
-    site, db, env, req, firstOwner, ownerSession, audits, enroll, secrets, codeFor, advance: (ms: number) => { now = new Date(now.getTime() + ms); }, keys, pushes, check,
+    site, db, env, req, firstOwner, ownerSession, audits, enroll, secrets, codeFor, advance: (ms: number) => { now = new Date(now.getTime() + ms); }, keys, pushes, check, lineFetch,
     setSiteDown: (v: boolean) => { siteDown = v; }, setLineStatus: (v: number) => { lineStatus = v; },
     dispatches, merges, cfZones, cfCalls, setGithubStatus: (v: number) => { githubStatus = v; },
   };
@@ -1047,7 +1048,7 @@ describe("Center: two-step sign-in and hardening (phase C9)", () => {
     const ctx = await setup();
     withGroup(ctx);
     const settings = ctx.db.all<{ alert_types: string }>("SELECT alert_types FROM center_settings")[0]!;
-    assert.deepEqual(JSON.parse(settings.alert_types).slice(-2), ["backup_stale", "security"], "new types start switched on");
+    assert.deepEqual(JSON.parse(settings.alert_types).slice(-3), ["backup_stale", "security", "topups"], "new types start switched on");
     await ctx.check();
     await ctx.check();
     assert.ok(!ctx.pushes.some((p) => /สำรองข้อมูล/.test(p.text)), "a newly watched site with no backup yet is fine");
@@ -1248,5 +1249,102 @@ describe("Center: credit settings for every site (Center migration 0006 / site 0
     const sent = await ctx.req("POST", "/credits/sync", { cookie: owner, form: { site: "all" } });
     assert.match(sent.text, /ตรงกับค่ากลาง/);
     assert.equal((await ctx.req("POST", "/credits/import", { cookie: owner, form: { site: "nope" } })).status, 404);
+  });
+});
+
+describe("Center: top-up requests of every site (central credits, stage 3)", () => {
+  const GROUP = `C${"b".repeat(32)}`;
+  async function withRequests() {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const token = await ctx.site.login("owner@site.test");
+    const s = await ctx.site.api("PUT", "/api/admin/credit-admin/settings", { token, body: {
+      enabled: true, feePerUnit: 20, lowThreshold: 500, approvalMode: "MANUAL", standardMin: 300, premiumMin: 1000, bankName: "Kasikorn",
+      accountName: "Platform Owner", accountNumber: "111-2-33333-4", promptpayNumber: null, qrAssetId: null, notifyEmail: null, alertTime1: "09:00", alertTime2: "17:00",
+    } });
+    assert.equal(s.status, 200, JSON.stringify(s.error));
+    const send = async (n: number, amount: number) => {
+      const r = await ctx.site.multipart<{ topup: { id: string } }>(token, "/api/admin/credits/topups",
+        [["plan", "STANDARD"], ["amount", String(amount)], ["file", { bytes: pngBytes(600 + n, 800 + n), name: `t${n}.png`, type: "image/png" }]]);
+      assert.equal(r.status, 201, JSON.stringify(r.error));
+      return ctx.site.db.get<{ id: string }>("SELECT id FROM credit_topups ORDER BY created_at DESC, rowid DESC LIMIT 1")!.id;
+    };
+    return { ctx, owner, send };
+  }
+
+  it("new requests are announced once in the LINE group; the page lists them; owner approves / rejects with a reason", async () => {
+    const { ctx, owner, send } = await withRequests();
+    ctx.db.exec(`UPDATE center_settings SET line_group_id = '${GROUP}' WHERE id = 1`);
+    const a = await send(1, 500);
+    const clock = () => new Date(ctx.site.now);
+    assert.equal(await announceTopups(ctx.env, { clock, lineFetch: ctx.lineFetch }), 1);
+    assert.equal(await announceTopups(ctx.env, { clock, lineFetch: ctx.lineFetch }), 0, "each request once");
+    assert.equal(ctx.pushes.length, 1);
+    const b = await send(2, 700);
+
+    const page = await ctx.req("GET", "/topups", { cookie: owner });
+    assert.equal(page.status, 200, page.text.slice(0, 300));
+    assert.match(page.text, /รอตรวจ \(2\)/);
+    assert.match(page.text, new RegExp(`/topups/phasakura/${a}/slip`));
+    assert.match(page.text, /คำขอเติมเครดิต/);
+
+    const slip = await ctx.req("GET", `/topups/phasakura/${a}/slip`, { cookie: owner });
+    assert.equal(slip.status, 200);
+    assert.equal(slip.headers.get("Content-Type"), "image/png");
+    assert.equal(ctx.audits("TOPUP_SLIP_VIEWED").length, 1);
+    assert.equal(ctx.site.audits("VIEW_TOPUP_SLIP")[0]!.user_id, "center_u_00000000000000aa");
+
+    const noReason = await ctx.req("POST", `/topups/phasakura/${a}/approve`, { cookie: owner, form: { amount: "500", plan: "STANDARD", reason: "" } });
+    assert.match(noReason.text, /กรุณาระบุเหตุผล/);
+    const badAmount = await ctx.req("POST", `/topups/phasakura/${a}/approve`, { cookie: owner, form: { amount: "0", plan: "STANDARD", reason: "ตรวจแล้ว" } });
+    assert.match(badAmount.text, /จำนวนเครดิต/);
+    const ok = await ctx.req("POST", `/topups/phasakura/${a}/approve`, { cookie: owner, form: { amount: "500", plan: "STANDARD", reason: "ตรวจยอดเข้าบัญชีแล้ว" } });
+    assert.equal(ok.status, 200, ok.text.slice(0, 300));
+    assert.match(ok.text, /อนุมัติแล้ว — Phasakura ได้ 500 เครดิต/);
+    assert.equal(ctx.site.db.get<{ b: number }>("SELECT balance AS b FROM credit_account WHERE id = 1")!.b, 500);
+    assert.equal(ctx.audits("TOPUP_APPROVED")[0]!.reason, "ตรวจยอดเข้าบัญชีแล้ว");
+    const again = await ctx.req("POST", `/topups/phasakura/${a}/approve`, { cookie: owner, form: { amount: "500", plan: "STANDARD", reason: "ซ้ำ" } });
+    assert.match(again.text, /ถูกตัดสินไปแล้ว/);
+
+    const no = await ctx.req("POST", `/topups/phasakura/${b}/reject`, { cookie: owner, form: { reason: "ไม่พบยอดเข้าบัญชี" } });
+    assert.match(no.text, /ไม่อนุมัติคำขอของ Phasakura แล้ว/);
+    assert.match(no.text, /ไม่มีคำขอที่รอตรวจ/);
+    assert.match(no.text, /ไม่พบยอดเข้าบัญชี/);
+    assert.equal(ctx.site.db.get<{ r: string }>("SELECT reject_reason AS r FROM credit_topups WHERE id = ?", b)!.r, "ไม่พบยอดเข้าบัญชี");
+  });
+
+  it("LINE: one message for the round's new requests, when the notice is on", async () => {
+    const { ctx, send } = await withRequests();
+    ctx.db.exec(`UPDATE center_settings SET line_group_id = '${GROUP}' WHERE id = 1`);
+    await send(1, 500);
+    await send(2, 900);
+    const clock = () => new Date(ctx.site.now);
+    assert.equal(await announceTopups(ctx.env, { clock, lineFetch: ctx.lineFetch }), 2);
+    assert.equal(ctx.pushes.length, 1);
+    assert.equal(ctx.pushes[0]!.to, GROUP);
+    assert.match(ctx.pushes[0]!.text, /คำขอเติมเครดิตใหม่/);
+    assert.match(ctx.pushes[0]!.text, /Phasakura — 500 บาท \(Standard\)/);
+    assert.match(ctx.pushes[0]!.text, /900 บาท/);
+    assert.match(ctx.pushes[0]!.text, /center\.test\/topups/);
+    ctx.db.exec(`UPDATE center_settings SET alert_types = '["site_down"]' WHERE id = 1`);
+    await send(3, 400);
+    assert.equal(await announceTopups(ctx.env, { clock, lineFetch: ctx.lineFetch }), 1);
+    assert.equal(ctx.pushes.length, 1, "switched off: remembered, not sent");
+    assert.equal(ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM center_topup_seen WHERE delivery = 'OFF'")!.n, 1);
+  });
+
+  it("SUPPORT_READONLY reads the list but cannot see slips or decide", async () => {
+    const { ctx, owner, send } = await withRequests();
+    const a = await send(1, 500);
+    const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: "Help", email: "help@phasakura.com", role: "SUPPORT_READONLY" } });
+    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1];
+    const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
+    const help = await ctx.enroll(set.cookie!);
+    const page = await ctx.req("GET", "/topups", { cookie: help });
+    assert.equal(page.status, 200);
+    assert.match(page.text, /ดูได้อย่างเดียว/);
+    assert.ok(!page.text.includes(`/topups/phasakura/${a}/slip`));
+    assert.equal((await ctx.req("GET", `/topups/phasakura/${a}/slip`, { cookie: help })).status, 403);
+    assert.equal((await ctx.req("POST", `/topups/phasakura/${a}/approve`, { cookie: help, form: { amount: "1", plan: "STANDARD", reason: "xxx" } })).status, 403);
   });
 });
