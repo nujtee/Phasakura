@@ -233,7 +233,7 @@ export function createServices(env: Env, options: ServiceOptions): Services {
   const pricing = new PricingRepository(db);
   const paymentRepo = new PaymentRepository(db);
   const bookingRepo = new BookingRepository(db);
-  const availability = new AvailabilityService(db, units, inventory, mediaRepo, authorization, log, clock, pricing);
+  const availability = new AvailabilityService(db, units, inventory, mediaRepo, authorization, log, clock, pricing, env.PUBLIC_MEDIA_BASE_URL);
   const media = new MediaService(db, mediaRepo, env.MEDIA_PUBLIC, authorization, log, env.PUBLIC_MEDIA_BASE_URL, clock);
   const fontRepo = new FontRepository(db);
   // Responsive image renditions (Phase 12).

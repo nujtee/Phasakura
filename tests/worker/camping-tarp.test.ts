@@ -4,6 +4,7 @@ import type { AvailabilityDto, CampingIntegrityDto, CampingSettingsDto, PublicAc
 import type { AdminBookingDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
 import { mapInventoryError } from "../../src/worker/services/booking.service.ts";
 import { Harness } from "../helpers/harness.ts";
+import { pngBytes } from "../helpers/images.ts";
 
 // Camping add-on "tarp area": one per booking, price per area per night, its own nightly limit.
 // Harness clock: 2027-01-10 10:00 Bangkok; seeded camping: ฿250 / adult / night, 30 tents.
@@ -231,5 +232,31 @@ describe("camping tarp area — admin settings and public data", () => {
     assert.equal((await h.api<PublicAccommodationsDto>("GET", "/api/public/accommodations?lang=en")).data.camping.tarp, null);
     offer(h, 2, 5000);
     assert.deepEqual((await h.api<PublicAccommodationsDto>("GET", "/api/public/accommodations?lang=en")).data.camping.tarp, { pricePerNightSatang: 5000 });
+  });
+});
+
+describe("camping ground photo (shown on the home page and the booking page)", () => {
+  it("an ACCOMMODATION upload becomes the camping cover; the admin page gets its address; other images are refused; cleared with null", async () => {
+    const h = new Harness({ seed: true });
+    const editor = await h.login(await h.user({ id: "cover_editor", roles: ["SUPER_ADMIN"] }));
+    const current = (await h.api<CampingSettingsDto>("GET", "/api/admin/camping", { token: editor })).data;
+    const upload = async (purpose: string) => (await h.upload<{ id: string; url: string }>(editor, { bytes: pngBytes(1200, 800), name: "camp.png", type: "image/png" }, purpose)).data;
+    const photo = await upload("ACCOMMODATION");
+    const body = { isEnabled: true, maxTentsPerNight: current.maxTentsPerNight, pricePerAdultNightSatang: current.pricePerAdultNightSatang, childFreeUnderAge: 12, maxGuestsPerTent: current.maxGuestsPerTent };
+
+    const logo = await upload("LOGO");
+    assert.equal((await h.api("PUT", "/api/admin/camping", { token: editor, body: { ...body, coverAssetId: logo.id } })).error?.details?.coverAssetId, "INVALID_IMAGE");
+
+    const saved = await h.api<CampingSettingsDto>("PUT", "/api/admin/camping", { token: editor, body: { ...body, coverAssetId: photo.id } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.error));
+    assert.equal(saved.data.coverAssetId, photo.id);
+    assert.ok(saved.data.coverUrl?.startsWith("/media/"), String(saved.data.coverUrl));
+    const pub = (await h.api<PublicAccommodationsDto>("GET", "/api/public/accommodations?lang=th")).data.camping;
+    assert.equal(pub.cover?.url, saved.data.coverUrl);
+    assert.equal((await h.get(saved.data.coverUrl!)).status, 200, "the photo is public once it is the cover");
+
+    const cleared = await h.api<CampingSettingsDto>("PUT", "/api/admin/camping", { token: editor, body: { ...body, coverAssetId: null } });
+    assert.deepEqual([cleared.data.coverAssetId, cleared.data.coverUrl], [null, null]);
+    assert.equal((await h.api<PublicAccommodationsDto>("GET", "/api/public/accommodations?lang=th")).data.camping.cover, null);
   });
 });

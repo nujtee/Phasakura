@@ -219,6 +219,8 @@ export interface CampingSettingsDto {
   childFreeUnderAge: number;
   maxGuestsPerTent: number | null;
   coverAssetId: string | null;
+  /** The cover photo (admin reads): shown on the home page and the booking page. */
+  coverUrl?: string | null;
   /** Tarp area add-on: offered, price per area per night, areas per night. */
   tarpEnabled: boolean;
   tarpPricePerNightSatang: number;

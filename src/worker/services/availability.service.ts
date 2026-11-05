@@ -1,3 +1,4 @@
+import { publicMediaUrl } from "./media-url.ts";
 import type {
   AdminAvailabilityDto,
   AvailabilityDto,
@@ -40,6 +41,7 @@ export class AvailabilityService {
     private readonly log: SecurityLogService,
     private readonly clock: Clock,
     private readonly pricing: PricingRepository,
+    private readonly mediaBaseUrl?: string,
   ) {}
 
   async today(): Promise<string> {
@@ -462,6 +464,7 @@ export class AvailabilityService {
       childFreeUnderAge: s?.child_free_under_age ?? 12,
       maxGuestsPerTent: s?.max_guests_per_tent ?? null,
       coverAssetId: s?.cover_asset_id ?? null,
+      coverUrl: publicMediaUrl(s?.cover_key, this.mediaBaseUrl) ?? null,
       tarpEnabled: s?.tarp_enabled === 1,
       tarpPricePerNightSatang: s?.tarp_price_per_night_satang ?? 0,
       maxTarpsPerNight: s?.max_tarps_per_night ?? 0,
