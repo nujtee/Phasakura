@@ -133,7 +133,7 @@ function preset(
 export const THEME_LAYOUTS = ["CLASSIC", "EDITORIAL", "BOUTIQUE", "NIGHT"] as const;
 export type ThemeLayout = (typeof THEME_LAYOUTS)[number];
 /** The layouts the Theme page offers (the others are being built). */
-export const OFFERED_LAYOUTS: readonly ThemeLayout[] = ["CLASSIC", "EDITORIAL"];
+export const OFFERED_LAYOUTS: readonly ThemeLayout[] = ["CLASSIC", "EDITORIAL", "BOUTIQUE"];
 
 export function parseLayout(value: unknown): ThemeLayout {
   return (THEME_LAYOUTS as readonly unknown[]).includes(value) ? value as ThemeLayout : "CLASSIC";
