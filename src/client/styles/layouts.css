@@ -149,6 +149,29 @@
   .layout-bookbar__field { border-bottom: 0; border-right: 1px solid var(--color-border); }
 }
 
+/* "Book" in the header on wide screens (phones have the floating button). */
+@media (min-width: 1200px) {
+  :root:is([data-layout="EDITORIAL"], [data-layout="BOUTIQUE"], [data-layout="NIGHT"]) .header-book {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 22px;
+    border-radius: var(--radius-xl);
+    background: var(--color-primary);
+    color: var(--color-primary-contrast);
+    font-family: var(--font-button);
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  :root:is([data-layout="EDITORIAL"], [data-layout="BOUTIQUE"], [data-layout="NIGHT"]) .header-book:hover { filter: brightness(1.1); }
+}
+
+/* Story sections alternate sides. */
+@media (min-width: 768px) {
+  .home-story--flip .home-story__img { order: 2; }
+}
+
 /* "Book with confidence". */
 .layout-trust { padding-block: 36px 0; }
 .layout-trust ul {
@@ -166,22 +189,6 @@
 
 /* ============================================================ A · EDITORIAL */
 
-:root[data-layout="EDITORIAL"] .header-book { display: none; }
-@media (min-width: 1200px) {
-  :root[data-layout="EDITORIAL"] .header-book {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    padding: 0 22px;
-    border-radius: 999px;
-    background: var(--color-primary);
-    color: var(--color-primary-contrast);
-    font-weight: 600;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  :root[data-layout="EDITORIAL"] .header-book:hover { filter: brightness(1.1); }
-}
 
 :root[data-layout="EDITORIAL"] .site-header {
   background: color-mix(in srgb, var(--color-background) 94%, transparent);
@@ -203,6 +210,7 @@
 :root[data-layout="EDITORIAL"] .home h2,
 :root[data-layout="EDITORIAL"] .home h3 { font-weight: 600; letter-spacing: 0; }
 :root[data-layout="EDITORIAL"] .hero__title { line-height: 1.18; }
+:root[data-layout="EDITORIAL"] .header-book { border-radius: 999px; }
 :root[data-layout="EDITORIAL"] .home--editorial .hero + .layout-bookbar-wrap { margin-top: -48px; }
 :root[data-layout="EDITORIAL"] .home .home-section { padding-block: clamp(56px, 8vw, 104px) 0; }
 :root[data-layout="EDITORIAL"] .home .home-section__head { align-items: flex-end; margin-bottom: 24px; }
@@ -228,9 +236,6 @@
 
 /* Story: pictures with soft corners; every other one on the right. */
 :root[data-layout="EDITORIAL"] .home .home-story__img { aspect-ratio: 5 / 4; border-radius: var(--radius-xl); }
-@media (min-width: 768px) {
-  :root[data-layout="EDITORIAL"] .home .home-story--flip .home-story__img { order: 2; }
-}
 
 :root[data-layout="EDITORIAL"] .home .booking-band { background: var(--color-primary); color: var(--color-primary-contrast); }
 :root[data-layout="EDITORIAL"] .home .booking-band__title { color: inherit; }
@@ -253,3 +258,94 @@
 /* The date bar overlaps the bottom of the hero: lift the slide controls and text above it. */
 :root[data-layout="EDITORIAL"] .home--editorial .hero__controls { bottom: 68px; }
 :root[data-layout="EDITORIAL"] .home--editorial .hero__content { padding-bottom: 140px; }
+
+/* ============================================================ B · BOUTIQUE */
+
+:root[data-layout="BOUTIQUE"] .site-header { background: var(--color-background); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-layout="BOUTIQUE"] .site-header__inner { min-height: 84px; }
+:root[data-layout="BOUTIQUE"] .brand__name { font-weight: 500; letter-spacing: 0.06em; }
+:root[data-layout="BOUTIQUE"] .nav__link { font-family: var(--font-heading); font-weight: 400; background: none; border-radius: 0; }
+:root[data-layout="BOUTIQUE"] .nav__link:hover { background: none; color: var(--color-accent); }
+:root[data-layout="BOUTIQUE"] .nav__link[aria-current="page"] { background: none; color: var(--color-heading); box-shadow: inset 0 -1px 0 var(--color-heading); }
+:root[data-layout="BOUTIQUE"] .header-book { letter-spacing: 0.04em; font-weight: 500; }
+
+:root[data-layout="BOUTIQUE"] .home h1,
+:root[data-layout="BOUTIQUE"] .home h2,
+:root[data-layout="BOUTIQUE"] .home h3 { font-weight: 300; letter-spacing: 0; }
+:root[data-layout="BOUTIQUE"] .home .button { font-family: var(--font-button); font-weight: 500; letter-spacing: 0.03em; }
+
+/* Hero: words on the left, the photograph on the right (stacked on phones). */
+:root[data-layout="BOUTIQUE"] .home--boutique .hero { background: var(--color-background); color: var(--color-heading); height: clamp(560px, 86svh, 760px); }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__slide--overlay::after { display: none; }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__text { text-shadow: none; max-width: 30rem; }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__title { font-weight: 300; line-height: 1.12; }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__subtitle { color: var(--color-accent); font-weight: 500; letter-spacing: 0.04em; }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__button--ghost { border-color: var(--color-heading); color: var(--color-heading); background: transparent; }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__button--ghost:hover { background: color-mix(in srgb, var(--color-heading) 8%, transparent); }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero :focus-visible { outline-color: var(--color-heading); }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__content { justify-content: flex-start; text-align: left; }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__content .hero__actions { justify-content: flex-start; }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__content .hero__description { margin-inline: 0; }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__dot span { background: color-mix(in srgb, var(--color-heading) 22%, transparent); }
+:root[data-layout="BOUTIQUE"] .home--boutique .hero__dot[aria-current="true"] span::after { background: var(--color-heading); }
+@media (min-width: 900px) {
+  :root[data-layout="BOUTIQUE"] .home--boutique .hero__media { left: 50%; top: 24px; bottom: 24px; right: max(var(--gutter), calc((100vw - var(--container-max)) / 2 + var(--gutter))); width: auto; height: auto; }
+  :root[data-layout="BOUTIQUE"] .home--boutique .hero__media img { position: absolute; inset: 0; }
+  :root[data-layout="BOUTIQUE"] .home--boutique .hero__content { align-items: center; padding-right: 52%; }
+}
+@media (max-width: 899px) {
+  :root[data-layout="BOUTIQUE"] .home--boutique .hero { height: clamp(560px, 84svh, 660px); }
+  :root[data-layout="BOUTIQUE"] .home--boutique .hero__media { height: 50%; }
+  :root[data-layout="BOUTIQUE"] .home--boutique .hero__media { bottom: auto; }
+  :root[data-layout="BOUTIQUE"] .home--boutique .hero__media img { position: absolute; inset: 0; }
+  :root[data-layout="BOUTIQUE"] .home--boutique .hero__content { top: 50%; align-items: flex-start; padding-block: 24px 64px; }
+}
+
+/* Sections: a thin rule and a numbered label above each title. */
+:root[data-layout="BOUTIQUE"] .home--boutique { counter-reset: boutique; }
+:root[data-layout="BOUTIQUE"] .home .home-eyebrow { color: var(--color-accent); font-weight: 500; }
+:root[data-layout="BOUTIQUE"] .home .home-eyebrow::before { counter-increment: boutique; content: "0" counter(boutique) " — "; }
+:root[data-layout="BOUTIQUE"] .home .home-section { padding-block: clamp(64px, 9vw, 112px) 0; }
+:root[data-layout="BOUTIQUE"] .home .home-section__head { align-items: flex-end; margin-bottom: 32px; padding-bottom: 16px; border-bottom: 1px solid var(--color-heading); }
+:root[data-layout="BOUTIQUE"] .home .home-section__title { font-size: clamp(2rem, 1.4rem + 2vw, 3rem); }
+:root[data-layout="BOUTIQUE"] .home .home-section__more { font-weight: 500; }
+:root[data-layout="BOUTIQUE"] .home .home-section__body { font-size: 1.0625rem; line-height: 1.8; }
+
+/* Stays: photographs without frames, name and price on one line. */
+@media (min-width: 768px) {
+  :root[data-layout="BOUTIQUE"] .home .postcards {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 48px 32px;
+    margin: 8px 0 0;
+    padding: 0;
+    overflow: visible;
+  }
+}
+:root[data-layout="BOUTIQUE"] .home .postcard__link { border: 0; border-radius: 0; background: transparent; }
+:root[data-layout="BOUTIQUE"] .home .postcard__img { border-radius: 0; }
+:root[data-layout="BOUTIQUE"] .home .postcard__text {
+  flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px;
+  padding: 16px 0 12px; border-bottom: 1px solid var(--color-border);
+}
+:root[data-layout="BOUTIQUE"] .home .postcard__name { font-weight: 400; font-size: 1.25rem; }
+:root[data-layout="BOUTIQUE"] .home .postcard__price { font-family: var(--font-heading); color: var(--color-heading); }
+
+:root[data-layout="BOUTIQUE"] .home .home-story__img { border-radius: 0; aspect-ratio: 4 / 5; }
+:root[data-layout="BOUTIQUE"] .home .mosaic__item,
+:root[data-layout="BOUTIQUE"] .home .mosaic__img { border-radius: 0; }
+
+/* Date bar and facts: ruled, flat. */
+:root[data-layout="BOUTIQUE"] .layout-bookbar { box-shadow: none; border-color: var(--color-heading); }
+:root[data-layout="BOUTIQUE"] .layout-bookbar__submit { font-weight: 500; letter-spacing: 0.04em; }
+:root[data-layout="BOUTIQUE"] .layout-trust { padding-top: 48px; }
+:root[data-layout="BOUTIQUE"] .layout-trust ul { border-top: 1px solid var(--color-heading); border-bottom: 1px solid var(--color-border); padding-block: 24px; }
+:root[data-layout="BOUTIQUE"] .layout-trust__icon { color: var(--color-accent); }
+:root[data-layout="BOUTIQUE"] .layout-trust strong { font-family: var(--font-heading); font-weight: 400; font-size: 1.125rem; }
+
+:root[data-layout="BOUTIQUE"] .home .booking-band { background: var(--color-primary); color: var(--color-primary-contrast); }
+:root[data-layout="BOUTIQUE"] .home .booking-band__title { color: inherit; font-weight: 300; }
+
+/* Footer: white with a hairline. */
+:root[data-layout="BOUTIQUE"] .site-footer { background: var(--color-background); border-top: 1px solid var(--color-heading); }
+:root[data-layout="BOUTIQUE"] .site-footer__name { font-weight: 500; letter-spacing: 0.04em; }
