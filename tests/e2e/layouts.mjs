@@ -65,7 +65,7 @@ pv.on("response", (r) => { if (/\.woff2(\?|$)/.test(r.url())) fonts.push([r.url(
 const phone = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "th-TH" });
 const pm = await phone.newPage(); watch(pm);
 
-for (const [layout, name] of [["EDITORIAL", "A · Sakura Editorial"], ["BOUTIQUE", "B · Boutique Minimal"]]) {
+for (const [layout, name] of [["EDITORIAL", "A · Sakura Editorial"], ["BOUTIQUE", "B · Boutique Minimal"], ["NIGHT", "C · Mountain Night"]]) {
   const slug = layout.toLowerCase();
   await check(`Theme → ${name}: applies its colours, saves the draft, publishes`, async () => {
     await pa.goto(`${BASE}/en/admin/settings-theme`);
