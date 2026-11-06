@@ -842,6 +842,7 @@ export function promotionBriefs(rules: PricingRuleRow[], nights: string[]): Prom
     out.set(r.id, {
       text: r.promo_text ?? null, discount: r.discount_kind ? { kind: r.discount_kind, value: r.discount_value ?? 0 } : null,
       freeExtraBed: r.free_extra_bed === 1, freePets: r.free_pets === 1, freeFoodOptionIds: r.free_food_ids ?? [], dateFrom: date, dateTo: date,
+      ...(r.free_foods?.length ? { freeFoods: r.free_foods } : {}),
       ...(r.perks?.length ? { perks: r.perks } : {}),
     });
   }

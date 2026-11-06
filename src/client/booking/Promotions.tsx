@@ -20,13 +20,15 @@ export function perkNames(perks: PerkNames, lang: string): string[] {
 }
 
 /** What a promotion offers, in short words ("ลด 20%", "ฟรีที่นอนเสริม", "น้ำดื่ม 4 ขวด"…). */
-export function promoPerks(p: Pick<PromotionBriefDto, "discount" | "freeExtraBed" | "freePets" | "freeFoodOptionIds" | "perks">, m: PromoMessages, baht: (n: number) => string, lang = "th"): string[] {
+export function promoPerks(p: Pick<PromotionBriefDto, "discount" | "freeExtraBed" | "freePets" | "freeFoodOptionIds" | "freeFoods" | "perks">, m: PromoMessages, baht: (n: number) => string, lang = "th"): string[] {
+  // The free dishes by name ("ฟรี ข้าวต้ม, กาแฟ"); the general words only when their names are not known.
+  const dishes = perkNames(p.freeFoods, lang);
   return [
     p.discount?.kind === "PERCENT" ? fill(m.percentOff, { v: p.discount.value }) : null,
     p.discount?.kind === "AMOUNT" ? fill(m.amountOff, { v: baht(p.discount.value) }) : null,
     p.freeExtraBed ? m.freeExtraBed : null,
     p.freePets ? m.freePets : null,
-    p.freeFoodOptionIds?.length ? m.freeFood : null,
+    dishes.length ? fill(m.freeFoodNamed, { names: dishes.join(", ") }) : p.freeFoodOptionIds?.length ? m.freeFood : null,
     ...perkNames(p.perks, lang),
   ].filter((x): x is string => !!x);
 }
