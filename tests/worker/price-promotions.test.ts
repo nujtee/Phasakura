@@ -4,6 +4,8 @@ import type { AvailabilityDto, PublicUnitDto } from "../../src/shared/accommodat
 import type { PricingRuleDto, PromotionPerkDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
 import { discountedPrice } from "../../src/worker/services/quote.service.ts";
 import { Harness } from "../helpers/harness.ts";
+import { promoPerks } from "../../src/client/booking/Promotions.tsx";
+import { getPromoMessages } from "../../src/shared/i18n/promo-messages.ts";
 
 // Promotions on price rules (migration 0055): room discount (percent or baht), free extra beds / pets, free food the
 // guest picks, and a text for guests. Harness clock: 2027-01-10 Bangkok. House 01 ฿3,500 / night.
@@ -128,6 +130,18 @@ describe("price rule promotions", () => {
     assert.equal(q.status, 200, JSON.stringify(q.body));
     const it0 = q.data.items[0]!;
     assert.deepEqual(it0.extraBeds, { quantity: 1, pricePerNightSatang: 30_000, nights: 1, subtotalSatang: 30_000, freeNights: 1 });
+    // Guests see which dishes are free (names per language), not just "free selected dishes".
+    const names = h.db.all<{ language_code: string; name: string }>("SELECT language_code, name FROM food_option_translations WHERE food_option_id = 'dev_food_dinner_a'");
+    const search = await h.api<AvailabilityDto>("GET", "/api/public/availability?checkIn=2027-02-05&checkOut=2027-02-07");
+    const free = search.data.units.find((u) => u.unitId === "dev_house_01")!.promotions![0]!.freeFoods!;
+    assert.deepEqual(free.map((f) => f.id), ["dev_food_dinner_a"]);
+    for (const n of names) assert.equal(free[0]!.names[n.language_code as "th"], n.name);
+    assert.deepEqual(promoPerks(search.data.units[0]!.promotions![0]!, getPromoMessages("th"), String, "th").at(-1), `ฟรี ${names.find((n) => n.language_code === "th")!.name}`);
+    // A dish taken off the menu is no longer named.
+    h.db.run("UPDATE food_options SET status = 'INACTIVE' WHERE id = 'dev_food_dinner_a'");
+    const after = await h.api<AvailabilityDto>("GET", "/api/public/availability?checkIn=2027-02-05&checkOut=2027-02-07");
+    assert.equal(after.data.units.find((u) => u.unitId === "dev_house_01")!.promotions![0]!.freeFoods, undefined);
+    h.db.run("UPDATE food_options SET status = 'ACTIVE' WHERE id = 'dev_food_dinner_a'");
     assert.equal(it0.pets?.subtotalSatang, 20_000);
     assert.equal(it0.pets?.freeUnits, 1);
     const [fri, sat] = ["2027-02-05", "2027-02-06"].map((d) => q.data.food.find((f) => f.serviceDate === d && f.optionId === "dev_food_dinner_a")!);

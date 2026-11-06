@@ -30,6 +30,8 @@ export interface PricingRuleRow {
   free_pets?: number;
   promo_text?: string | null;
   free_food_ids?: string[];
+  /** The free dishes that can still be ordered, with their names per language (for guests). */
+  free_foods?: PerkRef[];
   /** Extra perks of the promotion (migration 0056), from the shared list, with their names per language. */
   perks?: PerkRef[];
   created_at: string;
@@ -166,6 +168,7 @@ export class PricingRepository {
       ]),
       async () => [[] as Promo[], [] as { rule_id: string; option_id: string }[]] as const,
     );
+    const foodNames = foods.length ? await this.foodNames(foods.map((f) => f.option_id)) : new Map<string, PerkRef>();
     const perks = await this.rulePerks(ids);
     if (!promos.length && !perks.size) return rules;
     const byId = new Map(promos.map((p) => [p.id, p]));
@@ -182,9 +185,30 @@ export class PricingRepository {
         free_pets: p.free_pets,
         promo_text: p.promo_text,
         free_food_ids: foods.filter((f) => f.rule_id === r.id).map((f) => f.option_id),
+        free_foods: foods.filter((f) => f.rule_id === r.id).flatMap((f) => foodNames.get(f.option_id) ?? []),
         ...(rp ? { perks: rp } : {}),
       };
     });
+  }
+
+  /** Names per language of the dishes guests can order (active), in the menu's order. */
+  private async foodNames(optionIds: string[]): Promise<Map<string, PerkRef>> {
+    type Row = { id: string; language_code: string; name: string };
+    const { results } = await this.db
+      .prepare(`SELECT o.id, t.language_code, t.name
+                  FROM food_options o
+                  JOIN food_categories c ON c.id = o.food_category_id
+                  JOIN food_option_translations t ON t.food_option_id = o.id
+                 WHERE o.id IN (SELECT value FROM json_each(?1)) AND o.status = 'ACTIVE'
+                 ORDER BY c.sort_order, o.sort_order, o.id`)
+      .bind(JSON.stringify([...new Set(optionIds)])).all<Row>();
+    const out = new Map<string, PerkRef>();
+    for (const r of results) {
+      const ref = out.get(r.id) ?? { id: r.id, names: {} };
+      ref.names[r.language_code] = r.name;
+      out.set(r.id, ref);
+    }
+    return out;
   }
 
   /** The perks of these rules (migration 0056; none before it), in the shared list's order, with their names. */
