@@ -15,6 +15,7 @@ import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
 import { useLayout, useSite } from "../site/SiteProvider.tsx";
 import { BookBar, TrustStrip } from "../content/LayoutBlocks.tsx";
+import { StayList } from "../content/StayList.tsx";
 
 /** The stays block a theme layout adds when the admin has not placed one on the home page. */
 const AUTO_STAYS: PublicSectionDto = { id: "layout-stays", type: "ACCOMMODATION_HIGHLIGHTS", image: null, layout: null, title: null, subtitle: null, body: null, button: null };
@@ -277,20 +278,28 @@ export function HomePage() {
   // Theme layouts (migration 0061): a date bar and the "book with confidence" strip under the hero, the stays
   // when the admin has not placed them, and story sections alternating sides. CLASSIC is the page as it was.
   const styled = layout !== "CLASSIC";
-  const sections = styled && !data.sections.some((s) => s.type === "ACCOMMODATION_HIGHLIGHTS")
-    ? [AUTO_STAYS, ...data.sections] : data.sections;
+  // D · Stay List (migration 0062): the page opens on the search and the list of what is free; no hero, and the
+  // stays block is not repeated below. The admin's other sections follow.
+  const list = layout === "LIST";
+  const sections = list ? data.sections.filter((s) => s.type !== "ACCOMMODATION_HIGHLIGHTS")
+    : styled && !data.sections.some((s) => s.type === "ACCOMMODATION_HIGHLIGHTS") ? [AUTO_STAYS, ...data.sections] : data.sections;
   let stories = 0;
   return (
     <div className={`home${styled ? ` home--${layout.toLowerCase()}` : ""}`}>
-      {hasSlides ? <HeroSlideshow slides={data.slides} title={title} /> : (
+      {list ? (
+        <>
+          <h1 id="page-title" className="visually-hidden">{title}</h1>
+          <StayList />
+        </>
+      ) : hasSlides ? <HeroSlideshow slides={data.slides} title={title} /> : (
         <section className="page container home-intro" aria-labelledby="page-title">
           <h1 id="page-title" className="page__title">{title}</h1>
           {site?.tagline && <p className="page__lead">{site.tagline}</p>}
           {!data.sections.length && <EmptyState />}
         </section>
       )}
-      {styled && <BookBar />}
-      {styled && <TrustStrip />}
+      {styled && !list && <BookBar />}
+      {styled && !list && <TrustStrip />}
       {sections.map((s) => {
         const story = s.image !== null && !["ACCOMMODATION_HIGHLIGHTS", "GALLERY_PREVIEW", "FOOD_PREVIEW", "BOOKING_CTA", "CONTACT"].includes(s.type);
         const flip = styled && story && stories++ % 2 === 1;

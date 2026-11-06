@@ -452,6 +452,7 @@ const th = {
       EDITORIAL: { name: "A · Sakura Editorial", text: "หรู อบอุ่น หัวข้อตัวมีหัว แถบเลือกวันใต้ภาพใหญ่ และแถบจองอย่างมั่นใจ" },
       BOUTIQUE: { name: "B · Boutique Minimal", text: "สะอาด ทันสมัย ขาว-ดำ เส้นบาง" },
       NIGHT: { name: "C · Mountain Night", text: "พรีเมียม โทนเข้ม ตัวอักษรสีทอง" },
+      LIST: { name: "D · Stay List", text: "แบบเว็บจองโรงแรม: หน้าแรกเป็นรายการที่พักว่างพร้อมราคาตามวันที่ ค้นหา กรอง และจัดเรียงได้" },
     },
     fontNote: "ฟอนต์ระบบรองรับภาษาไทยและจีนเสมอ ฟอนต์ที่อัปโหลดจะแสดงตามไฟล์ และใช้ฟอนต์สำรองสำหรับตัวอักษรที่ไฟล์ไม่มี",
     fonts: {
@@ -864,6 +865,7 @@ const en: AdminCmsMessages = {
       EDITORIAL: { name: "A · Sakura Editorial", text: "Warm and refined: serif headings, a date bar under the hero, a book-with-confidence strip" },
       BOUTIQUE: { name: "B · Boutique Minimal", text: "Clean and modern: black and white, fine lines" },
       NIGHT: { name: "C · Mountain Night", text: "Premium and dark with champagne gold" },
+      LIST: { name: "D · Stay List", text: "Like a hotel-search site: the home page lists what is free with prices for the dates, with search, filters and sorting" },
     },
     fontNote: "System fonts always cover Thai and Chinese. An uploaded font shows the characters its file contains and falls back to its fallback font for the rest.",
     presetCUSTOM: "Custom",
@@ -1133,6 +1135,7 @@ const zhCN: AdminCmsMessages = {
       EDITORIAL: { name: "A · Sakura Editorial", text: "温馨典雅：衬线标题、大图下方的日期栏、放心预订栏" },
       BOUTIQUE: { name: "B · Boutique Minimal", text: "简洁现代：黑白配色、细线条" },
       NIGHT: { name: "C · Mountain Night", text: "高端深色，香槟金点缀" },
+      LIST: { name: "D · Stay List", text: "酒店搜索式：首页列出所选日期的空房与价格，可搜索、筛选和排序" },
     },
     fontNote: "系统字体始终支持泰文与中文。上传的字体仅显示文件包含的字符，其余字符使用备用字体。",
     fonts: {

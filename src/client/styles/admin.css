@@ -4192,3 +4192,6 @@
 .thm-layout-thumb--boutique b { left: 52%; right: 6px; top: 20px; height: 70px; }
 .thm-layout-thumb--boutique em { top: 34px; bottom: auto; width: 34%; height: 10px; }
 .thm-layout-thumb--night b { top: 0; height: 74px; opacity: 0.35; }
+.thm-layout-thumb--list b { top: 0; height: 30px; opacity: 1; }
+.thm-layout-thumb--list em { left: 10%; right: 10%; width: auto; top: 22px; bottom: auto; height: 14px; border-radius: 3px; background: #fff !important; box-shadow: 0 0 0 2px currentColor; }
+.thm-layout-thumb--list i { top: 48px; left: 8px; right: 8px; height: 12px; box-shadow: 0 18px 0 0 currentColor; opacity: 0.35; }

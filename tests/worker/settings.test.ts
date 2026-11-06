@@ -159,6 +159,13 @@ describe("theme layouts (migration 0061): versioned with the colours", () => {
     await h.api("POST", `/api/admin/theme/versions/${old.id}/rollback`, { token: designer });
     assert.equal((await site(h)).layout, "CLASSIC");
 
+    // D · Stay List (migration 0062 rebuilt the column): accepted, and history still frozen.
+    const list = await h.api<ThemeAdminDto>("PUT", "/api/admin/theme/draft", { token: designer, body: { preset: "CUSTOM", layout: "LIST", tokens: LAYOUT_TOKENS.LIST } });
+    assert.equal(list.data.draft?.layout, "LIST");
+    await h.api("POST", "/api/admin/theme/publish", { token: designer });
+    assert.equal((await site(h)).layout, "LIST");
+    assert.throws(() => h.db.run("UPDATE theme_versions SET layout_ext = NULL WHERE status = 'PUBLISHED'"), /THEME_VERSION_IMMUTABLE/);
+
     // An older client that sends no layout keeps working (CLASSIC).
     const noLayout = await h.api<ThemeAdminDto>("PUT", "/api/admin/theme/draft", { token: designer, body: { preset: "DARK", tokens: PRESET_TOKENS.DARK } });
     assert.equal(noLayout.data.draft?.layout, "CLASSIC");
