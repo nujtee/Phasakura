@@ -398,6 +398,14 @@ export function BookingPage() {
   };
 
   // ------------------------------------------------------------------ confirmation
+  // A link to …/booking#sec-camping (the home page's stay list) lands on the camping ground once it is drawn.
+  const campingShown = !!data?.camping.enabled;
+  useEffect(() => {
+    if (campingShown && typeof window !== "undefined" && window.location.hash === "#sec-camping") {
+      document.getElementById("sec-camping")?.scrollIntoView({ block: "start" });
+    }
+  }, [campingShown]);
+
   if (step === "done" && booking) {
     return (
       <div className="page container">

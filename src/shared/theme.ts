@@ -130,7 +130,7 @@ function preset(
  * How the public site is laid out (home page, header, footer), chosen in Settings → Theme with the colours
  * (migration 0061). CLASSIC = the site as it always was.
  */
-export const THEME_LAYOUTS = ["CLASSIC", "EDITORIAL", "BOUTIQUE", "NIGHT"] as const;
+export const THEME_LAYOUTS = ["CLASSIC", "EDITORIAL", "BOUTIQUE", "NIGHT", "LIST"] as const;
 export type ThemeLayout = (typeof THEME_LAYOUTS)[number];
 /** The layouts the Theme page offers. */
 export const OFFERED_LAYOUTS: readonly ThemeLayout[] = THEME_LAYOUTS;
@@ -165,6 +165,8 @@ export const LAYOUT_TOKENS: Record<ThemeLayout, Required<ThemeTokens>> = {
     ...preset(["#16181a", "#ffffff", "#45494d", "#b3485c", "#ffffff", "#ffffff", "#16181a", "#16181a", "#5e6266", "#e3e3e1"], "SANS", "DISPLAY_SANS", [0, 0, 2, 4], "NONE"),
     "--font-button": FONT_STACKS.DISPLAY_SANS,
   },
+  // D · a hotel-search page: deep teal band, sakura-pink search box, white result rows (migration 0062).
+  LIST: preset(["#0f4c5c", "#ffffff", "#55656c", "#c4456f", "#f4f6f8", "#ffffff", "#1b262b", "#0f4c5c", "#55656c", "#e1e6e9"], "SANS", "SANS", [6, 8, 12, 16], "SOFT"),
   // Night charcoal with champagne gold; Thai serif headings.
   NIGHT: {
     ...preset(["#d9be85", "#14191b", "#9aa59d", "#d9be85", "#0f1416", "#182024", "#e9e4da", "#f4efe6", "#b9b1a4", "#2e373b"], "SANS", "DISPLAY_SERIF", [0, 2, 4, 8], "STRONG"),

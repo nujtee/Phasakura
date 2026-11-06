@@ -189,14 +189,23 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
       if (!isMissingTableError(error)) throw error;
     }
 
-    // Migration 0061: the published theme's layout (no column before it → the classic site).
+    // Migration 0061 / 0062: the published theme's layout (no column before them → the classic site).
     let themeLayout: string | null = null;
+    const notYet = (error: unknown) => isMissingTableError(error) || /no such column/i.test(String(error));
     try {
       themeLayout = (await this.db.prepare(
-        `SELECT v.layout FROM theme_settings s JOIN theme_versions v ON v.id = s.published_version_id AND v.status = 'PUBLISHED' WHERE s.id = 1`,
+        `SELECT COALESCE(v.layout_ext, v.layout) AS layout FROM theme_settings s
+           JOIN theme_versions v ON v.id = s.published_version_id AND v.status = 'PUBLISHED' WHERE s.id = 1`,
       ).first<{ layout: string }>())?.layout ?? null;
     } catch (error) {
-      if (!isMissingTableError(error) && !/no such column/i.test(String(error))) throw error;
+      if (!notYet(error)) throw error;
+      try {
+        themeLayout = (await this.db.prepare(
+          `SELECT v.layout FROM theme_settings s JOIN theme_versions v ON v.id = s.published_version_id AND v.status = 'PUBLISHED' WHERE s.id = 1`,
+        ).first<{ layout: string }>())?.layout ?? null;
+      } catch (inner) {
+        if (!notYet(inner)) throw inner;
+      }
     }
 
     // Phase 14: tracking switches and the cookie banner (tables missing before migration 0019 → defaults).

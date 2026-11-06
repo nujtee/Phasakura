@@ -124,6 +124,71 @@ for (const [layout, name] of [["EDITORIAL", "A · Sakura Editorial"], ["BOUTIQUE
   });
 }
 
+await check("Theme → D · Stay List: publishes", async () => {
+  await pa.goto(`${BASE}/en/admin/settings-theme`);
+  await pa.getByRole("heading", { name: "Site layout" }).waitFor();
+  const pick = pa.getByRole("button", { name: /D · Stay List/ });
+  await pick.click();
+  await pa.getByText("This layout's colours and fonts are applied").waitFor();
+  await pa.getByRole("button", { name: "Save draft" }).click();
+  await pa.getByText("Saved").first().waitFor();
+  await pa.getByRole("button", { name: "Publish theme" }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Publish theme" }).click();
+  await pa.getByText("Published").first().waitFor();
+  const site = await (await admin.request.get(`${BASE}/api/public/site?lang=en`)).json();
+  assert(site.data.layout === "LIST", `layout ${site.data.layout}`);
+});
+
+await check("D · desktop: the home page lists what is free with prices; filters; sorting; new dates search again", async () => {
+  await pv.goto(`${BASE}/th/`);
+  await pv.locator(".stay-row:not(.skeleton)").first().waitFor();
+  assert((await pv.evaluate(() => document.documentElement.dataset.layout)) === "LIST", "data-layout");
+  assert(await pv.locator(".hero").count() === 0, "no hero on the list layout");
+  const all = await pv.locator(".stay-row").count();
+  assert(all >= 2, `rows ${all}`);
+  assert(/฿/.test(await pv.locator(".stay-row__total").first().innerText()), "price");
+  await pv.locator(".stay-list__chip").nth(1).click();
+  assert(await pv.locator(".stay-row").count() < all, "filter did nothing");
+  await pv.locator(".stay-list__chip").first().click();
+  await pv.locator(".stay-list__sort select").selectOption("PRICE");
+  const totals = (await pv.locator(".stay-row:not(.is-full) .stay-row__total").allInnerTexts()).map((x) => Number(x.replace(/[^0-9]/g, "")));
+  assert(totals.every((v, i) => i === 0 || totals[i - 1] <= v), `not sorted ${totals}`);
+  const overflow = await pv.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 0, `sideways scroll ${overflow}px`);
+  await pv.screenshot({ path: `${SHOTS}/l-list-desktop.png`, fullPage: true });
+  // Two nights: prices are for two nights.
+  const inField = pv.locator(".stay-list__field input[type=date]").first();
+  const checkIn = await inField.inputValue();
+  const out = new Date(Date.parse(`${checkIn}T00:00:00Z`) + 2 * 86400000).toISOString().slice(0, 10);
+  await pv.locator(".stay-list__field input[type=date]").nth(1).fill(out);
+  await pv.locator(".stay-list__go").click();
+  await pv.getByText(/ราคาสำหรับ 2 คืน/).first().waitFor();
+});
+
+await check("D · choose a house → booking page with that house and the dates", async () => {
+  const link = pv.locator(".stay-row__pick").first();
+  const href = await link.getAttribute("href");
+  await link.click();
+  await pv.waitForURL(/\/th\/booking\?/);
+  const u = new URL(pv.url());
+  assert(u.searchParams.get("checkIn") && u.searchParams.get("adults") === "2", pv.url());
+  assert(href && (u.searchParams.get("unit") || u.hash === "#sec-camping"), `href ${href}`);
+});
+
+await check("D · phone: the search folds into a summary; rows fit", async () => {
+  await pm.goto(`${BASE}/th/`);
+  await pm.locator(".stay-row:not(.skeleton)").first().waitFor();
+  assert(await pm.locator(".stay-list__summary").isVisible(), "summary");
+  assert(!(await pm.locator(".stay-list__go").isVisible()), "fields open on a phone");
+  await pm.locator(".stay-list__summary").click();
+  assert(await pm.locator(".stay-list__go").isVisible(), "fields do not open");
+  const overflow = await pm.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 0, `sideways scroll ${overflow}px`);
+  await pm.locator(".stay-list__summary").click();
+  await pm.waitForTimeout(300);
+  await pm.screenshot({ path: `${SHOTS}/l-list-phone.png`, fullPage: true });
+});
+
 await check("rollback to the classic version: the site is as before", async () => {
   await pa.goto(`${BASE}/en/admin/settings-theme`);
   await pa.getByRole("button", { name: "Restore" }).last().click();

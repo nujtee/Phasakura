@@ -221,7 +221,7 @@ export class SettingsRepository {
   async themeVersions(limit: number) {
     const { results } = await this.db
       .prepare(
-        `SELECT v.id, v.version_number, v.preset, v.layout, v.tokens_json, v.status, v.note, v.created_at, v.published_at,
+        `SELECT v.id, v.version_number, v.preset, COALESCE(v.layout_ext, v.layout) AS layout, v.tokens_json, v.status, v.note, v.created_at, v.published_at,
                 cu.display_name AS created_by_name, pu.display_name AS published_by_name
            FROM theme_versions v
            LEFT JOIN users cu ON cu.id = v.created_by
@@ -236,7 +236,7 @@ export class SettingsRepository {
   themeVersion(id: string) {
     return this.db
       .prepare(
-        `SELECT v.id, v.version_number, v.preset, v.layout, v.tokens_json, v.status, v.note, v.created_at, v.published_at,
+        `SELECT v.id, v.version_number, v.preset, COALESCE(v.layout_ext, v.layout) AS layout, v.tokens_json, v.status, v.note, v.created_at, v.published_at,
                 NULL AS created_by_name, NULL AS published_by_name
            FROM theme_versions v WHERE v.id = ?1`,
       )
@@ -252,16 +252,16 @@ export class SettingsRepository {
   insertThemeDraftStatement(id: string, preset: string, layout: string, tokens: string, note: string | null, actorId: string, now: string) {
     return this.db
       .prepare(
-        `INSERT INTO theme_versions (id, version_number, preset, layout, tokens_json, status, note, created_by, created_at)
-         VALUES (?1, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM theme_versions), ?2, ?7, ?3, 'DRAFT', ?4, ?5, ?6)`,
+        `INSERT INTO theme_versions (id, version_number, preset, layout, layout_ext, tokens_json, status, note, created_by, created_at)
+         VALUES (?1, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM theme_versions), ?2, ?7, ?8, ?3, 'DRAFT', ?4, ?5, ?6)`,
       )
-      .bind(id, preset, tokens, note, actorId, now, layout);
+      .bind(id, preset, tokens, note, actorId, now, ...layoutColumns(layout));
   }
 
   updateThemeDraftStatement(id: string, preset: string, layout: string, tokens: string, note: string | null) {
     return this.db
-      .prepare("UPDATE theme_versions SET preset = ?2, layout = ?5, tokens_json = ?3, note = ?4 WHERE id = ?1 AND status = 'DRAFT'")
-      .bind(id, preset, tokens, note, layout);
+      .prepare("UPDATE theme_versions SET preset = ?2, layout = ?5, layout_ext = ?6, tokens_json = ?3, note = ?4 WHERE id = ?1 AND status = 'DRAFT'")
+      .bind(id, preset, tokens, note, ...layoutColumns(layout));
   }
 
   /**
@@ -314,4 +314,10 @@ export interface ThemeVersionRow {
   published_at: string | null;
   created_by_name: string | null;
   published_by_name: string | null;
+}
+
+/** Layouts added after migration 0061 are stored in layout_ext (migration 0062), the layout column then CLASSIC. */
+const EXT_LAYOUTS = new Set(["LIST"]);
+function layoutColumns(layout: string): [string, string | null] {
+  return EXT_LAYOUTS.has(layout) ? ["CLASSIC", layout] : [layout, null];
 }
