@@ -166,6 +166,17 @@ describe("theme layouts (migration 0061): versioned with the colours", () => {
     assert.equal((await site(h)).layout, "LIST");
     assert.throws(() => h.db.run("UPDATE theme_versions SET layout_ext = NULL WHERE status = 'PUBLISHED'"), /THEME_VERSION_IMMUTABLE/);
 
+    // The booking page's look (migration 0063): versioned with the theme, CARDS unless chosen.
+    assert.equal((await site(h)).bookingLayout, "CARDS");
+    assert.equal((await h.api("PUT", "/api/admin/theme/draft", { token: designer, body: { preset: "CUSTOM", layout: "LIST", bookingLayout: "GRID", tokens: LAYOUT_TOKENS.LIST } })).status, 422);
+    const booking = await h.api<ThemeAdminDto>("PUT", "/api/admin/theme/draft", { token: designer, body: { preset: "CUSTOM", layout: "EDITORIAL", bookingLayout: "LIST", tokens: LAYOUT_TOKENS.EDITORIAL } });
+    assert.deepEqual([booking.data.draft?.layout, booking.data.draft?.bookingLayout], ["EDITORIAL", "LIST"]);
+    assert.equal((await h.api<{ bookingLayout: string }>("GET", "/api/admin/theme/preview", { token: designer })).data.bookingLayout, "LIST");
+    assert.equal((await site(h)).bookingLayout, "CARDS", "a draft is not live");
+    await h.api("POST", "/api/admin/theme/publish", { token: designer });
+    assert.deepEqual([(await site(h)).layout, (await site(h)).bookingLayout], ["EDITORIAL", "LIST"]);
+    assert.throws(() => h.db.run("UPDATE theme_versions SET booking_layout = 'CARDS' WHERE status = 'PUBLISHED'"), /THEME_VERSION_IMMUTABLE/);
+
     // An older client that sends no layout keeps working (CLASSIC).
     const noLayout = await h.api<ThemeAdminDto>("PUT", "/api/admin/theme/draft", { token: designer, body: { preset: "DARK", tokens: PRESET_TOKENS.DARK } });
     assert.equal(noLayout.data.draft?.layout, "CLASSIC");

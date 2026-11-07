@@ -135,6 +135,13 @@ export type ThemeLayout = (typeof THEME_LAYOUTS)[number];
 /** The layouts the Theme page offers. */
 export const OFFERED_LAYOUTS: readonly ThemeLayout[] = THEME_LAYOUTS;
 
+/** The booking page's look (migration 0063): CARDS as it was, LIST = one row per stay with filters and sorting. */
+export const BOOKING_LAYOUTS = ["CARDS", "LIST"] as const;
+export type BookingLayout = (typeof BOOKING_LAYOUTS)[number];
+export function parseBookingLayout(value: unknown): BookingLayout {
+  return value === "LIST" ? "LIST" : "CARDS";
+}
+
 export function parseLayout(value: unknown): ThemeLayout {
   return (THEME_LAYOUTS as readonly unknown[]).includes(value) ? value as ThemeLayout : "CLASSIC";
 }

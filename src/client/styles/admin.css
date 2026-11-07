@@ -4195,3 +4195,10 @@
 .thm-layout-thumb--list b { top: 0; height: 30px; opacity: 1; }
 .thm-layout-thumb--list em { left: 10%; right: 10%; width: auto; top: 22px; bottom: auto; height: 14px; border-radius: 3px; background: #fff !important; box-shadow: 0 0 0 2px currentColor; }
 .thm-layout-thumb--list i { top: 48px; left: 8px; right: 8px; height: 12px; box-shadow: 0 18px 0 0 currentColor; opacity: 0.35; }
+
+/* Theme → booking page (migration 0063): cards vs rows. */
+.thm-booking-thumb { display: grid; gap: 6px; height: 96px; padding: 8px; box-sizing: border-box; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-background); }
+.thm-booking-thumb i { display: block; border-radius: 4px; background: color-mix(in srgb, var(--color-primary) 22%, var(--color-surface)); }
+.thm-booking-thumb--cards { grid-template-columns: repeat(3, 1fr); }
+.thm-booking-thumb--list { grid-template-rows: repeat(3, 1fr); }
+.thm-booking-thumb--list i { background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 30%, var(--color-surface)) 0 28%, var(--color-surface) 28% 100%); border: 1px solid var(--color-border); }

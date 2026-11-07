@@ -24,6 +24,7 @@ function site(overrides: Partial<PublicSiteDto> = {}): PublicSiteDto {
     },
     theme: null,
     layout: "CLASSIC",
+    bookingLayout: "CARDS",
     favicon: null,
     loginLogo: null,
     contact: { phone: null, email: null, lineOaUrl: null, mapUrl: null, address: null, coordinates: null },

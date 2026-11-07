@@ -447,6 +447,12 @@ const th = {
     layoutHint: "เปลี่ยนหน้าแรก เมนูด้านบน และส่วนท้ายของเว็บ เลือกแล้วระบบจะใช้ชุดสีและฟอนต์ของรูปแบบนั้นให้ (แก้ต่อได้) — มีผลเมื่อบันทึกฉบับร่างและกดเผยแพร่",
     layoutApplied: "ใช้ชุดสีและฟอนต์ของรูปแบบนี้แล้ว — บันทึกฉบับร่างเพื่อดูตัวอย่างบนเว็บ",
     layoutLabel: "รูปแบบ",
+    bookingLayoutTitle: "หน้าจองที่พัก",
+    bookingLayoutHint: "หน้าตาของหน้า \"จองที่พัก\" เลือกแยกจากรูปแบบหน้าเว็บได้ (ใช้สีของธีม) — มีผลเมื่อบันทึกฉบับร่างและกดเผยแพร่",
+    bookingLayouts: {
+      CARDS: { name: "การ์ด (แบบเดิม)", text: "ที่พักเป็นการ์ดเรียงเป็นตาราง แยกบ้านพัก / เต็นท์ VIP / ลานกางเต็นท์" },
+      LIST: { name: "รายการแบบเว็บจองโรงแรม", text: "ที่พักทีละแถว รูปซ้าย ข้อมูลขวา ราคาตามวันที่ชิดขวา มีปุ่มกรองประเภท จัดเรียงราคา และจำนวนที่ว่าง" },
+    },
     layouts: {
       CLASSIC: { name: "แบบเดิม", text: "หน้าตาปัจจุบันของเว็บ" },
       EDITORIAL: { name: "A · Sakura Editorial", text: "หรู อบอุ่น หัวข้อตัวมีหัว แถบเลือกวันใต้ภาพใหญ่ และแถบจองอย่างมั่นใจ" },
@@ -860,6 +866,12 @@ const en: AdminCmsMessages = {
     layoutHint: "Changes the home page, the top menu and the footer. Picking one applies its colours and fonts (still editable) — it goes live when you save the draft and publish.",
     layoutApplied: "This layout's colours and fonts are applied — save the draft to preview it on the website",
     layoutLabel: "Layout",
+    bookingLayoutTitle: "Booking page",
+    bookingLayoutHint: "How the \"Book\" page looks — chosen separately from the site layout (theme colours apply). Goes live when you save the draft and publish.",
+    bookingLayouts: {
+      CARDS: { name: "Cards (classic)", text: "Stays as cards in a grid: houses / VIP tents / camping ground" },
+      LIST: { name: "Hotel-search list", text: "One row per stay: photo left, details right, the price for the dates on the right; type filters, price sorting and how many are free" },
+    },
     layouts: {
       CLASSIC: { name: "Classic", text: "The website as it looks today" },
       EDITORIAL: { name: "A · Sakura Editorial", text: "Warm and refined: serif headings, a date bar under the hero, a book-with-confidence strip" },
@@ -1130,6 +1142,12 @@ const zhCN: AdminCmsMessages = {
     layoutHint: "更改首页、顶部菜单和页脚。选择后将套用该版式的配色与字体（仍可修改）——保存草稿并发布后生效。",
     layoutApplied: "已套用此版式的配色与字体——保存草稿即可在网站上预览",
     layoutLabel: "版式",
+    bookingLayoutTitle: "预订页",
+    bookingLayoutHint: "“预订”页面的外观，可与网站版式分开选择（使用主题配色）——保存草稿并发布后生效。",
+    bookingLayouts: {
+      CARDS: { name: "卡片（经典）", text: "住宿以卡片网格显示：独栋 / VIP 帐篷 / 营地" },
+      LIST: { name: "酒店搜索式列表", text: "每行一个住宿：左图右文，右侧显示所选日期价格；可按类型筛选、按价格排序并显示空房数" },
+    },
     layouts: {
       CLASSIC: { name: "经典", text: "网站当前的外观" },
       EDITORIAL: { name: "A · Sakura Editorial", text: "温馨典雅：衬线标题、大图下方的日期栏、放心预订栏" },

@@ -83,6 +83,10 @@ const th = {
       details: "ดูรายละเอียด",
       loadError: "โหลดห้องว่างไม่สำเร็จ",
       retry: "ลองอีกครั้ง",
+      priceNights: "ราคาสำหรับ {n} คืน",
+      from: "เริ่มต้น",
+      freeOk: "ว่างในวันที่เลือก",
+      stays: "ที่พัก",
     },
   },
   gallery: {
@@ -194,6 +198,10 @@ const en: ContentMessages = {
       details: "Details",
       loadError: "Could not load availability",
       retry: "Try again",
+      priceNights: "Price for {n} nights",
+      from: "From",
+      freeOk: "Free for your dates",
+      stays: "Stays",
     },
   },
   gallery: {
@@ -303,6 +311,10 @@ const zhCN: ContentMessages = {
       details: "详情",
       loadError: "无法加载空房",
       retry: "重试",
+      priceNights: "{n} 晚的价格",
+      from: "起价",
+      freeOk: "所选日期可订",
+      stays: "住宿",
     },
   },
   gallery: {

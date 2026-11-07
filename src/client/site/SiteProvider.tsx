@@ -2,14 +2,18 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { PublicSiteDto } from "../../shared/api-types.ts";
 import type { Locale } from "../../shared/i18n/index.ts";
 import type { PublicFontFaceDto } from "../../shared/media-types.ts";
-import { parseLayout, THEME_TOKENS, validateThemeTokens, type ThemeLayout, type ThemeTokens } from "../../shared/theme.ts";
+import { parseBookingLayout, parseLayout, THEME_TOKENS, validateThemeTokens, type BookingLayout, type ThemeLayout, type ThemeTokens } from "../../shared/theme.ts";
 import { apiGet } from "../api/client.ts";
 
 export type SiteState = (
   | { status: "loading"; site: PublicSiteDto | null; retry: () => void; preview: boolean; exitPreview: () => void }
   | { status: "ready"; site: PublicSiteDto; retry: () => void; preview: boolean; exitPreview: () => void }
   | { status: "error"; site: PublicSiteDto | null; retry: () => void; preview: boolean; exitPreview: () => void }
-) & { /** The draft's layout while an admin previews the theme. */ previewLayout?: ThemeLayout | null };
+) & {
+  /** The draft's layouts while an admin previews the theme. */
+  previewLayout?: ThemeLayout | null;
+  previewBookingLayout?: BookingLayout | null;
+};
 
 const noop = () => {};
 const PREVIEW_KEY = "phasakura.themePreview";
@@ -74,6 +78,7 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
   const [previewTokens, setPreviewTokens] = useState<ThemeTokens | null>(null);
   const [previewFonts, setPreviewFonts] = useState<PublicFontFaceDto[] | null>(null);
   const [previewLayout, setPreviewLayout] = useState<ThemeLayout | null>(null);
+  const [previewBookingLayout, setPreviewBookingLayout] = useState<BookingLayout | null>(null);
   const exitPreview = useCallback(() => {
     try {
       window.sessionStorage.removeItem(PREVIEW_KEY);
@@ -84,6 +89,7 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
     setPreviewTokens(null);
     setPreviewFonts(null);
     setPreviewLayout(null);
+    setPreviewBookingLayout(null);
   }, []);
   const [state, setState] = useState<Omit<SiteState, "preview" | "exitPreview">>({ status: "loading", site: null, retry });
 
@@ -105,8 +111,11 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
   useEffect(() => {
     if (!readPreviewFlag()) return;
     const controller = new AbortController();
-    apiGet<{ tokens: ThemeTokens; layout?: string; fonts?: PublicFontFaceDto[] }>("/api/admin/theme/preview", controller.signal)
-      .then((res) => { setPreviewTokens(res.tokens); setPreviewFonts(res.fonts ?? []); setPreviewLayout(parseLayout(res.layout)); setPreview(true); })
+    apiGet<{ tokens: ThemeTokens; layout?: string; bookingLayout?: string; fonts?: PublicFontFaceDto[] }>("/api/admin/theme/preview", controller.signal)
+      .then((res) => {
+        setPreviewTokens(res.tokens); setPreviewFonts(res.fonts ?? []);
+        setPreviewLayout(parseLayout(res.layout)); setPreviewBookingLayout(parseBookingLayout(res.bookingLayout)); setPreview(true);
+      })
       .catch(() => { if (!controller.signal.aborted) exitPreview(); });
     return () => controller.abort();
   }, [exitPreview]);
@@ -138,7 +147,7 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
     return () => { if (previous !== null) link.setAttribute("href", previous); };
   }, [favicon]);
 
-  return <SiteContext.Provider value={{ ...state, preview, exitPreview, previewLayout } as SiteState}>{children}</SiteContext.Provider>;
+  return <SiteContext.Provider value={{ ...state, preview, exitPreview, previewLayout, previewBookingLayout } as SiteState}>{children}</SiteContext.Provider>;
 }
 
 export function useSite(): SiteState {
@@ -149,4 +158,10 @@ export function useSite(): SiteState {
 export function useLayout(): ThemeLayout {
   const s = useContext(SiteContext);
   return s.previewLayout ?? s.site?.layout ?? "CLASSIC";
+}
+
+/** The booking page's look (migration 0063): the previewed draft's, else the published one's. */
+export function useBookingLayout(): BookingLayout {
+  const s = useContext(SiteContext);
+  return s.previewBookingLayout ?? s.site?.bookingLayout ?? "CARDS";
 }

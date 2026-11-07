@@ -7,7 +7,9 @@ import { isIsoDate } from "../../shared/dates.ts";
 import { campingItem, foodChangeEvents, quoteItems, unitItem } from "../analytics/booking-events.ts";
 import { track } from "../analytics/tracker.ts";
 import { readCampaign } from "../analytics/campaign.ts";
-import { useSite } from "../site/SiteProvider.tsx";
+import { useBookingLayout, useSite } from "../site/SiteProvider.tsx";
+import { useContentT } from "../content/useContentT.ts";
+import { stayTotal, UnitRow } from "../accommodation/UnitRow.tsx";
 import { ApiError } from "../api/client.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
@@ -84,6 +86,11 @@ export function BookingPage() {
   const [availability, setAvailability] = useState<AvailabilityDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // Settings → Theme → booking page (migration 0063): the list look's filter and order.
+  const bookingLayout = useBookingLayout();
+  const lt = useContentT().layout.list;
+  const [kind, setKind] = useState<"ALL" | "HOUSE" | "TENT" | "CAMPING">("ALL");
+  const [order, setOrder] = useState<"RECOMMENDED" | "PRICE">("RECOMMENDED");
 
   const [step, setStep] = useState<Step>("choose");
   /** The stays picked (several houses / VIP tents + camping, same dates), each with its own guests. */
@@ -571,27 +578,46 @@ export function BookingPage() {
   const picked = (unit: PublicUnitDto) => picks.some((p) => pickKey(p) === unit.id);
   const ready = picks.length > 0 && picks.reduce((a, p) => a + p.adults, 0) >= 1 && picks.every((p) => pickProblem(p, bt) === null);
   /** One house / VIP tent with its choose / remove button: in the list, and in the site map's panel. */
+  const pickButton = (u: PublicUnitDto) => canBook(u) && (picked(u) ? (
+    <button type="button" className="button button--secondary unit-pick__btn" aria-pressed="true"
+      onClick={() => setPicks((cur) => cur.filter((p) => pickKey(p) !== u.id))}>
+      {bt.picked} · {bt.pickRemove}
+    </button>
+  ) : (
+    <button type="button" className="button button--primary unit-pick__btn" aria-pressed="false" onClick={() => addUnit(u)}>
+      {picks.length ? bt.pickAddMore : bt.pickAdd}
+    </button>
+  ));
   const unitPick = (u: PublicUnitDto) => (
     <div key={u.id} className={`unit-pick${picked(u) ? " is-picked" : ""}`}>
       <UnitCard unit={u} availability={availabilityFor(u)} />
-      {canBook(u) && (picked(u) ? (
-        <button type="button" className="button button--secondary unit-pick__btn" aria-pressed="true"
-          onClick={() => setPicks((cur) => cur.filter((p) => pickKey(p) !== u.id))}>
-          {bt.picked} · {bt.pickRemove}
-        </button>
-      ) : (
-        <button type="button" className="button button--primary unit-pick__btn" aria-pressed="false" onClick={() => addUnit(u)}>
-          {picks.length ? bt.pickAddMore : bt.pickAdd}
-        </button>
-      ))}
+      {pickButton(u)}
     </div>
   );
+  // The list look: houses and VIP tents in one list (type filter, order), free ones first after a search.
+  const asList = bookingLayout === "LIST";
+  const listed = data ? [
+    ...data.houses.map((u, i) => ({ u, kind: "HOUSE" as const, i })),
+    ...data.vipTents.map((u, i) => ({ u, kind: "TENT" as const, i: data.houses.length + i })),
+  ] : [];
+  const free = (u: PublicUnitDto) => { const a = availabilityFor(u); return !!a && a.available && a.fitsGuests; };
+  const rows = listed
+    .filter((r) => kind === "ALL" || r.kind === kind)
+    .sort((a, b) => (availability ? Number(free(b.u)) - Number(free(a.u)) : 0)
+      || (order === "PRICE" ? (stayTotal(availabilityFor(a.u)) ?? a.u.priceSatang) - (stayTotal(availabilityFor(b.u)) ?? b.u.priceSatang) : a.i - b.i));
+  const showCamping = !asList || kind === "ALL" || kind === "CAMPING";
+  const freeCount = listed.filter((r) => free(r.u)).length + (availability?.camping.enabled && availability.camping.remaining > 0 ? 1 : 0);
+  const chips: ["ALL" | "HOUSE" | "TENT" | "CAMPING", string, number][] = data ? [
+    ["ALL", lt.all, listed.length + (data.camping.enabled ? 1 : 0)],
+    ...([["HOUSE", lt.house, data.houses.length], ["TENT", lt.tent, data.vipTents.length], ["CAMPING", lt.camping, data.camping.enabled ? 1 : 0]] as
+      ["HOUSE" | "TENT" | "CAMPING", string, number][]).filter((c) => c[2] > 0),
+  ] : [];
   const unitGrid = (units: PublicUnitDto[]) => <div className="unit-grid">{units.map(unitPick)}</div>;
   const campingPick = picks.find((p) => p.kind === "CAMPING");
   const goToCamping = () => document.getElementById("sec-camping")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
-    <div className={`page container${picks.length ? " has-picks-bar" : ""}`}>
+    <div className={`page container${picks.length ? " has-picks-bar" : ""}${asList ? " booking-page--list" : ""}`}>
       <div className="booking-head">
         <div className="booking-head__text">
           <h1 className="page__title" tabIndex={-1} ref={headingRef}>{t.pages.booking.title}</h1>
@@ -625,21 +651,49 @@ export function BookingPage() {
       )}
       <div id="stay-list" tabIndex={-1} className="stay-list-anchor" />
 
-      {data && data.houses.length > 0 && (
+      {asList && data && listed.length > 0 && (
+        <section aria-labelledby="sec-list" className="unit-section booking-list">
+          <h2 id="sec-list" className="section-title">{lt.stays}</h2>
+          <div className="stay-list__tools">
+            <div className="stay-list__chips" role="group" aria-label={lt.filter}>
+              {chips.map(([k, label, n]) => (
+                <button key={k} type="button" className="stay-list__chip" aria-pressed={kind === k} onClick={() => setKind(k)}>{label} ({n})</button>
+              ))}
+            </div>
+            <label className="stay-list__sort">
+              <span>{lt.sort}</span>
+              <select value={order} onChange={(e) => setOrder(e.currentTarget.value as typeof order)}>
+                <option value="RECOMMENDED">{lt.sortRecommended}</option>
+                <option value="PRICE">{lt.sortPrice}</option>
+              </select>
+            </label>
+          </div>
+          {availability && <p className="stay-list__found" aria-live="polite"><strong>{fill(lt.found, { n: freeCount })}</strong> <span>{lt.foundSub}</span></p>}
+          {rows.length > 0 && (
+            <ul className="stay-list__rows">
+              {rows.map(({ u, kind: k }) => (
+                <li key={u.id}><UnitRow unit={u} kind={k} availability={availabilityFor(u)} picked={picked(u)} action={pickButton(u)} /></li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {!asList && data && data.houses.length > 0 && (
         <section aria-labelledby="sec-houses" className="unit-section">
           <h2 id="sec-houses" className="section-title">{t.accommodation.houses}</h2>
           {unitGrid(data.houses)}
         </section>
       )}
 
-      {data && data.vipTents.length > 0 && (
+      {!asList && data && data.vipTents.length > 0 && (
         <section aria-labelledby="sec-vip" className="unit-section">
           <h2 id="sec-vip" className="section-title">{t.accommodation.vipTents}</h2>
           {unitGrid(data.vipTents)}
         </section>
       )}
 
-      {data && (
+      {data && showCamping && (
         <section aria-labelledby="sec-camping" className="unit-section">
           <h2 id="sec-camping" className="section-title">{data.camping.name ?? t.accommodation.camping}</h2>
           <article className="camping-card">
