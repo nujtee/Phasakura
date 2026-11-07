@@ -572,6 +572,34 @@ describe("Center: credit settings kept once in Center (site migration 0060)", ()
   });
 });
 
+describe("Center: one app fee per booking with several stays (site migration 0064)", () => {
+  it("PLATFORM_OWNER / OPERATOR with a reason; audited as the Center user; the site page shows it", async () => {
+    const { h, signed } = await c3();
+    type O = { multiStay?: { enabled: boolean; feeBaht: number } };
+    const body = { enabled: true, feeBaht: 20 };
+    const token = await h.login("owner@site.test");
+    const settings = await h.api("PUT", "/api/admin/credit-admin/settings", { token, body: {
+      enabled: true, feePerUnit: 10, lowThreshold: 500, approvalMode: "MANUAL", standardMin: 300, premiumMin: 1000, bankName: "Kasikorn",
+      accountName: "Platform Owner", accountNumber: "111-2-33333-4", promptpayNumber: null, qrAssetId: null, notifyEmail: null, alertTime1: "09:00", alertTime2: "17:00",
+    } });
+    assert.equal(settings.status, 200, JSON.stringify(settings.error));
+    assert.equal((await signed("PUT", "/api/center/credits/multi-stay", SUPPORT, body)).error?.code, "CENTER_ROLE_REQUIRED");
+    assert.equal((await signed("PUT", "/api/center/credits/multi-stay", { ...OPERATOR, reason: "" }, body)).status, 422);
+    assert.equal((await signed("PUT", "/api/center/credits/multi-stay", OPERATOR, { enabled: true, feeBaht: 0 })).status, 422);
+    assert.equal((await signed("PUT", "/api/center/credits/multi-stay", OPERATOR, { ...body, extra: 1 })).status, 422);
+    const before = await signed<O>("GET", "/api/center/credits", SUPPORT);
+    assert.deepEqual(before.data.multiStay, { enabled: false, feeBaht: 20 });
+    const on = await signed<O>("PUT", "/api/center/credits/multi-stay", OPERATOR, { enabled: true, feeBaht: 30 });
+    assert.equal(on.status, 200, JSON.stringify(on.error));
+    assert.deepEqual(on.data.multiStay, { enabled: true, feeBaht: 30 });
+    assert.equal(h.audits("CENTER_CREDIT_MULTI_STAY")[0]!.user_id, "center_u_ops");
+    const page = await h.api<{ multiStay: { enabled: boolean; feeBaht: number } }>("GET", "/api/admin/credit-admin/settings", { token });
+    assert.deepEqual(page.data.multiStay, { enabled: true, feeBaht: 30 });
+    const off = await signed<O>("PUT", "/api/center/credits/multi-stay", OWNER, { enabled: false, feeBaht: 30 });
+    assert.deepEqual(off.data.multiStay, { enabled: false, feeBaht: 30 });
+  });
+});
+
 describe("Center: top-up requests decided in Center (central credits, stage 3)", () => {
   it("lists pending; the slip and decisions are for PLATFORM_OWNER / OPERATOR with a reason; audited as the Center user", async () => {
     const { h, key, signed } = await c3();

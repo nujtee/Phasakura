@@ -59,6 +59,10 @@ export const ACTION_LABELS: Record<string, string> = {
   TOPUP_REJECTED: "ไม่อนุมัติคำขอเติมเครดิต",
   TOPUP_SLIP_VIEWED: "ดูสลิปเติมเครดิต",
   CREDIT_SYNC: "ส่งค่าเครดิตกลางให้เว็บ",
+  MULTI_STAY_SETTINGS: "ตั้งค่าเครดิตครั้งเดียวต่อการจอง (หลายที่พัก)",
+  MULTI_STAY_SITE_ON: "เลือกเว็บใช้เครดิตครั้งเดียวต่อการจอง",
+  MULTI_STAY_SITE_OFF: "เลิกเลือกเว็บใช้เครดิตครั้งเดียวต่อการจอง",
+  MULTI_STAY_SENT: "ส่งค่าเครดิตครั้งเดียวต่อการจองให้เว็บ",
 };
 
 /** Bangkok time for people reading the console. */

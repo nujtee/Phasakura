@@ -102,6 +102,8 @@ export interface TopupResultDto {
 
 /** GET / PUT /api/admin/credit-admin/settings (credits.manage). */
 export interface CreditSettingsDto {
+  /** Migration 0064: set by Center, read-only here. */
+  multiStay?: MultiStayFeeDto;
   enabled: boolean;
   feePerUnit: number;
   lowThreshold: number;
@@ -181,6 +183,18 @@ export interface AppFeeDto {
   units: number;
   perUnitSatang: number;
   totalSatang: number;
+  /**
+   * Migration 0064: charged once for the whole booking although it has several stays (units is then 1). In a quote,
+   * perBookingSatang is that once-per-booking amount whenever the site uses it (for adding stays to a booking later).
+   */
+  perBooking?: boolean;
+  perBookingSatang?: number;
+}
+
+/** Center's "one fee per booking with several stays" for a site (migration 0064). */
+export interface MultiStayFeeDto {
+  enabled: boolean;
+  feeBaht: number;
 }
 
 // ------------------------------------------------------------------ credit settings from Center (migration 0060)
@@ -197,6 +211,8 @@ export interface CenterCreditQr {
 
 /** GET /api/center/credits — what Center shows per site. */
 export interface CenterCreditOverviewDto {
+  /** Migration 0064 (absent before it). */
+  multiStay?: MultiStayFeeDto;
   managed: boolean;
   version: string | null;
   syncedAt: string | null;

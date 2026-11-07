@@ -278,8 +278,15 @@ export function bookingController(services: ServicesFor) {
     quote: (async (ctx) => {
       await services(ctx).centerAdmin.assertOpenForBooking();
       const body = await readJsonObject(ctx.request);
-      const v = new Validator(body).allowOnly(QUOTE_FIELDS);
+      const v = new Validator(body).allowOnly([...QUOTE_FIELDS, "joining"]);
       const input = parseQuote(body, v);
+      // Adding stays to a booking (migration 0064): what it already has, for the price shown; adding them uses the
+      // booking itself.
+      if (body.joining !== undefined) {
+        const j = obj(body.joining);
+        if (!j || !Object.keys(j).every((k) => k === "stays" || k === "feeSatang")) v.errors.joining = "INVALID_VALUE";
+        else input.joining = { stays: int(v, j.stays, "joining.stays", 0, 1000), feeSatang: int(v, j.feeSatang, "joining.feeSatang", 0, MAX_PRICE_SATANG * 100) };
+      }
       v.assertValid();
       return jsonOk(await services(ctx).bookings.quote(input), { headers: NO_STORE });
     }) satisfies Handler,

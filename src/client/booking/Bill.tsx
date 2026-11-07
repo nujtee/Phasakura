@@ -89,7 +89,12 @@ export function BillDocument({ booking: b, lang, siteName, logoUrl, phone, onClo
       amount: l.subtotalSatang === 0 ? bt.free : baht(l.subtotalSatang),
     })),
     ...(b.appFee && b.appFee.totalSatang > 0
-      ? [{ name: bt.appFee, qty: fillText(bt.appFeeLine, { n: b.appFee.units, price: baht(b.appFee.perUnitSatang) }), amount: baht(b.appFee.totalSatang) }]
+      ? [{
+        name: bt.appFee,
+        qty: b.appFee.perBooking ? fillText(bt.appFeePerBooking, { price: baht(b.appFee.perUnitSatang) })
+          : fillText(bt.appFeeLine, { n: b.appFee.units, price: baht(b.appFee.perUnitSatang) }),
+        amount: baht(b.appFee.totalSatang),
+      }]
       : []),
   ];
 

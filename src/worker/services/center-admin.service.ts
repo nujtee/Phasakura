@@ -12,7 +12,7 @@ import type { ChannelService } from "./channel.service.ts";
 import type { CenterChannelsDto, CenterFeature, CenterFeaturesDto } from "../../shared/channel-types.ts";
 import type { LandscapeService } from "./landscape.service.ts";
 import type { CreditService } from "./credit.service.ts";
-import type { CenterCreditOverviewDto, CenterCreditQr, CenterCreditSettings, CreditPlan, CreditTopupDto } from "../../shared/credit-types.ts";
+import type { CenterCreditOverviewDto, CenterCreditQr, CenterCreditSettings, CreditPlan, CreditTopupDto, MultiStayFeeDto } from "../../shared/credit-types.ts";
 import { CENTER_SESSION_TTL_MS, type NewSession, type SessionService } from "./session.service.ts";
 
 /** How long an SSO ticket can be used (Center posts it straight away). */
@@ -213,6 +213,15 @@ export class CenterAdminService {
     const reason = requireReason(req.actor);
     const caller = centerUser(req.actor);
     return credits.applyFromCenter(input, caller.id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
+      { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
+  }
+
+  /** One app fee per booking with several stays (migration 0064) — PLATFORM_OWNER / OPERATOR, reason; audited. */
+  async setMultiStay(req: CenterRequest, credits: CreditService, input: MultiStayFeeDto, meta: RequestMeta): Promise<CenterCreditOverviewDto> {
+    requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
+    const reason = requireReason(req.actor);
+    const caller = centerUser(req.actor);
+    return credits.applyMultiStay(input, caller.id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
       { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
   }
 

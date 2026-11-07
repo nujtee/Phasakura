@@ -27,6 +27,9 @@ export interface CreditSettingsRow {
   center_version?: string | null;
   center_synced_at?: string | null;
   qr_sha256?: string | null;
+  /** Migration 0064: one fee per booking with several stays (set by Center). */
+  multi_stay_flat?: number;
+  multi_stay_fee?: number;
 }
 
 export interface CreditAccountRow {
@@ -100,6 +103,13 @@ export class CreditRepository {
   constructor(private readonly db: D1DatabaseLike) {}
 
   // ------------------------------------------------------------------ settings + balance
+
+  /** Center's choice for this site (migration 0064). */
+  multiStayStatement(enabled: boolean, feeBaht: number, now: string) {
+    return this.db
+      .prepare("UPDATE credit_settings SET multi_stay_flat = ?1, multi_stay_fee = ?2, updated_at = ?3 WHERE id = 1")
+      .bind(enabled ? 1 : 0, feeBaht, now);
+  }
 
   settings(): Promise<CreditSettingsRow | null> {
     return this.db
