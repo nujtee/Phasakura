@@ -161,6 +161,17 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       return jsonOk(await s.centerAdmin.setCredits(req, s.credits, { settings, qr, version }, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
+    /** `{ unlocked }` — Theme for this site whatever its plan (migration 0065); reason required. */
+    setThemeUnlock: (async (ctx) => {
+      const req = await verify(ctx);
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["unlocked"]);
+      if (typeof body.unlocked !== "boolean") v.errors.unlocked = "REQUIRED";
+      v.assertValid();
+      const s = services(ctx);
+      return jsonOk(await s.centerAdmin.setThemeUnlock(req, s.credits, body.unlocked as boolean, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
     /** `{ enabled, feeBaht }` — one app fee per booking with several stays (migration 0064); reason required. */
     setMultiStay: (async (ctx) => {
       const req = await verify(ctx);

@@ -102,6 +102,8 @@ export interface TopupResultDto {
 
 /** GET / PUT /api/admin/credit-admin/settings (credits.manage). */
 export interface CreditSettingsDto {
+  /** Migration 0065: Theme whatever the plan — set by Center, read-only here. */
+  themeUnlocked?: boolean;
   /** Migration 0064: set by Center, read-only here. */
   multiStay?: MultiStayFeeDto;
   enabled: boolean;
@@ -211,6 +213,8 @@ export interface CenterCreditQr {
 
 /** GET /api/center/credits — what Center shows per site. */
 export interface CenterCreditOverviewDto {
+  /** Migration 0065 (absent before it): Theme whatever the plan. */
+  themeUnlocked?: boolean;
   /** Migration 0064 (absent before it). */
   multiStay?: MultiStayFeeDto;
   managed: boolean;

@@ -23,19 +23,29 @@ export class RbacRepository {
    * Effective permissions = role permissions ∪ user GRANTs − user DENYs, then (migration 0027):
    *   - credits.manage / channels.toggle / landscape.toggle only for a SUPER_ADMIN (whatever the overrides say);
    *   - while the credit system is on and the property is on the STANDARD plan, Reports / Marketing / Theme
-   *     (PREMIUM_ONLY_PERMISSIONS) are removed for everyone but SUPER_ADMIN.
+   *     (PREMIUM_ONLY_PERMISSIONS) are removed for everyone but SUPER_ADMIN — except Theme while Center unlocked it
+   *     for this site (migration 0065).
    */
   async effectivePermissions(userId: string): Promise<string[]> {
-    // Before migration 0027 the credit tables do not exist: no plan lock (and no credits.manage permission yet).
-    return withFallback(() => this.effectivePermissionsWith(userId, true), () => this.effectivePermissionsWith(userId, false));
+    // Before migration 0065 there is no Theme unlock (the plan lock as before); before 0027 the credit tables do not
+    // exist: no plan lock (and no credits.manage permission yet).
+    return withFallback(
+      () => this.effectivePermissionsWith(userId, "THEME_UNLOCK"),
+      () => withFallback(() => this.effectivePermissionsWith(userId, "PLAN"), () => this.effectivePermissionsWith(userId, "NONE")),
+    );
   }
 
-  private async effectivePermissionsWith(userId: string, credits: boolean): Promise<string[]> {
-    const planLock = credits
+  private async effectivePermissionsWith(userId: string, lock: "THEME_UNLOCK" | "PLAN" | "NONE"): Promise<string[]> {
+    const planLock = lock === "THEME_UNLOCK"
       ? `AND NOT (p.code IN (${PREMIUM_ONLY_SQL}) AND NOT ${SUPER_ADMIN}
                      AND EXISTS (SELECT 1 FROM credit_settings cs JOIN credit_account ca ON ca.id = 1
+                                  WHERE cs.id = 1 AND cs.enabled = 1 AND ca.plan = 'STANDARD'
+                                    AND NOT (p.code = 'settings.theme' AND cs.theme_unlocked = 1)))`
+      : lock === "PLAN"
+        ? `AND NOT (p.code IN (${PREMIUM_ONLY_SQL}) AND NOT ${SUPER_ADMIN}
+                     AND EXISTS (SELECT 1 FROM credit_settings cs JOIN credit_account ca ON ca.id = 1
                                   WHERE cs.id = 1 AND cs.enabled = 1 AND ca.plan = 'STANDARD'))`
-      : "";
+        : "";
     const { results } = await this.db
       .prepare(
         `SELECT p.code FROM permissions p

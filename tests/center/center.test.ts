@@ -1427,6 +1427,37 @@ describe("Center: credits switched on / off per site from the credits page", () 
   });
 });
 
+describe("credits: Theme whatever the plan (site migration 0065)", () => {
+  const unlocked = (ctx: Awaited<ReturnType<typeof setup>>) => ctx.site.db.get<{ u: number }>("SELECT theme_unlocked AS u FROM credit_settings WHERE id = 1")!.u;
+
+  it("the table shows Theme per site and opens / closes it with a reason; SUPPORT only reads", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const page = await ctx.req("GET", "/credits", { cookie: owner });
+    assert.match(page.text, /<th>Theme<\/th>/);
+    assert.match(page.text, /action="\/credits\/theme"/);
+    assert.match((await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "phasakura", op: "on", reason: "" } })).text, /กรุณาระบุเหตุผล/);
+    const on = await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "phasakura", op: "on", reason: "ให้ Manager แก้ธีมได้" } });
+    assert.match(on.text, /เปิด Theme ให้ Phasakura แล้ว/);
+    assert.equal(unlocked(ctx), 1);
+    assert.equal(ctx.site.audits("CENTER_THEME_UNLOCK").length, 1);
+    assert.equal(ctx.audits("THEME_UNLOCK_ON").at(-1)!.reason, "ให้ Manager แก้ธีมได้");
+    assert.match(on.text, /เลิกเปิด Theme/);
+    const off = await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "phasakura", op: "off", reason: "กลับไปตามแพ็กเกจ" } });
+    assert.match(off.text, /เลิกเปิด Theme ของ Phasakura แล้ว/);
+    assert.equal(unlocked(ctx), 0);
+    assert.equal((await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "nope", op: "on", reason: "xxx" } })).status, 404);
+    assert.equal((await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "phasakura", op: "maybe", reason: "xxx" } })).status, 422);
+
+    const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: "help", email: "help@phasakura.com", role: "SUPPORT_READONLY" } });
+    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1];
+    const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
+    const help = await ctx.enroll(set.cookie!);
+    assert.ok(!(await ctx.req("GET", "/credits", { cookie: help })).text.includes('action="/credits/theme"'));
+    assert.equal((await ctx.req("POST", "/credits/theme", { cookie: help, form: { site: "phasakura", op: "on", reason: "xxx" } })).status, 403);
+  });
+});
+
 describe("credits: one app fee per booking with several stays (Center migration 0008)", () => {
   const flat = (ctx: Awaited<ReturnType<typeof setup>>) =>
     ({ ...ctx.site.db.get<{ on: number; fee: number }>("SELECT multi_stay_flat AS [on], multi_stay_fee AS fee FROM credit_settings WHERE id = 1")! });

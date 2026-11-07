@@ -169,6 +169,11 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     }
     // One app fee per booking with several stays (Center migration 0008): the owner sets the switch and amount;
     // owner / operator choose the sites.
+    // Theme for a site whatever its plan (site migration 0065).
+    if (key === "POST /credits/theme") {
+      if (me.role !== "PLATFORM_OWNER" && me.role !== "OPERATOR") throw new HttpError(403, "บทบาทของคุณเปิด / ปิด Theme ไม่ได้");
+      return themeUnlock(ctx, me);
+    }
     if (key === "POST /credits/multi-stay/site") {
       if (me.role !== "PLATFORM_OWNER" && me.role !== "OPERATOR") throw new HttpError(403, "บทบาทของคุณเปิด / ปิดไม่ได้");
       return multiStaySite(ctx, me);
@@ -1279,6 +1284,25 @@ ${canEdit && row ? '<form method="post" action="/credits/sync" class="inline"><i
     return r.failed.length
       ? { kind: "error", text: `${done} · ส่งแล้ว ${r.ok.length} เว็บ · ไม่สำเร็จ: ${r.failed.join(", ")} — กด "ส่งอีกครั้ง" ในตาราง` }
       : { kind: "ok", text: `${done} · ส่งให้ ${r.ok.length} เว็บแล้ว` };
+  }
+
+  async function themeUnlock(ctx: Ctx, me: Me): Promise<Response> {
+    const form = await readForm(ctx.request);
+    const site = ctx.sites.find((x) => x.slug === (form.get("site") ?? "").trim());
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    const op = form.get("op");
+    if (op !== "on" && op !== "off") throw new HttpError(422, "คำสั่งไม่ถูกต้อง");
+    const reason = (form.get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) return creditsPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    const res = await new SiteClient(ctx.env, 8000, clock)
+      .call<CenterCreditOverviewDto>(site, "PUT", "/api/center/credits/theme", { ...actorOf(me), reason }, { unlocked: op === "on" });
+    await audit(ctx, me.id, op === "on" ? "THEME_UNLOCK_ON" : "THEME_UNLOCK_OFF", site.slug, reason, { ok: res.status === 200, status: res.status }).run();
+    if (res.status !== 200) {
+      return creditsPage(ctx, me, { kind: "error", text: `${site.name}: ${res.status === 404 ? "ยังไม่รองรับ — Release เว็บนี้ก่อน" : siteError(res.status, res.error?.code)}` });
+    }
+    return creditsPage(ctx, me, { kind: "ok", text: op === "on"
+      ? `เปิด Theme ให้ ${site.name} แล้ว — ผู้ดูแลที่มีสิทธิ์ Theme เห็นเมนูได้ทันที (รีเฟรชหน้า)`
+      : `เลิกเปิด Theme ของ ${site.name} แล้ว — กลับไปตามแพ็กเกจ` });
   }
 
   async function multiStayMaster(ctx: Ctx, me: Me): Promise<Response> {
