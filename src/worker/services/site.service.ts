@@ -7,7 +7,7 @@ import {
   type LocaleCode,
 } from "../../shared/i18n/locales.ts";
 import { CTA_ICONS, CTA_PAGES, type BookingCtaDto, type CtaPage, type PublicSiteExtrasDto } from "../../shared/settings-types.ts";
-import { parseLayout, validateThemeTokens, type ThemeTokens } from "../../shared/theme.ts";
+import { parseBookingLayout, parseLayout, validateThemeTokens, type ThemeTokens } from "../../shared/theme.ts";
 import type { CtaRecord, SiteSettingsRecord, SiteSettingsRepository, SiteTranslationRecord } from "../repositories/site-settings.repository.ts";
 import { publicMediaUrl } from "./media-url.ts";
 import { addFriendUrl } from "../../shared/line-types.ts";
@@ -84,6 +84,7 @@ export class SiteService {
       logo: { main, mobile },
       theme,
       layout: parseLayout(record?.themeLayout),
+      bookingLayout: parseBookingLayout(record?.bookingLayout),
       favicon: publicMediaUrl(branding?.faviconKey, this.publicMediaBaseUrl) ?? null,
       loginLogo: publicMediaUrl(branding?.loginLogoKey, this.publicMediaBaseUrl) ?? null,
       contact: {

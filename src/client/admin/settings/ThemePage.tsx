@@ -3,8 +3,8 @@ import { format } from "../../../shared/i18n/admin-messages.ts";
 import type { CustomFontDto } from "../../../shared/media-types.ts";
 import type { ThemeAdminDto } from "../../../shared/settings-types.ts";
 import {
-  COLOR_TOKENS, contrastRatio, customFontFamily, FONT_STACKS, FONT_TOKENS, LAYOUT_TOKENS, OFFERED_LAYOUTS, PRESET_TOKENS, RADIUS_TOKENS,
-  SHADOW_LEVELS, THEME_PRESETS, type FontStackKey, type ShadowLevel, type ThemeLayout, type ThemePreset, type ThemeToken, type ThemeTokens,
+  BOOKING_LAYOUTS, COLOR_TOKENS, contrastRatio, customFontFamily, FONT_STACKS, FONT_TOKENS, LAYOUT_TOKENS, OFFERED_LAYOUTS, PRESET_TOKENS, RADIUS_TOKENS,
+  SHADOW_LEVELS, THEME_PRESETS, type BookingLayout, type FontStackKey, type ShadowLevel, type ThemeLayout, type ThemePreset, type ThemeToken, type ThemeTokens,
 } from "../../../shared/theme.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
 import { applyTheme, loadFonts } from "../../site/SiteProvider.tsx";
@@ -38,6 +38,7 @@ export function ThemePage() {
   const [data, setData] = useState<ThemeAdminDto | null>(null);
   const [preset, setPreset] = useState<ThemePreset>("DEFAULT");
   const [layout, setLayout] = useState<ThemeLayout>("CLASSIC");
+  const [bookingLayout, setBookingLayout] = useState<BookingLayout>("CARDS");
   const [tokens, setTokens] = useState<ThemeTokens>(PRESET_TOKENS.DEFAULT);
   const [note, setNote] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -53,6 +54,7 @@ export function ThemePage() {
     const base = d.draft ?? d.published;
     setPreset(base?.preset ?? "DEFAULT");
     setLayout(base?.layout ?? "CLASSIC");
+    setBookingLayout(base?.bookingLayout ?? "CARDS");
     setTokens({ ...PRESET_TOKENS.DEFAULT, ...(base?.tokens ?? {}) });
     setNote(d.draft?.note ?? "");
     setDirty(false);
@@ -99,7 +101,7 @@ export function ThemePage() {
     }
   }
 
-  const saveDraft = () => run(() => apiRequest("PUT", "/api/admin/theme/draft", { preset, layout, tokens, note: note.trim() || null }), t.common.saved);
+  const saveDraft = () => run(() => apiRequest("PUT", "/api/admin/theme/draft", { preset, layout, bookingLayout, tokens, note: note.trim() || null }), t.common.saved);
   // A layout comes with the colours and fonts it was designed with (still editable afterwards).
   const pickLayout = (l: ThemeLayout) => {
     setLayout(l);
@@ -154,6 +156,22 @@ export function ThemePage() {
                   </li>
                 );
               })}
+            </ul>
+          </div>
+
+          <div className="adm-card">
+            <h2 className="adm-h2">{c.theme.bookingLayoutTitle}</h2>
+            <p className="adm-field__hint">{c.theme.bookingLayoutHint}</p>
+            <ul className="thm-layouts">
+              {BOOKING_LAYOUTS.map((l) => (
+                <li key={l}>
+                  <button type="button" className="thm-layout-pick" aria-pressed={bookingLayout === l} onClick={() => { setBookingLayout(l); setDirty(true); }}>
+                    <span className={`thm-booking-thumb thm-booking-thumb--${l.toLowerCase()}`} aria-hidden="true"><i /><i /><i /></span>
+                    <strong>{c.theme.bookingLayouts[l].name}</strong>
+                    <span className="adm-small adm-muted">{c.theme.bookingLayouts[l].text}</span>
+                  </button>
+                </li>
+              ))}
             </ul>
           </div>
 

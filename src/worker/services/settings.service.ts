@@ -6,7 +6,7 @@ import {
   type BookingCtaDto, type BrandingDto, type BrandingSlot, type MarketingDto, type SeoEntryDto, type SeoPageDto,
   type SiteTextsDto, type ThemeAdminDto, type ThemeVersionDto, type WebsiteSettingsDto,
 } from "../../shared/settings-types.ts";
-import { parseLayout, THEME_LAYOUTS, THEME_PRESETS, validateThemeTokens, type ThemeLayout, type ThemePreset, type ThemeTokens } from "../../shared/theme.ts";
+import { BOOKING_LAYOUTS, parseBookingLayout, parseLayout, THEME_LAYOUTS, type BookingLayout, THEME_PRESETS, validateThemeTokens, type ThemeLayout, type ThemePreset, type ThemeTokens } from "../../shared/theme.ts";
 import type { D1DatabaseLike } from "../env.ts";
 import { ConflictError, NotFoundError } from "../http/errors.ts";
 import type { SettingsRepository, ThemeVersionRow } from "../repositories/settings.repository.ts";
@@ -361,20 +361,21 @@ export class SettingsService {
   }
 
   /** Draft tokens for "preview on the website" (admin session only); falls back to the live theme. */
-  async themePreview(actor: AuthContext, meta: RequestMeta): Promise<{ tokens: ThemeTokens; layout: ThemeLayout; versionNumber: number | null; isDraft: boolean; fonts: PublicFontFaceDto[] }> {
+  async themePreview(actor: AuthContext, meta: RequestMeta): Promise<{ tokens: ThemeTokens; layout: ThemeLayout; bookingLayout: BookingLayout; versionNumber: number | null; isDraft: boolean; fonts: PublicFontFaceDto[] }> {
     const t = await this.theme(actor, meta);
     const v = t.draft ?? t.published;
     const tokens = v?.tokens ?? {};
     // Faces the draft uses, so "preview on the live website" shows uploaded fonts too.
     const fonts = this.fonts ? fontFaces(tokens, await this.fonts.list(), this.mediaBaseUrl) : [];
-    return { tokens, layout: v?.layout ?? "CLASSIC", versionNumber: v?.versionNumber ?? null, isDraft: !!t.draft, fonts };
+    return { tokens, layout: v?.layout ?? "CLASSIC", bookingLayout: v?.bookingLayout ?? "CARDS", versionNumber: v?.versionNumber ?? null, isDraft: !!t.draft, fonts };
   }
 
   async saveThemeDraft(actor: AuthContext, body: Body, meta: RequestMeta): Promise<ThemeAdminDto> {
     await this.authz.requirePermission(actor, "settings.theme", meta);
-    const v = new Validator(body).allowOnly(["preset", "layout", "tokens", "note"]);
+    const v = new Validator(body).allowOnly(["preset", "layout", "bookingLayout", "tokens", "note"]);
     const preset = v.oneOf("preset", [...THEME_PRESETS, "CUSTOM"] as const, { required: true });
     const layout = v.oneOf("layout", THEME_LAYOUTS) ?? "CLASSIC";
+    const bookingLayout = v.oneOf("bookingLayout", BOOKING_LAYOUTS) ?? "CARDS";
     const note = v.string("note", { max: 200 }) ?? null;
     // Uploaded font families (Phase 12) must exist in the font library.
     const tokenErrors = validateThemeTokens(body.tokens, this.fonts ? await this.fonts.families() : []);
@@ -385,16 +386,17 @@ export class SettingsService {
     const current = await this.theme(actor, meta);
     if (current.draft) {
       await this.db.batch([
-        this.repo.updateThemeDraftStatement(current.draft.id, preset!, layout, tokens, note),
+        this.repo.updateThemeDraftStatement(current.draft.id, preset!, layout, bookingLayout, tokens, note),
         this.log.auditStatement(actor.userId, "UPDATE_THEME_DRAFT", "theme", current.draft.id,
-          { preset: current.draft.preset, layout: current.draft.layout, tokens: current.draft.tokens }, { preset, layout, tokens: body.tokens }, meta),
+          { preset: current.draft.preset, layout: current.draft.layout, bookingLayout: current.draft.bookingLayout, tokens: current.draft.tokens },
+          { preset, layout, bookingLayout, tokens: body.tokens }, meta),
       ]);
     } else {
       const id = newId();
       await this.db.batch([
-        this.repo.insertThemeDraftStatement(id, preset!, layout, tokens, note, actor.userId, now),
+        this.repo.insertThemeDraftStatement(id, preset!, layout, bookingLayout, tokens, note, actor.userId, now),
         this.repo.setThemePointersStatement(id, actor.userId, now),
-        this.log.auditStatement(actor.userId, "CREATE_THEME_DRAFT", "theme", id, null, { preset, layout, tokens: body.tokens }, meta),
+        this.log.auditStatement(actor.userId, "CREATE_THEME_DRAFT", "theme", id, null, { preset, layout, bookingLayout, tokens: body.tokens }, meta),
       ]);
     }
     return this.theme(actor, meta);
@@ -460,6 +462,7 @@ function themeDto(r: ThemeVersionRow): ThemeVersionDto {
     versionNumber: r.version_number,
     preset: r.preset as ThemePreset,
     layout: parseLayout(r.layout),
+    bookingLayout: parseBookingLayout(r.booking_layout),
     status: r.status,
     tokens,
     note: r.note,

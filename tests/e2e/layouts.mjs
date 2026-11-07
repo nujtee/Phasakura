@@ -189,6 +189,54 @@ await check("D · phone: the search folds into a summary; rows fit", async () =>
   await pm.screenshot({ path: `${SHOTS}/l-list-phone.png`, fullPage: true });
 });
 
+await check("Theme → booking page: hotel-search list → published", async () => {
+  await pa.goto(`${BASE}/en/admin/settings-theme`);
+  await pa.getByRole("heading", { name: "Booking page" }).waitFor();
+  const pick = pa.getByRole("button", { name: /Hotel-search list/ });
+  await pick.click();
+  assert((await pick.getAttribute("aria-pressed")) === "true", "not pressed");
+  await pa.getByRole("button", { name: "Save draft" }).click();
+  await pa.getByText("Saved").first().waitFor();
+  await pa.getByRole("button", { name: "Publish theme" }).click();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Publish theme" }).click();
+  await pa.getByText("Published").first().waitFor();
+  const site = await (await admin.request.get(`${BASE}/api/public/site?lang=en`)).json();
+  assert(site.data.bookingLayout === "LIST" && site.data.layout === "LIST", JSON.stringify([site.data.layout, site.data.bookingLayout]));
+});
+
+await check("booking page · list: rows with prices for the dates, type filter, price order, pick a house", async () => {
+  await pv.goto(`${BASE}/th/booking`);
+  await pv.locator(".booking-list .stay-row").first().waitFor();
+  const all = await pv.locator(".booking-list .stay-row").count();
+  assert(all >= 2, `rows ${all}`);
+  assert(await pv.locator(".unit-grid .unit-card").count() === 0, "cards still drawn");
+  // Search dates (the existing search box) → prices for those nights, free ones first.
+  await pv.locator(".stay-search button[type=submit]").click();
+  await pv.locator(".booking-list .stay-list__found").waitFor();
+  await pv.locator(".booking-list .stay-row__for").filter({ hasText: /ราคาสำหรับ \d+ คืน/ }).first().waitFor();
+  await pv.locator(".booking-list .stay-list__chip").nth(1).click();
+  assert(await pv.locator(".booking-list .stay-row").count() < all, "filter did nothing");
+  assert(await pv.locator("#sec-camping").count() === 0, "camping shown under a house filter");
+  await pv.locator(".booking-list .stay-list__chip").first().click();
+  await pv.locator(".booking-list .stay-list__sort select").selectOption("PRICE");
+  const totals = (await pv.locator(".booking-list .stay-row:not(.is-full) .stay-row__total").allInnerTexts()).map((x) => Number(x.replace(/[^0-9]/g, "")));
+  assert(totals.every((v, i) => i === 0 || totals[i - 1] <= v), `not sorted ${totals}`);
+  const overflow = await pv.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 0, `sideways scroll ${overflow}px`);
+  await pv.screenshot({ path: `${SHOTS}/l-booking-list-desktop.png`, fullPage: true });
+  await pv.locator(".booking-list .stay-row:not(.is-full) .unit-pick__btn").first().click();
+  await pv.locator(".booking-list .stay-row.is-picked").first().waitFor();
+  await pv.locator("#picks").waitFor();
+});
+
+await check("booking page · list on a phone: fits", async () => {
+  await pm.goto(`${BASE}/th/booking`);
+  await pm.locator(".booking-list .stay-row").first().waitFor();
+  const overflow = await pm.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert(overflow <= 0, `sideways scroll ${overflow}px`);
+  await pm.screenshot({ path: `${SHOTS}/l-booking-list-phone.png`, fullPage: true });
+});
+
 await check("rollback to the classic version: the site is as before", async () => {
   await pa.goto(`${BASE}/en/admin/settings-theme`);
   await pa.getByRole("button", { name: "Restore" }).last().click();

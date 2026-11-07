@@ -221,7 +221,7 @@ export class SettingsRepository {
   async themeVersions(limit: number) {
     const { results } = await this.db
       .prepare(
-        `SELECT v.id, v.version_number, v.preset, COALESCE(v.layout_ext, v.layout) AS layout, v.tokens_json, v.status, v.note, v.created_at, v.published_at,
+        `SELECT v.id, v.version_number, v.preset, COALESCE(v.layout_ext, v.layout) AS layout, v.booking_layout, v.tokens_json, v.status, v.note, v.created_at, v.published_at,
                 cu.display_name AS created_by_name, pu.display_name AS published_by_name
            FROM theme_versions v
            LEFT JOIN users cu ON cu.id = v.created_by
@@ -236,7 +236,7 @@ export class SettingsRepository {
   themeVersion(id: string) {
     return this.db
       .prepare(
-        `SELECT v.id, v.version_number, v.preset, COALESCE(v.layout_ext, v.layout) AS layout, v.tokens_json, v.status, v.note, v.created_at, v.published_at,
+        `SELECT v.id, v.version_number, v.preset, COALESCE(v.layout_ext, v.layout) AS layout, v.booking_layout, v.tokens_json, v.status, v.note, v.created_at, v.published_at,
                 NULL AS created_by_name, NULL AS published_by_name
            FROM theme_versions v WHERE v.id = ?1`,
       )
@@ -249,19 +249,19 @@ export class SettingsRepository {
       .first<{ published_version_id: string | null; draft_version_id: string | null }>();
   }
 
-  insertThemeDraftStatement(id: string, preset: string, layout: string, tokens: string, note: string | null, actorId: string, now: string) {
+  insertThemeDraftStatement(id: string, preset: string, layout: string, bookingLayout: string, tokens: string, note: string | null, actorId: string, now: string) {
     return this.db
       .prepare(
-        `INSERT INTO theme_versions (id, version_number, preset, layout, layout_ext, tokens_json, status, note, created_by, created_at)
-         VALUES (?1, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM theme_versions), ?2, ?7, ?8, ?3, 'DRAFT', ?4, ?5, ?6)`,
+        `INSERT INTO theme_versions (id, version_number, preset, layout, layout_ext, booking_layout, tokens_json, status, note, created_by, created_at)
+         VALUES (?1, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM theme_versions), ?2, ?7, ?8, ?9, ?3, 'DRAFT', ?4, ?5, ?6)`,
       )
-      .bind(id, preset, tokens, note, actorId, now, ...layoutColumns(layout));
+      .bind(id, preset, tokens, note, actorId, now, ...layoutColumns(layout), bookingLayout);
   }
 
-  updateThemeDraftStatement(id: string, preset: string, layout: string, tokens: string, note: string | null) {
+  updateThemeDraftStatement(id: string, preset: string, layout: string, bookingLayout: string, tokens: string, note: string | null) {
     return this.db
-      .prepare("UPDATE theme_versions SET preset = ?2, layout = ?5, layout_ext = ?6, tokens_json = ?3, note = ?4 WHERE id = ?1 AND status = 'DRAFT'")
-      .bind(id, preset, tokens, note, ...layoutColumns(layout));
+      .prepare("UPDATE theme_versions SET preset = ?2, layout = ?5, layout_ext = ?6, booking_layout = ?7, tokens_json = ?3, note = ?4 WHERE id = ?1 AND status = 'DRAFT'")
+      .bind(id, preset, tokens, note, ...layoutColumns(layout), bookingLayout);
   }
 
   /**
@@ -307,6 +307,7 @@ export interface ThemeVersionRow {
   version_number: number;
   preset: string;
   layout: string;
+  booking_layout?: string;
   tokens_json: string;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   note: string | null;

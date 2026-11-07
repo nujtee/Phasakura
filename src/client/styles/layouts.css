@@ -582,3 +582,23 @@
 :root[data-layout="LIST"] .site-footer__tagline,
 :root[data-layout="LIST"] .site-footer__heading,
 :root[data-layout="LIST"] .site-footer__legal { color: color-mix(in srgb, var(--color-primary-contrast) 78%, transparent); }
+
+/* ============================================================ booking page · list look (migration 0063) */
+
+.booking-page--list .stay-search {
+  border: 3px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  background: var(--color-surface);
+}
+.booking-list .stay-list__tools { margin-bottom: 4px; }
+.booking-list .stay-list__found { margin-top: 14px; }
+.booking-list .stay-list__rows > li { list-style: none; }
+.stay-row--pick .promo { margin: 2px 0; font-size: 0.875rem; }
+.stay-row--pick.is-picked { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.stay-row__action { margin-top: 8px; width: 100%; display: flex; justify-content: flex-end; }
+.stay-row__action .unit-pick__btn { width: auto; min-width: 160px; }
+@media (max-width: 599px) {
+  .stay-row__action .unit-pick__btn { width: 100%; min-width: 0; }
+}
+.booking-page--list .camping-card { border-radius: var(--radius-lg); }

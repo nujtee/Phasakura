@@ -50,6 +50,8 @@ export interface SiteSettingsRecord {
   themeTokensJson?: string | null;
   /** The published theme's layout (migration 0061). */
   themeLayout?: string | null;
+  /** The published theme's booking page look (migration 0063). */
+  bookingLayout?: string | null;
   cta?: CtaRecord | null;
   ctaLabels?: { language_code: string; label: string }[];
   /** Floating LINE button (Phase 11). */
@@ -208,6 +210,16 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
       }
     }
 
+    // Migration 0063: the booking page's look (no column before it → the cards).
+    let bookingLayout: string | null = null;
+    try {
+      bookingLayout = (await this.db.prepare(
+        `SELECT v.booking_layout FROM theme_settings s JOIN theme_versions v ON v.id = s.published_version_id AND v.status = 'PUBLISHED' WHERE s.id = 1`,
+      ).first<{ booking_layout: string }>())?.booking_layout ?? null;
+    } catch (error) {
+      if (!notYet(error)) throw error;
+    }
+
     // Phase 14: tracking switches and the cookie banner (tables missing before migration 0019 → defaults).
     let marketing: SiteSettingsRecord["marketing"] = null;
     let privacy: SiteSettingsRecord["privacy"] = null;
@@ -246,6 +258,7 @@ export class D1SiteSettingsRepository implements SiteSettingsRepository {
       branding,
       themeTokensJson: (results[3]?.results[0] as { tokens_json: string } | undefined)?.tokens_json ?? null,
       themeLayout,
+      bookingLayout,
       cta: (results[4]?.results[0] as CtaRecord | undefined) ?? null,
       ctaLabels: (results[5]?.results ?? []) as { language_code: string; label: string }[],
     };

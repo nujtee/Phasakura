@@ -4,7 +4,7 @@
 import type { LocaleCode } from "./i18n/locales.ts";
 import type { PublicFontFaceDto } from "./media-types.ts";
 import type { PublicSiteExtrasDto } from "./settings-types.ts";
-import type { ThemeLayout } from "./theme.ts";
+import type { BookingLayout, ThemeLayout } from "./theme.ts";
 
 export interface ApiSuccess<T> {
   data: T;
@@ -44,6 +44,8 @@ export interface PublicSiteDto {
   theme: PublicSiteExtrasDto["theme"];
   /** Home page / header / footer layout of the published theme (migration 0061). */
   layout: ThemeLayout;
+  /** The booking page's look of the published theme (migration 0063). */
+  bookingLayout: BookingLayout;
   favicon: string | null;
   loginLogo: string | null;
   contact: PublicSiteExtrasDto["contact"];
