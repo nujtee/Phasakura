@@ -15,6 +15,7 @@ import {
   creditFormHtml, creditPayeeNote, creditSwitchForm, fromBase64, hasPayee, isQrMime, loadCredit, loadSync, newVersion, parseCreditForm, pushCredit, QR_MAX_BYTES, sha256Bytes,
   siteTableHtml, sniffQr, toBase64, type CenterCreditRow, type SiteCreditView,
 } from "./credits.ts";
+import { loadMultiStay, multiStayCardHtml, multiStayFor, parseFee, type MultiStayState } from "./multi-stay.ts";
 import { CREDIT_PLANS, MAX_CREDIT_AMOUNT, type CenterCreditOverviewDto, type CenterCreditSettings, type CreditTopupDto } from "../shared/credit-types.ts";
 import { topupsBody, type SiteTopups, type SiteTopupView } from "./topups.ts";
 
@@ -166,11 +167,18 @@ export function createCenterApp(options: CenterAppOptions = {}) {
       if (me.role !== "PLATFORM_OWNER" && me.role !== "OPERATOR") throw new HttpError(403, "บทบาทของคุณเปิด / ปิดระบบเครดิตไม่ได้");
       return creditSwitch(ctx, me);
     }
+    // One app fee per booking with several stays (Center migration 0008): the owner sets the switch and amount;
+    // owner / operator choose the sites.
+    if (key === "POST /credits/multi-stay/site") {
+      if (me.role !== "PLATFORM_OWNER" && me.role !== "OPERATOR") throw new HttpError(403, "บทบาทของคุณเปิด / ปิดไม่ได้");
+      return multiStaySite(ctx, me);
+    }
     if (url.pathname.startsWith("/credits") && request.method === "POST") {
       if (me.role !== "PLATFORM_OWNER") throw new HttpError(403, "ตั้งค่าเครดิตได้เฉพาะเจ้าของแพลตฟอร์ม");
       if (key === "POST /credits") return saveCredit(ctx, me);
       if (key === "POST /credits/import") return importCredit(ctx, me);
       if (key === "POST /credits/sync") return syncCredit(ctx, me);
+      if (key === "POST /credits/multi-stay") return multiStayMaster(ctx, me);
     }
     // Top-up requests of every site (stage 3): everyone reads; owner / operator see the slip and decide.
     if (key === "GET /topups") return topupsPage(ctx, me);
@@ -1110,7 +1118,7 @@ ${runsCard}`,
 
   async function creditsPage(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null, draft: CenterCreditSettings | null = null): Promise<Response> {
     const canEdit = me.role === "PLATFORM_OWNER";
-    const [row, views] = await Promise.all([loadCredit(ctx.repo.db), creditViews(ctx, me)]);
+    const [row, views, multiStay] = await Promise.all([loadCredit(ctx.repo.db), creditViews(ctx, me), loadMultiStay(ctx.repo.db)]);
     const importable = views.filter((v) => v.res.status === 200);
     const importForm = canEdit && importable.length
       ? `<form method="post" action="/credits/import" class="inline"><label for="c-from" style="margin:0">นำค่าจากเว็บ</label>
@@ -1123,7 +1131,8 @@ ${runsCard}`,
       title: "เครดิต", user: me, current: "credits", flash,
       body: `<h1>เครดิตการใช้ App — ทุกเว็บ</h1>
 <p class="muted">ตั้งค่าครั้งเดียวที่นี่ แล้วส่งให้ทุกเว็บ (หน้า "จัดการเติมเครดิต → ตั้งค่า" ของแต่ละเว็บจะเป็นแบบอ่านอย่างเดียว) · เปิด / ปิดระบบเครดิตยังแยกรายเว็บ</p>
-<div class="card scroll"><h2 style="margin-top:0">ทุกเว็บ</h2>${siteTableHtml(views, row, canEdit, me.role === "PLATFORM_OWNER" || me.role === "OPERATOR" ? me.role : null)}
+<div class="card">${multiStayCardHtml(multiStay, canEdit, ctx.sites.length)}</div>
+<div class="card scroll"><h2 style="margin-top:0">ทุกเว็บ</h2>${siteTableHtml(views, row, canEdit, me.role === "PLATFORM_OWNER" || me.role === "OPERATOR" ? me.role : null, multiStay)}
 ${canEdit && row ? '<form method="post" action="/credits/sync" class="inline"><input type="hidden" name="site" value="all"><button class="plain" type="submit">ส่งค่ากลางให้ทุกเว็บอีกครั้ง</button></form>' : ""}</div>
 <div class="card">${head}${importForm}${creditFormHtml(row, canEdit, draft)}</div>`,
     }), flash?.kind === "error" ? 422 : 200);
@@ -1248,6 +1257,75 @@ ${canEdit && row ? '<form method="post" action="/credits/sync" class="inline"><i
     const reason = (form.get("reason") ?? "").trim();
     if (reason.length < 3 || reason.length > 300) return creditsPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
     return creditsPage(ctx, me, await switchCredits(ctx, me, site, op === "on", reason));
+  }
+
+  /** Sends each site what it should use now; audited once with the result of each site. */
+  async function sendMultiStay(ctx: Ctx, me: Me, state: MultiStayState, reason: string, only: CenterSite[]): Promise<{ ok: string[]; failed: string[] }> {
+    const client = new SiteClient(ctx.env, 8000, clock);
+    const ok: string[] = [];
+    const failed: string[] = [];
+    await Promise.all(only.map(async (site) => {
+      const want = multiStayFor(state, site.slug);
+      const res = await client.call<CenterCreditOverviewDto>(site, "PUT", "/api/center/credits/multi-stay", { ...actorOf(me), reason }, want);
+      if (res.status === 200) ok.push(site.name);
+      else failed.push(`${site.name} (${res.status === 404 ? "ยังไม่รองรับ — Release เว็บนี้ก่อน" : siteError(res.status, res.error?.code)})`);
+    }));
+    await audit(ctx, me.id, "MULTI_STAY_SENT", only.length === 1 ? only[0]!.slug : null, reason,
+      { enabled: state.enabled, feeBaht: state.feeBaht, sites: [...state.sites], ok, failed }).run();
+    return { ok, failed };
+  }
+
+  function multiStayResult(r: { ok: string[]; failed: string[] }, done: string): { kind: "ok" | "error"; text: string } {
+    return r.failed.length
+      ? { kind: "error", text: `${done} · ส่งแล้ว ${r.ok.length} เว็บ · ไม่สำเร็จ: ${r.failed.join(", ")} — กด "ส่งอีกครั้ง" ในตาราง` }
+      : { kind: "ok", text: `${done} · ส่งให้ ${r.ok.length} เว็บแล้ว` };
+  }
+
+  async function multiStayMaster(ctx: Ctx, me: Me): Promise<Response> {
+    const form = await readForm(ctx.request);
+    const enabled = form.get("enabled") === "1";
+    const fee = parseFee(form.get("fee"));
+    const reason = (form.get("reason") ?? "").trim();
+    if (fee === null) return creditsPage(ctx, me, { kind: "error", text: "ค่าธรรมเนียมต่อการจองต้องเป็นจำนวนเต็ม 1–100,000 บาท" });
+    if (reason.length < 3 || reason.length > 300) return creditsPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    const before = await loadMultiStay(ctx.repo.db);
+    const at = iso(ctx.now);
+    await ctx.repo.db.batch([
+      ctx.repo.db.prepare(
+        `INSERT INTO center_multi_stay (id, enabled, fee_baht, updated_by, updated_at) VALUES (1, ?1, ?2, ?3, ?4)
+         ON CONFLICT (id) DO UPDATE SET enabled = excluded.enabled, fee_baht = excluded.fee_baht, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      ).bind(enabled ? 1 : 0, fee, me.id, at),
+      audit(ctx, me.id, "MULTI_STAY_SETTINGS", null, reason, { before: { enabled: before.enabled, feeBaht: before.feeBaht }, after: { enabled, feeBaht: fee } }),
+    ]);
+    const state = await loadMultiStay(ctx.repo.db);
+    // Every chosen site, and any site that had it before (to switch it off there).
+    const only = ctx.sites.filter((x) => state.sites.has(x.slug));
+    const done = `${enabled ? "เปิด" : "ปิด"}การคิดเครดิตครั้งเดียวต่อการจอง (${fee} บาท)`;
+    if (!only.length) return creditsPage(ctx, me, { kind: "ok", text: `${done} — ยังไม่ได้เลือกเว็บในตาราง` });
+    return creditsPage(ctx, me, multiStayResult(await sendMultiStay(ctx, me, state, reason, only), done));
+  }
+
+  async function multiStaySite(ctx: Ctx, me: Me): Promise<Response> {
+    const form = await readForm(ctx.request);
+    const site = ctx.sites.find((x) => x.slug === (form.get("site") ?? "").trim());
+    if (!site) throw new HttpError(404, "ไม่พบเว็บนี้");
+    const op = form.get("op");
+    if (op !== "on" && op !== "off" && op !== "resend") throw new HttpError(422, "คำสั่งไม่ถูกต้อง");
+    const reason = (form.get("reason") ?? "").trim();
+    if (reason.length < 3 || reason.length > 300) return creditsPage(ctx, me, { kind: "error", text: "กรุณาระบุเหตุผล 3–300 ตัวอักษร" });
+    if (op !== "resend") {
+      await ctx.repo.db.batch([
+        ctx.repo.db.prepare(
+          `INSERT INTO center_multi_stay_sites (site, enabled, updated_by, updated_at) VALUES (?1, ?2, ?3, ?4)
+           ON CONFLICT (site) DO UPDATE SET enabled = excluded.enabled, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+        ).bind(site.slug, op === "on" ? 1 : 0, me.id, iso(ctx.now)),
+        audit(ctx, me.id, `MULTI_STAY_SITE_${op === "on" ? "ON" : "OFF"}`, site.slug, reason, {}),
+      ]);
+    }
+    const state = await loadMultiStay(ctx.repo.db);
+    const done = op === "resend" ? `ส่งค่าให้ ${site.name} อีกครั้ง`
+      : `${op === "on" ? "เลือก" : "เลิกเลือก"} ${site.name}${op === "on" && !state.enabled ? " (ยังไม่มีผลจนกว่าจะเปิดใช้ด้านบน)" : ""}`;
+    return creditsPage(ctx, me, multiStayResult(await sendMultiStay(ctx, me, state, reason, [site]), done));
   }
 
   async function syncCredit(ctx: Ctx, me: Me): Promise<Response> {

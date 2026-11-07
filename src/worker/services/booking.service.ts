@@ -244,7 +244,10 @@ export class BookingService {
       throw new ConflictError("This accommodation is already part of the booking", "UNIT_ALREADY_BOOKED");
     }
 
-    const prepared = await this.quotes.prepare(input);
+    // A once-per-booking app fee (migration 0064) counts the stays already booked and charges only what is missing.
+    const prepared = await this.quotes.prepare({
+      ...input, joining: { stays: items.reduce((acc, i) => acc + i.quantity, 0), feeSatang: row.app_fee_satang },
+    });
     const q = prepared.quote;
     if (q.bookingUnavailable) throw new ConflictError("Online booking is temporarily unavailable", "CREDIT_INSUFFICIENT");
     if (q.totalSatang !== input.expectedTotalSatang) {
@@ -264,7 +267,7 @@ export class BookingService {
         accommodation: row.accommodation_subtotal_satang + q.accommodationSubtotalSatang,
         food: row.food_subtotal_satang + q.foodSubtotalSatang + (q.massageSubtotalSatang ?? 0),
         appFeeSatang: row.app_fee_satang + (q.appFee?.totalSatang ?? 0),
-        appFeeUnits: row.app_fee_units + (q.appFee?.units ?? 0),
+        appFeeUnits: q.appFee?.perBooking ? Math.max(1, row.app_fee_units) : row.app_fee_units + (q.appFee?.units ?? 0),
         total,
         deposit: depositFor(total, payLater),
         now: at,
@@ -715,8 +718,9 @@ export class BookingService {
     const petMoney = pets.find((e) => e.booking_item_id === itemId)?.subtotal_satang ?? 0;
     const accommodation = row.accommodation_subtotal_satang - target.snapshot_subtotal_satang - tarpMoney - bedMoney - petMoney;
     // App fee (migration 0027): an unpaid booking stops paying for the stay's units (its credit hold shrinks with it,
-    // trigger); once paid the fee was earned and stays.
-    const unpaid = row.booking_status === "PENDING" && row.app_fee_units > 0;
+    // trigger); once paid the fee was earned and stays. A fee taken once for the booking (one unit, migration 0064) stays
+    // too: the booking still has stays.
+    const unpaid = row.booking_status === "PENDING" && row.app_fee_units > 1;
     const feeUnits = unpaid ? row.app_fee_units - target.quantity : row.app_fee_units;
     const appFeeSatang = unpaid ? Math.round(row.app_fee_satang / row.app_fee_units) * feeUnits : row.app_fee_satang;
     const total = accommodation + row.food_subtotal_satang + appFeeSatang - row.discount_satang;
@@ -1556,7 +1560,7 @@ export class BookingService {
       totalSatang: row.total_satang,
       currency: row.currency,
       depositSatang: row.deposit_satang,
-      appFee: appFeeOf(row),
+      appFee: appFeeOf(row, live.reduce((acc, x) => acc + x.quantity, 0)),
       paidSatang,
       balanceSatang,
       ...(moves.some((m) => m.status === "APPROVED" && m.amount_satang > 0) ? {
@@ -1607,10 +1611,17 @@ export class BookingService {
 }
 
 /** Maps database constraint failures from the booking batch to business errors. */
-/** App fee of a booking (migration 0027): units × per unit; null when it has none. */
-export function appFeeOf(row: Pick<BookingRow, "app_fee_units" | "app_fee_satang">): AppFeeDto | null {
+/**
+ * App fee of a booking (migration 0027): units × per unit; null when it has none. One unit for several stays (`stays`,
+ * their units) is the fee taken once for the booking (migration 0064).
+ */
+export function appFeeOf(row: Pick<BookingRow, "app_fee_units" | "app_fee_satang">, stays = 0): AppFeeDto | null {
   if (!row.app_fee_units || !row.app_fee_satang) return null;
-  return { units: row.app_fee_units, perUnitSatang: Math.round(row.app_fee_satang / row.app_fee_units), totalSatang: row.app_fee_satang };
+  const perBooking = row.app_fee_units === 1 && stays > 1;
+  return {
+    units: row.app_fee_units, perUnitSatang: Math.round(row.app_fee_satang / row.app_fee_units), totalSatang: row.app_fee_satang,
+    ...(perBooking ? { perBooking: true } : {}),
+  };
 }
 
 export function mapInventoryError(error: unknown): unknown {

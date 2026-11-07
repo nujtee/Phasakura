@@ -75,6 +75,13 @@ function initialFromUrl(): { query: StayQuery; unitSlug: string | null; guestsGi
   };
 }
 
+/** Adding to a booking: what it already has, so a once-per-booking app fee (migration 0064) is priced right. */
+function joining(body: QuoteRequest, addTo: PublicBookingDto | null): QuoteRequest {
+  if (!addTo) return body;
+  const stays = addTo.items.filter((i) => i.status !== "CANCELLED").reduce((acc, i) => acc + i.quantity, 0);
+  return { ...body, joining: { stays, feeSatang: addTo.appFee?.totalSatang ?? 0 } };
+}
+
 export function BookingPage() {
   const { locale, t } = useI18n();
   const bt = useBookingT();
@@ -177,7 +184,7 @@ export function BookingPage() {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setQuoting(true);
-      fetchQuote(request(searched, picks, cart, massages), controller.signal)
+      fetchQuote(joining(request(searched, picks, cart, massages), addTo), controller.signal)
         .then((q) => { setQuote(q); setNotice(null); })
         .catch((err: unknown) => {
           if (controller.signal.aborted) return;
@@ -194,7 +201,7 @@ export function BookingPage() {
         .finally(() => { if (!controller.signal.aborted) setQuoting(false); });
     }, 250);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [picks, searched, cart, massages, step, request, bt, locale.code]);
+  }, [picks, searched, cart, massages, step, request, bt, locale.code, addTo]);
 
   useEffect(() => {
     if (step !== "choose") headingRef.current?.focus();
@@ -327,7 +334,7 @@ export function BookingPage() {
         setNotice(text);
       } else if (err instanceof ApiError && err.code === "PRICE_CHANGED") {
         setNotice(bt.priceChanged);
-        setQuote(await fetchQuote(request(searched, picks, cart, massages)).catch(() => quote));
+        setQuote(await fetchQuote(joining(request(searched, picks, cart, massages), addTo)).catch(() => quote));
         setIdemKey(newIdempotencyKey());
       } else if (err instanceof ApiError && (err.code === "EXTRA_BED_UNAVAILABLE" || err.code === "PET_UNAVAILABLE" || err.code === "MASSAGE_UNAVAILABLE")) {
         if (err.code === "EXTRA_BED_UNAVAILABLE") dropExtraBeds();

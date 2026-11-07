@@ -2,7 +2,7 @@ import {
   CREDIT_PLANS, MAX_CREDIT_AMOUNT, PREMIUM_ONLY_MENU_PATHS,
   type CreditLedgerEntryDto, type CreditPaymentInfoDto, type CreditPlan, type CreditRecipientDto, type CreditSettingsDto,
   type CreditSettingsInput, type CreditState, type CreditSummaryDto, type CreditTopupDto, type Page, type TopupResultDto,
-  type CenterCreditOverviewDto, type CenterCreditQr, type CenterCreditSettings,
+  type CenterCreditOverviewDto, type CenterCreditQr, type CenterCreditSettings, type MultiStayFeeDto,
 } from "../../shared/credit-types.ts";
 import { DEFAULT_TIMEZONE, localDateTimeIn } from "../../shared/dates.ts";
 import type { D1DatabaseLike, D1PreparedStatementLike, R2BucketLike } from "../env.ts";
@@ -76,6 +76,8 @@ export function creditState(s: Pick<CreditSettingsRow, "enabled" | "fee_per_unit
 export interface AppFeeTerms {
   perUnitSatang: number;
   availableCredits: number;
+  /** Migration 0064: a booking with several stays pays this once instead (null = per unit). */
+  perBookingSatang: number | null;
 }
 
 export interface CreditConfig {
@@ -139,7 +141,10 @@ export class CreditService {
   async feeTerms(): Promise<AppFeeTerms | null> {
     const { s, a } = await this.load();
     if (!s || s.enabled !== 1) return null;
-    return { perUnitSatang: s.fee_per_unit * 100, availableCredits: creditState(s, a).available };
+    return {
+      perUnitSatang: s.fee_per_unit * 100, availableCredits: creditState(s, a).available,
+      perBookingSatang: s.multi_stay_flat === 1 ? (s.multi_stay_fee ?? 20) * 100 : null,
+    };
   }
 
   /** Public: can a guest book online at all right now (enough credit for one unit)? */
@@ -420,6 +425,7 @@ export class CreditService {
       notifyEmail: s?.notify_email ?? null, alertTime1: s?.alert_time_1 ?? "09:00", alertTime2: s?.alert_time_2 ?? "17:00",
       verifierConfigured: this.verifier !== null, emailReady, lineReady, updatedAt: s?.updated_at ?? "",
       managedByCenter: s?.center_managed === 1, centerSyncedAt: s?.center_synced_at ?? null,
+      multiStay: { enabled: s?.multi_stay_flat === 1, feeBaht: s?.multi_stay_fee ?? 20 },
     };
   }
 
@@ -486,6 +492,7 @@ export class CreditService {
     const { state, available } = creditState(s, a);
     const pending = await this.repo.pendingCount().catch(() => 0);
     return {
+      ...(s && s.multi_stay_flat !== undefined ? { multiStay: { enabled: s.multi_stay_flat === 1, feeBaht: s.multi_stay_fee ?? 20 } } : {}),
       managed: s?.center_managed === 1, version: s?.center_version ?? null, syncedAt: s?.center_synced_at ?? null,
       qrSha256: s?.qr_asset_id ? s.qr_sha256 ?? null : null,
       qrUrl: publicMediaUrl(s?.qr_key, this.config.mediaBaseUrl),
@@ -502,6 +509,20 @@ export class CreditService {
         verifierConfigured: this.verifier !== null, pendingTopups: pending,
       },
     };
+  }
+
+  /** Center switches "one fee per booking with several stays" for this site (migration 0064), audited as the Center user. */
+  async applyMultiStay(input: MultiStayFeeDto, callerId: string, extraStatements: D1PreparedStatementLike[], meta: RequestMeta,
+    audit: Record<string, unknown>): Promise<CenterCreditOverviewDto> {
+    const before = await this.repo.settings();
+    if (!before) throw new ConflictError("Credits are not set up on this site yet", "CREDITS_NOT_READY");
+    await this.db.batch([
+      ...extraStatements,
+      this.repo.multiStayStatement(input.enabled, input.feeBaht, iso(this.clock())),
+      this.log.auditStatement(callerId, "CENTER_CREDIT_MULTI_STAY", "credits", "settings",
+        { enabled: before.multi_stay_flat === 1, feeBaht: before.multi_stay_fee ?? 20 }, { ...input, ...audit }, meta),
+    ]);
+    return this.centerOverview();
   }
 
   /**

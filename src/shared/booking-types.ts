@@ -138,6 +138,8 @@ export interface QuoteRequest {
   /** Health massage (migration 0050), paid in full at booking like food. */
   massages?: MassageSelection[];
   lang?: string;
+  /** Quote only, adding to a booking (migration 0064): its stay units and app fee so far. */
+  joining?: { stays: number; feeSatang: number };
 }
 
 export interface CreateBookingRequest extends QuoteRequest {

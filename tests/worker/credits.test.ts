@@ -256,6 +256,70 @@ describe("app fee on bookings", () => {
   });
 });
 
+describe("once per booking with several stays (migration 0064, set by Center)", () => {
+  const flat = (h: Harness, on = true, fee = 20) => h.db.run("UPDATE credit_settings SET multi_stay_flat = ?, multi_stay_fee = ? WHERE id = 1", on ? 1 : 0, fee);
+  const addStays = (h: Harness, code: string, stays: Stay[], expectedTotalSatang: number) => h.api<PublicBookingDto>("POST", "/api/public/bookings/add-stays", {
+    body: { checkIn: "2027-02-01", checkOut: "2027-02-03", stays, food: [], lang: "th", bookingCode: code, phone: PHONE, expectedTotalSatang, idempotencyKey: key() },
+  });
+
+  it("several houses / tents in one booking pay the fee once; one stay pays per unit as before", async () => {
+    const { h, quote, book, hold, account, pay } = await setup({ credits: 1000, settings: { feePerUnit: 10 } });
+    flat(h);
+    const one = await quote([house1]);
+    assert.deepEqual(one.data.appFee, { units: 1, perUnitSatang: 1000, totalSatang: 1000, perBookingSatang: 2000 });
+    const many = await quote([house1, house2, vip1, camp2]);
+    assert.deepEqual(many.data.appFee, { units: 1, perUnitSatang: 2000, totalSatang: 2000, perBooking: true, perBookingSatang: 2000 });
+    // Two tents of one camping stay are several stays too.
+    assert.equal((await quote([camp2])).data.appFee?.totalSatang, 2000);
+    const b = await book([house1, house2, vip1, camp2]);
+    assert.equal(b.status, 201, JSON.stringify(b.body));
+    assert.deepEqual(b.data.appFee, { units: 1, perUnitSatang: 2000, totalSatang: 2000, perBooking: true });
+    assert.deepEqual(hold(b.data.bookingCode), { units: 1, amount: 20, status: "HELD" });
+    assert.equal((await pay(b.data.bookingCode, b.data.totalSatang)).status, 200);
+    assert.deepEqual(account(), { balance: 980, held: 0, plan: "STANDARD" });
+    // Switched off again: per unit.
+    flat(h, false);
+    assert.deepEqual((await quote([house1, house2], { checkIn: "2027-03-01", checkOut: "2027-03-03" })).data.appFee, { units: 2, perUnitSatang: 1000, totalSatang: 2000 });
+  });
+
+  it("adding stays charges only what the booking's fee is missing; cancelling a stay keeps the once-per-booking fee", async () => {
+    const { h, root, quote, book, hold } = await setup({ credits: 1000, settings: { feePerUnit: 10 } });
+    flat(h);
+    const b = await book([house1]);
+    assert.deepEqual(hold(b.data.bookingCode), { units: 1, amount: 10, status: "HELD" });
+    // The quote shown while adding knows the booking (joining): 20 − 10 already held.
+    const q = await quote([house2], { joining: { stays: 1, feeSatang: 1000 } });
+    assert.equal(q.data.appFee?.totalSatang, 1000);
+    const added = await addStays(h, b.data.bookingCode, [house2], q.data.totalSatang);
+    assert.equal(added.status, 201, JSON.stringify(added.body));
+    assert.deepEqual(hold(b.data.bookingCode), { units: 1, amount: 20, status: "HELD" });
+    assert.deepEqual(added.data.appFee, { units: 1, perUnitSatang: 2000, totalSatang: 2000, perBooking: true });
+    // A third stay: already covered.
+    const q2 = await quote([vip1], { joining: { stays: 2, feeSatang: 2000 } });
+    assert.equal(q2.data.appFee?.totalSatang, 0);
+    assert.equal((await addStays(h, b.data.bookingCode, [vip1], q2.data.totalSatang)).status, 201);
+    assert.deepEqual(hold(b.data.bookingCode), { units: 1, amount: 20, status: "HELD" });
+    // A quote that leaves the booking out shows more than adding really costs: refused, the guest sees the new price.
+    const wrong = await quote([camp2]);
+    const refused = await addStays(h, b.data.bookingCode, [camp2], wrong.data.totalSatang);
+    assert.equal(refused.status, 409);
+    assert.equal(refused.error?.code, "PRICE_CHANGED");
+    // Staff cancel one stay of the unpaid booking: the fee stays (the booking still has stays).
+    const full = (await h.api<AdminBookingDto>("GET", `/api/admin/bookings/${b.data.bookingCode}`, { token: root })).data;
+    const item = full.items.find((i) => i.unitId === "dev_vip_01")!;
+    const res = await h.api<AdminBookingDto>("POST", `/api/admin/bookings/${b.data.bookingCode}/stays/${item.id}/cancel`, { token: root, body: { reason: "not needed" } });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(hold(b.data.bookingCode), { units: 1, amount: 20, status: "HELD" });
+  });
+
+  it("the site's credit page shows it read-only", async () => {
+    const { h, root } = await setup({ credits: 100 });
+    flat(h, true, 25);
+    const s = await h.api<CreditSettingsDto>("GET", "/api/admin/credit-admin/settings", { token: root });
+    assert.deepEqual(s.data.multiStay, { enabled: true, feeBaht: 25 });
+  });
+});
+
 describe("Super Admin only", () => {
   it("credits.manage stays with SUPER_ADMIN: routes, role editing and per-user grants refuse it", async () => {
     const { h, root, manager, managerId } = await setup({ enabled: false });

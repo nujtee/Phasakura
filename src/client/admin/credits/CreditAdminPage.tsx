@@ -408,6 +408,7 @@ function SettingsTab() {
     <form onSubmit={(e) => void save(e)} noValidate>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {managed && <Alert kind="info">{fill(m.admin.managedByCenter, { time: s.centerSyncedAt ? new Date(s.centerSyncedAt).toLocaleString() : "—" })}</Alert>}
+      {s.multiStay?.enabled && <Alert kind="info">{fill(m.admin.multiStayOn, { fee: s.multiStay.feeBaht })}</Alert>}
       <fieldset className="adm-fieldset" disabled={busy}>
         <div className="adm-card">
           <h2 className="adm-h2">{m.admin.settingsTitle}</h2>

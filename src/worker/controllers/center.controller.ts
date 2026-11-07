@@ -161,6 +161,18 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       return jsonOk(await s.centerAdmin.setCredits(req, s.credits, { settings, qr, version }, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
+    /** `{ enabled, feeBaht }` — one app fee per booking with several stays (migration 0064); reason required. */
+    setMultiStay: (async (ctx) => {
+      const req = await verify(ctx);
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["enabled", "feeBaht"]);
+      if (typeof body.enabled !== "boolean") v.errors.enabled = "REQUIRED";
+      if (typeof body.feeBaht !== "number" || !Number.isInteger(body.feeBaht) || body.feeBaht < 1 || body.feeBaht > 100_000) v.errors.feeBaht = "OUT_OF_RANGE";
+      v.assertValid();
+      const s = services(ctx);
+      return jsonOk(await s.centerAdmin.setMultiStay(req, s.credits, { enabled: body.enabled as boolean, feeBaht: body.feeBaht as number }, requestMeta(ctx)), NO_STORE);
+    }) satisfies Handler,
+
     /** Top-up requests of this site (stage 3): every one waiting and the latest decided. */
     getTopups: (async (ctx) => {
       await verify(ctx);

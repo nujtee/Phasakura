@@ -162,13 +162,17 @@ export function BookingSummary({ quote, headingLevel = 2 }: { quote: QuoteDto; h
             <dd>{baht(quote.massageSubtotalSatang ?? 0)}</dd>
           </div>
         )}
-        {quote.appFee && quote.appFee.totalSatang > 0 && (
+        {quote.appFee && (quote.appFee.totalSatang > 0 || quote.appFee.perBooking) && (
           <div className="summary__line">
             <dt>
               {bt.appFee}
-              <small>{fill(bt.appFeeLine, { n: quote.appFee.units, price: baht(quote.appFee.perUnitSatang) })}</small>
+              <small>
+                {quote.appFee.perBooking
+                  ? fill(bt.appFeePerBooking, { price: baht(quote.appFee.perUnitSatang) })
+                  : fill(bt.appFeeLine, { n: quote.appFee.units, price: baht(quote.appFee.perUnitSatang) })}
+              </small>
             </dt>
-            <dd>{baht(quote.appFee.totalSatang)}</dd>
+            <dd>{quote.appFee.totalSatang > 0 ? baht(quote.appFee.totalSatang) : bt.appFeeJoined}</dd>
           </div>
         )}
         <div className="summary__line summary__line--total">

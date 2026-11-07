@@ -43,6 +43,7 @@ import { publicMediaUrl } from "./media-url.ts";
 import { pickTranslation } from "./accommodation.service.ts";
 import type { AvailabilityService } from "./availability.service.ts";
 import type { AppFeeTerms } from "./credit.service.ts";
+import type { AppFeeDto } from "../../shared/credit-types.ts";
 
 /** One stay of the request, with its own guests (the parser fills them in for a legacy single `stay`). */
 export type StayInput =
@@ -62,6 +63,24 @@ export interface QuoteInput {
   food: FoodSelection[];
   massages?: MassageSelection[];
   lang: string;
+  /**
+   * Adding stays to a booking (migration 0064): its stay units and the app fee it already has, so a once-per-booking fee
+   * is charged only for what is missing. Set by the server from the booking itself when the stays are really added.
+   */
+  joining?: { stays: number; feeSatang: number };
+}
+
+/**
+ * App fee (migrations 0027 / 0064): per house / VIP tent / own tent; or, when Center turned it on for this site, once for
+ * a booking with several stays (`units` 1 + `perBooking`; joining a booking, only what its fee is still missing).
+ */
+export function appFeeFor(terms: AppFeeTerms | null, units: number, joining?: { stays: number; feeSatang: number }): AppFeeDto | null {
+  if (!terms || units <= 0) return null;
+  const flat = terms.perBookingSatang;
+  if (flat !== null && units + (joining?.stays ?? 0) >= 2) {
+    return { units: 1, perUnitSatang: flat, totalSatang: Math.max(0, flat - (joining?.feeSatang ?? 0)), perBooking: true, perBookingSatang: flat };
+  }
+  return { units, perUnitSatang: terms.perUnitSatang, totalSatang: units * terms.perUnitSatang, ...(flat !== null ? { perBookingSatang: flat } : {}) };
 }
 
 export interface PreparedFoodLine {
@@ -423,7 +442,7 @@ export class QuoteService {
     // App fee (migration 0027): per house / VIP tent / own tent, on the guest's bill; paid now (part of any deposit).
     const terms = this.appFeeTerms ? await this.appFeeTerms().catch(() => null) : null;
     const feeUnits = items.reduce((acc, it) => acc + it.quantity, 0);
-    const appFee = terms && feeUnits > 0 ? { units: feeUnits, perUnitSatang: terms.perUnitSatang, totalSatang: feeUnits * terms.perUnitSatang } : null;
+    const appFee = appFeeFor(terms, feeUnits, input.joining);
     const totalSatang = accommodationSubtotalSatang + foodSubtotalSatang + massageSubtotalSatang + (appFee?.totalSatang ?? 0);
     return {
       quote: {

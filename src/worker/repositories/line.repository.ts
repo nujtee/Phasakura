@@ -584,11 +584,16 @@ export class LineRepository {
   // ------------------------------------------------------------------ message data
 
   /** The app usage fee on a booking (none before migration 0027). */
-  async bookingAppFee(bookingId: string): Promise<{ units: number; totalSatang: number } | null> {
+  async bookingAppFee(bookingId: string): Promise<{ units: number; totalSatang: number; perBooking: boolean } | null> {
     return withFallback(async () => {
-      const r = await this.db.prepare("SELECT app_fee_units, app_fee_satang FROM bookings WHERE id = ?1")
-        .bind(bookingId).first<{ app_fee_units: number; app_fee_satang: number }>();
-      return r && r.app_fee_satang > 0 ? { units: r.app_fee_units, totalSatang: r.app_fee_satang } : null;
+      const r = await this.db.prepare(
+        `SELECT b.app_fee_units, b.app_fee_satang,
+                (SELECT COALESCE(SUM(i.quantity), 0) FROM booking_items i WHERE i.booking_id = b.id AND i.status = 'ACTIVE') AS stays
+           FROM bookings b WHERE b.id = ?1`)
+        .bind(bookingId).first<{ app_fee_units: number; app_fee_satang: number; stays: number }>();
+      // One unit for several stays: the fee taken once for the booking (migration 0064).
+      return r && r.app_fee_satang > 0
+        ? { units: r.app_fee_units, totalSatang: r.app_fee_satang, perBooking: r.app_fee_units === 1 && r.stays > 1 } : null;
     }, async () => null);
   }
 
