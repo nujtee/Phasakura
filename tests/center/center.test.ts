@@ -1179,10 +1179,10 @@ describe("Center: credit settings for every site (Center migration 0006 / site 0
   it("the owner saves once and every site gets it (QR included); the site's page is read-only; everyone else only reads", async () => {
     const ctx = await setup();
     const owner = await ctx.ownerSession();
-    const first = await ctx.req("GET", "/credits", { cookie: owner });
+    const first = await ctx.req("GET", "/credits?tab=shared", { cookie: owner });
     assert.equal(first.status, 200, first.text.slice(0, 300));
     assert.match(first.text, /ยังไม่มีค่ากลาง/);
-    assert.match(first.text, /Phasakura/);
+    assert.match((await ctx.req("GET", "/credits", { cookie: owner })).text, /Phasakura/);
 
     const bad = await ctx.req("POST", "/credits", { cookie: owner, multipart: multipart({ ...FORM, reason: "" }) });
     assert.equal(bad.status, 422);
@@ -1213,9 +1213,11 @@ describe("Center: credit settings for every site (Center migration 0006 / site 0
     const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1];
     const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
     const ops = await ctx.enroll(set.cookie!);
-    const read = await ctx.req("GET", "/credits", { cookie: ops });
-    assert.equal(read.status, 200);
-    assert.ok(!read.text.includes('action="/credits/sync"'), "no send button");
+    for (const tab of ["balance", "shared"]) {
+      const read = await ctx.req("GET", `/credits?tab=${tab}`, { cookie: ops });
+      assert.equal(read.status, 200);
+      assert.ok(!read.text.includes('action="/credits/sync"'), "no send button");
+    }
     assert.equal((await ctx.req("POST", "/credits", { cookie: ops, multipart: multipart(FORM) })).status, 403);
     assert.equal((await ctx.req("POST", "/credits/sync", { cookie: ops, form: { site: "all" } })).status, 403);
   });
@@ -1350,6 +1352,28 @@ describe("Center: top-up requests of every site (central credits, stage 3)", () 
   });
 });
 
+type CenterTest = Awaited<ReturnType<typeof setup>>;
+type Sw = Partial<Record<"c" | "t" | "m", 0 | 1>>;
+/** The "ฟีเจอร์" form of the one test site: what each switch was (`was`, default off) and what is ticked now. */
+function fields(now: Sw, was: Sw = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of ["c", "t", "m"] as const) {
+    const w = was[f] ?? 0;
+    out[`${f}.phasakura.was`] = String(w);
+    if ((now[f] ?? w) === 1) out[`${f}.phasakura`] = "1";
+  }
+  return out;
+}
+function features(ctx: CenterTest, cookie: string, now: Sw, reason: string, was: Sw = {}) {
+  return ctx.req("POST", "/credits/features", { cookie, form: { ...fields(now, was), reason } });
+}
+async function addUser(ctx: CenterTest, owner: string, email: string, role: string): Promise<string> {
+  const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: role, email, role } });
+  const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1];
+  const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
+  return ctx.enroll(set.cookie!);
+}
+
 describe("Center: credits switched on / off per site from the credits page", () => {
   const FORM = {
     fee_per_unit: "20", low_threshold: "500", approval_mode: "MANUAL", standard_min: "", premium_min: "",
@@ -1363,98 +1387,96 @@ describe("Center: credits switched on / off per site from the credits page", () 
   };
   const enabled = (ctx: Awaited<ReturnType<typeof setup>>) => ctx.site.db.get<{ e: number }>("SELECT enabled AS e FROM credit_settings")!.e;
 
-  it("the table has the switch; a site without a payee gets the shared settings first; off again; reason required", async () => {
+  it("the features tab switches credits; a site without a payee gets the shared settings first; off again; reason required", async () => {
     const ctx = await setup();
     const owner = await ctx.ownerSession();
-    const before = await ctx.req("GET", "/credits", { cookie: owner });
-    assert.match(before.text, /<button type="submit" disabled>เปิด<\/button>/, "nothing to send yet");
-    assert.equal((await ctx.req("POST", "/credits/switch", { cookie: owner, form: { site: "phasakura", credits: "on", reason: "เริ่มเก็บค่าธรรมเนียม" } })).text.includes("ยังไม่มีบัญชีรับเงินเติมเครดิต"), true);
+    const before = await ctx.req("GET", "/credits?tab=features", { cookie: owner });
+    assert.match(before.text, /name="c\.phasakura" value="1" data-was="0" disabled/, "nothing to send yet");
+    assert.match(before.text, /ยังไม่มีบัญชีรับเงินเติมเครดิต/);
+    assert.match((await features(ctx, owner, { c: 1 }, "เริ่มเก็บค่าธรรมเนียม")).text, /ยังไม่มีบัญชีรับเงินเติมเครดิต/);
     assert.equal(enabled(ctx), 0);
 
     // Shared settings saved in Center while the site was down: the site has no payee yet.
     ctx.setSiteDown(true);
     await ctx.req("POST", "/credits", { cookie: owner, multipart: multipart(FORM) });
     ctx.setSiteDown(false);
-    const page = await ctx.req("GET", "/credits", { cookie: owner });
-    assert.match(page.text, /กดเปิดแล้วระบบจะส่งค่ากลางให้ก่อน/);
-    assert.match(page.text, /name="credits" value="on"/);
+    const page = await ctx.req("GET", "/credits?tab=features", { cookie: owner });
+    assert.match(page.text, /เปิดแล้วจะส่งค่ากลางให้ก่อน/);
+    assert.match(page.text, /name="c\.phasakura" value="1" data-was="0">/);
 
-    assert.match((await ctx.req("POST", "/credits/switch", { cookie: owner, form: { site: "phasakura", credits: "on", reason: "" } })).text, /กรุณาระบุเหตุผล/);
-    const on = await ctx.req("POST", "/credits/switch", { cookie: owner, form: { site: "phasakura", credits: "on", reason: "เริ่มเก็บค่าธรรมเนียม" } });
+    assert.match((await features(ctx, owner, { c: 1 }, "")).text, /กรุณาระบุเหตุผล/);
+    assert.match((await features(ctx, owner, {}, "ไม่มีอะไร")).text, /ยังไม่ได้เปลี่ยนสวิตช์ใด/);
+    const on = await features(ctx, owner, { c: 1 }, "เริ่มเก็บค่าธรรมเนียม");
     assert.equal(on.status, 200, on.text.slice(0, 300));
-    assert.match(on.text, /เปิดระบบเครดิตของ Phasakura แล้ว \(ส่งค่ากลางให้ก่อนเปิด\)/);
+    assert.match(on.text, /สำเร็จ 1 รายการ: เปิดระบบเครดิตของ Phasakura แล้ว \(ส่งค่ากลางให้ก่อนเปิด\)/);
+    assert.match(on.text, /aria-current="page">ฟีเจอร์/);
     assert.equal(enabled(ctx), 1);
     assert.equal(ctx.site.db.get<{ m: number }>("SELECT center_managed AS m FROM credit_settings")!.m, 1);
     assert.equal(ctx.site.audits("CREDITS_ON")[0]!.user_id, "center_u_00000000000000aa");
     assert.deepEqual([ctx.audits("FEATURE_CREDITS_ON").at(-1)!.reason, ctx.audits("FEATURE_CREDITS_ON").at(-1)!.site], ["เริ่มเก็บค่าธรรมเนียม", "phasakura"]);
-    assert.match(on.text, /name="credits" value="off"/);
+    assert.match(on.text, /name="c\.phasakura" value="1" data-was="1" checked>/);
 
-    const off = await ctx.req("POST", "/credits/switch", { cookie: owner, form: { site: "phasakura", credits: "off", reason: "เจ้าของเว็บขอพัก" } });
+    const off = await features(ctx, owner, { c: 0 }, "เจ้าของเว็บขอพัก", { c: 1 });
     assert.match(off.text, /ปิดระบบเครดิตของ Phasakura แล้ว/);
     assert.equal(enabled(ctx), 0);
-    assert.equal((await ctx.req("POST", "/credits/switch", { cookie: owner, form: { site: "nope", credits: "on", reason: "xxx" } })).status, 404);
-    assert.equal((await ctx.req("POST", "/credits/switch", { cookie: owner, form: { site: "phasakura", credits: "maybe", reason: "xxx" } })).status, 422);
+    // A forged form.
+    assert.equal((await ctx.req("POST", "/credits/features", { cookie: owner, form: { "c.phasakura.was": "2", reason: "xxx" } })).status, 422);
+    assert.equal((await ctx.req("POST", "/credits/features", { cookie: owner, form: { bulk: "x:on", reason: "xxx" } })).status, 422);
+    assert.equal((await ctx.req("POST", "/credits/features", { cookie: owner, form: { resend: "m.nope", reason: "xxx" } })).status, 422);
   });
 
   it("an OPERATOR switches a site that has a payee, but cannot send the shared settings; SUPPORT cannot switch", async () => {
     const ctx = await setup();
     const owner = await ctx.ownerSession();
-    const add = async (email: string, role: string) => {
-      const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: role, email, role } });
-      const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1];
-      const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
-      return ctx.enroll(set.cookie!);
-    };
-    const ops = await add("ops@phasakura.com", "OPERATOR");
-    const help = await add("help@phasakura.com", "SUPPORT_READONLY");
+    const ops = await addUser(ctx, owner, "ops@phasakura.com", "OPERATOR");
+    const help = await addUser(ctx, owner, "help@phasakura.com", "SUPPORT_READONLY");
     ctx.setSiteDown(true);
     await ctx.req("POST", "/credits", { cookie: owner, multipart: multipart(FORM) });
     ctx.setSiteDown(false);
-    const opsPage = await ctx.req("GET", "/credits", { cookie: ops });
-    assert.match(opsPage.text, /ให้เจ้าของแพลตฟอร์มส่งจาก/);
-    assert.match(opsPage.text, /<button type="submit" disabled>เปิด<\/button>/);
-    assert.match((await ctx.req("POST", "/credits/switch", { cookie: ops, form: { site: "phasakura", credits: "on", reason: "เปิดให้ลูกค้า" } })).text, /ให้เจ้าของแพลตฟอร์มส่งค่ากลาง/);
+    const opsPage = await ctx.req("GET", "/credits?tab=features", { cookie: ops });
+    assert.match(opsPage.text, /ยังไม่มีบัญชีรับเงินเติมเครดิต/);
+    assert.match(opsPage.text, /name="c\.phasakura" value="1" data-was="0" disabled/);
+    assert.match((await features(ctx, ops, { c: 1 }, "เปิดให้ลูกค้า")).text, /ให้เจ้าของแพลตฟอร์มส่งค่ากลาง/);
     assert.equal(enabled(ctx), 0);
 
     await ctx.req("POST", "/credits/sync", { cookie: owner, form: { site: "all" } });
-    const on = await ctx.req("POST", "/credits/switch", { cookie: ops, form: { site: "phasakura", credits: "on", reason: "เปิดให้ลูกค้า" } });
+    const on = await features(ctx, ops, { c: 1 }, "เปิดให้ลูกค้า");
     assert.match(on.text, /เปิดระบบเครดิตของ Phasakura แล้ว/);
     assert.equal(enabled(ctx), 1);
 
-    const read = await ctx.req("GET", "/credits", { cookie: help });
-    assert.ok(!read.text.includes('action="/credits/switch"'));
-    assert.equal((await ctx.req("POST", "/credits/switch", { cookie: help, form: { site: "phasakura", credits: "off", reason: "xxx" } })).status, 403);
+    const read = await ctx.req("GET", "/credits?tab=features", { cookie: help });
+    assert.ok(!read.text.includes('action="/credits/features"'));
+    assert.match(read.text, /ดูได้อย่างเดียว/);
+    assert.equal((await features(ctx, help, { c: 0 }, "xxx", { c: 1 })).status, 403);
   });
 });
 
 describe("credits: Theme whatever the plan (site migration 0065)", () => {
   const unlocked = (ctx: Awaited<ReturnType<typeof setup>>) => ctx.site.db.get<{ u: number }>("SELECT theme_unlocked AS u FROM credit_settings WHERE id = 1")!.u;
 
-  it("the table shows Theme per site and opens / closes it with a reason; SUPPORT only reads", async () => {
+  it("the features tab shows Theme per site and opens / closes it with a reason, with others at once; SUPPORT only reads", async () => {
     const ctx = await setup();
     const owner = await ctx.ownerSession();
-    const page = await ctx.req("GET", "/credits", { cookie: owner });
-    assert.match(page.text, /<th>Theme<\/th>/);
-    assert.match(page.text, /action="\/credits\/theme"/);
-    assert.match((await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "phasakura", op: "on", reason: "" } })).text, /กรุณาระบุเหตุผล/);
-    const on = await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "phasakura", op: "on", reason: "ให้ Manager แก้ธีมได้" } });
-    assert.match(on.text, /เปิด Theme ให้ Phasakura แล้ว/);
+    const page = await ctx.req("GET", "/credits?tab=features", { cookie: owner });
+    assert.match(page.text, /Theme<br>/);
+    assert.match(page.text, /name="t\.phasakura"/);
+    const on = await features(ctx, owner, { t: 1, m: 1 }, "ให้ Manager แก้ธีมได้");
+    assert.match(on.text, /สำเร็จ 2 รายการ: เปิด Theme ให้ Phasakura · เลือก Phasakura ในจองหลายที่พัก \(มีผลเมื่อเปิดค่ากลาง\)/);
     assert.equal(unlocked(ctx), 1);
     assert.equal(ctx.site.audits("CENTER_THEME_UNLOCK").length, 1);
     assert.equal(ctx.audits("THEME_UNLOCK_ON").at(-1)!.reason, "ให้ Manager แก้ธีมได้");
-    assert.match(on.text, /เลิกเปิด Theme/);
-    const off = await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "phasakura", op: "off", reason: "กลับไปตามแพ็กเกจ" } });
-    assert.match(off.text, /เลิกเปิด Theme ของ Phasakura แล้ว/);
+    assert.match(on.text, /name="t\.phasakura" value="1" data-was="1" checked>/);
+    const off = await features(ctx, owner, { t: 0 }, "กลับไปตามแพ็กเกจ", { t: 1, m: 1 });
+    assert.match(off.text, /เลิกเปิด Theme ของ Phasakura/);
     assert.equal(unlocked(ctx), 0);
-    assert.equal((await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "nope", op: "on", reason: "xxx" } })).status, 404);
-    assert.equal((await ctx.req("POST", "/credits/theme", { cookie: owner, form: { site: "phasakura", op: "maybe", reason: "xxx" } })).status, 422);
+    // The column buttons: every site at once.
+    const all = await ctx.req("POST", "/credits/features", { cookie: owner, form: { ...fields({}, { m: 1 }), bulk: "t:on", reason: "เปิดทุกเว็บ" } });
+    assert.match(all.text, /สำเร็จ 1 รายการ: เปิด Theme ให้ Phasakura/);
+    assert.equal(unlocked(ctx), 1);
 
-    const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: "help", email: "help@phasakura.com", role: "SUPPORT_READONLY" } });
-    const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1];
-    const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
-    const help = await ctx.enroll(set.cookie!);
-    assert.ok(!(await ctx.req("GET", "/credits", { cookie: help })).text.includes('action="/credits/theme"'));
-    assert.equal((await ctx.req("POST", "/credits/theme", { cookie: help, form: { site: "phasakura", op: "on", reason: "xxx" } })).status, 403);
+    const help = await addUser(ctx, owner, "help@phasakura.com", "SUPPORT_READONLY");
+    assert.ok(!(await ctx.req("GET", "/credits?tab=features", { cookie: help })).text.includes('action="/credits/features"'));
+    assert.equal((await features(ctx, help, { t: 0 }, "xxx", { t: 1 })).status, 403);
   });
 });
 
@@ -1465,13 +1487,13 @@ describe("credits: one app fee per booking with several stays (Center migration 
   it("the owner sets the switch and amount; sites are chosen in the table; each site gets both switches combined", async () => {
     const ctx = await setup();
     const owner = await ctx.ownerSession();
-    const page = await ctx.req("GET", "/credits", { cookie: owner });
+    const page = await ctx.req("GET", "/credits?tab=shared", { cookie: owner });
     assert.match(page.text, /จองหลายที่พัก คิดเครดิตครั้งเดียว/);
-    assert.match(page.text, /name="op" value="on"/);
+    assert.match((await ctx.req("GET", "/credits?tab=features", { cookie: owner })).text, /ค่ากลางปิดอยู่ — เปิดที่แท็บค่ากลาง/);
 
     // Chosen while the centre-wide switch is off: sent as off.
-    const chosen = await ctx.req("POST", "/credits/multi-stay/site", { cookie: owner, form: { site: "phasakura", op: "on", reason: "ลูกค้าจองหลายหลัง" } });
-    assert.match(chosen.text, /เลือก Phasakura \(ยังไม่มีผลจนกว่าจะเปิดใช้ด้านบน\)/);
+    const chosen = await features(ctx, owner, { m: 1 }, "ลูกค้าจองหลายหลัง");
+    assert.match(chosen.text, /เลือก Phasakura ในจองหลายที่พัก \(มีผลเมื่อเปิดค่ากลาง\)/);
     assert.deepEqual(flat(ctx), { on: 0, fee: 20 });
 
     assert.match((await ctx.req("POST", "/credits/multi-stay", { cookie: owner, form: { enabled: "1", fee: "0", reason: "เปิดใช้" } })).text, /ต้องเป็นจำนวนเต็ม/);
@@ -1484,39 +1506,32 @@ describe("credits: one app fee per booking with several stays (Center migration 
 
     // The site reports something else (changed meanwhile): the table offers a re-send.
     ctx.site.db.run("UPDATE credit_settings SET multi_stay_flat = 0 WHERE id = 1");
-    const differs = await ctx.req("GET", "/credits", { cookie: owner });
+    const differs = await ctx.req("GET", "/credits?tab=features", { cookie: owner });
     assert.match(differs.text, /เว็บรายงาน: ปิด/);
-    const again = await ctx.req("POST", "/credits/multi-stay/site", { cookie: owner, form: { site: "phasakura", op: "resend", reason: "ส่งให้ตรงกัน" } });
-    assert.match(again.text, /ส่งค่าให้ Phasakura อีกครั้ง · ส่งให้ 1 เว็บแล้ว/);
+    assert.match(differs.text, /name="resend" value="m\.phasakura"/);
+    const again = await ctx.req("POST", "/credits/features", { cookie: owner, form: { ...fields({}, { m: 1 }), resend: "m.phasakura", reason: "ส่งให้ตรงกัน" } });
+    assert.match(again.text, /ส่งจองหลายที่พักให้ Phasakura อีกครั้ง/);
     assert.deepEqual(flat(ctx), { on: 1, fee: 25 });
 
-    const off = await ctx.req("POST", "/credits/multi-stay/site", { cookie: owner, form: { site: "phasakura", op: "off", reason: "เว็บนี้ไม่ใช้" } });
+    const off = await features(ctx, owner, { m: 0 }, "เว็บนี้ไม่ใช้", { m: 1 });
     assert.match(off.text, /เลิกเลือก Phasakura/);
     assert.deepEqual(flat(ctx), { on: 0, fee: 25 });
-    assert.equal((await ctx.req("POST", "/credits/multi-stay/site", { cookie: owner, form: { site: "nope", op: "on", reason: "xxx" } })).status, 404);
-    assert.equal((await ctx.req("POST", "/credits/multi-stay/site", { cookie: owner, form: { site: "phasakura", op: "maybe", reason: "xxx" } })).status, 422);
   });
 
   it("an OPERATOR chooses sites but cannot change the switch or amount; SUPPORT only reads", async () => {
     const ctx = await setup();
     const owner = await ctx.ownerSession();
-    const add = async (email: string, role: string) => {
-      const res = await ctx.req("POST", "/users", { cookie: owner, form: { name: role, email, role } });
-      const token = res.text.match(/\/setup\?token=([A-Za-z0-9_-]{43})/)![1];
-      const set = await ctx.req("POST", `/setup?token=${token}`, { form: { password: PASSWORD, confirm: PASSWORD } });
-      return ctx.enroll(set.cookie!);
-    };
-    const ops = await add("ops@phasakura.com", "OPERATOR");
-    const help = await add("help@phasakura.com", "SUPPORT_READONLY");
+    const ops = await addUser(ctx, owner, "ops@phasakura.com", "OPERATOR");
+    const help = await addUser(ctx, owner, "help@phasakura.com", "SUPPORT_READONLY");
     await ctx.req("POST", "/credits/multi-stay", { cookie: owner, form: { enabled: "1", fee: "20", reason: "เปิดใช้" } });
-    const opsPage = await ctx.req("GET", "/credits", { cookie: ops });
+    const opsPage = await ctx.req("GET", "/credits?tab=shared", { cookie: ops });
     assert.ok(!opsPage.text.includes('action="/credits/multi-stay" '), "no master form for the operator");
     assert.equal((await ctx.req("POST", "/credits/multi-stay", { cookie: ops, form: { enabled: "0", fee: "20", reason: "ปิด" } })).status, 403);
-    const on = await ctx.req("POST", "/credits/multi-stay/site", { cookie: ops, form: { site: "phasakura", op: "on", reason: "ลูกค้าจองหลายหลัง" } });
-    assert.match(on.text, /เลือก Phasakura · ส่งให้ 1 เว็บแล้ว/);
+    const on = await features(ctx, ops, { m: 1 }, "ลูกค้าจองหลายหลัง");
+    assert.match(on.text, /สำเร็จ 1 รายการ: เลือก Phasakura ในจองหลายที่พัก/);
     assert.deepEqual(flat(ctx), { on: 1, fee: 20 });
-    const read = await ctx.req("GET", "/credits", { cookie: help });
-    assert.ok(!read.text.includes('action="/credits/multi-stay/site"'));
-    assert.equal((await ctx.req("POST", "/credits/multi-stay/site", { cookie: help, form: { site: "phasakura", op: "off", reason: "xxx" } })).status, 403);
+    const read = await ctx.req("GET", "/credits?tab=features", { cookie: help });
+    assert.ok(!read.text.includes('action="/credits/features"'));
+    assert.equal((await features(ctx, help, { m: 0 }, "xxx", { m: 1 })).status, 403);
   });
 });

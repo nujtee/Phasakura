@@ -4,7 +4,6 @@ import { ACCOUNT_NUMBER_PATTERN, PROMPTPAY_PATTERN } from "../shared/payment-typ
 import type { D1DatabaseLike } from "../worker/env.ts";
 import { parseSites, type CenterEnv, type CenterSite } from "./env.ts";
 import { bkk, esc } from "./html.ts";
-import { multiStayCellHtml, type MultiStayState } from "./multi-stay.ts";
 import { SiteClient, type SiteResponse } from "./site-client.ts";
 
 /**
@@ -199,7 +198,6 @@ export async function retryCredit(env: CenterEnv, clock: () => Date = () => new 
 // ---------------------------------------------------------------- rendering
 
 const STATE_LABEL: Record<CreditState, string> = { OFF: "ปิดอยู่", NORMAL: "ปกติ", LOW: "ใกล้หมด", EMPTY: "หมด (ปิดรับจองออนไลน์)" };
-const STATE_CLASS: Record<CreditState, string> = { OFF: "muted", NORMAL: "ok", LOW: "warn", EMPTY: "bad" };
 
 const n = (v: number) => v.toLocaleString("en-US");
 
@@ -272,42 +270,36 @@ export function creditSwitchForm(action: string, site: string | null, on: boolea
 <button type="submit"${on ? ' class="danger"' : ""}${blocked ? " disabled" : ""}>${label}</button></form>`;
 }
 
-export function siteTableHtml(views: SiteCreditView[], row: CenterCreditRow | null, canEdit: boolean, switchRole: string | null = null,
-  multiStay: MultiStayState | null = null): string {
-  const themeCell = (slug: string, d: CenterCreditOverviewDto) => {
-    const plan = d.status.plan;
-    const locked = d.status.enabled && plan === "STANDARD";
-    const label = !locked ? `<span class="ok">เปิด</span><div class="muted small">${plan === "PREMIUM" ? "แพ็กเกจ PREMIUM" : "ระบบเครดิตปิด"}</div>`
-      : d.themeUnlocked ? '<span class="ok">เปิด</span><div class="muted small">เปิดจาก Center</div>'
-        : '<span class="warn">ล็อก</span><div class="muted small">แพ็กเกจ STANDARD</div>';
-    if (d.themeUnlocked === undefined) return `<td>${label}<div class="muted small">เปิดจาก Center ไม่ได้ — Release เว็บนี้ก่อน</div></td>`;
-    const on = d.themeUnlocked;
-    const form = switchRole ? `<form method="post" action="/credits/theme" class="inline">
-<input type="hidden" name="site" value="${esc(slug)}"><input type="hidden" name="op" value="${on ? "off" : "on"}">
-<input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล" aria-label="เหตุผล" style="max-width:9rem">
-<button class="plain" type="submit">${on ? "เลิกเปิด Theme" : "เปิด Theme"}</button></form>` : "";
-    return `<td>${label}${form}</td>`;
-  };
-  const msCell = (slug: string, d: CenterCreditOverviewDto | undefined) => (multiStay ? `<td>${multiStayCellHtml(multiStay, slug, d?.multiStay, switchRole !== null)}</td>` : "");
+/** The "ยอดเครดิต" tab: what each site reports (switches are on the "ฟีเจอร์" tab). */
+export function siteTableHtml(views: SiteCreditView[], row: CenterCreditRow | null, canEdit: boolean, role: string): string {
   const rows = views.map(({ site, res, sync }) => {
     const d = res.status === 200 ? res.data : undefined;
+    const link = `<a href="/sites/${esc(site.slug)}">${esc(site.name)}</a>`;
     if (!d) {
       const why = res.status === 404 ? "ยังไม่รองรับ — Release เว็บนี้ก่อน" : res.status === 0 ? "ติดต่อเว็บไม่ได้" : `อ่านไม่ได้ (${res.status})`;
-      return `<tr><td><a href="/sites/${esc(site.slug)}">${esc(site.name)}</a></td><td colspan="6" class="bad small">${esc(why)}</td>${multiStay ? "<td></td>" : ""}<td>${syncCell(row, sync, null)}</td></tr>`;
+      return `<tr><td>${link}</td><td colspan="4" class="bad small">${esc(why)}</td><td>${syncCell(row, sync, null)}</td></tr>`;
     }
     const st = d.status;
-    return `<tr><td><a href="/sites/${esc(site.slug)}">${esc(site.name)}</a></td>
-<td>${st.enabled ? '<span class="ok">เปิด</span>' : '<span class="muted">ปิด</span>'}${!st.enabled && !st.payeeSet ? `<div class="warn small">${esc(creditPayeeNote(row, { role: switchRole ?? "" }))}</div>` : ""}${switchRole ? creditSwitchForm("/credits/switch", site.slug, st.enabled, st.payeeSet, row, { role: switchRole }, true) : ""}</td>
-<td class="${STATE_CLASS[st.state]}">${esc(STATE_LABEL[st.state])}</td>
-<td>${n(st.balance)}<div class="muted small">กันไว้ ${n(st.held)} · ใช้ได้ ${n(st.available)}</div></td>
+    const state = st.enabled ? `<span class="pill ${PILL[st.state]}">${esc(STATE_LABEL[st.state])}</span>` : '<span class="pill off">ปิดอยู่</span>';
+    return `<tr><td>${link}</td>
+<td>${state}${!st.enabled && !st.payeeSet ? `<div class="warn small">${esc(creditPayeeNote(row, { role }))}</div>` : ""}</td>
+<td class="num">${st.enabled ? `<strong>${n(st.balance)}</strong><div class="muted small">กันไว้ ${n(st.held)} · ใช้ได้ ${n(st.available)}</div>` : '<span class="muted">—</span>'}</td>
 <td>${esc(st.plan ?? "—")}</td>
-${themeCell(site.slug, d)}${msCell(site.slug, d)}
-<td>${st.pendingTopups ? `<span class="warn">${n(st.pendingTopups)}</span>` : "0"}${!st.verifierConfigured && row?.approval_mode === "EASYSLIP" ? '<div class="muted small">ไม่มีคีย์ EasySlip — ตรวจเอง</div>' : ""}</td>
-<td>${syncCell(row, sync, d)}${canEdit && row ? `<form method="post" action="/credits/sync" class="inline"><input type="hidden" name="site" value="${esc(site.slug)}"><button class="plain" type="submit">ส่งอีกครั้ง</button></form>` : ""}</td></tr>`;
+<td>${st.pendingTopups ? `<a class="warn" href="/topups">${n(st.pendingTopups)}</a>` : "0"}${!st.verifierConfigured && row?.approval_mode === "EASYSLIP" ? '<div class="muted small">ไม่มีคีย์ EasySlip — ตรวจเอง</div>' : ""}</td>
+<td>${syncCell(row, sync, d)}${canEdit && row ? `<form method="post" action="/credits/sync" class="inline"><input type="hidden" name="site" value="${esc(site.slug)}"><button class="plain small" type="submit">ส่งอีกครั้ง</button></form>` : ""}</td></tr>`;
   }).join("");
-  return `<table><thead><tr><th>เว็บ</th><th>ระบบเครดิต</th><th>สถานะ</th><th>คงเหลือ</th><th>แพ็กเกจ</th><th>Theme</th>${multiStay ? "<th>จองหลายที่พัก</th>" : ""}<th>คำขอเติมรอตรวจ</th><th>ค่ากลาง</th></tr></thead>
-<tbody>${rows || `<tr><td colspan="${multiStay ? 9 : 8}" class="muted">ยังไม่มีเว็บ</td></tr>`}</tbody></table>
-<p class="muted small">เปิด / ปิดระบบเครดิตรายเว็บได้จากตารางนี้ (ต้องใส่เหตุผล บันทึกทั้งใน Center และในเว็บ) · ปิดแล้วการจองใหม่ไม่ถูกหักเครดิต · ยอดและคำขอเติมอ่านจากเว็บทุกครั้งที่เปิดหน้านี้</p>`;
+  return `<table><thead><tr><th>เว็บ</th><th>ระบบเครดิต</th><th class="num">คงเหลือ</th><th>แพ็กเกจ</th><th>คำขอเติมรอตรวจ</th><th>ค่ากลาง</th></tr></thead>
+<tbody>${rows || '<tr><td colspan="6" class="muted">ยังไม่มีเว็บ</td></tr>'}</tbody></table>
+<p class="muted small">ยอดและคำขอเติมอ่านจากเว็บทุกครั้งที่เปิดหน้านี้ · เปิด / ปิดระบบเครดิต, Theme และจองหลายที่พัก อยู่ที่แท็บ "ฟีเจอร์"</p>`;
+}
+
+const PILL: Record<CreditState, string> = { OFF: "off", NORMAL: "good", LOW: "low", EMPTY: "empty" };
+
+/** The "ค่ากลางและการส่ง" tab: whether each site has the shared settings. */
+export function syncListHtml(views: SiteCreditView[], row: CenterCreditRow | null): string {
+  if (!row || !views.length) return "";
+  const items = views.map(({ site, res, sync }) => `<li><a href="/sites/${esc(site.slug)}">${esc(site.name)}</a> — ${syncCell(row, sync, res.status === 200 ? res.data ?? null : null)}</li>`);
+  return `<details class="small"><summary>การส่งค่ากลางรายเว็บ</summary><ul>${items.join("")}</ul></details>`;
 }
 
 function syncCell(row: CenterCreditRow | null, sync: SyncRow | undefined, d: CenterCreditOverviewDto | null): string {
