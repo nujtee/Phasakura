@@ -274,12 +274,26 @@ export function creditSwitchForm(action: string, site: string | null, on: boolea
 
 export function siteTableHtml(views: SiteCreditView[], row: CenterCreditRow | null, canEdit: boolean, switchRole: string | null = null,
   multiStay: MultiStayState | null = null): string {
+  const themeCell = (slug: string, d: CenterCreditOverviewDto) => {
+    const plan = d.status.plan;
+    const locked = d.status.enabled && plan === "STANDARD";
+    const label = !locked ? `<span class="ok">เปิด</span><div class="muted small">${plan === "PREMIUM" ? "แพ็กเกจ PREMIUM" : "ระบบเครดิตปิด"}</div>`
+      : d.themeUnlocked ? '<span class="ok">เปิด</span><div class="muted small">เปิดจาก Center</div>'
+        : '<span class="warn">ล็อก</span><div class="muted small">แพ็กเกจ STANDARD</div>';
+    if (d.themeUnlocked === undefined) return `<td>${label}<div class="muted small">เปิดจาก Center ไม่ได้ — Release เว็บนี้ก่อน</div></td>`;
+    const on = d.themeUnlocked;
+    const form = switchRole ? `<form method="post" action="/credits/theme" class="inline">
+<input type="hidden" name="site" value="${esc(slug)}"><input type="hidden" name="op" value="${on ? "off" : "on"}">
+<input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล" aria-label="เหตุผล" style="max-width:9rem">
+<button class="plain" type="submit">${on ? "เลิกเปิด Theme" : "เปิด Theme"}</button></form>` : "";
+    return `<td>${label}${form}</td>`;
+  };
   const msCell = (slug: string, d: CenterCreditOverviewDto | undefined) => (multiStay ? `<td>${multiStayCellHtml(multiStay, slug, d?.multiStay, switchRole !== null)}</td>` : "");
   const rows = views.map(({ site, res, sync }) => {
     const d = res.status === 200 ? res.data : undefined;
     if (!d) {
       const why = res.status === 404 ? "ยังไม่รองรับ — Release เว็บนี้ก่อน" : res.status === 0 ? "ติดต่อเว็บไม่ได้" : `อ่านไม่ได้ (${res.status})`;
-      return `<tr><td><a href="/sites/${esc(site.slug)}">${esc(site.name)}</a></td><td colspan="5" class="bad small">${esc(why)}</td>${multiStay ? "<td></td>" : ""}<td>${syncCell(row, sync, null)}</td></tr>`;
+      return `<tr><td><a href="/sites/${esc(site.slug)}">${esc(site.name)}</a></td><td colspan="6" class="bad small">${esc(why)}</td>${multiStay ? "<td></td>" : ""}<td>${syncCell(row, sync, null)}</td></tr>`;
     }
     const st = d.status;
     return `<tr><td><a href="/sites/${esc(site.slug)}">${esc(site.name)}</a></td>
@@ -287,12 +301,12 @@ export function siteTableHtml(views: SiteCreditView[], row: CenterCreditRow | nu
 <td class="${STATE_CLASS[st.state]}">${esc(STATE_LABEL[st.state])}</td>
 <td>${n(st.balance)}<div class="muted small">กันไว้ ${n(st.held)} · ใช้ได้ ${n(st.available)}</div></td>
 <td>${esc(st.plan ?? "—")}</td>
-${msCell(site.slug, d)}
+${themeCell(site.slug, d)}${msCell(site.slug, d)}
 <td>${st.pendingTopups ? `<span class="warn">${n(st.pendingTopups)}</span>` : "0"}${!st.verifierConfigured && row?.approval_mode === "EASYSLIP" ? '<div class="muted small">ไม่มีคีย์ EasySlip — ตรวจเอง</div>' : ""}</td>
 <td>${syncCell(row, sync, d)}${canEdit && row ? `<form method="post" action="/credits/sync" class="inline"><input type="hidden" name="site" value="${esc(site.slug)}"><button class="plain" type="submit">ส่งอีกครั้ง</button></form>` : ""}</td></tr>`;
   }).join("");
-  return `<table><thead><tr><th>เว็บ</th><th>ระบบเครดิต</th><th>สถานะ</th><th>คงเหลือ</th><th>แพ็กเกจ</th>${multiStay ? "<th>จองหลายที่พัก</th>" : ""}<th>คำขอเติมรอตรวจ</th><th>ค่ากลาง</th></tr></thead>
-<tbody>${rows || `<tr><td colspan="${multiStay ? 8 : 7}" class="muted">ยังไม่มีเว็บ</td></tr>`}</tbody></table>
+  return `<table><thead><tr><th>เว็บ</th><th>ระบบเครดิต</th><th>สถานะ</th><th>คงเหลือ</th><th>แพ็กเกจ</th><th>Theme</th>${multiStay ? "<th>จองหลายที่พัก</th>" : ""}<th>คำขอเติมรอตรวจ</th><th>ค่ากลาง</th></tr></thead>
+<tbody>${rows || `<tr><td colspan="${multiStay ? 9 : 8}" class="muted">ยังไม่มีเว็บ</td></tr>`}</tbody></table>
 <p class="muted small">เปิด / ปิดระบบเครดิตรายเว็บได้จากตารางนี้ (ต้องใส่เหตุผล บันทึกทั้งใน Center และในเว็บ) · ปิดแล้วการจองใหม่ไม่ถูกหักเครดิต · ยอดและคำขอเติมอ่านจากเว็บทุกครั้งที่เปิดหน้านี้</p>`;
 }
 

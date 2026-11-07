@@ -460,6 +460,21 @@ describe("plan: STANDARD hides Reports, Marketing and Theme", () => {
     await h.api("PUT", "/api/admin/credit-admin/settings", { token: root, body: { ...SETTINGS, enabled: false } });
     assert.ok((await perms(manager)).includes("reports.view"));
   });
+
+  it("Center can open Theme on STANDARD (migration 0065); Reports / Marketing stay locked; before 0065 the plan lock holds", async () => {
+    const { h, manager } = await setup();
+    const perms = async () => (await h.api<CurrentUserDto>("GET", "/api/auth/me", { token: manager })).data.permissions;
+    assert.ok(!(await perms()).includes("settings.theme"));
+    h.db.run("UPDATE credit_settings SET theme_unlocked = 1 WHERE id = 1");
+    const open = await perms();
+    assert.ok(open.includes("settings.theme"), "Theme open");
+    assert.ok(!open.includes("reports.view") && !open.includes("marketing.view"), "the rest stays PREMIUM");
+    assert.equal((await h.api("GET", "/api/admin/theme", { token: manager })).status, 200);
+    // Worker deployed before migration 0065: the plan lock as before (never unlocks everything).
+    h.db.run("ALTER TABLE credit_settings DROP COLUMN theme_unlocked");
+    const before = await perms();
+    assert.ok(!before.includes("settings.theme") && !before.includes("reports.view"));
+  });
 });
 
 describe("notices", () => {

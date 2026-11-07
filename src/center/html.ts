@@ -63,6 +63,8 @@ export const ACTION_LABELS: Record<string, string> = {
   MULTI_STAY_SITE_ON: "เลือกเว็บใช้เครดิตครั้งเดียวต่อการจอง",
   MULTI_STAY_SITE_OFF: "เลิกเลือกเว็บใช้เครดิตครั้งเดียวต่อการจอง",
   MULTI_STAY_SENT: "ส่งค่าเครดิตครั้งเดียวต่อการจองให้เว็บ",
+  THEME_UNLOCK_ON: "เปิด Theme ให้เว็บ (ไม่ขึ้นกับแพ็กเกจ)",
+  THEME_UNLOCK_OFF: "เลิกเปิด Theme ของเว็บ (กลับไปตามแพ็กเกจ)",
 };
 
 /** Bangkok time for people reading the console. */

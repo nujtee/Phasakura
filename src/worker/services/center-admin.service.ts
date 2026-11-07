@@ -216,6 +216,15 @@ export class CenterAdminService {
       { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
   }
 
+  /** Theme whatever the plan (migration 0065) — PLATFORM_OWNER / OPERATOR, reason; audited. */
+  async setThemeUnlock(req: CenterRequest, credits: CreditService, unlocked: boolean, meta: RequestMeta): Promise<CenterCreditOverviewDto> {
+    requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);
+    const reason = requireReason(req.actor);
+    const caller = centerUser(req.actor);
+    return credits.applyThemeUnlock(unlocked, caller.id, this.repo.upsertUserStatements({ ...caller, now: iso(this.clock()) }), meta,
+      { center: { email: req.actor.email, role: req.actor.role, keyId: req.keyId, reason } });
+  }
+
   /** One app fee per booking with several stays (migration 0064) — PLATFORM_OWNER / OPERATOR, reason; audited. */
   async setMultiStay(req: CenterRequest, credits: CreditService, input: MultiStayFeeDto, meta: RequestMeta): Promise<CenterCreditOverviewDto> {
     requireRole(req.actor, ["PLATFORM_OWNER", "OPERATOR"]);

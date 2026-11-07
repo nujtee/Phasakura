@@ -426,6 +426,7 @@ export class CreditService {
       verifierConfigured: this.verifier !== null, emailReady, lineReady, updatedAt: s?.updated_at ?? "",
       managedByCenter: s?.center_managed === 1, centerSyncedAt: s?.center_synced_at ?? null,
       multiStay: { enabled: s?.multi_stay_flat === 1, feeBaht: s?.multi_stay_fee ?? 20 },
+      themeUnlocked: s?.theme_unlocked === 1,
     };
   }
 
@@ -493,6 +494,7 @@ export class CreditService {
     const pending = await this.repo.pendingCount().catch(() => 0);
     return {
       ...(s && s.multi_stay_flat !== undefined ? { multiStay: { enabled: s.multi_stay_flat === 1, feeBaht: s.multi_stay_fee ?? 20 } } : {}),
+      ...(s && s.theme_unlocked !== undefined ? { themeUnlocked: s.theme_unlocked === 1 } : {}),
       managed: s?.center_managed === 1, version: s?.center_version ?? null, syncedAt: s?.center_synced_at ?? null,
       qrSha256: s?.qr_asset_id ? s.qr_sha256 ?? null : null,
       qrUrl: publicMediaUrl(s?.qr_key, this.config.mediaBaseUrl),
@@ -509,6 +511,20 @@ export class CreditService {
         verifierConfigured: this.verifier !== null, pendingTopups: pending,
       },
     };
+  }
+
+  /** Center unlocks Theme for this site whatever its plan (migration 0065), audited as the Center user. */
+  async applyThemeUnlock(unlocked: boolean, callerId: string, extraStatements: D1PreparedStatementLike[], meta: RequestMeta,
+    audit: Record<string, unknown>): Promise<CenterCreditOverviewDto> {
+    const before = await this.repo.settings();
+    if (!before) throw new ConflictError("Credits are not set up on this site yet", "CREDITS_NOT_READY");
+    await this.db.batch([
+      ...extraStatements,
+      this.repo.themeUnlockStatement(unlocked, iso(this.clock())),
+      this.log.auditStatement(callerId, "CENTER_THEME_UNLOCK", "credits", "settings",
+        { themeUnlocked: before.theme_unlocked === 1 }, { themeUnlocked: unlocked, ...audit }, meta),
+    ]);
+    return this.centerOverview();
   }
 
   /** Center switches "one fee per booking with several stays" for this site (migration 0064), audited as the Center user. */

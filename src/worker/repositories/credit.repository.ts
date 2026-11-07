@@ -30,6 +30,8 @@ export interface CreditSettingsRow {
   /** Migration 0064: one fee per booking with several stays (set by Center). */
   multi_stay_flat?: number;
   multi_stay_fee?: number;
+  /** Migration 0065: Theme whatever the plan (set by Center). */
+  theme_unlocked?: number;
 }
 
 export interface CreditAccountRow {
@@ -103,6 +105,11 @@ export class CreditRepository {
   constructor(private readonly db: D1DatabaseLike) {}
 
   // ------------------------------------------------------------------ settings + balance
+
+  /** Center unlocks Theme for this site whatever its plan (migration 0065). */
+  themeUnlockStatement(unlocked: boolean, now: string) {
+    return this.db.prepare("UPDATE credit_settings SET theme_unlocked = ?1, updated_at = ?2 WHERE id = 1").bind(unlocked ? 1 : 0, now);
+  }
 
   /** Center's choice for this site (migration 0064). */
   multiStayStatement(enabled: boolean, feeBaht: number, now: string) {

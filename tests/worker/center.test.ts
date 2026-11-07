@@ -572,6 +572,24 @@ describe("Center: credit settings kept once in Center (site migration 0060)", ()
   });
 });
 
+describe("Center: Theme whatever the plan (site migration 0065)", () => {
+  it("PLATFORM_OWNER / OPERATOR with a reason; audited as the Center user; shown on the site's credit page", async () => {
+    const { h, signed } = await c3();
+    type O = { themeUnlocked?: boolean };
+    assert.equal((await signed("PUT", "/api/center/credits/theme", SUPPORT, { unlocked: true })).error?.code, "CENTER_ROLE_REQUIRED");
+    assert.equal((await signed("PUT", "/api/center/credits/theme", { ...OPERATOR, reason: "" }, { unlocked: true })).status, 422);
+    assert.equal((await signed("PUT", "/api/center/credits/theme", OPERATOR, { unlocked: "yes" })).status, 422);
+    assert.equal((await signed<O>("GET", "/api/center/credits", SUPPORT)).data.themeUnlocked, false);
+    const on = await signed<O>("PUT", "/api/center/credits/theme", OPERATOR, { unlocked: true });
+    assert.equal(on.status, 200, JSON.stringify(on.error));
+    assert.equal(on.data.themeUnlocked, true);
+    assert.equal(h.audits("CENTER_THEME_UNLOCK")[0]!.user_id, "center_u_ops");
+    const token = await h.login("owner@site.test");
+    assert.equal((await h.api<O>("GET", "/api/admin/credit-admin/settings", { token })).data.themeUnlocked, true);
+    assert.equal((await signed<O>("PUT", "/api/center/credits/theme", OWNER, { unlocked: false })).data.themeUnlocked, false);
+  });
+});
+
 describe("Center: one app fee per booking with several stays (site migration 0064)", () => {
   it("PLATFORM_OWNER / OPERATOR with a reason; audited as the Center user; the site page shows it", async () => {
     const { h, signed } = await c3();
