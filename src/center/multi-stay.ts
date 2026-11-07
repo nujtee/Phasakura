@@ -51,7 +51,7 @@ export function multiStayCardHtml(state: MultiStayState, canEdit: boolean, siteC
     ? `<span class="ok">เปิด</span> · ${state.feeBaht.toLocaleString("en-US")} บาทต่อการจอง · ใช้กับ ${state.sites.size} จาก ${siteCount} เว็บ`
     : '<span class="muted">ปิด</span> — ทุกเว็บคิดค่าธรรมเนียมรายหลังตามเดิม';
   const form = canEdit ? `<form method="post" action="/credits/multi-stay" class="stack" style="margin-top:.6rem">
-<label class="inline"><input type="checkbox" name="enabled" value="1"${state.enabled ? " checked" : ""}> เปิดใช้ (เฉพาะเว็บที่เลือกในตาราง)</label>
+<label class="inline"><input type="checkbox" name="enabled" value="1"${state.enabled ? " checked" : ""}> เปิดใช้ (เฉพาะเว็บที่เลือกในแท็บฟีเจอร์)</label>
 <label for="ms-fee">ค่าธรรมเนียมต่อการจอง (บาท)</label>
 <input id="ms-fee" name="fee" inputmode="numeric" required pattern="[0-9]{1,6}" value="${esc(String(state.feeBaht))}" style="max-width:8rem">
 <label for="ms-reason">เหตุผล</label>
@@ -60,19 +60,4 @@ export function multiStayCardHtml(state: MultiStayState, canEdit: boolean, siteC
   return `<h2 style="margin-top:0">จองหลายที่พัก คิดเครดิตครั้งเดียว</h2>
 <p class="muted small">ผู้จองคนเดียวเลือกหลายหลัง (บ้าน / เต็นท์ VIP / เต็นท์) ในการจองเดียว — คิดค่าธรรมเนียมการใช้ App ครั้งเดียวต่อการจองแทนรายหลัง · จองหลังเดียวคิดตามเดิม</p>
 <p>${status}${state.updatedAt ? ` <span class="muted small">(แก้ล่าสุด ${esc(bkk(state.updatedAt))})</span>` : ""}</p>${form}`;
-}
-
-/** The table cell of one site: its own switch, what it reports, and a re-send when it differs. */
-export function multiStayCellHtml(state: MultiStayState, slug: string, reported: MultiStayFeeDto | undefined, canSwitch: boolean): string {
-  const on = state.sites.has(slug);
-  const want = multiStayFor(state, slug);
-  const label = on ? (state.enabled ? '<span class="ok">เปิด</span>' : '<span class="muted">เลือกไว้ (ปิดทั้งหมด)</span>') : '<span class="muted">ปิด</span>';
-  const differs = reported !== undefined && !sameMultiStay(reported, want);
-  const notReady = reported === undefined;
-  const form = (op: "on" | "off" | "resend", text: string) => `<form method="post" action="/credits/multi-stay/site" class="inline">
-<input type="hidden" name="site" value="${esc(slug)}"><input type="hidden" name="op" value="${op}">
-<input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล" aria-label="เหตุผล" style="max-width:9rem">
-<button class="plain" type="submit">${text}</button></form>`;
-  return `${label}${notReady ? '<div class="muted small">ยังไม่รองรับ — Release เว็บนี้ก่อน</div>' : ""}${differs ? `<div class="warn small">เว็บรายงาน: ${reported!.enabled ? `เปิด ${reported!.feeBaht} บาท` : "ปิด"}</div>` : ""}
-${canSwitch && !notReady ? form(on ? "off" : "on", on ? "ปิด" : "เปิด") + (differs ? form("resend", "ส่งอีกครั้ง") : "") : ""}`;
 }
