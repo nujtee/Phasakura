@@ -17,7 +17,8 @@ export function stayTotal(availability: Availability): number | null {
 
 /**
  * One house / VIP tent as a row (booking page "list" look, migration 0063): photo, type, guests, promotions, whether
- * it is free for the dates, and the price for those nights on the right with the choose / remove button below it.
+ * it is free for the dates, and the price for those nights on the right with the choose / remove button and
+ * "ดูรายละเอียด" (the house's own page, as on the cards) below it.
  */
 export function UnitRow({ unit, kind, availability, picked, action }: {
   unit: PublicUnitDto; kind: "HOUSE" | "TENT"; availability: Availability; picked: boolean; action: ReactNode;
@@ -62,7 +63,10 @@ export function UnitRow({ unit, kind, availability, picked, action }: {
             <span className="stay-row__for">{t.accommodation.perNight}</span>
           </>
         )}
-        <div className="stay-row__action">{action}</div>
+        <div className="stay-row__action">
+          {action}
+          <Link to={accommodationPath(locale, unit.slug)} className="button button--secondary stay-row__details">{t.accommodation.viewDetails}</Link>
+        </div>
       </div>
     </article>
   );
