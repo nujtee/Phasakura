@@ -210,6 +210,10 @@ await check("booking page · list: rows with prices for the dates, type filter, 
   const all = await pv.locator(".booking-list .stay-row").count();
   assert(all >= 2, `rows ${all}`);
   assert(await pv.locator(".unit-grid .unit-card").count() === 0, "cards still drawn");
+  // Every row links to the house's own page ("ดูรายละเอียด"), as the cards do.
+  assert(await pv.locator(".booking-list .stay-row__details").count() === all, "details link on every row");
+  const href = await pv.locator(".booking-list .stay-row__details").first().getAttribute("href");
+  assert(/^\/th\/accommodation\/[^/]+$/.test(href ?? ""), `details link ${href}`);
   // Search dates (the existing search box) → prices for those nights, free ones first.
   await pv.locator(".stay-search button[type=submit]").click();
   await pv.locator(".booking-list .stay-list__found").waitFor();
