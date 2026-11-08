@@ -13,6 +13,7 @@ export interface Messages {
     history: string;
     /** Guest booking look-up (Booking ID or phone). */
     lookup: string;
+    move: string;
   };
   header: {
     mainNavigation: string;
@@ -83,6 +84,7 @@ export interface Messages {
     home: { title: string };
     accommodation: { title: string };
     bookingLookup: { title: string };
+    bookingMove: { title: string; lead: string };
     gallery: { title: string };
     booking: { title: string };
     history: { title: string };
@@ -98,6 +100,7 @@ export const th: Messages = {
     booking: "จองที่พัก",
     history: "เกี่ยวกับเรา",
     lookup: "ตรวจสอบการจอง",
+    move: "เลื่อนวันเข้าพัก",
   },
   header: {
     mainNavigation: "เมนูหลัก",
@@ -172,6 +175,7 @@ export const th: Messages = {
     home: { title: "หน้าแรก" },
     accommodation: { title: "ที่พัก" },
     bookingLookup: { title: "ตรวจสอบการจอง" },
+    bookingMove: { title: "เลื่อนวันเข้าพัก", lead: "กรอก Booking ID และเบอร์โทรที่ใช้จอง แล้วเลือกวันเข้าพักใหม่" },
     gallery: { title: "คลังภาพ" },
     booking: { title: "จองที่พัก" },
     history: { title: "เกี่ยวกับเรา" },
@@ -191,6 +195,7 @@ export const en: Messages = {
     booking: "Booking",
     history: "History",
     lookup: "Check booking",
+    move: "Change dates",
   },
   header: {
     mainNavigation: "Main navigation",
@@ -265,6 +270,7 @@ export const en: Messages = {
     home: { title: "Home" },
     accommodation: { title: "Accommodation" },
     bookingLookup: { title: "Check your booking" },
+    bookingMove: { title: "Change your dates", lead: "Enter your Booking ID and the phone number used for the booking, then choose your new dates." },
     gallery: { title: "Gallery" },
     booking: { title: "Booking" },
     history: { title: "History" },
@@ -284,6 +290,7 @@ export const zhCN: Messages = {
     booking: "立即预订",
     history: "历史沿革",
     lookup: "查询预订",
+    move: "更改日期",
   },
   header: {
     mainNavigation: "主导航",
@@ -358,6 +365,7 @@ export const zhCN: Messages = {
     home: { title: "首页" },
     accommodation: { title: "住宿" },
     bookingLookup: { title: "查询预订" },
+    bookingMove: { title: "更改入住日期", lead: "输入预订编号和预订时使用的电话号码，然后选择新的入住日期。" },
     gallery: { title: "图库" },
     booking: { title: "立即预订" },
     history: { title: "历史沿革" },

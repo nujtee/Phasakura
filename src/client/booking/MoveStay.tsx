@@ -19,11 +19,11 @@ const post = <T,>(path: string, who: Who, extra: Record<string, unknown> = {}) =
   apiRequest<T>("POST", `/api/public/bookings/move${path}`, { ...who, ...extra });
 
 /**
- * Booking page → "เลื่อนวันเข้าพัก": Booking ID + phone, then the guest picks new dates (another free house / VIP tent
+ * Menu → "เลื่อนวันเข้าพัก" (its own page, BookingMovePage): Booking ID + phone, then the guest picks new dates (another free house / VIP tent
  * when theirs is taken), transfers the date change fee (+ any higher price) and sends the slip. The booking moves once
  * the slip is verified (migration 0045).
  */
-export function MoveStayLauncher() {
+export function MoveStayLauncher({ labelledBy }: { labelledBy?: string } = {}) {
   const bt = useBookingT();
   const m = bt.move;
   const id = useId();
@@ -55,8 +55,8 @@ export function MoveStayLauncher() {
 
   return (
     <>
-      <form className="move-launch" onSubmit={(e) => void open(e)} aria-labelledby={`${id}-h`}>
-        <h2 id={`${id}-h`} className="move-launch__title">{m.open}</h2>
+      <form className="move-launch" onSubmit={(e) => void open(e)} aria-labelledby={labelledBy ?? `${id}-h`}>
+        {!labelledBy && <h2 id={`${id}-h`} className="move-launch__title">{m.open}</h2>}
         <div className="move-launch__fields">
           <label className="move-launch__field">
             <span>{m.code}</span>

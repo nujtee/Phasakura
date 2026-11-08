@@ -170,8 +170,8 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* Full menu in the header from 1024px (five links + search + languages); the menu button below that. */
-@media (min-width: 1024px) {
+/* Full menu in the header from 1200px (six links + search + languages); the menu button below that. */
+@media (min-width: 1200px) {
   .nav--desktop,
   .lang-switcher--desktop {
     display: block;

@@ -1915,3 +1915,9 @@ button.button--secondary {
 .add-total strong {
   font-size: 1.2rem;
 }
+
+/* Menu → "เลื่อนวันเข้าพัก": its own page. */
+.move-page { max-width: 760px; }
+.move-page .move-launch { padding: 20px; margin-top: 8px; }
+.move-page .move-launch__field { flex: 1 1 12rem; }
+.move-page .move-launch__field input { width: 100%; }

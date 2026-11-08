@@ -65,7 +65,7 @@ export function FloatingBookingCta({ page }: { page: SitePage | null }) {
     }
   }, []);
 
-  const pageKey = page === "bookingLookup" ? "booking" : page;
+  const pageKey = page === "bookingLookup" || page === "bookingMove" ? "booking" : page;
   const visible = !!cta && !!cta.label && !dismissed && page !== null && pageKey !== "booking"
     && (cta.pages.includes("*") || cta.pages.includes(pageKey as never));
 
