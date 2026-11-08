@@ -45,7 +45,7 @@ export function UnitRow({ unit, kind, availability, picked, action }: {
         <span className="stay-row__line">{fill(lt.capacity, { n: unit.standardGuests, max: unit.maxGuests })}</span>
         {unit.shortDescription && <span className="stay-row__desc">{unit.shortDescription}</span>}
         <PromoList promotions={availability?.promotions} />
-        {free && <span className="stay-row__ok">✓ {lt.freeOk}</span>}
+        {free && <span className="stay-row__ok">✓ {lt.instant}</span>}
         {free && <span className="stay-row__left">{kind === "HOUSE" ? lt.leftHouse : lt.leftTent}</span>}
         {status && <span className="stay-row__left">{status}</span>}
       </div>

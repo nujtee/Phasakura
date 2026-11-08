@@ -166,6 +166,9 @@ await check("D · desktop: the home page lists what is free with prices; filters
 });
 
 await check("D · choose a house → booking page with that house and the dates", async () => {
+  // "ดูรายละเอียด" on each house / tent row, to its own page.
+  assert(await pv.locator(".stay-list .stay-row__details").count() >= 1, "details link on the home list");
+  assert(/^\/th\/accommodation\/[^/]+$/.test((await pv.locator(".stay-list .stay-row__details").first().getAttribute("href")) ?? ""), "details href");
   const link = pv.locator(".stay-row__pick").first();
   const href = await link.getAttribute("href");
   await link.click();
