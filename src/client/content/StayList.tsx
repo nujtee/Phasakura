@@ -220,7 +220,12 @@ export function StayList() {
                   <span className="stay-row__for">{fill(lt.priceFor, { n: nights, a: query.adults })}</span>
                   {r.list !== null && <s className="stay-row__was">{baht(r.list)}</s>}
                   <span className="stay-row__total">{baht(r.total)}</span>
-                  {r.free && <Link to={r.href} className="button button--primary stay-row__pick">{pick} ›</Link>}
+                  {(r.free || r.details) && (
+                    <div className="stay-row__action">
+                      {r.free && <Link to={r.href} className="button button--primary stay-row__pick">{pick} ›</Link>}
+                      {r.details && <Link to={r.details} className="button button--secondary stay-row__details">{t.accommodation.viewDetails}</Link>}
+                    </div>
+                  )}
                 </div>
               </li>
             );
