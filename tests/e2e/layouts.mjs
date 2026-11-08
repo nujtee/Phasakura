@@ -236,6 +236,22 @@ await check("booking page · list: rows with prices for the dates, type filter, 
   await pv.locator("#picks").waitFor();
 });
 
+await check("booking page → ดูรายละเอียด: the house page checks the searched dates itself; เลือกที่พักนี้ at once", async () => {
+  await pv.goto(`${BASE}/th/booking`);
+  await pv.locator(".booking-list .stay-row").first().waitFor();
+  const checkIn = await pv.locator(".stay-search input").first().inputValue();
+  await pv.locator(".stay-search button[type=submit]").click();
+  await pv.locator(".booking-list .stay-list__found").waitFor();
+  const row = pv.locator(".booking-list .stay-row:not(.is-full)").first();
+  await row.locator(".stay-row__details").click();
+  await pv.waitForURL(/\/th\/accommodation\//);
+  const book = pv.locator(".detail__book");
+  await book.waitFor({ timeout: 10000 });
+  const href = await book.getAttribute("href");
+  assert(href?.includes(`checkIn=${checkIn}`), `same dates: ${href} / ${checkIn}`);
+  assert(/[?&]unit=/.test(href ?? ""), `the house goes along: ${href}`);
+});
+
 await check("booking page · list on a phone: fits", async () => {
   await pm.goto(`${BASE}/th/booking`);
   await pm.locator(".booking-list .stay-row").first().waitFor();

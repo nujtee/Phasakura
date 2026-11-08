@@ -56,6 +56,33 @@ export async function fetchAvailability(q: StayQuery, t: Messages): Promise<{ da
   }
 }
 
+const REMEMBER_KEY = "psk.stay";
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The dates a guest searched (booking page or home list), kept for this tab: a house page opened after that
+ * checks them by itself, so "เลือกที่พักนี้" is there without searching again.
+ */
+export function rememberStay(q: StayQuery): void {
+  try { sessionStorage.setItem(REMEMBER_KEY, JSON.stringify(q)); } catch { /* storage off: they search again */ }
+}
+
+/** The remembered search, if its dates are still bookable (from today on); otherwise null. */
+export function rememberedStay(): StayQuery | null {
+  try {
+    const raw = sessionStorage.getItem(REMEMBER_KEY);
+    if (!raw) return null;
+    const q = JSON.parse(raw) as Partial<StayQuery>;
+    const { min, max } = stayLimits();
+    if (typeof q.checkIn !== "string" || typeof q.checkOut !== "string" || !ISO.test(q.checkIn) || !ISO.test(q.checkOut)) return null;
+    if (q.checkIn < min || q.checkOut <= q.checkIn || q.checkOut > max) return null;
+    const n = (v: unknown, d: number) => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 50 ? v : d);
+    return { checkIn: q.checkIn, checkOut: q.checkOut, adults: Math.max(1, n(q.adults, 2)), children: n(q.children, 0), tents: Math.max(1, n(q.tents, 1)) };
+  } catch {
+    return null;
+  }
+}
+
 export function nightsBetween(q: StayQuery): number {
   return Math.max(0, diffDays(q.checkIn, q.checkOut));
 }

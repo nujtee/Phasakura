@@ -3,7 +3,7 @@ import type { AvailabilityDto, PublicUnitDto, PromotionBriefDto } from "../../sh
 import { formatBaht } from "../../shared/booking-rules.ts";
 import { addDays } from "../../shared/dates.ts";
 import { accommodationPath, pagePath } from "../../shared/routes.ts";
-import { defaultStay, fetchAvailability, nightsBetween, stayLimits, useAccommodations, type StayQuery } from "../accommodation/data.ts";
+import { defaultStay, fetchAvailability, nightsBetween, rememberStay, stayLimits, useAccommodations, type StayQuery } from "../accommodation/data.ts";
 import { promoPerks, usePromo } from "../booking/Promotions.tsx";
 import { IMAGE_SIZES } from "../../shared/media-types.ts";
 import { ResponsiveImage } from "./ResponsiveImage.tsx";
@@ -71,6 +71,7 @@ export function StayList() {
     e.preventDefault();
     const out = draft.checkOut > draft.checkIn ? draft.checkOut : addDays(draft.checkIn, 1);
     setQuery({ ...draft, checkOut: out });
+    rememberStay({ ...draft, checkOut: out });
     setDraft((d) => ({ ...d, checkOut: out }));
     setEditing(false);
   };

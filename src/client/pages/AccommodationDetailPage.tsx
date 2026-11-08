@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AvailabilityDto, PublicUnitDto } from "../../shared/accommodation-types.ts";
 import { formatBaht } from "../../shared/booking-rules.ts";
 import { pagePath } from "../../shared/routes.ts";
 import { ApiError, apiGet } from "../api/client.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
-import { defaultStay, fetchAvailability, type StayQuery } from "../accommodation/data.ts";
+import { defaultStay, fetchAvailability, rememberedStay, rememberStay, type StayQuery } from "../accommodation/data.ts";
 import { unitItem } from "../analytics/booking-events.ts";
 import { track } from "../analytics/tracker.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
@@ -28,12 +28,22 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
   const [checked, setChecked] = useState<StayQuery | null>(null);
   const bt = useBookingT();
   const promo = usePromo();
+  /** Dates already searched on the booking page / home list: checked here at once (no second search). */
+  const [initial, setInitial] = useState<StayQuery | null>(null);
+  const autoChecked = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
     setState("loading");
     apiGet<PublicUnitDto>(`/api/public/accommodations/${encodeURIComponent(slug)}?lang=${locale.path}`, controller.signal)
       .then((u) => {
+        const most = u.maxGuests;
+        const r = rememberedStay();
+        const adults = Math.max(1, Math.min(r?.adults ?? 2, u.maxAdults ?? most, most));
+        setInitial(r
+          ? { ...r, adults, children: Math.min(r.children, Math.max(0, most - adults)) }
+          : { ...defaultStay(), adults: Math.min(2, most) });
+        autoChecked.current = !r;
         setUnit(u);
         setState("ready");
         track({ name: "view_accommodation", item: unitItem(u) });
@@ -45,15 +55,23 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
     return () => controller.abort();
   }, [slug, locale]);
 
+  useEffect(() => {
+    if (!unit || !initial || autoChecked.current) return;
+    autoChecked.current = true;
+    void check(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per house page, with the remembered dates
+  }, [unit, initial]);
+
   if (state === "missing") return <NotFoundPage />;
   if (state === "error") return <div className="page container"><p role="alert" className="notice notice--error">{t.common.loadError}</p></div>;
-  if (!unit) return <div className="page container" aria-busy="true"><div className="detail-skeleton" /></div>;
+  if (!unit || !initial) return <div className="page container" aria-busy="true"><div className="detail-skeleton" /></div>;
 
   const images = unit.images.length ? unit.images : unit.cover ? [unit.cover] : [];
   const current = images[active];
   const mine = result?.units.find((u) => u.unitId === unit.id);
 
   async function check(q: StayQuery) {
+    rememberStay(q);
     setChecked(q);
     setBusy(true);
     setSearchError(null);
@@ -110,7 +128,7 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
           <p className="unit-card__meta">{fill(t.accommodation.upToGuests, { n: unit.maxGuests })}</p>
           <PromoList promotions={unit.promotions} withDates title={promo.upcoming} />
           <h2 id="book-h" className="section-title section-title--small">{t.accommodation.checkAvailability}</h2>
-          <StaySearch initial={{ ...defaultStay(), adults: Math.min(2, unit.maxGuests) }} busy={busy} error={searchError}
+          <StaySearch key={unit.id} initial={initial} busy={busy} error={searchError}
             childAge={unit.childUnderAge} maxGuests={unit.maxGuests} maxAdults={unit.maxAdults} showTents={false} onSearch={(q) => void check(q)} />
           {mine && (
             <p className={`unit-card__badge-inline ${mine.available && mine.fitsGuests ? "is-ok" : "is-bad"}`} role="status">
