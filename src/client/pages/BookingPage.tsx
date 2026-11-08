@@ -30,7 +30,6 @@ import {
 } from "../booking/api.ts";
 import { Confirmation } from "../booking/Confirmation.tsx";
 import { FoodStep } from "../booking/FoodStep.tsx";
-import { MoveStayLauncher } from "../booking/MoveStay.tsx";
 import { BookingSummary, useDateText } from "../booking/Summary.tsx";
 import { CampingBooker } from "../booking/CampingBooker.tsx";
 import { LandscapeMap } from "../booking/LandscapeMap.tsx";
@@ -630,7 +629,6 @@ export function BookingPage() {
           <h1 className="page__title" tabIndex={-1} ref={headingRef}>{t.pages.booking.title}</h1>
           <p className="page__lead">{t.accommodation.chooseDates}</p>
         </div>
-        <MoveStayLauncher />
       </div>
       {onlineOpen === false && <p className="notice notice--error" role="alert">{bt.onlineClosed}</p>}
       {addTo && <AddingBanner booking={addTo} onCancel={leaveAdd} onSeparate={restart} />}

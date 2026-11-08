@@ -6,6 +6,7 @@ import { Layout } from "./components/Layout.tsx";
 import type { NavKey } from "./components/navigation.ts";
 import { I18nProvider } from "./i18n/I18nProvider.tsx";
 import { AccommodationDetailPage } from "./pages/AccommodationDetailPage.tsx";
+import { BookingMovePage } from "./pages/BookingMovePage.tsx";
 import { BookingLookupPage } from "./pages/BookingLookupPage.tsx";
 import { BookingPage } from "./pages/BookingPage.tsx";
 import { GalleryPage } from "./pages/GalleryPage.tsx";
@@ -60,6 +61,8 @@ function renderPage(page: SitePage | null, title: string, slug: string | undefin
       return <BookingPage />;
     case "bookingLookup":
       return <BookingLookupPage />;
+    case "bookingMove":
+      return <BookingMovePage />;
     case "accommodation":
       return slug ? <AccommodationDetailPage key={slug} slug={slug} /> : <NotFoundPage />;
     case "gallery":

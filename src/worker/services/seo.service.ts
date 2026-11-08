@@ -110,11 +110,11 @@ export class SeoService {
       });
     }
 
-    // Not indexed at all: unknown pages, unknown / inactive accommodation, the private booking lookup.
-    if (!page || (page === "accommodation" && !unit) || page === "bookingLookup") {
-      const notFound = page !== "bookingLookup";
-      const title = withSite(notFound ? t.pages.notFound.title : t.pages.bookingLookup.title);
-      const description = notFound ? sm.notFound : sm.bookingLookup;
+    // Not indexed at all: unknown pages, unknown / inactive accommodation, the private booking lookup / date change.
+    if (!page || (page === "accommodation" && !unit) || page === "bookingLookup" || page === "bookingMove") {
+      const notFound = page !== "bookingLookup" && page !== "bookingMove";
+      const title = withSite(notFound ? t.pages.notFound.title : page === "bookingMove" ? t.pages.bookingMove.title : t.pages.bookingLookup.title);
+      const description = notFound ? sm.notFound : page === "bookingMove" ? sm.bookingMove : sm.bookingLookup;
       return {
         ...base, path, status: notFound ? 404 : 200, title, description, canonical: null, robots: "noindex,nofollow", alternates: [],
         og: { type: "website", title, description, url: null, siteName, locale: OG_LOCALE[lang], localeAlternates: [], image: null },
@@ -281,7 +281,7 @@ export class SeoService {
    * private Booking ID lookup. Null = serve the empty app shell as before.
    */
   async prerender(route: MetaRoute, meta: PageMetaDto): Promise<string | null> {
-    if (route.kind !== "page" || meta.status !== 200 || route.page === "bookingLookup") return null;
+    if (route.kind !== "page" || meta.status !== 200 || route.page === "bookingLookup" || route.page === "bookingMove") return null;
     const locale = route.locale;
     const lang = locale.code;
     const t = getMessages(lang);

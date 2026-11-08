@@ -25,6 +25,13 @@ describe("pagePath", () => {
 });
 
 describe("resolveRoute", () => {
+  it("the guest date change has its own page (main menu, after Check booking)", () => {
+    const r = resolveRoute("/en/booking/move");
+    assert.equal(r.kind, "page");
+    assert.equal(r.kind === "page" && r.page, "bookingMove");
+    assert.deepEqual(resolveRoute("/th/booking/move/"), { kind: "redirect", to: "/th/booking/move" });
+  });
+
   it("redirects / to the default language home", () => {
     assert.deepEqual(resolveRoute("/"), { kind: "redirect", to: "/th/" });
   });

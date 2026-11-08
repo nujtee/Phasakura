@@ -12,7 +12,7 @@ export function LineButton({ page }: { page: SitePage | null }) {
   const { site } = useSite();
   const { t } = useI18n();
   const url = site?.lineButton?.url;
-  const pageKey = page === "bookingLookup" ? "booking" : page;
+  const pageKey = page === "bookingLookup" || page === "bookingMove" ? "booking" : page;
   if (!url || !/^https:\/\//.test(url) || page === null || pageKey === "booking") return null;
   return (
     <a className="line-fab" href={url} target="_blank" rel="noopener noreferrer" aria-label={t.common.lineChat} title={t.common.lineChat}>

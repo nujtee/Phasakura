@@ -20,11 +20,16 @@ export function pagePath(locale: Locale, page: PublicPage): string {
 }
 
 /** Pages that exist but are not in the main menu. */
-export type SitePage = PublicPage | "accommodation" | "bookingLookup" | "privacy";
+export type SitePage = PublicPage | "accommodation" | "bookingLookup" | "bookingMove" | "privacy";
 
 /** Guest booking lookup (Booking ID + phone). */
 export function bookingLookupPath(locale: Locale): string {
   return `/${locale.path}/booking/lookup`;
+}
+
+/** Guest date change (Booking ID + phone, migration 0045): in the main menu after "ตรวจสอบการจอง". */
+export function bookingMovePath(locale: Locale): string {
+  return `/${locale.path}/booking/move`;
 }
 
 /** Privacy policy (Phase 14): linked from the footer, the cookie banner and the booking form. */
@@ -125,6 +130,11 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   if (rest.length === 2 && rest[0] === "booking" && rest[1] === "lookup") {
     if (pathname.endsWith("/")) return { kind: "redirect", to: bookingLookupPath(locale) };
     return { kind: "page", locale, page: "bookingLookup" };
+  }
+
+  if (rest.length === 2 && rest[0] === "booking" && rest[1] === "move") {
+    if (pathname.endsWith("/")) return { kind: "redirect", to: bookingMovePath(locale) };
+    return { kind: "page", locale, page: "bookingMove" };
   }
 
   if (rest.length === 1 && rest[0] === "privacy") {

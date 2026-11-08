@@ -385,14 +385,20 @@ await check("guest changes the dates from the booking page: Booking ID + phone, 
   const paid = await req.post(`${BASE}/api/admin/bookings/${B.bookingCode}/payments`, { headers: H, data: { amountSatang: B.totalSatang, method: "BANK_TRANSFER", paidAt: new Date().toISOString() } });
   assert(paid.ok(), `paid ${paid.status()}`);
 
-  // Where it sits on a desktop: next to the page title, above the date search.
+  // Its own page in the main menu, after "ตรวจสอบการจอง"; no longer a box on the booking page.
   await pa.goto(`${BASE}/th/booking`);
+  await pa.locator(".stay-search").waitFor();
+  assert(await pa.locator(".move-launch").count() === 0, "move box still on the booking page");
+  const menu = await pa.locator(".nav--desktop .nav__link").allInnerTexts();
+  assert(menu.indexOf("เลื่อนวันเข้าพัก") === menu.indexOf("ตรวจสอบการจอง") + 1, `menu ${menu}`);
+  await pa.locator(".nav--desktop").getByRole("link", { name: "เลื่อนวันเข้าพัก" }).click();
+  await pa.waitForURL(/\/th\/booking\/move$/);
   await pa.locator(".move-launch").waitFor();
   if (SHOTS) await pa.screenshot({ path: `${SHOTS}/move-desktop-head.png`, clip: { x: 0, y: 0, width: 1366, height: 520 } });
   // The guest (mobile, TH).
-  await pg.goto(`${BASE}/th/booking`);
-  const launch = pg.locator(".move-launch");
-  await launch.getByRole("heading", { name: "เลื่อนวันเข้าพัก" }).waitFor();
+  await pg.goto(`${BASE}/th/booking/move`);
+  await pg.getByRole("heading", { name: "เลื่อนวันเข้าพัก", level: 1 }).waitFor();
+  const launch = pg.getByRole("form", { name: "เลื่อนวันเข้าพัก" });
   await launch.getByLabel("Booking ID").fill(B.bookingCode);
   await launch.getByLabel("เบอร์โทรที่ใช้จอง").fill("0867777777");
   await launch.getByRole("button", { name: "เลื่อนจอง" }).click();
