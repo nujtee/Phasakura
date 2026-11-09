@@ -239,9 +239,18 @@ await check("booking page · list: rows with prices for the dates, type filter, 
 await check("booking page → ดูรายละเอียด: the house page checks the searched dates itself; เลือกที่พักนี้ at once", async () => {
   await pv.goto(`${BASE}/th/booking`);
   await pv.locator(".booking-list .stay-row").first().waitFor();
-  const checkIn = await pv.locator(".stay-search input").first().inputValue();
+  // Other dates than the page starts with, so "kept" means kept.
+  const iso = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  const checkIn = iso(20);
+  // Check-out first, so moving check-in never pushes it on.
+  await pv.locator(".stay-search input[type=date]").nth(1).fill(iso(21));
+  await pv.locator(".stay-search input[type=date]").nth(0).fill(checkIn);
+  await pv.locator(".stay-search__nights").filter({ hasText: /^1 คืน$/ }).waitFor();
+  // The page may still be searching the dates it remembered: wait for the answer to these dates.
+  const answered = pv.waitForResponse((r) => r.url().includes("/api/public/availability") && r.url().includes(`checkIn=${checkIn}`));
   await pv.locator(".stay-search button[type=submit]").click();
-  await pv.locator(".booking-list .stay-list__found").waitFor();
+  await answered;
+  await pv.locator(".booking-list .stay-row__for").filter({ hasText: /ราคาสำหรับ 1 คืน/ }).first().waitFor();
   const row = pv.locator(".booking-list .stay-row:not(.is-full)").first();
   const rowPrice = (await row.locator(".stay-row__total").innerText()).replace(/[^0-9]/g, "");
   await row.locator(".stay-row__details").click();
@@ -262,6 +271,11 @@ await check("booking page → ดูรายละเอียด: the house pa
   await pv.getByRole("button", { name: "เปลี่ยนวันที่" }).click();
   await pv.locator(".detail__aside .stay-search").waitFor();
   assert(await pv.locator(".detail__aside .stay-search input[type=date]").first().inputValue() === checkIn, "the form keeps the dates");
+  // "กลับไปหน้าจองที่พัก": the booking page shows those dates again, already searched.
+  await pv.getByRole("link", { name: /กลับไปหน้าจองที่พัก/ }).click();
+  await pv.waitForURL(/\/th\/booking$/);
+  await pv.locator(".booking-list .stay-list__found").waitFor();
+  assert(await pv.locator(".stay-search input[type=date]").first().inputValue() === checkIn, "booking page keeps the dates");
   assert(/[?&]unit=/.test(href ?? ""), `the house goes along: ${href}`);
 });
 

@@ -13,7 +13,7 @@ import { stayTotal, UnitRow } from "../accommodation/UnitRow.tsx";
 import { ApiError } from "../api/client.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
-import { defaultStay, fetchAvailability, rememberStay, useAccommodations, type StayQuery } from "../accommodation/data.ts";
+import { defaultStay, fetchAvailability, rememberedStay, rememberStay, useAccommodations, type StayQuery } from "../accommodation/data.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill, StayPrice, UnitCard, type Availability } from "../accommodation/UnitCard.tsx";
 import { PromoList } from "../booking/Promotions.tsx";
@@ -50,9 +50,9 @@ interface Details {
 }
 
 /** ?checkIn=&checkOut=&adults=&children=&unit=<slug> — deep link from an accommodation page. */
-function initialFromUrl(): { query: StayQuery; unitSlug: string | null; guestsGiven: boolean } {
+function initialFromUrl(): { query: StayQuery; unitSlug: string | null; guestsGiven: boolean; searchNow: boolean } {
   const base = defaultStay();
-  if (typeof window === "undefined") return { query: base, unitSlug: null, guestsGiven: false };
+  if (typeof window === "undefined") return { query: base, unitSlug: null, guestsGiven: false, searchNow: false };
   const p = new URLSearchParams(window.location.search);
   const int = (k: string, min: number, fallback: number) => {
     const n = Number(p.get(k));
@@ -61,6 +61,10 @@ function initialFromUrl(): { query: StayQuery; unitSlug: string | null; guestsGi
   const checkIn = p.get("checkIn");
   const checkOut = p.get("checkOut");
   const valid = isIsoDate(checkIn) && isIsoDate(checkOut);
+  // Back on the booking page (its link, the house page's "กลับไปหน้าจองที่พัก", the browser's back) without dates in
+  // the address: the dates searched before in this tab, searched again at once.
+  const remembered = valid ? null : rememberedStay();
+  if (remembered) return { query: remembered, unitSlug: null, guestsGiven: false, searchNow: true };
   return {
     query: {
       checkIn: valid ? checkIn : base.checkIn,
@@ -71,6 +75,7 @@ function initialFromUrl(): { query: StayQuery; unitSlug: string | null; guestsGi
     },
     unitSlug: valid ? p.get("unit") : null,
     guestsGiven: p.has("adults") || p.has("children"),
+    searchNow: false,
   };
 }
 
@@ -131,11 +136,15 @@ export function BookingPage() {
   const sent = useRef({ viewFood: false, begin: false });
 
   /** `quiet`: the caller shows the error itself (camping form), not the search box at the top. */
+  const searchSeq = useRef(0);
   const search = useCallback(async (q: StayQuery, quiet = false) => {
+    const seq = ++searchSeq.current;
     setQuery(q);
     if (!quiet) setBusy(true);
     setSearchError(null);
     const result = await fetchAvailability(q, t);
+    // A newer search went out meanwhile (e.g. the guest searched while the remembered dates were loading): its answer wins.
+    if (seq !== searchSeq.current) return result;
     setBusy(false);
     setAvailability(result.data ?? null);
     setSearched(result.data ? q : null);
@@ -150,9 +159,10 @@ export function BookingPage() {
   // Deep link: run the search once, then go on with the unit if it is free and takes the guests (more can be added later).
   const autoRan = useRef(false);
   useEffect(() => {
-    if (autoRan.current || !data || !initial.unitSlug) return;
+    if (autoRan.current || !data || (!initial.unitSlug && !initial.searchNow)) return;
     autoRan.current = true;
     void search(initial.query).then(({ data: a }) => {
+      if (!initial.unitSlug) return;
       const unit = [...data.houses, ...data.vipTents].find((u) => u.slug === initial.unitSlug);
       const state = a?.units.find((u) => u.unitId === unit?.id);
       if (!unit || !state?.available) return;
