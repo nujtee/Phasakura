@@ -246,8 +246,11 @@ await check("booking page → ดูรายละเอียด: the house pa
   await pv.locator(".stay-search input[type=date]").nth(1).fill(iso(21));
   await pv.locator(".stay-search input[type=date]").nth(0).fill(checkIn);
   await pv.locator(".stay-search__nights").filter({ hasText: /^1 คืน$/ }).waitFor();
+  // The page may still be searching the dates it remembered: wait for the answer to these dates.
+  const answered = pv.waitForResponse((r) => r.url().includes("/api/public/availability") && r.url().includes(`checkIn=${checkIn}`));
   await pv.locator(".stay-search button[type=submit]").click();
-  await pv.locator(".booking-list .stay-list__found").waitFor();
+  await answered;
+  await pv.locator(".booking-list .stay-row__for").filter({ hasText: /ราคาสำหรับ 1 คืน/ }).first().waitFor();
   const row = pv.locator(".booking-list .stay-row:not(.is-full)").first();
   const rowPrice = (await row.locator(".stay-row__total").innerText()).replace(/[^0-9]/g, "");
   await row.locator(".stay-row__details").click();

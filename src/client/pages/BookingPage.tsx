@@ -136,11 +136,15 @@ export function BookingPage() {
   const sent = useRef({ viewFood: false, begin: false });
 
   /** `quiet`: the caller shows the error itself (camping form), not the search box at the top. */
+  const searchSeq = useRef(0);
   const search = useCallback(async (q: StayQuery, quiet = false) => {
+    const seq = ++searchSeq.current;
     setQuery(q);
     if (!quiet) setBusy(true);
     setSearchError(null);
     const result = await fetchAvailability(q, t);
+    // A newer search went out meanwhile (e.g. the guest searched while the remembered dates were loading): its answer wins.
+    if (seq !== searchSeq.current) return result;
     setBusy(false);
     setAvailability(result.data ?? null);
     setSearched(result.data ? q : null);
