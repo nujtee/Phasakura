@@ -500,6 +500,8 @@ await check("promotions: staff add a discount, free extra bed and free dinner to
   if (SHOTS) await pg.screenshot({ path: `${SHOTS}/promo-food-step.png`, fullPage: true });
 
   // The house page lists the promotion with its dates.
+  // A fresh visit (no dates searched on the booking page in this tab): the house page has its own date check.
+  await pg.evaluate(() => sessionStorage.clear());
   await pg.goto(`${BASE}/th/accommodation/house-sakura`);
   const promoOnPage = pg.locator(".detail__aside .promo");
   await promoOnPage.getByText("โปรโมชั่นของที่พักนี้").waitFor();
@@ -529,6 +531,8 @@ await check("child age: staff set it in booking rules; the booking page and the 
   // The camping section follows the same age.
   await pg.getByText("เด็กอายุต่ำกว่า 10 ปี พักฟรี").waitFor();
   if (SHOTS) await pg.locator(".camping-card").screenshot({ path: `${SHOTS}/child-age-camping.png` });
+  // A fresh visit (no dates searched on the booking page in this tab): the house page has its own date check.
+  await pg.evaluate(() => sessionStorage.clear());
   await pg.goto(`${BASE}/th/accommodation/house-sakura`);
   await pg.getByText("เด็ก (อายุต่ำกว่า 10 ปี)").first().waitFor();
   const put = await req.put(`${BASE}/api/admin/booking-settings`, { headers: H, data: { ...(await (await req.get(`${BASE}/api/admin/booking-settings`)).json()).data, updatedAt: undefined, childUnderAge: null } });
@@ -565,6 +569,8 @@ await check("booking page search asks dates only; a house picked gets its usual 
 });
 
 await check("house page: guests never above what the house takes; more than its usual number adds extra beds on their own", async () => {
+  // A fresh visit (no dates searched on the booking page in this tab): the house page has its own date check.
+  await pg.evaluate(() => sessionStorage.clear());
   await pg.goto(`${BASE}/th/accommodation/house-sakura`);
   const aside = pg.locator(".detail__aside");
   await aside.getByText("หลังนี้รองรับสูงสุด 4 ท่าน (รวมเด็ก)").waitFor();
