@@ -243,10 +243,16 @@ await check("booking page → ดูรายละเอียด: the house pa
   await pv.locator(".stay-search button[type=submit]").click();
   await pv.locator(".booking-list .stay-list__found").waitFor();
   const row = pv.locator(".booking-list .stay-row:not(.is-full)").first();
+  const rowPrice = (await row.locator(".stay-row__total").innerText()).replace(/[^0-9]/g, "");
   await row.locator(".stay-row__details").click();
   await pv.waitForURL(/\/th\/accommodation\//);
   const book = pv.locator(".detail__book");
   await book.waitFor({ timeout: 10000 });
+  // The price at the top is the one of those dates (one night here), as in the list, not the usual price.
+  await pv.locator(".detail__aside .unit-card__price-block").waitFor();
+  const top = (await pv.locator(".detail__aside .unit-card__price strong").first().innerText()).replace(/[^0-9]/g, "");
+  assert(top === rowPrice, `house page ${top} vs list ${rowPrice}`);
+  assert(await pv.locator(".detail__aside .unit-card__price").count() === 1, "price shown twice");
   const href = await book.getAttribute("href");
   assert(href?.includes(`checkIn=${checkIn}`), `same dates: ${href} / ${checkIn}`);
   assert(/[?&]unit=/.test(href ?? ""), `the house goes along: ${href}`);

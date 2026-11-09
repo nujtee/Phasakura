@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { AvailabilityDto, PublicUnitDto } from "../../shared/accommodation-types.ts";
-import { formatBaht } from "../../shared/booking-rules.ts";
 import { pagePath } from "../../shared/routes.ts";
 import { ApiError, apiGet } from "../api/client.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
@@ -122,9 +121,8 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
         </div>
 
         <aside className="detail__aside" aria-labelledby="book-h">
-          <p className="unit-card__price">
-            <strong>{formatBaht(unit.priceSatang, locale.code)}</strong> <span>{t.accommodation.perNight}</span>
-          </p>
+          {/* The price of the dates checked (time-based prices, promotions) once there are dates; the usual price before. */}
+          <StayPrice base={unit.priceSatang} nightly={mine?.nightlyPricesSatang} list={mine?.listPricesSatang} per={t.accommodation.perNight} />
           <p className="unit-card__meta">{fill(t.accommodation.upToGuests, { n: unit.maxGuests })}</p>
           <PromoList promotions={unit.promotions} withDates title={promo.upcoming} />
           <h2 id="book-h" className="section-title section-title--small">{t.accommodation.checkAvailability}</h2>
@@ -135,7 +133,6 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
               {!mine.available ? t.accommodation.unavailable : !mine.fitsGuests ? t.accommodation.tooManyGuests : t.accommodation.available}
             </p>
           )}
-          {mine && <StayPrice base={unit.priceSatang} nightly={mine.nightlyPricesSatang} list={mine.listPricesSatang} per={t.accommodation.perNight} />}
           {mine?.available && mine.fitsGuests && checked && (
             <Link className="button button--primary detail__book" to={`${pagePath(locale, "booking")}?${new URLSearchParams({
               unit: unit.slug, checkIn: checked.checkIn, checkOut: checked.checkOut, adults: String(checked.adults), children: String(checked.children),
