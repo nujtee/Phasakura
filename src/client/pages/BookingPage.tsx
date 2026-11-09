@@ -13,7 +13,7 @@ import { stayTotal, UnitRow } from "../accommodation/UnitRow.tsx";
 import { ApiError } from "../api/client.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
-import { defaultStay, fetchAvailability, rememberedStay, rememberStay, useAccommodations, type StayQuery } from "../accommodation/data.ts";
+import { defaultStay, fetchAvailability, rememberedPicks, rememberedStay, rememberPicks, rememberStay, useAccommodations, type KeptStay, type StayQuery } from "../accommodation/data.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill, StayPrice, UnitCard, type Availability } from "../accommodation/UnitCard.tsx";
 import { PromoList } from "../booking/Promotions.tsx";
@@ -156,22 +156,53 @@ export function BookingPage() {
   /** Camping form: spots left on its dates, without touching the search results above. */
   const peek = useCallback((q: StayQuery) => fetchAvailability(q, t), [t]);
 
+  // The stays chosen before on these dates in this tab (read once, before this page's own choice is kept).
+  const [kept] = useState(() => rememberedPicks(initial.query));
+
+  /** Those stays again, for the houses still free (camping as it was; the price check says if it no longer fits). */
+  function restorePicks(a: AvailabilityDto | undefined, all: PublicUnitDto[], except?: string): Pick[] {
+    return kept.flatMap((k): Pick[] => {
+      if (k.kind === "CAMPING") return data?.camping ? [k] : [];
+      const unit = all.find((u) => u.slug === k.slug);
+      if (!unit || unit.slug === except || !a?.units.some((s) => s.unitId === unit.id && s.available)) return [];
+      return [{ kind: "UNIT", unit, adults: k.adults, children: k.children, ...(k.extraBeds ? { extraBeds: k.extraBeds } : {}), ...(k.pets ? { pets: k.pets } : {}) }];
+    });
+  }
+
   // Deep link: run the search once, then go on with the unit if it is free and takes the guests (more can be added later).
+  // A house chosen on its own page joins the stays chosen before on the same dates.
   const autoRan = useRef(false);
   useEffect(() => {
     if (autoRan.current || !data || (!initial.unitSlug && !initial.searchNow)) return;
     autoRan.current = true;
     void search(initial.query).then(({ data: a }) => {
-      if (!initial.unitSlug) return;
-      const unit = [...data.houses, ...data.vipTents].find((u) => u.slug === initial.unitSlug);
+      const all = [...data.houses, ...data.vipTents];
+      const before = restorePicks(a, all, initial.unitSlug ?? undefined);
+      if (!initial.unitSlug) {
+        if (before.length) setPicks(before);
+        return;
+      }
+      const unit = all.find((u) => u.slug === initial.unitSlug);
       const state = a?.units.find((u) => u.unitId === unit?.id);
-      if (!unit || !state?.available) return;
+      if (!unit || !state?.available) {
+        if (before.length) setPicks(before);
+        return;
+      }
       track({ name: "select_accommodation", item: unitItem(unit) });
-      if (state.fitsGuests) start([{ kind: "UNIT", unit, adults: initial.query.adults, children: initial.query.children }], initial.query);
-      else setPicks([{ kind: "UNIT", unit, ...guestsForNewUnit(unit, initial.query, []) }]);
+      if (state.fitsGuests) start([...before, { kind: "UNIT", unit, adults: initial.query.adults, children: initial.query.children }], initial.query);
+      else setPicks([...before, { kind: "UNIT", unit, ...guestsForNewUnit(unit, initial.query, before) }]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  // Keep the stays chosen (for a house page's "เลือกที่พักนี้" or coming back); forget them once booked.
+  useEffect(() => {
+    if (addTo || !searched || !autoRan.current && (initial.unitSlug || initial.searchNow)) return;
+    if (step === "done") { rememberPicks(searched, []); return; }
+    rememberPicks(searched, picks.map((p): KeptStay => (p.kind === "UNIT"
+      ? { kind: "UNIT", slug: p.unit.slug, adults: p.adults, children: p.children, ...(p.extraBeds ? { extraBeds: p.extraBeds } : {}), ...(p.pets ? { pets: p.pets } : {}) }
+      : { kind: "CAMPING", tents: p.tents, tarp: p.tarp, adults: p.adults, children: p.children })));
+  }, [picks, searched, step, addTo, initial]);
 
   const request = useCallback((q: StayQuery, chosen: Pick[], foodCart: FoodCart, massageCart: Record<string, number> = {}): QuoteRequest => ({
     checkIn: q.checkIn,

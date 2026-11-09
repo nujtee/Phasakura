@@ -624,6 +624,13 @@ await check("เลือกที่พักเพิ่ม: from the extras s
   await pg.locator(".summary").getByText("House 01").first().waitFor();
   await pg.locator(".summary").getByText("House 02").first().waitFor();
   if (SHOTS) await pg.screenshot({ path: `${SHOTS}/add-more-stays.png`, fullPage: true });
+  // Again, but this time through a house page: its "เลือกที่พักนี้" adds the house to the two already chosen.
+  await pg.getByRole("button", { name: "+ เลือกที่พักเพิ่ม" }).click();
+  await card(/VIP-01/).getByRole("link", { name: "ดูรายละเอียด" }).click();
+  await pg.waitForURL(/\/th\/accommodation\//);
+  await pg.locator(".detail__book").click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  for (const name of ["House 01", "House 02", "VIP-01"]) await pg.locator(".summary").getByText(name).first().waitFor();
 });
 
 await check("จองเพิ่ม before paying: the new house joins the same Booking ID, details and dates", async () => {
