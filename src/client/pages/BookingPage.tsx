@@ -242,20 +242,36 @@ export function BookingPage() {
     setPicks((cur2) => [...cur2.filter((p) => pickKey(p) !== unit.id), { kind: "UNIT", unit, ...guests }]);
   }
 
+  /** "เลือกที่พักเพิ่ม": back to the list with the stays chosen so far (and the extras picked) kept. */
+  const keepExtras = useRef(false);
+  function chooseMore() {
+    keepExtras.current = true;
+    setStep("choose");
+    window.setTimeout(() => {
+      const list = document.getElementById("stay-list");
+      list?.scrollIntoView({ block: "start" });
+      list?.focus({ preventScroll: true });
+    }, 0);
+  }
+
   /** Start the booking steps with these stays. */
   function start(chosen: Pick[], q: StayQuery = searched ?? query) {
+    const keep = keepExtras.current && searched !== null && q.checkIn === searched.checkIn && q.checkOut === searched.checkOut;
+    keepExtras.current = false;
     sent.current = { viewFood: false, begin: false };
     const items = chosen.map(trackItem);
     // Indicative value (one night); the exact total is known at checkout.
     track({ name: "begin_booking", value: chosen.reduce((acc, p, i) => acc + (items[i]!.price ?? 0) * (p.kind === "UNIT" ? 1 : p.adults), 0), items });
     setPicks(chosen);
+    setNotice(null);
+    setStep("food");
+    window.scrollTo({ top: 0 });
+    // Back from "เลือกที่พักเพิ่ม" on the same dates: the food, extra beds and massage chosen stay.
+    if (keep && catalogue) return;
     setCart({});
     setMassages({});
     setQuote(null);
     setCatalogue(null);
-    setNotice(null);
-    setStep("food");
-    window.scrollTo({ top: 0 });
     fetchFoodCatalogue(q.checkIn, q.checkOut, locale.code)
       .then(setCatalogue)
       .catch(() => setCatalogue({ checkIn: q.checkIn, checkOut: q.checkOut, categories: [] }));
@@ -471,6 +487,12 @@ export function BookingPage() {
         </section>
 
         <h1 className="page__title" tabIndex={-1} ref={headingRef}>{titles[step]}</h1>
+        {step === "food" && (
+          <p className="flow-add-more">
+            <button type="button" className="button button--secondary" onClick={chooseMore}>+ {bt.addMoreStays}</button>
+            <span className="flow-add-more__hint">{bt.addMoreHint}</span>
+          </p>
+        )}
         {addTo && <AddingBanner booking={addTo} onCancel={leaveAdd} />}
         {notice && <p role="alert" className="notice notice--error">{notice}</p>}
         {!notice && quote?.bookingUnavailable && step !== "done" && <p role="alert" className="notice notice--error">{bt.bookingUnavailable}</p>}
