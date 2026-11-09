@@ -1921,3 +1921,7 @@ button.button--secondary {
 .move-page .move-launch { padding: 20px; margin-top: 8px; }
 .move-page .move-launch__field { flex: 1 1 12rem; }
 .move-page .move-launch__field input { width: 100%; }
+
+/* Food step: "เลือกที่พักเพิ่ม" back to the list, the stays chosen kept. */
+.flow-add-more { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: -4px 0 20px; }
+.flow-add-more__hint { color: var(--color-muted); font-size: 0.875rem; }

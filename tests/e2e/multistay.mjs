@@ -608,6 +608,24 @@ await check("house page: guests never above what the house takes; more than its 
   await req.put(`${BASE}/api/admin/extra-beds`, { headers: H, data: { enabled: false, pricePerNightSatang: 30000, maxPerUnit: 2, offUnitIds: [] } });
 });
 
+await check("เลือกที่พักเพิ่ม: from the extras step back to the list; the house chosen stays, another joins the summary", async () => {
+  const ci = day(124), co = day(125);
+  await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}&adults=2&children=0&unit=house-sakura`);
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  await pg.locator(".summary").getByText("House 01").first().waitFor();
+  await pg.getByRole("button", { name: "+ เลือกที่พักเพิ่ม" }).click();
+  const picks = pg.locator("#picks");
+  await picks.getByText("House 01").first().waitFor();
+  const card = (name) => pg.locator(".unit-pick", { has: pg.getByRole("heading", { name }) });
+  await card(/House 02/).getByRole("button", { name: "เพิ่มหลังนี้" }).click();
+  await picks.getByRole("button", { name: /ถัดไป/ }).click();
+  await pg.getByRole("heading", { name: "รายการเพิ่มเติม" }).waitFor();
+  await pg.locator(".flow-stay").getByText("House 02").waitFor();
+  await pg.locator(".summary").getByText("House 01").first().waitFor();
+  await pg.locator(".summary").getByText("House 02").first().waitFor();
+  if (SHOTS) await pg.screenshot({ path: `${SHOTS}/add-more-stays.png`, fullPage: true });
+});
+
 await check("จองเพิ่ม before paying: the new house joins the same Booking ID, details and dates", async () => {
   const ci = day(60), co = day(61);
   await pg.goto(`${BASE}/th/booking?checkIn=${ci}&checkOut=${co}`);
