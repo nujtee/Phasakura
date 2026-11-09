@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AvailabilityDto, PublicUnitDto } from "../../shared/accommodation-types.ts";
 import { pagePath } from "../../shared/routes.ts";
 import { ApiError, apiGet } from "../api/client.ts";
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import { Link } from "../router/Router.tsx";
-import { defaultStay, fetchAvailability, rememberedStay, rememberStay, type StayQuery } from "../accommodation/data.ts";
+import { defaultStay, fetchAvailability, nightsBetween, rememberedStay, type StayQuery } from "../accommodation/data.ts";
 import { unitItem } from "../analytics/booking-events.ts";
 import { track } from "../analytics/tracker.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
@@ -30,6 +30,11 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
   /** Dates already searched on the booking page / home list: checked here at once (no second search). */
   const [initial, setInitial] = useState<StayQuery | null>(null);
   const autoChecked = useRef(false);
+  /** Those dates are shown as check-in / check-out only (no second search box) until the guest changes them. */
+  const [fromSearch, setFromSearch] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const dateFmt = useMemo(() => new Intl.DateTimeFormat(locale.code, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }), [locale.code]);
+  const showDate = (iso: string) => dateFmt.format(new Date(`${iso}T00:00:00Z`));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -43,6 +48,8 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
           ? { ...r, adults, children: Math.min(r.children, Math.max(0, most - adults)) }
           : { ...defaultStay(), adults: Math.min(2, most) });
         autoChecked.current = !r;
+        setFromSearch(!!r);
+        setEditing(false);
         setUnit(u);
         setState("ready");
         track({ name: "view_accommodation", item: unitItem(u) });
@@ -70,7 +77,6 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
   const mine = result?.units.find((u) => u.unitId === unit.id);
 
   async function check(q: StayQuery) {
-    rememberStay(q);
     setChecked(q);
     setBusy(true);
     setSearchError(null);
@@ -125,9 +131,27 @@ export function AccommodationDetailPage({ slug }: { slug: string }) {
           <StayPrice base={unit.priceSatang} nightly={mine?.nightlyPricesSatang} list={mine?.listPricesSatang} per={t.accommodation.perNight} />
           <p className="unit-card__meta">{fill(t.accommodation.upToGuests, { n: unit.maxGuests })}</p>
           <PromoList promotions={unit.promotions} withDates title={promo.upcoming} />
-          <h2 id="book-h" className="section-title section-title--small">{t.accommodation.checkAvailability}</h2>
-          <StaySearch key={unit.id} initial={initial} busy={busy} error={searchError}
-            childAge={unit.childUnderAge} maxGuests={unit.maxGuests} maxAdults={unit.maxAdults} showTents={false} onSearch={(q) => void check(q)} />
+          {fromSearch && !editing ? (
+            <section className="detail-dates" aria-labelledby="book-h">
+              <h2 id="book-h" className="section-title section-title--small">{t.accommodation.yourDates}</h2>
+              <dl className="detail-dates__list">
+                <div><dt>{t.accommodation.checkIn}</dt><dd>{showDate(initial.checkIn)}</dd></div>
+                <div><dt>{t.accommodation.checkOut}</dt><dd>{showDate(initial.checkOut)}</dd></div>
+              </dl>
+              <p className="detail-dates__more">
+                {fill(t.accommodation.nights, { n: nightsBetween(initial) })}
+                {" · "}
+                <button type="button" className="link-button" onClick={() => setEditing(true)}>{t.accommodation.changeDates}</button>
+              </p>
+              {searchError && <p role="alert" className="notice notice--error">{searchError}</p>}
+            </section>
+          ) : (
+            <>
+              <h2 id="book-h" className="section-title section-title--small">{t.accommodation.checkAvailability}</h2>
+              <StaySearch key={unit.id} initial={checked ?? initial} busy={busy} error={searchError}
+                childAge={unit.childUnderAge} maxGuests={unit.maxGuests} maxAdults={unit.maxAdults} showTents={false} onSearch={(q) => void check(q)} />
+            </>
+          )}
           {mine && (
             <p className={`unit-card__badge-inline ${mine.available && mine.fitsGuests ? "is-ok" : "is-bad"}`} role="status">
               {!mine.available ? t.accommodation.unavailable : !mine.fitsGuests ? t.accommodation.tooManyGuests : t.accommodation.available}
