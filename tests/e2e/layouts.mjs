@@ -239,7 +239,11 @@ await check("booking page · list: rows with prices for the dates, type filter, 
 await check("booking page → ดูรายละเอียด: the house page checks the searched dates itself; เลือกที่พักนี้ at once", async () => {
   await pv.goto(`${BASE}/th/booking`);
   await pv.locator(".booking-list .stay-row").first().waitFor();
-  const checkIn = await pv.locator(".stay-search input").first().inputValue();
+  // Other dates than the page starts with, so "kept" means kept.
+  const iso = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  const checkIn = iso(20);
+  await pv.locator(".stay-search input[type=date]").nth(0).fill(checkIn);
+  await pv.locator(".stay-search input[type=date]").nth(1).fill(iso(21));
   await pv.locator(".stay-search button[type=submit]").click();
   await pv.locator(".booking-list .stay-list__found").waitFor();
   const row = pv.locator(".booking-list .stay-row:not(.is-full)").first();
@@ -262,6 +266,11 @@ await check("booking page → ดูรายละเอียด: the house pa
   await pv.getByRole("button", { name: "เปลี่ยนวันที่" }).click();
   await pv.locator(".detail__aside .stay-search").waitFor();
   assert(await pv.locator(".detail__aside .stay-search input[type=date]").first().inputValue() === checkIn, "the form keeps the dates");
+  // "กลับไปหน้าจองที่พัก": the booking page shows those dates again, already searched.
+  await pv.getByRole("link", { name: /กลับไปหน้าจองที่พัก/ }).click();
+  await pv.waitForURL(/\/th\/booking$/);
+  await pv.locator(".booking-list .stay-list__found").waitFor();
+  assert(await pv.locator(".stay-search input[type=date]").first().inputValue() === checkIn, "booking page keeps the dates");
   assert(/[?&]unit=/.test(href ?? ""), `the house goes along: ${href}`);
 });
 
