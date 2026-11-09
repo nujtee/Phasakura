@@ -13,7 +13,7 @@ import { stayTotal, UnitRow } from "../accommodation/UnitRow.tsx";
 import { ApiError } from "../api/client.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { useI18n } from "../i18n/I18nProvider.tsx";
-import { defaultStay, fetchAvailability, useAccommodations, type StayQuery } from "../accommodation/data.ts";
+import { defaultStay, fetchAvailability, rememberStay, useAccommodations, type StayQuery } from "../accommodation/data.ts";
 import { StaySearch } from "../accommodation/StaySearch.tsx";
 import { fill, StayPrice, UnitCard, type Availability } from "../accommodation/UnitCard.tsx";
 import { PromoList } from "../booking/Promotions.tsx";
@@ -139,6 +139,7 @@ export function BookingPage() {
     setBusy(false);
     setAvailability(result.data ?? null);
     setSearched(result.data ? q : null);
+    if (result.data && !quiet) rememberStay(q);
     if (!quiet) setSearchError(result.error ?? null);
     return result;
   }, [t]);
