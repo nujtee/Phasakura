@@ -434,3 +434,11 @@
 
 /* Guests / tents steppers in the search (− value +) */
 .stay-search__field .stepper { min-height: 44px; }
+
+/* House page with dates searched on the booking page: check-in / check-out only, no second search box. */
+.detail-dates__list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 8px; }
+.detail-dates__list > div { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.detail-dates__list dt { font-size: 0.8125rem; color: var(--color-muted); }
+.detail-dates__list dd { margin: 2px 0 0; font-weight: 600; font-size: 1.0625rem; }
+.detail-dates__more { margin: 0; color: var(--color-muted); font-size: 0.875rem; }
+.detail-dates__more .link-button { text-decoration: underline; text-underline-offset: 3px; color: var(--color-primary); }

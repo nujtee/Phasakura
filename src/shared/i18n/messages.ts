@@ -77,6 +77,8 @@ export interface Messages {
     noAccommodation: string;
     photos: string;
     checkAvailability: string;
+    yourDates: string;
+    changeDates: string;
     campingDisabled: string;
     errors: Record<"IN_THE_PAST" | "MUST_BE_AFTER_CHECK_IN" | "STAY_TOO_LONG" | "TOO_FAR_AHEAD" | "INVALID_DATE", string>;
   };
@@ -162,6 +164,8 @@ export const th: Messages = {
     noAccommodation: "ยังไม่มีที่พักที่เปิดให้จอง",
     photos: "รูปภาพ",
     checkAvailability: "ตรวจสอบวันว่าง",
+    yourDates: "วันที่เข้าพัก",
+    changeDates: "เปลี่ยนวันที่",
     campingDisabled: "ปิดรับการกางเต็นท์ชั่วคราว",
     errors: {
       IN_THE_PAST: "วันเช็คอินต้องไม่เป็นวันที่ผ่านมาแล้ว",
@@ -257,6 +261,8 @@ export const en: Messages = {
     noAccommodation: "No accommodation is open for booking yet",
     photos: "Photos",
     checkAvailability: "Check dates",
+    yourDates: "Your dates",
+    changeDates: "Change dates",
     campingDisabled: "Camping is temporarily closed",
     errors: {
       IN_THE_PAST: "Check-in can't be in the past",
@@ -352,6 +358,8 @@ export const zhCN: Messages = {
     noAccommodation: "暂无可预订的住宿",
     photos: "照片",
     checkAvailability: "查询日期",
+    yourDates: "入住日期",
+    changeDates: "更改日期",
     campingDisabled: "露营暂停开放",
     errors: {
       IN_THE_PAST: "入住日期不能早于今天",

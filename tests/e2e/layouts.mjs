@@ -167,7 +167,7 @@ await check("D · desktop: the home page lists what is free with prices; filters
 
 await check("D · choose a house → booking page with that house and the dates", async () => {
   // "ดูรายละเอียด" on each house / tent row, to its own page.
-  assert(await pv.locator(".stay-list .stay-row__details").count() >= 1, "details link on the home list");
+  await pv.locator(".stay-list .stay-row__details").first().waitFor();
   assert(/^\/th\/accommodation\/[^/]+$/.test((await pv.locator(".stay-list .stay-row__details").first().getAttribute("href")) ?? ""), "details href");
   const link = pv.locator(".stay-row__pick").first();
   const href = await link.getAttribute("href");
@@ -255,7 +255,26 @@ await check("booking page → ดูรายละเอียด: the house pa
   assert(await pv.locator(".detail__aside .unit-card__price").count() === 1, "price shown twice");
   const href = await book.getAttribute("href");
   assert(href?.includes(`checkIn=${checkIn}`), `same dates: ${href} / ${checkIn}`);
+  // Only check-in / check-out are shown, no second search box; "เปลี่ยนวันที่" brings it back.
+  await pv.locator(".detail-dates").waitFor();
+  assert(await pv.locator(".detail__aside .stay-search").count() === 0, "search box shown again");
+  await pv.locator(".detail__aside").screenshot({ path: `${SHOTS}/l-detail-dates.png` });
+  await pv.getByRole("button", { name: "เปลี่ยนวันที่" }).click();
+  await pv.locator(".detail__aside .stay-search").waitFor();
+  assert(await pv.locator(".detail__aside .stay-search input[type=date]").first().inputValue() === checkIn, "the form keeps the dates");
   assert(/[?&]unit=/.test(href ?? ""), `the house goes along: ${href}`);
+});
+
+await check("house page opened without a search on the booking page: the date check as before", async () => {
+  const fresh = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 }, locale: "th-TH" });
+  const p = await fresh.newPage();
+  await p.goto(`${BASE}/th/booking`);
+  await p.locator(".booking-list .stay-row__details").first().click();
+  await p.waitForURL(/\/th\/accommodation\//);
+  await p.locator(".detail__aside .stay-search").waitFor();
+  assert(await p.locator(".detail-dates").count() === 0, "dates summary without a search");
+  assert(await p.locator(".detail__book").count() === 0, "book button before a check");
+  await fresh.close();
 });
 
 await check("booking page · list on a phone: fits", async () => {
