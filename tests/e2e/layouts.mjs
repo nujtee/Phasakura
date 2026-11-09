@@ -242,8 +242,10 @@ await check("booking page → ดูรายละเอียด: the house pa
   // Other dates than the page starts with, so "kept" means kept.
   const iso = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
   const checkIn = iso(20);
-  await pv.locator(".stay-search input[type=date]").nth(0).fill(checkIn);
+  // Check-out first, so moving check-in never pushes it on.
   await pv.locator(".stay-search input[type=date]").nth(1).fill(iso(21));
+  await pv.locator(".stay-search input[type=date]").nth(0).fill(checkIn);
+  await pv.locator(".stay-search__nights").filter({ hasText: /^1 คืน$/ }).waitFor();
   await pv.locator(".stay-search button[type=submit]").click();
   await pv.locator(".booking-list .stay-list__found").waitFor();
   const row = pv.locator(".booking-list .stay-row:not(.is-full)").first();
