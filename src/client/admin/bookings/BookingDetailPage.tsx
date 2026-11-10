@@ -13,11 +13,13 @@ import { MoveDates } from "./MoveDates.tsx";
 import { StayButtons } from "./StayButtons.tsx";
 import { StaysCard } from "./StaysCard.tsx";
 import { AdminBillButton } from "./AdminBillButton.tsx";
+import { EditCustomer } from "./EditCustomer.tsx";
 import { staysText } from "./shared.tsx";
 
 export function BookingDetailPage({ code }: { code: string }) {
   const { t, c, can, href, locale } = useAdmin();
   const [stayDone, setStayDone] = useState<string | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState(false);
   const dateTime = useDateFormatter();
   const stayDate = useStayDate();
   const [b, setB] = useState<AdminBookingDto | null>(null);
@@ -105,7 +107,16 @@ export function BookingDetailPage({ code }: { code: string }) {
           {movable && <MoveDates key={`${b.checkIn}|${b.status}`} booking={b} onMoved={stayChanged} />}
         </div>
         <div className="adm-card">
-          <h2 className="adm-h2">{t.bk.customer}</h2>
+          <div className="adm-row adm-row--wrap adm-cardhead">
+            <h2 className="adm-h2">{t.bk.customer}</h2>
+            {can("bookings.edit") && !editingCustomer && (
+              <Button variant="secondary" onClick={() => setEditingCustomer(true)}>{t.bk.editCustomer}</Button>
+            )}
+          </div>
+          {editingCustomer ? (
+            <EditCustomer booking={b} onClose={() => setEditingCustomer(false)}
+              onSaved={(next) => { setEditingCustomer(false); stayChanged(next, t.bk.customerSaved); }} />
+          ) : (
           <dl className="adm-dl">
             <dt>{t.users.name}</dt><dd>{b.customerName}</dd>
             <dt>{t.bk.phone}</dt><dd><a href={`tel:${b.customerPhone.replace(/[^\d+]/g, "")}`}>{b.customerPhone}</a></dd>
@@ -115,6 +126,7 @@ export function BookingDetailPage({ code }: { code: string }) {
             {b.customerNote && <><dt>{t.bk.note}</dt><dd className="adm-prewrap">{b.customerNote}</dd></>}
             <dt>{t.bk.privacyAccepted}</dt><dd>{dateTime(b.privacyAcceptedAt)}</dd>
           </dl>
+          )}
         </div>
       </div>
 

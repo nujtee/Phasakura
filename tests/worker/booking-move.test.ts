@@ -255,3 +255,34 @@ describe("change dates → another room when the booked one is taken (migration 
     assert.ok(r.nearest.length > 0);
   });
 });
+
+describe("staff correct the guest's contact details", () => {
+  it("bookings.edit: name, phone, e-mail, LINE ID; the guest then finds the booking with the new phone; audited", async () => {
+    const { h, admin } = await setup();
+    const b = await book(h, {});
+    const oldPhone = h.db.get<{ p: string }>("SELECT customer_phone AS p FROM bookings WHERE booking_code = ?", b.bookingCode)!.p;
+    const put = (body: Record<string, unknown>, token = admin) => h.api<AdminBookingDto>("PUT", `/api/admin/bookings/${b.bookingCode}/customer`, { token, body });
+    const ok = await put({ name: "มณีรัตน์ ใหม่", phone: "081-234-5678", email: "new@example.com", lineId: "@newline" });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.deepEqual([ok.data.customerName, ok.data.customerPhone, ok.data.customerEmail, ok.data.customerLineId],
+      ["มณีรัตน์ ใหม่", "081-234-5678", "new@example.com", "@newline"]);
+    assert.equal(h.db.get<{ p: string }>("SELECT customer_phone_normalized AS p FROM bookings WHERE booking_code = ?", b.bookingCode)!.p, "0812345678");
+    const audit = h.db.get<{ o: string; n: string }>("SELECT old_value AS o, new_value AS n FROM audit_logs WHERE action = 'EDIT_BOOKING_CUSTOMER'")!;
+    assert.deepEqual(Object.keys(JSON.parse(audit.n)).sort(), ["email", "lineId", "name", "phone"]);
+    const lookup = (phone: string) => h.api("POST", "/api/public/bookings/lookup", { body: { bookingCode: b.bookingCode, phone } });
+    assert.equal((await lookup("0812345678")).status, 200, "the new phone finds it");
+    assert.notEqual((await lookup(oldPhone)).status, 200, "the old one no longer does");
+    // Clearing the optional ones; nothing changed → no second audit.
+    assert.equal((await put({ name: "มณีรัตน์ ใหม่", phone: "081-234-5678", email: null, lineId: null })).data.customerEmail, null);
+    assert.equal((await put({ name: "มณีรัตน์ ใหม่", phone: "081-234-5678", email: null, lineId: null })).status, 200);
+    assert.equal(h.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'EDIT_BOOKING_CUSTOMER'")!.n, 2);
+    // Invalid input.
+    assert.equal((await put({ name: "", phone: "0812345678" })).status, 422);
+    assert.equal((await put({ name: "A", phone: "abc" })).status, 422);
+    assert.equal((await put({ name: "A", phone: "0812345678", email: "not-an-email" })).status, 422);
+    assert.equal((await put({ name: "A", phone: "0812345678", extra: 1 })).status, 422);
+    // Without bookings.edit.
+    const viewer = await h.login(await h.user({ id: `viewer_${++seq}`, roles: ["CONTENT_ADMIN"] }));
+    assert.equal((await put({ name: "X", phone: "0812345678" }, viewer)).status, 403);
+  });
+});
