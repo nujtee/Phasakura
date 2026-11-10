@@ -640,6 +640,16 @@ export class BookingRepository {
       .bind(bookingId, now);
   }
 
+  /** Staff correct the guest's name / phone / e-mail / LINE ID. */
+  updateCustomerStatement(bookingId: string, c: { name: string; phone: string; phoneNormalized: string; email: string | null; lineId: string | null }, now: string) {
+    return this.db
+      .prepare(
+        `UPDATE bookings SET customer_name = ?2, customer_phone = ?3, customer_phone_normalized = ?4, customer_email = ?5,
+                customer_line_id = ?6, updated_at = ?7 WHERE id = ?1`,
+      )
+      .bind(bookingId, c.name, c.phone, c.phoneNormalized, c.email, c.lineId, now);
+  }
+
   /** Stay lifecycle step (check-in / check-out / no-show). Only from the expected status. */
   transitionStatement(bookingId: string, from: string, to: string, now: string): D1PreparedStatementLike {
     return this.db

@@ -1151,6 +1151,30 @@ export class BookingService {
   }
 
 
+  // ================================================================ staff correct the guest's contact details
+
+  /**
+   * Name, phone, e-mail, LINE ID of a booking (bookings.edit). The new phone is the one the guest then finds / changes
+   * the booking with. Audited with what changed (the old and new values, as for any staff change of the booking).
+   */
+  async updateCustomer(actor: AuthContext, code: string, input: { name: string; phone: string; email: string | null; lineId: string | null },
+    meta: RequestMeta): Promise<AdminBookingDto> {
+    await this.authz.requirePermission(actor, "bookings.edit", meta);
+    const row = await this.findOr404(code);
+    const phoneNormalized = normalizePhone(input.phone);
+    if (!phoneNormalized) throw new ValidationError({ phone: "INVALID_PHONE" });
+    const before = { name: row.customer_name, phone: row.customer_phone, email: row.customer_email, lineId: row.customer_line_id };
+    const after = { name: input.name, phone: input.phone, email: input.email, lineId: input.lineId };
+    const changed = (Object.keys(after) as (keyof typeof after)[]).filter((k) => (before[k] ?? null) !== (after[k] ?? null));
+    if (!changed.length) return this.toAdmin(row);
+    const pick = (o: typeof before) => Object.fromEntries(changed.map((k) => [k, o[k] ?? null]));
+    await this.db.batch([
+      this.repo.updateCustomerStatement(row.id, { ...input, phoneNormalized }, iso(this.clock())),
+      this.log.auditStatement(actor.userId, "EDIT_BOOKING_CUSTOMER", "bookings", row.id, pick(before), pick(after), meta),
+    ]);
+    return this.toAdmin((await this.repo.findByCode(row.booking_code))!);
+  }
+
   // ================================================================ guest moves the stay (migration 0045)
 
   private get moveRequests(): MoveRequestRepository {

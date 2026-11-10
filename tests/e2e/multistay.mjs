@@ -99,6 +99,23 @@ await check("guest (mobile, TH) picks two houses, a VIP tent and camping in one 
   assert(b.adults === 9 && b.children === 1, `${b.adults}/${b.children}`);
 });
 
+await check("admin: staff correct the guest's name, phone, e-mail and LINE ID", async () => {
+  await pa.goto(`${BASE}/en/admin/bookings/${CODE}`);
+  await pa.getByRole("button", { name: "Edit guest details" }).click();
+  const form = pa.getByRole("form", { name: "Edit guest details" });
+  await form.getByLabel("Phone").fill("0899999999");
+  await form.getByLabel("LINE ID").fill("@guest.new");
+  if (SHOTS) await pa.screenshot({ path: `${SHOTS}/edit-customer.png`, fullPage: true });
+  await form.getByRole("button", { name: "Save" }).click();
+  await pa.getByText("Guest details saved").waitFor();
+  await pa.getByText("@guest.new").waitFor();
+  const b = (await (await req.get(`${BASE}/api/admin/bookings/${CODE}`)).json()).data;
+  assert(b.customerPhone === "0899999999" && b.customerLineId === "@guest.new", JSON.stringify([b.customerPhone, b.customerLineId]));
+  // Back to the phone the guest uses below.
+  const back = await req.put(`${BASE}/api/admin/bookings/${CODE}/customer`, { headers: H, data: { name: b.customerName, phone: "0867777777", email: b.customerEmail, lineId: b.customerLineId } });
+  assert(back.ok(), `restore ${back.status()}`);
+});
+
 await check("admin: the booking lists its stays; cancelling the VIP tent alone gives a new total", async () => {
   await pa.goto(`${BASE}/en/admin/bookings`);
   await pa.locator("tr", { hasText: CODE }).getByText(/House 01.*\+.*House 02.*\+.*VIP-01.*\+/).waitFor();

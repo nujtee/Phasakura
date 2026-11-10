@@ -4202,3 +4202,7 @@
 .thm-booking-thumb--cards { grid-template-columns: repeat(3, 1fr); }
 .thm-booking-thumb--list { grid-template-rows: repeat(3, 1fr); }
 .thm-booking-thumb--list i { background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 30%, var(--color-surface)) 0 28%, var(--color-surface) 28% 100%); border: 1px solid var(--color-border); }
+
+/* Booking → guest details: title with the "edit" button on the right. */
+.adm-cardhead { justify-content: space-between; align-items: center; margin: 0 0 8px; }
+.adm-cardhead .adm-h2 { margin: 0; }

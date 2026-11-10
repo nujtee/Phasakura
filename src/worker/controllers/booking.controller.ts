@@ -495,6 +495,19 @@ export function bookingController(services: ServicesFor) {
       return jsonOk(await services(ctx).bookings.moveDates(auth, codeParam(ctx), checkIn, requestMeta(ctx), rooms), { headers: NO_STORE });
     }),
 
+    /** PUT /api/admin/bookings/:code/customer { name, phone, email, lineId } — staff correct the guest's contact details. */
+    updateCustomer: withPermission("bookings.edit", services, async (ctx, auth) => {
+      const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["name", "phone", "email", "lineId"]);
+      const input = {
+        name: v.string("name", { required: true, max: 100 })!,
+        phone: v.string("phone", { required: true, max: 24 })!,
+        email: v.email("email") ?? null,
+        lineId: v.string("lineId", { max: 50 }) || null,
+      };
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.updateCustomer(auth, codeParam(ctx), input, requestMeta(ctx)), { headers: NO_STORE });
+    }),
+
     /** GET /api/admin/bookings/:code/balance — deposit plan: what is still due and where to pay it. */
     balance: withPermission("bookings.edit", services, async (ctx, auth) =>
       jsonOk(await services(ctx).bookings.balance(auth, codeParam(ctx), requestMeta(ctx)), { headers: NO_STORE })),
