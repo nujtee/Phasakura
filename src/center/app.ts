@@ -15,6 +15,7 @@ import {
   creditFormHtml, creditPayeeNote, creditSwitchForm, fromBase64, hasPayee, isQrMime, loadCredit, loadSync, newVersion, parseCreditForm, pushCredit, QR_MAX_BYTES, sha256Bytes,
   siteTableHtml, sniffQr, syncListHtml, toBase64, type CenterCreditRow, type SiteCreditView,
 } from "./credits.ts";
+import { domainLineHtml, loadDomains, refreshDomains } from "./domains.ts";
 import { loadMultiStay, multiStayCardHtml, multiStayFor, parseFee, type MultiStayState } from "./multi-stay.ts";
 import { FEATURE_NAME, featuresHtml, parseFeatureForm, type FeatureChange } from "./credit-features.ts";
 import { CREDIT_PLANS, MAX_CREDIT_AMOUNT, type CenterCreditOverviewDto, type CenterCreditSettings, type CreditTopupDto } from "../shared/credit-types.ts";
@@ -43,6 +44,8 @@ export interface CenterAppOptions {
   hashIterations?: number;
   /** LINE Messaging API calls (tests pass a fake). */
   lineFetch?: FetchLike;
+  /** RDAP (domain expiry) calls (tests pass a fake). */
+  rdapFetch?: FetchLike;
   /** GitHub API calls for Release from Center (tests pass a fake). */
   githubFetch?: FetchLike;
   /** Cloudflare API calls for "เพิ่มเว็บใหม่" (tests pass a fake). */
@@ -193,6 +196,9 @@ export function createCenterApp(options: CenterAppOptions = {}) {
     if (key === "POST /checks/run") {
       if (me.role === "SUPPORT_READONLY") throw new HttpError(403, "บทบาทของคุณสั่งตรวจไม่ได้");
       const result = await runChecks(ctx.env, { clock, lineFetch: options.lineFetch });
+      // Domain expiry read again too (otherwise twice a day).
+      await refreshDomains(ctx.env, { clock, fetcher: options.rdapFetch, force: true }).catch((e) =>
+        console.error(JSON.stringify({ level: "error", message: "center_domains_refresh_failed", error: String(e).slice(0, 200) })));
       await audit(ctx, me.id, "CHECKS_RUN", null, null, { events: result.events.length, delivery: result.delivery }).run();
       return dashboard(ctx, me, { kind: "ok", text: `ตรวจ ${result.checked} เว็บแล้ว — ${result.events.length ? `${result.events.length} เหตุการณ์ใหม่ (LINE: ${result.delivery})` : "ไม่มีเหตุการณ์ใหม่"}` });
     }
@@ -487,13 +493,14 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
   }
 
   async function dashboard(ctx: Ctx, me: Me, flash: { kind: "ok" | "error"; text: string } | null = null): Promise<Response> {
-    const [latest, open, keyOk] = await Promise.all([
+    const [latest, open, keyOk, domains] = await Promise.all([
       ctx.repo.db.prepare(
         `SELECT c.site, c.checked_at, c.http_status, c.schema_state, c.cron_state, c.errors_24h, c.slips_waiting, c.suspended, c.detail
            FROM center_site_checks c JOIN (SELECT site, max(checked_at) AS at FROM center_site_checks GROUP BY site) m ON m.site = c.site AND m.at = c.checked_at`,
       ).all<CheckRow>(),
       ctx.repo.db.prepare("SELECT site, type, open_since, detail FROM center_alert_states WHERE open_since IS NOT NULL").all<{ site: string; type: string; open_since: string; detail: string | null }>(),
       signingKey(ctx.env.CENTER_SIGNING_KEY).then(Boolean),
+      loadDomains(ctx.repo.db),
     ]);
     const bySite = new Map(latest.results.map((r) => [r.site, r]));
     const rows = ctx.sites.map((site) => {
@@ -509,7 +516,7 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
       const alertHtml = alerts.length
         ? alerts.map((a) => `<div class="small bad">🔴 ${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ตั้งแต่ ${esc(bkk(a.open_since))}</div>`).join("") : "";
       return `<tr><td><a href="/sites/${esc(site.slug)}"><strong>${esc(site.name)}</strong></a><br><a class="small" href="https://${esc(site.domain)}" rel="noopener noreferrer" target="_blank">${esc(site.domain)}</a></td>
-<td>${status}${alertHtml}<div class="small muted">ตรวจล่าสุด ${esc(bkk(c?.checked_at ?? null))}</div></td>
+<td>${status}${alertHtml}<div class="small muted">ตรวจล่าสุด ${esc(bkk(c?.checked_at ?? null))}</div>${domainLineHtml(domains.get(site.domain), ctx.now)}</td>
 <td><form method="post" action="/sites/${esc(site.slug)}/sso" class="inline">
 <input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล เช่น ช่วยตั้งค่าห้องพัก" aria-label="เหตุผลที่เข้าหลังบ้าน ${esc(site.name)}">
 <button type="submit">เข้าหลังบ้าน</button></form></td></tr>`;

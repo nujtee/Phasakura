@@ -105,6 +105,7 @@ export function createApp(options: AppOptions = {}) {
     .put("/api/center/credits", center.setCredits)
     .put("/api/center/credits/multi-stay", center.setMultiStay)
     .put("/api/center/credits/theme", center.setThemeUnlock)
+    .post("/api/center/notices/domain", center.domainNotice)
     .get("/api/center/topups", center.getTopups)
     .get("/api/center/topups/:id/slip", center.topupSlip)
     .post("/api/center/topups/:id/approve", center.approveTopup)

@@ -3,6 +3,7 @@ import { IP_MAX_FAILURES, IP_WINDOW_MS } from "../../src/center/app.ts";
 import { backupState } from "../../src/center/monitor.ts";
 import { retryCredit } from "../../src/center/credits.ts";
 import { announceTopups } from "../../src/center/topups.ts";
+import { daysLeft, domainReminders, parseRdap, refreshDomains, stageOf } from "../../src/center/domains.ts";
 import { pngBytes } from "../helpers/images.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -1048,7 +1049,7 @@ describe("Center: two-step sign-in and hardening (phase C9)", () => {
     const ctx = await setup();
     withGroup(ctx);
     const settings = ctx.db.all<{ alert_types: string }>("SELECT alert_types FROM center_settings")[0]!;
-    assert.deepEqual(JSON.parse(settings.alert_types).slice(-3), ["backup_stale", "security", "topups"], "new types start switched on");
+    assert.deepEqual(JSON.parse(settings.alert_types).slice(-4), ["backup_stale", "security", "topups", "domains"], "new types start switched on");
     await ctx.check();
     await ctx.check();
     assert.ok(!ctx.pushes.some((p) => /สำรองข้อมูล/.test(p.text)), "a newly watched site with no backup yet is fine");
@@ -1533,5 +1534,78 @@ describe("credits: one app fee per booking with several stays (Center migration 
     const read = await ctx.req("GET", "/credits?tab=features", { cookie: help });
     assert.ok(!read.text.includes('action="/credits/features"'));
     assert.equal((await features(ctx, help, { m: 0 }, "xxx", { m: 1 })).status, 403);
+  });
+});
+
+describe("domain expiry (Center migration 0009)", () => {
+  it("RDAP answer → expiry date and registrar; days left (Bangkok); stages 15 / 7 / 3", () => {
+    const r = parseRdap({
+      events: [{ eventAction: "registration", eventDate: "2020-01-02T00:00:00Z" }, { eventAction: "expiration", eventDate: "2027-01-02T04:05:06Z" }],
+      entities: [{ roles: ["registrar"], vcardArray: ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Cloudflare, Inc."]]] }],
+    });
+    assert.deepEqual(r, { expiresAt: "2027-01-02", registrar: "Cloudflare, Inc." });
+    assert.deepEqual(parseRdap({}), { expiresAt: null, registrar: null });
+    assert.equal(daysLeft("2027-01-02", new Date("2026-12-31T18:00:00Z")), 1, "01:00 on 1 Jan in Bangkok");
+    assert.deepEqual([16, 15, 8, 7, 4, 3, 0, -1].map((d) => stageOf(d)?.stage ?? null), [null, "D15", "D15", "D7", "D7", "D3", "D3", null]);
+  });
+
+  it("shown under each site; reminders once per time: Center LINE group + the site's admins and the Center users' e-mail", async () => {
+    const ctx = await setup();
+    const owner = await ctx.ownerSession();
+    const GROUP = `C${"a".repeat(32)}`;
+    ctx.db.run("UPDATE center_settings SET line_group_id = ?, alert_types = '[\"domains\"]' WHERE id = 1", GROUP);
+    ctx.site.db.run("UPDATE email_settings SET enabled = 1, from_email = 'noreply@site.test' WHERE id = 1");
+    let cur = new Date(ctx.site.now);
+    const bkkDate = (d: Date) => new Date(d.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
+    const plus = (days: number) => new Date(Date.parse(`${bkkDate(cur)}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+    const expiry = plus(16);
+    const domain = new URL(ORIGIN).host;
+    const rdap: string[] = [];
+    const fetcher = async (url: string) => {
+      rdap.push(url);
+      return new Response(JSON.stringify({ events: [{ eventAction: "expiration", eventDate: `${expiry}T10:00:00Z` }] }), { status: 200 });
+    };
+    assert.equal(await refreshDomains(ctx.env, { clock: () => cur, fetcher }), 1);
+    assert.equal(await refreshDomains(ctx.env, { clock: () => cur, fetcher }), 0, "read twice a day, not every 5 minutes");
+    assert.equal(rdap[0], `https://rdap.org/domain/${domain}`);
+    assert.match((await ctx.req("GET", "/", { cookie: owner })).text, /โดเมนหมดอายุ .+ \(อีก 16 วัน\)/);
+    // To 08:00 Bangkok of the next day: 15 days left.
+    const target = Date.parse(`${bkkDate(cur)}T01:00:00Z`) + 86_400_000;
+    ctx.advance(target - cur.getTime());
+    cur = new Date(target);
+
+    const run = () => domainReminders(ctx.env, { clock: () => cur, lineFetch: ctx.lineFetch });
+    assert.equal(await run(), 0, "08:00: before the 09:00 reminder");
+    ctx.advance(3_600_000 + 60_000); cur = new Date(cur.getTime() + 3_600_000 + 60_000);
+    assert.equal(await run(), 1, "09:01: the 15-day reminder");
+    assert.equal(await run(), 0, "once");
+    assert.match(ctx.pushes.at(-1)!.text, new RegExp(`${domain.replace(/\./g, "\\.")} หมดอายุ .+ \\(อีก 15 วัน\\)`));
+    const emails = ctx.site.db.all<{ recipient: string; idempotency_key: string }>("SELECT recipient, idempotency_key FROM email_logs WHERE notification_type = 'DOMAIN_EXPIRY' ORDER BY recipient");
+    const centerOwner = ctx.db.all<{ email: string }>("SELECT email FROM center_users")[0]!.email.toLowerCase();
+    assert.deepEqual(emails.map((e) => e.recipient), [`center:${centerOwner}`, "user:site-owner"]);
+    assert.ok(emails.every((e) => e.idempotency_key.startsWith(`DOMAIN_EXPIRY:${domain}:${expiry}:D15:1:`)));
+
+    // 8 days later = 7 days left: 09:00 and 18:00.
+    ctx.advance(8 * 86_400_000); cur = new Date(cur.getTime() + 8 * 86_400_000);
+    assert.equal(await run(), 1);
+    ctx.advance(9 * 3_600_000); cur = new Date(cur.getTime() + 9 * 3_600_000);
+    assert.equal(await run(), 1, "18:01");
+    assert.equal(await run(), 0);
+    // 4 days later = 3 days left, first read at 20:00: one message for the three times passed, then nothing that day.
+    ctx.advance(4 * 86_400_000 + 2 * 3_600_000); cur = new Date(cur.getTime() + 4 * 86_400_000 + 2 * 3_600_000);
+    assert.equal(await run(), 1);
+    assert.equal(await run(), 0);
+    const slots = ctx.db.all<{ slot: string }>("SELECT slot FROM center_domain_notices ORDER BY slot").map((r) => r.slot);
+    assert.deepEqual(slots, ["D15:1", "D3:1", "D3:2", "D3:3", "D7:1", "D7:2"]);
+    assert.equal(ctx.site.db.all("SELECT 1 FROM email_logs WHERE notification_type = 'DOMAIN_EXPIRY'").length, 8, "4 rounds × (site owner + Center user)");
+
+    // Renewed: a new date, the reminders start over for it (none yet: a year away).
+    const renewed = plus(365);
+    await refreshDomains(ctx.env, { clock: () => cur, force: true,
+      fetcher: async () => new Response(JSON.stringify({ events: [{ eventAction: "expiration", eventDate: `${renewed}T00:00:00Z` }] })) });
+    assert.equal(await run(), 0);
+    // A failed read keeps the date known and says why.
+    await refreshDomains(ctx.env, { clock: () => cur, force: true, fetcher: async () => new Response("no", { status: 503 }) });
+    assert.deepEqual({ ...ctx.db.all<{ expires_at: string; error: string }>("SELECT expires_at, error FROM center_domains")[0]! }, { expires_at: renewed, error: "RDAP 503" });
   });
 });

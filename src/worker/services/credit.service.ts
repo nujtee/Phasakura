@@ -594,6 +594,17 @@ export class CreditService {
     return this.centerOverview();
   }
 
+  /**
+   * From Center: the domain expires soon. Queues the notice for the site's Super Admins and Managers (e-mail, LINE)
+   * and the Center users' e-mail; `slot` makes each of Center's reminders go out once. Returns how many were queued.
+   */
+  async domainNotice(input: { domain: string; expiresAt: string; daysLeft: number; slot: string; centerEmails: string[] }): Promise<number> {
+    const key = `DOMAIN_EXPIRY:${input.domain}:${input.expiresAt}:${input.slot}:`;
+    const results = await this.db.batch(this.repo.domainNoticeStatements(key,
+      { domain: input.domain, expiresAt: input.expiresAt, daysLeft: input.daysLeft }, input.centerEmails, iso(this.clock())));
+    return results.reduce((n, r) => n + (r.meta?.changes ?? 0), 0);
+  }
+
   /** For Center: is it on, can it be switched on, where does the balance stand. */
   async centerStatus(): Promise<{ enabled: boolean; payeeSet: boolean; balance: number; held: number; plan: string | null }> {
     const [s, a] = await Promise.all([this.repo.settings().catch(() => null), this.repo.account().catch(() => null)]);

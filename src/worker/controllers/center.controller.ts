@@ -184,6 +184,30 @@ export function centerController(services: (ctx: Pick<RequestContext, "request" 
       return jsonOk(await s.centerAdmin.setMultiStay(req, s.credits, { enabled: body.enabled as boolean, feeBaht: body.feeBaht as number }, requestMeta(ctx)), NO_STORE);
     }) satisfies Handler,
 
+    /**
+     * `{ domain, expiresAt, daysLeft, slot, centerEmails }` — Center's reminder that this site's domain expires soon:
+     * sent to the site's Super Admins / Managers (e-mail, LINE) and to the Center users' e-mail. Any Center role.
+     */
+    domainNotice: (async (ctx) => {
+      await verify(ctx);
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["domain", "expiresAt", "daysLeft", "slot", "centerEmails"]);
+      const domain = typeof body.domain === "string" && /^[a-z0-9.-]{3,253}$/.test(body.domain) ? body.domain : null;
+      if (!domain) v.errors.domain = "INVALID_VALUE";
+      const expiresAt = typeof body.expiresAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.expiresAt) ? body.expiresAt : null;
+      if (!expiresAt) v.errors.expiresAt = "INVALID_DATE";
+      const daysLeft = typeof body.daysLeft === "number" && Number.isInteger(body.daysLeft) && body.daysLeft >= -365 && body.daysLeft <= 400 ? body.daysLeft : null;
+      if (daysLeft === null) v.errors.daysLeft = "OUT_OF_RANGE";
+      const slot = typeof body.slot === "string" && /^[A-Za-z0-9:_-]{1,40}$/.test(body.slot) ? body.slot : null;
+      if (!slot) v.errors.slot = "INVALID_VALUE";
+      const emails = Array.isArray(body.centerEmails) ? body.centerEmails : [];
+      const centerEmails = emails.filter((e): e is string => typeof e === "string" && e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+      if (!Array.isArray(body.centerEmails) || centerEmails.length !== emails.length || emails.length > 20) v.errors.centerEmails = "INVALID_VALUE";
+      v.assertValid();
+      const queued = await services(ctx).credits.domainNotice({ domain: domain!, expiresAt: expiresAt!, daysLeft: daysLeft!, slot: slot!, centerEmails });
+      return jsonOk({ queued }, NO_STORE);
+    }) satisfies Handler,
+
     /** Top-up requests of this site (stage 3): every one waiting and the latest decided. */
     getTopups: (async (ctx) => {
       await verify(ctx);

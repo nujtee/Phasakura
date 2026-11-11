@@ -2,10 +2,11 @@ import type { CreditRepository } from "../repositories/credit.repository.ts";
 import { creditState } from "../services/credit.service.ts";
 import { creditMessage, type CreditMessage } from "./credit-messages.ts";
 
-export const CREDIT_NOTICE_TYPES = new Set(["CREDIT_LOW", "CREDIT_EMPTY", "CREDIT_TOPUP_REQUEST", "CREDIT_TOPUP_RESULT"]);
+export const CREDIT_NOTICE_TYPES = new Set(["CREDIT_LOW", "CREDIT_EMPTY", "CREDIT_TOPUP_REQUEST", "CREDIT_TOPUP_RESULT", "DOMAIN_EXPIRY"]);
 
 /** Admin page a notice links to (path under /{lang}/admin/). */
 export function creditNoticePath(m: CreditMessage): string {
+  if (m.path !== undefined) return m.path;
   return m.forAdmin ? "credit-admin" : "credit-topup";
 }
 
@@ -45,6 +46,14 @@ export async function renderCreditNotice(repo: CreditRepository, type: string, p
       }
       if (topup.status === "REJECTED") return creditMessage({ kind: "TOPUP_REJECTED", amount: topup.amount_requested, reason: topup.reject_reason ?? "" }, lang);
       return { skip: "NOT_RELEVANT" };
+    }
+    case "DOMAIN_EXPIRY": {
+      // Sent by Center (it reads the expiry date); the text is built from what Center sent.
+      const { domain, expiresAt, daysLeft } = payload;
+      if (typeof domain !== "string" || typeof expiresAt !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt) || typeof daysLeft !== "number") {
+        return { skip: "NOT_RELEVANT" };
+      }
+      return creditMessage({ kind: "DOMAIN_EXPIRY", domain, expiresAt, daysLeft }, lang);
     }
     default:
       return { skip: "UNKNOWN_TYPE" };

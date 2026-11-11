@@ -378,6 +378,12 @@ export class EmailService {
       if (!u || !SIMPLE_EMAIL.test(u.email)) return { skip: "RECIPIENT_INACTIVE" };
       return { to: u.email, lang: row.language_code ?? u.preferred_language ?? "th", name: u.display_name };
     }
+    // A Center user (domain notices, sent by Center through this site).
+    if (row.recipient.startsWith("center:")) {
+      const to = row.recipient.slice(7);
+      if (!SIMPLE_EMAIL.test(to)) return { skip: "RECIPIENT_INACTIVE" };
+      return { to, lang: row.language_code ?? "th", name: null };
+    }
     if (row.recipient === "credit-admin") {
       const to = this.credits ? (await this.credits.settings())?.notify_email ?? null : null;
       if (!to || !SIMPLE_EMAIL.test(to)) return { skip: "RECIPIENT_INACTIVE" };

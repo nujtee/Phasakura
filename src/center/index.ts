@@ -3,6 +3,7 @@ import type { CenterEnv } from "./env.ts";
 import { runChecks } from "./monitor.ts";
 import { retryCredit } from "./credits.ts";
 import { announceTopups } from "./topups.ts";
+import { domainReminders, refreshDomains } from "./domains.ts";
 
 /** Center Management console Worker (center/wrangler.jsonc). */
 const app = createCenterApp();
@@ -32,6 +33,14 @@ export default {
       if (fresh) console.warn(JSON.stringify({ level: "info", message: "center_topups_announced", count: fresh }));
     } catch (error) {
       console.error(JSON.stringify({ level: "error", message: "center_topups_announce_failed", error: String(error).slice(0, 300) }));
+    }
+    // Domain expiry (Center migration 0009): read twice a day, reminders 15 / 7 / 3 days before.
+    try {
+      await refreshDomains(env);
+      const n = await domainReminders(env);
+      if (n) console.warn(JSON.stringify({ level: "info", message: "center_domain_reminders", sites: n }));
+    } catch (error) {
+      console.error(JSON.stringify({ level: "error", message: "center_domains_failed", error: String(error).slice(0, 300) }));
     }
   },
 };
