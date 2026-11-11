@@ -54,16 +54,16 @@ jobs:
       - name: Install
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - name: Browser for e2e
-        # Ubuntu's package mirrors sometimes cannot be reached from the runner: try again, and if they stay
-        # unreachable install Chromium alone (the runner image already has its system libraries).
+        # Ubuntu's package mirrors are sometimes unreachable from the runner for a while: try again before giving up.
+        # (Not without the system packages: the Thai / Chinese fonts are needed for the layout checks.)
         run: |
-          for i in 1 2 3; do
+          for i in 1 2 3 4; do
             npx playwright install --with-deps chromium && exit 0
-            echo "::warning::Ubuntu mirrors unreachable (attempt $i) - trying again in 30 s"
-            sleep 30
+            echo "::warning::Ubuntu package mirrors unreachable (attempt $i) - trying again in 60 s"
+            sleep 60
           done
-          echo "::warning::Installing Chromium without system packages"
-          npx playwright install chromium
+          echo "::error::Ubuntu package mirrors stayed unreachable - nothing wrong with the code; re-run this job later"
+          exit 1
       - run: npm run test:e2e
       - name: Screenshots
         if: always()
