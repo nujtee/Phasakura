@@ -53,7 +53,17 @@ jobs:
           cache-dependency-path: package*.json
       - name: Install
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
-      - run: npx playwright install --with-deps chromium
+      - name: Browser for e2e
+        # Ubuntu's package mirrors sometimes cannot be reached from the runner: try again, and if they stay
+        # unreachable install Chromium alone (the runner image already has its system libraries).
+        run: |
+          for i in 1 2 3; do
+            npx playwright install --with-deps chromium && exit 0
+            echo "::warning::Ubuntu mirrors unreachable (attempt $i) - trying again in 30 s"
+            sleep 30
+          done
+          echo "::warning::Installing Chromium without system packages"
+          npx playwright install chromium
       - run: npm run test:e2e
       - name: Screenshots
         if: always()
