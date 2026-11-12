@@ -10,7 +10,9 @@ export type CreditNotice =
   | { kind: "EMPTY"; available: number; feePerUnit: number }
   | { kind: "TOPUP_REQUEST"; requester: string; plan: string; amount: number; reasons: string[] }
   | { kind: "TOPUP_APPROVED"; amount: number; plan: string; balance: number }
-  | { kind: "TOPUP_REJECTED"; amount: number; reason: string };
+  | { kind: "TOPUP_REJECTED"; amount: number; reason: string }
+  /** From Center: the site's domain name expires soon (renew it at the registrar). */
+  | { kind: "DOMAIN_EXPIRY"; domain: string; expiresAt: string; daysLeft: number };
 
 const TEXTS = {
   th: {
@@ -32,6 +34,10 @@ const TEXTS = {
     rejectedBody: "ยอด {amount} บาท\nเหตุผล: {reason}",
     openLabel: "เปิดหน้าเติมเครดิต",
     openAdminLabel: "เปิดหน้าจัดการเติมเครดิต",
+    domainSubject: "โดเมน {domain} จะหมดอายุในอีก {days} วัน",
+    domainTitle: "🌐 โดเมนใกล้หมดอายุ",
+    domainBody: "โดเมน {domain} หมดอายุวันที่ {date} (อีก {days} วัน)\nกรุณาต่ออายุที่ผู้ให้บริการจดโดเมน ก่อนเว็บและอีเมลหยุดทำงาน",
+    domainLabel: "เปิดหลังบ้าน",
   },
   en: {
     lowSubject: "Credits running low: {available} left",
@@ -52,6 +58,10 @@ const TEXTS = {
     rejectedBody: "Amount: {amount} THB\nReason: {reason}",
     openLabel: "Open Top up credits",
     openAdminLabel: "Open Credit management",
+    domainSubject: "Domain {domain} expires in {days} days",
+    domainTitle: "🌐 Domain expiring soon",
+    domainBody: "The domain {domain} expires on {date} ({days} days left)\nPlease renew it with your domain registrar before the website and e-mail stop working.",
+    domainLabel: "Open admin",
   },
   "zh-CN": {
     lowSubject: "积分即将用完：剩余 {available}",
@@ -72,6 +82,10 @@ const TEXTS = {
     rejectedBody: "金额 {amount} 泰铢\n原因：{reason}",
     openLabel: "打开充值页面",
     openAdminLabel: "打开积分管理",
+    domainSubject: "域名 {domain} 将在 {days} 天后到期",
+    domainTitle: "🌐 域名即将到期",
+    domainBody: "域名 {domain} 将于 {date} 到期（剩余 {days} 天）\n请在域名注册商处续费，以免网站和邮箱停止工作。",
+    domainLabel: "打开后台",
   },
 } as const;
 
@@ -94,6 +108,8 @@ export interface CreditMessage {
   /** Button label; the link is the top-up page (users) or the credit admin page (Super Admin). */
   linkLabel: string;
   forAdmin: boolean;
+  /** Admin page to link (under /{lang}/admin/), when not the credit pages. */
+  path?: string;
 }
 
 export function creditMessage(notice: CreditNotice, languageCode: string | null | undefined): CreditMessage {
@@ -126,6 +142,14 @@ export function creditMessage(notice: CreditNotice, languageCode: string | null 
         subject: fill(t.approvedSubject, { amount: n(notice.amount) }), title: t.approvedTitle,
         body: fill(t.approvedBody, { amount: n(notice.amount), plan: notice.plan, balance: n(notice.balance) }), linkLabel: t.openLabel, forAdmin: false,
       };
+    case "DOMAIN_EXPIRY": {
+      const date = new Date(`${notice.expiresAt}T00:00:00Z`).toLocaleDateString(code === "th" ? "th-TH" : code === "zh-CN" ? "zh-CN" : "en-GB",
+        { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+      return {
+        subject: fill(t.domainSubject, { domain: notice.domain, days: n(notice.daysLeft) }), title: t.domainTitle,
+        body: fill(t.domainBody, { domain: notice.domain, date, days: n(notice.daysLeft) }), linkLabel: t.domainLabel, forAdmin: true, path: "",
+      };
+    }
     case "TOPUP_REJECTED":
       return {
         subject: t.rejectedSubject, title: t.rejectedTitle,

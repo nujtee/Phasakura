@@ -90,6 +90,8 @@ export interface CreditUserRow {
 /** Back-office users who get the low / empty notices: every ACTIVE user but SUPER_ADMIN. */
 const STAFF_USERS = `u.status = 'ACTIVE' AND ${siteUser()} AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = 'role_super_admin')`;
 const SUPER_ADMINS = `u.status = 'ACTIVE' AND ${siteUser()} AND EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = 'role_super_admin')`;
+/** Super Admins and Managers (domain notices from Center). */
+const SITE_ADMINS = `u.status = 'ACTIVE' AND ${siteUser()} AND EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id IN ('role_super_admin', 'role_manager'))`;
 const EMAIL_ON = "EXISTS (SELECT 1 FROM email_settings s WHERE s.id = 1 AND s.enabled = 1)";
 const LINE_ON = "EXISTS (SELECT 1 FROM line_settings s WHERE s.id = 1 AND s.enabled = 1)";
 
@@ -391,6 +393,36 @@ export class CreditRepository {
              FROM users u JOIN user_line_links l ON l.user_id = u.id WHERE ${STAFF_USERS} AND ${LINE_ON}`,
         )
         .bind(type, key, json, now),
+    ];
+  }
+
+  /**
+   * Center: the domain expires soon — e-mail and LINE to every active Super Admin and Manager (as they set their
+   * notices), plus e-mail to the Center users Center lists ("center:" recipients). Each once per key.
+   */
+  domainNoticeStatements(key: string, payload: unknown, centerEmails: string[], now: string): D1PreparedStatementLike[] {
+    const json = JSON.stringify(payload);
+    return [
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO email_logs (id, notification_type, idempotency_key, language_code, recipient, payload_json, scheduled_for, created_at, updated_at)
+           SELECT lower(hex(randomblob(16))), 'DOMAIN_EXPIRY', ?1 || u.id, COALESCE(u.preferred_language, 'th'), 'user:' || u.id, ?2, ?3, ?3, ?3
+             FROM users u WHERE ${SITE_ADMINS} AND ${EMAIL_ON}`,
+        )
+        .bind(key, json, now),
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO notification_logs (id, channel, notification_type, idempotency_key, language_code, recipient, payload_json, scheduled_for, created_at, updated_at)
+           SELECT lower(hex(randomblob(16))), 'LINE', 'DOMAIN_EXPIRY', ?1 || u.id, COALESCE(u.preferred_language, 'th'), 'user:' || u.id, ?2, ?3, ?3, ?3
+             FROM users u JOIN user_line_links l ON l.user_id = u.id WHERE ${SITE_ADMINS} AND ${LINE_ON}`,
+        )
+        .bind(key, json, now),
+      ...centerEmails.map((email) => this.db
+        .prepare(
+          `INSERT OR IGNORE INTO email_logs (id, notification_type, idempotency_key, language_code, recipient, payload_json, scheduled_for, created_at, updated_at)
+           SELECT lower(hex(randomblob(16))), 'DOMAIN_EXPIRY', ?1 || ?2, 'th', ?2, ?3, ?4, ?4, ?4 WHERE ${EMAIL_ON}`,
+        )
+        .bind(key, `center:${email.toLowerCase()}`, json, now)),
     ];
   }
 
