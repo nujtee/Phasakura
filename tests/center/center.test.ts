@@ -1574,7 +1574,7 @@ describe("domain expiry (Center migration 0009)", () => {
     assert.equal(await refreshDomains(ctx.env, { clock: () => cur, fetcher }), 0, "read twice a day, not every 5 minutes");
     // .com / .net straight to Verisign; any other TLD through IANA's bootstrap file.
     assert.equal(rdap[0], `https://rdap.example/domain/${domain}`);
-    assert.match((await ctx.req("GET", "/", { cookie: owner })).text, /โดเมนหมดอายุ .+ \(อีก 16 วัน\)/);
+    assert.match((await ctx.req("GET", "/", { cookie: owner })).text, /· อีก 16 วัน/);
     // To 08:00 Bangkok of the next day: 15 days left.
     const target = Date.parse(`${bkkDate(cur)}T01:00:00Z`) + 86_400_000;
     ctx.advance(target - cur.getTime());

@@ -15,7 +15,8 @@ import {
   creditFormHtml, creditPayeeNote, creditSwitchForm, fromBase64, hasPayee, isQrMime, loadCredit, loadSync, newVersion, parseCreditForm, pushCredit, QR_MAX_BYTES, sha256Bytes,
   siteTableHtml, sniffQr, syncListHtml, toBase64, type CenterCreditRow, type SiteCreditView,
 } from "./credits.ts";
-import { domainLineHtml, loadDomains, refreshDomains } from "./domains.ts";
+import { loadDomains, refreshDomains } from "./domains.ts";
+import { overviewHtml } from "./overview.ts";
 import { loadMultiStay, multiStayCardHtml, multiStayFor, parseFee, type MultiStayState } from "./multi-stay.ts";
 import { FEATURE_NAME, featuresHtml, parseFeatureForm, type FeatureChange } from "./credit-features.ts";
 import { CREDIT_PLANS, MAX_CREDIT_AMOUNT, type CenterCreditOverviewDto, type CenterCreditSettings, type CreditTopupDto } from "../shared/credit-types.ts";
@@ -502,34 +503,21 @@ ${codeForm(`/mfa?next=${encodeURIComponent(back)}`, "รหัส 6 หลัก
       signingKey(ctx.env.CENTER_SIGNING_KEY).then(Boolean),
       loadDomains(ctx.repo.db),
     ]);
-    const bySite = new Map(latest.results.map((r) => [r.site, r]));
-    const rows = ctx.sites.map((site) => {
-      const c = bySite.get(site.slug);
-      const alerts = open.results.filter((a) => a.site === site.slug);
-      const status = !c ? '<span class="muted">ยังไม่เคยตรวจ</span>'
-        : c.http_status !== 200 ? `<span class="bad">ติดต่อไม่ได้</span> <span class="small muted">${esc(c.detail ?? "")}</span>`
-          : `${c.suspended ? '<span class="bad">พักการรับจอง</span>' : '<span class="ok">ออนไลน์</span>'}
-<span class="small ${c.schema_state === "ok" ? "muted" : "warn"}">· ฐานข้อมูล ${esc(c.schema_state)}</span>
-<span class="small ${c.cron_state === "ok" ? "muted" : "warn"}">· cron ${esc(c.cron_state)}</span>
-<span class="small ${(c.errors_24h ?? 0) > 0 ? "warn" : "muted"}">· error 24 ชม. ${esc(c.errors_24h)}</span>
-<span class="small muted">· สลิปรอตรวจ ${esc(c.slips_waiting)}</span>`;
-      const alertHtml = alerts.length
-        ? alerts.map((a) => `<div class="small bad">🔴 ${esc(ALERT_LABELS[a.type as SettingType] ?? a.type)} — ตั้งแต่ ${esc(bkk(a.open_since))}</div>`).join("") : "";
-      return `<tr><td><a href="/sites/${esc(site.slug)}"><strong>${esc(site.name)}</strong></a><br><a class="small" href="https://${esc(site.domain)}" rel="noopener noreferrer" target="_blank">${esc(site.domain)}</a></td>
-<td>${status}${alertHtml}<div class="small muted">ตรวจล่าสุด ${esc(bkk(c?.checked_at ?? null))}</div>${domainLineHtml(domains.get(site.domain), ctx.now)}</td>
-<td><form method="post" action="/sites/${esc(site.slug)}/sso" class="inline">
-<input name="reason" required minlength="3" maxlength="300" placeholder="เหตุผล เช่น ช่วยตั้งค่าห้องพัก" aria-label="เหตุผลที่เข้าหลังบ้าน ${esc(site.name)}">
-<button type="submit">เข้าหลังบ้าน</button></form></td></tr>`;
-    }).join("");
     const keyNote = keyOk ? "" : '<div class="flash error">ยังไม่มี key สำหรับเซ็นคำสั่ง — GitHub → Actions → Center setup → keys</div>';
-    const runButton = (me.role === "PLATFORM_OWNER" ? '<a href="/sites/new" style="margin-right:12px">+ เพิ่มเว็บใหม่</a>' : "")
-      + (me.role === "SUPPORT_READONLY" ? "" : '<form method="post" action="/checks/run" class="inline"><button class="plain" type="submit">ตรวจตอนนี้</button></form>');
     return html(page({
       title: "เว็บทั้งหมด", user: me, current: "sites", flash,
-      body: `<div class="inline" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h1 style="margin:0">เว็บทั้งหมด (${ctx.sites.length})</h1><div style="display:flex;align-items:center">${runButton}</div></div>
-<p class="muted small">ตรวจอัตโนมัติทุก 5 นาที · ปัญหาที่เห็น 2 รอบติดกันจะแจ้งเตือนเข้ากลุ่ม LINE</p>${keyNote}
-<div class="card scroll"><table><thead><tr><th>เว็บ</th><th>สถานะ</th><th>หลังบ้าน</th></tr></thead><tbody>${rows}</tbody></table>
-<p class="muted small">การเข้าหลังบ้านทุกครั้งถูกบันทึกทั้งใน Center และใน Audit logs ของเว็บนั้น พร้อมเหตุผล${me.role === "SUPPORT_READONLY" ? " — บทบาทของคุณเข้าได้แบบดูอย่างเดียว" : ""}</p></div>`,
+      body: keyNote + overviewHtml({
+        sites: ctx.sites,
+        checks: new Map(latest.results.map((r) => [r.site, r])),
+        alerts: open.results,
+        domains,
+        alertLabel: (type) => ALERT_LABELS[type as SettingType] ?? type,
+        now: ctx.now,
+        query: (ctx.url.searchParams.get("q") ?? "").slice(0, 100),
+        readOnly: me.role === "SUPPORT_READONLY",
+        canAdd: me.role === "PLATFORM_OWNER",
+        canRun: me.role !== "SUPPORT_READONLY",
+      }),
     }));
   }
 

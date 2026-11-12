@@ -1,6 +1,5 @@
 import { createLineApi, type FetchLike } from "../worker/line/line-api.ts";
 import { parseSites, type CenterEnv, type CenterSite } from "./env.ts";
-import { esc } from "./html.ts";
 import { bangkokTime, loadSettings, MONITOR_ACTOR } from "./monitor.ts";
 import { SiteClient } from "./site-client.ts";
 
@@ -204,14 +203,4 @@ export async function domainReminders(env: CenterEnv, options: { clock?: () => D
   }
   await env.DB.batch(statements);
   return due.length;
-}
-
-/** The line under a site on the dashboard. */
-export function domainLineHtml(row: DomainRow | undefined, now: Date): string {
-  if (!row) return '<div class="small muted">โดเมน: ยังไม่ได้อ่านวันหมดอายุ</div>';
-  if (!row.expires_at) return `<div class="small warn">โดเมน: อ่านวันหมดอายุไม่ได้${row.error ? ` (${esc(row.error)})` : ""}</div>`;
-  const left = daysLeft(row.expires_at, now);
-  const cls = left <= 3 ? "bad" : left <= 15 ? "warn" : "muted";
-  const when = left < 0 ? `หมดอายุแล้ว ${-left} วัน` : left === 0 ? "หมดอายุวันนี้" : `อีก ${left} วัน`;
-  return `<div class="small ${cls}">โดเมนหมดอายุ ${esc(thaiDate(row.expires_at))} (${when})${row.registrar ? ` · ${esc(row.registrar)}` : ""}</div>`;
 }

@@ -76,8 +76,8 @@ export function bkk(iso: string | null): string {
 }
 
 const STYLE = `
-:root{color-scheme:light dark;--bg:#f6f7f9;--card:#fff;--text:#1d2129;--muted:#5f6673;--line:#dfe3e8;--accent:#1f5fbf;--ok:#1a7f37;--warn:#9a6700;--bad:#c62828}
-@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1a1f25;--text:#e6e9ee;--muted:#9aa3ad;--line:#2c333b;--accent:#6ea8ff;--ok:#4cc26b;--warn:#e3b341;--bad:#ff6b6b}}
+:root{color-scheme:light dark;--bg:#f6f7f9;--card:#fff;--text:#1d2129;--muted:#5f6673;--line:#dfe3e8;--accent:#1f5fbf;--ok:#1a7f37;--warn:#9a6700;--bad:#c62828;--info:#1f5fbf}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1a1f25;--text:#e6e9ee;--muted:#9aa3ad;--line:#2c333b;--accent:#6ea8ff;--ok:#4cc26b;--warn:#e3b341;--bad:#ff6b6b;--info:#8ab8ff}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI","Noto Sans Thai",sans-serif}
 header{background:var(--card);border-bottom:1px solid var(--line)}
 .bar{max-width:1080px;margin:0 auto;padding:10px 16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
@@ -118,6 +118,28 @@ table.features th{vertical-align:bottom}table.features td{vertical-align:middle;
 .sw input:disabled+.sw-track{opacity:.45;cursor:not-allowed}
 .savebar{position:sticky;bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card);border:1px solid #f5b54a;border-radius:12px;padding:12px 16px;box-shadow:0 8px 24px rgba(16,24,40,.12)}
 .savebar label{margin:0 0 0 auto}.savebar input{width:min(320px,100%)}
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:16px}.page-head h1{margin:0}.page-head p{margin:2px 0 0}
+.head-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-weight:500;text-decoration:none;cursor:pointer;white-space:nowrap;list-style:none}
+.btn::-webkit-details-marker{display:none}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px}.tile-v{font-size:1.6rem;font-weight:700;line-height:1.3}
+.sec-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px}.sec-head h2{margin:0}
+.search{display:flex;gap:6px;margin-left:auto}.search input{width:min(240px,60vw)}
+.attn{display:flex;align-items:center;gap:14px;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
+.attn-body{flex:1;min-width:220px}.sev{width:4px;align-self:stretch;border-radius:2px;flex:none;background:var(--info)}
+.sev.bad{background:var(--bad)}.sev.warn{background:var(--warn)}.info{color:var(--info)}
+.acts{display:flex;gap:8px;align-items:center}
+table.sites{min-width:820px}table.sites td{vertical-align:middle;padding:10px 16px}table.sites th{padding:10px 16px}
+.chks{display:flex;gap:12px;flex-wrap:wrap}.chk{font-size:.85rem;color:var(--muted);white-space:nowrap}.chk b{color:var(--text);font-weight:600}.chk.w b{color:var(--warn)}
+.exp{height:4px;width:120px;border-radius:2px;background:var(--line);overflow:hidden;margin:5px 0 2px}.exp span{display:block;height:100%;background:var(--ok)}
+.exp.warn span{background:var(--warn)}.exp.bad span{background:var(--bad)}
+table.sites a,.attn a{color:inherit;text-decoration:none}table.sites a:hover,.attn a:hover{text-decoration:underline}
+details.sso{position:relative;display:inline-block;text-align:left}
+.sso-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:5;width:300px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:8px}
+table.sites .sso-pop{position:static;width:260px;margin-top:6px;box-shadow:none}
+.sso-pop label{margin:0;font-size:.85rem}.sso-pop p{margin:0}
 table.features{min-width:760px}@media (max-width:640px){.savebar{position:static}.savebar label{margin:0}}
 `;
 
