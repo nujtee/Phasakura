@@ -3,7 +3,7 @@ import { IP_MAX_FAILURES, IP_WINDOW_MS } from "../../src/center/app.ts";
 import { backupState } from "../../src/center/monitor.ts";
 import { retryCredit } from "../../src/center/credits.ts";
 import { announceTopups } from "../../src/center/topups.ts";
-import { daysLeft, domainReminders, parseRdap, refreshDomains, stageOf } from "../../src/center/domains.ts";
+import { daysLeft, domainReminders, parseBootstrap, parseRdap, refreshDomains, stageOf } from "../../src/center/domains.ts";
 import { pngBytes } from "../helpers/images.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -1545,6 +1545,8 @@ describe("domain expiry (Center migration 0009)", () => {
     });
     assert.deepEqual(r, { expiresAt: "2027-01-02", registrar: "Cloudflare, Inc." });
     assert.deepEqual(parseRdap({}), { expiresAt: null, registrar: null });
+    const boot = parseBootstrap({ services: [[["th", "co.th"], ["https://rdap.thains.co.th/rdap"]], [["io"], ["http://x/", "https://rdap.io/"]], "junk"] });
+    assert.deepEqual([...boot], [["th", "https://rdap.thains.co.th/rdap/"], ["co.th", "https://rdap.thains.co.th/rdap/"], ["io", "https://rdap.io/"]]);
     assert.equal(daysLeft("2027-01-02", new Date("2026-12-31T18:00:00Z")), 1, "01:00 on 1 Jan in Bangkok");
     assert.deepEqual([16, 15, 8, 7, 4, 3, 0, -1].map((d) => stageOf(d)?.stage ?? null), [null, "D15", "D15", "D7", "D7", "D3", "D3", null]);
   });
@@ -1561,13 +1563,17 @@ describe("domain expiry (Center migration 0009)", () => {
     const expiry = plus(16);
     const domain = new URL(ORIGIN).host;
     const rdap: string[] = [];
-    const fetcher = async (url: string) => {
+    // ".test" goes through IANA's bootstrap file.
+    const boot = (f: (url: string) => Promise<Response>) => async (url: string) => (url === "https://data.iana.org/rdap/dns.json"
+      ? new Response(JSON.stringify({ services: [[["test"], ["https://rdap.example/"]]] })) : f(url));
+    const fetcher = boot(async (url: string) => {
       rdap.push(url);
       return new Response(JSON.stringify({ events: [{ eventAction: "expiration", eventDate: `${expiry}T10:00:00Z` }] }), { status: 200 });
-    };
+    });
     assert.equal(await refreshDomains(ctx.env, { clock: () => cur, fetcher }), 1);
     assert.equal(await refreshDomains(ctx.env, { clock: () => cur, fetcher }), 0, "read twice a day, not every 5 minutes");
-    assert.equal(rdap[0], `https://rdap.org/domain/${domain}`);
+    // .com / .net straight to Verisign; any other TLD through IANA's bootstrap file.
+    assert.equal(rdap[0], `https://rdap.example/domain/${domain}`);
     assert.match((await ctx.req("GET", "/", { cookie: owner })).text, /โดเมนหมดอายุ .+ \(อีก 16 วัน\)/);
     // To 08:00 Bangkok of the next day: 15 days left.
     const target = Date.parse(`${bkkDate(cur)}T01:00:00Z`) + 86_400_000;
@@ -1602,10 +1608,10 @@ describe("domain expiry (Center migration 0009)", () => {
     // Renewed: a new date, the reminders start over for it (none yet: a year away).
     const renewed = plus(365);
     await refreshDomains(ctx.env, { clock: () => cur, force: true,
-      fetcher: async () => new Response(JSON.stringify({ events: [{ eventAction: "expiration", eventDate: `${renewed}T00:00:00Z` }] })) });
+      fetcher: boot(async () => new Response(JSON.stringify({ events: [{ eventAction: "expiration", eventDate: `${renewed}T00:00:00Z` }] }))) });
     assert.equal(await run(), 0);
     // A failed read keeps the date known and says why.
-    await refreshDomains(ctx.env, { clock: () => cur, force: true, fetcher: async () => new Response("no", { status: 503 }) });
+    await refreshDomains(ctx.env, { clock: () => cur, force: true, fetcher: boot(async () => new Response("no", { status: 503 })) });
     assert.deepEqual({ ...ctx.db.all<{ expires_at: string; error: string }>("SELECT expires_at, error FROM center_domains")[0]! }, { expires_at: renewed, error: "RDAP 503" });
   });
 });
