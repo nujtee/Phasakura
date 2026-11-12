@@ -20,7 +20,30 @@ export interface DomainRow {
 }
 
 const RECHECK_MS = 12 * 3_600_000;
-const RDAP = "https://rdap.org/domain/";
+/**
+ * Where each TLD's registry answers RDAP: IANA's bootstrap file (read once per round), with the common ones built in.
+ * Asked directly, not through rdap.org (which refuses requests from Cloudflare Workers: 403).
+ */
+const IANA_BOOTSTRAP = "https://data.iana.org/rdap/dns.json";
+const KNOWN_RDAP: Record<string, string> = {
+  com: "https://rdap.verisign.com/com/v1/",
+  net: "https://rdap.verisign.com/net/v1/",
+};
+const HEADERS = { accept: "application/rdap+json, application/json", "user-agent": "PhasakuraCenter/1.0 (domain expiry check)" };
+
+/** TLD → RDAP base URL (ending in "/"), from IANA's bootstrap answer. */
+export function parseBootstrap(json: unknown): Map<string, string> {
+  const out = new Map<string, string>();
+  const services = (json as { services?: unknown } | null)?.services;
+  if (!Array.isArray(services)) return out;
+  for (const s of services) {
+    if (!Array.isArray(s) || !Array.isArray(s[0]) || !Array.isArray(s[1])) continue;
+    const url = (s[1] as unknown[]).find((u): u is string => typeof u === "string" && u.startsWith("https://"));
+    if (!url) continue;
+    for (const tld of s[0] as unknown[]) if (typeof tld === "string") out.set(tld.toLowerCase(), url.endsWith("/") ? url : `${url}/`);
+  }
+  return out;
+}
 
 /** Stages from the furthest: days left at most `days` → these Bangkok times. */
 export const DOMAIN_STAGES = [
@@ -76,11 +99,27 @@ export async function refreshDomains(env: CenterEnv, options: { clock?: () => Da
     const r = known.get(s.domain);
     return options.force || !r || now.getTime() - Date.parse(r.checked_at) >= RECHECK_MS;
   });
+  let bootstrap: Map<string, string> | null = null;
+  const baseFor = async (domain: string): Promise<string | null> => {
+    const tld = domain.slice(domain.lastIndexOf(".") + 1).toLowerCase();
+    if (KNOWN_RDAP[tld]) return KNOWN_RDAP[tld]!;
+    if (!bootstrap) {
+      try {
+        const res = await fetcher(IANA_BOOTSTRAP, { headers: HEADERS });
+        bootstrap = res.ok ? parseBootstrap(await res.json()) : new Map();
+      } catch {
+        bootstrap = new Map();
+      }
+    }
+    return bootstrap.get(tld) ?? null;
+  };
   for (const site of due) {
     let row: { expiresAt: string | null; registrar: string | null; error: string | null };
     try {
-      const res = await fetcher(`${RDAP}${encodeURIComponent(site.domain)}`, { headers: { accept: "application/rdap+json, application/json" } });
-      if (!res.ok) row = { expiresAt: null, registrar: null, error: `RDAP ${res.status}` };
+      const base = await baseFor(site.domain);
+      const res = base ? await fetcher(`${base}domain/${encodeURIComponent(site.domain)}`, { headers: HEADERS }) : null;
+      if (!res) row = { expiresAt: null, registrar: null, error: "ไม่พบ RDAP ของ registry นี้" };
+      else if (!res.ok) row = { expiresAt: null, registrar: null, error: `RDAP ${res.status}` };
       else {
         const parsed = parseRdap(await res.json());
         row = { ...parsed, error: parsed.expiresAt ? null : "ไม่พบวันหมดอายุในข้อมูลของ registry" };
