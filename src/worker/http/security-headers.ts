@@ -20,6 +20,9 @@ export function withSecurityHeaders(response: Response, requestId: string): Resp
   }
   // API data is private by default. Public endpoints opt in to caching explicitly.
   if (!headers.has("Cache-Control")) headers.set("Cache-Control", "no-store");
+  // JSON is data for the pages, never a search result of its own (robots.txt lets crawlers fetch the public
+  // endpoints so they can render the pages). Images and other files are not touched.
+  if ((headers.get("Content-Type") ?? "").startsWith("application/json")) headers.set("X-Robots-Tag", "noindex");
   headers.set("X-Request-Id", requestId);
   return new Response(response.body, {
     status: response.status,
