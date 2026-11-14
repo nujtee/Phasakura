@@ -310,6 +310,11 @@ describe("redirects, robots.txt, sitemap.xml, favicon", () => {
     for (const p of ["/api/", "/admin", "/th/admin", "/zh-cn/admin", "/en/booking/lookup", "/customer", "/payment"]) {
       assert.match(txt, new RegExp(`^Disallow: ${p.replace(/\//g, "\\/")}$`, "m"), p);
     }
+    // A crawler that renders the page must be able to load what the page loads; bookings and feeds stay closed.
+    assert.match(txt, /^Allow: \/api\/public\/$/m);
+    for (const p of ["/api/public/bookings", "/api/public/ical/"]) assert.match(txt, new RegExp(`^Disallow: ${p.replace(/\//g, "\\/")}$`, "m"), p);
+    const api = await h.get("/api/public/home?lang=th");
+    assert.equal(api.headers.get("X-Robots-Tag"), "noindex", "API answers are never search results themselves");
     assert.doesNotMatch(txt, /^Disallow: \/$/m);
     assert.match(txt, new RegExp(`^Sitemap: ${BASE}/sitemap.xml$`, "m"));
   });

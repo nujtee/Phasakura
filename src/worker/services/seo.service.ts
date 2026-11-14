@@ -386,12 +386,18 @@ export class SeoService {
     };
   }
 
-  /** robots.txt: private areas excluded; a non-production deployment blocks everything. */
+  /**
+   * robots.txt: private areas excluded; a non-production deployment blocks everything.
+   * The public read endpoints stay open: a crawler that runs the page's script (Googlebot) loads them to draw the
+   * page, and a blocked request leaves it with the "could not load" state instead of the content. The longest
+   * matching rule wins, so bookings and calendar feeds under /api/public/ stay closed. API answers carry
+   * `X-Robots-Tag: noindex`, so they never become search results themselves.
+   */
   robotsTxt(): string {
     if (!this.production) {
       return ["# Not the production site: nothing here should be indexed.", "User-agent: *", "Disallow: /", ""].join("\n");
     }
-    const lines = ["User-agent: *", "Disallow: /api/", "Disallow: /admin"];
+    const lines = ["User-agent: *", "Disallow: /api/", "Allow: /api/public/", "Disallow: /api/public/bookings", "Disallow: /api/public/ical/", "Disallow: /admin"];
     for (const l of LOCALES) lines.push(`Disallow: /${l.path}/admin`);
     for (const l of LOCALES) lines.push(`Disallow: ${bookingLookupPath(l)}`);
     lines.push("Disallow: /customer", "Disallow: /payment", "", `Sitemap: ${this.baseUrl}/sitemap.xml`, "");
