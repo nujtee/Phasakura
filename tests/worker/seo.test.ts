@@ -73,8 +73,30 @@ describe("app shell with page metadata (Phase 13)", () => {
     assert.equal(lodging.telephone, "000-000-0000");
     assert.equal(lodging.priceRange, "฿250 – ฿3,500", "from live active prices (camping per adult … dearest house)");
     assert.deepEqual(lodging.availableLanguage, ["th", "en", "zh-Hans"]);
+    // The stays themselves, each linked to its own page, and how many there are.
+    const active = h.db.all<{ slug: string }>("SELECT slug FROM accommodation_units WHERE status = 'ACTIVE' AND deleted_at IS NULL");
+    const places = lodging.containsPlace as { "@type": string; name: string; url: string }[];
+    assert.equal(lodging.numberOfRooms, active.length);
+    assert.deepEqual(places.map((p) => p.url).sort(), active.map((u) => `${BASE}/th/accommodation/${u.slug}`).sort());
+    assert.ok(places.every((p) => p["@type"] === "Accommodation" && p.name));
+    assert.equal(lodging.currenciesAccepted, "THB");
+    const address = lodging.address as Record<string, string> | undefined;
+    if (address) assert.equal(address.addressCountry, "TH");
+    // Photos are absolute URLs (the first slide and stay covers), never empty: the logo when there are none.
+    const images = ([] as unknown[]).concat(lodging.image ?? []);
+    assert.ok(images.every((u) => typeof u === "string" && /^https?:\/\//.test(u)), JSON.stringify(images));
     for (const [k, v] of Object.entries(PAGE_SECURITY_HEADERS)) assert.equal(res.headers.get(k), v, k);
     assert.match(html, /<div id="root"><div class="prerender">/, "the page content is in the HTML (prerender); the app replaces it");
+  });
+
+  it("booking page: the stays as an ItemList after the breadcrumb and the page", async () => {
+    const m = head((await page("/th/booking")).html);
+    assert.deepEqual(m.jsonLd.map((d) => d["@type"]), ["BreadcrumbList", "WebPage", "ItemList"]);
+    const list = m.jsonLd[2]!;
+    const items = list.itemListElement as { position: number; url: string }[];
+    assert.equal(list.numberOfItems, items.length);
+    assert.deepEqual(items.map((i) => i.position), items.map((_, i) => i + 1));
+    assert.ok(items.every((i) => i.url.startsWith(`${BASE}/th/accommodation/`)));
   });
 
   it("several contact numbers: JSON-LD telephone lists each one", async () => {

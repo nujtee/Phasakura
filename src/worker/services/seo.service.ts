@@ -212,11 +212,12 @@ export class SeoService {
       const home = await this.content.home(lang);
       const slide = home.slides[0]?.desktop ?? home.sections.find((s) => s.image)?.image ?? null;
       fallbackImage = this.image(slide, title);
-      if (siteName) jsonLd.push(await this.lodging(site, locale, homeUrl, description, extras));
+      if (siteName) jsonLd.push(await this.lodging(site, locale, homeUrl, description, extras, slide?.url ?? null));
     } else {
       const pageTitle = t.pages[pageKey!].title;
       title = withSite(pageTitle);
       description = siteName ? clean(fill(sm[pageKey!], { site: siteName })) : null;
+      let stayList: Record<string, unknown> | null = null;
       if (pageKey === "gallery") {
         const g = await this.content.gallery(lang);
         fallbackImage = this.image(g.images[0]?.image, pageTitle);
@@ -225,7 +226,18 @@ export class SeoService {
         fallbackImage = this.image(h.sections.find((s) => s.image)?.image ?? h.timeline.find((i) => i.image)?.image, pageTitle);
       } else if (pageKey === "booking") {
         const list = await this.accommodation.publicList(locale);
-        fallbackImage = this.image([...list.houses, ...list.vipTents].find((u) => u.cover)?.cover, pageTitle);
+        const units = [...list.houses, ...list.vipTents];
+        fallbackImage = this.image(units.find((u) => u.cover)?.cover, pageTitle);
+        // The stays as a list, each pointing at its own page (which carries Accommodation + Offer).
+        if (units.length) {
+          stayList = {
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            name: pageTitle,
+            numberOfItems: units.length,
+            itemListElement: units.map((u, i) => ({ "@type": "ListItem", position: i + 1, name: u.name, url: `${this.baseUrl}${accommodationPath(locale, u.slug)}` })),
+          };
+        }
       }
       jsonLd.push(crumbs([{ name: t.nav.home, url: homeUrl }, { name: pageTitle, url: ownUrl }]));
       const pageType = pageKey === "gallery" ? "CollectionPage" : pageKey === "history" ? "AboutPage" : "WebPage";
@@ -233,6 +245,7 @@ export class SeoService {
         "@context": "https://schema.org", "@type": pageType, name: title, description, url: ownUrl, inLanguage: HREFLANG[lang],
         isPartOf: siteName ? { "@type": "WebSite", "@id": `${this.baseUrl}/#website`, name: siteName, url: homeUrl } : null,
       }));
+      if (stayList) jsonLd.push(stayList);
     }
 
     title = clean(row?.seo_title, 120) ?? title;
@@ -319,11 +332,18 @@ export class SeoService {
     });
   }
 
-  /** WebSite + LodgingBusiness for the home page (contact details, map, price range from live prices). */
+  /**
+   * WebSite + LodgingBusiness for the home page: contact details, map, price range from live prices, real photos
+   * (the first slide, then each stay's cover) and the stays themselves, each linked to its own page.
+   */
   private async lodging(site: PublicSiteDto, locale: Locale, homeUrl: string, description: string | null,
-    extras: { latitude: number | null; longitude: number | null }): Promise<Record<string, unknown>> {
+    extras: { latitude: number | null; longitude: number | null }, heroUrl: string | null): Promise<Record<string, unknown>> {
     const list = await this.accommodation.publicList(locale);
-    const prices = [...list.houses, ...list.vipTents].map((u) => u.priceSatang)
+    const units = [...list.houses, ...list.vipTents];
+    const logo = this.abs(site.logo.main?.url);
+    const photos = [...new Set([heroUrl, ...units.map((u) => u.cover?.url ?? null)].map((u) => this.abs(u)).filter((u): u is string => u !== null))]
+      .slice(0, LODGING_PHOTOS);
+    const prices = units.map((u) => u.priceSatang)
       .concat(list.camping.enabled ? [list.camping.pricePerAdultNightSatang] : []).filter((p) => p > 0);
     const min = prices.length ? Math.min(...prices) : null;
     const max = prices.length ? Math.max(...prices) : null;
@@ -338,18 +358,29 @@ export class SeoService {
           name: site.siteName,
           description,
           url: homeUrl,
-          logo: this.abs(site.logo.main?.url),
-          image: this.abs(site.logo.main?.url),
+          logo,
+          image: photos.length ? photos : logo,
           telephone: telephones(site.contact.phone),
           email: site.contact.email,
-          address: site.contact.address ? { "@type": "PostalAddress", streetAddress: site.contact.address } : null,
+          address: site.contact.address ? { "@type": "PostalAddress", streetAddress: site.contact.address, addressCountry: "TH" } : null,
           geo: extras.latitude !== null && extras.longitude !== null
             ? { "@type": "GeoCoordinates", latitude: extras.latitude, longitude: extras.longitude } : null,
           hasMap: site.contact.mapUrl,
           sameAs: site.contact.lineOaUrl ? [site.contact.lineOaUrl] : null,
           priceRange: min !== null && max !== null
             ? (min === max ? formatBaht(min, lang) : `${formatBaht(min, lang)} – ${formatBaht(max, lang)}`) : null,
+          currenciesAccepted: "THB",
           availableLanguage: LOCALES.map((l) => HREFLANG[l.code]),
+          numberOfRooms: units.length || null,
+          containsPlace: units.length
+            ? units.map((u) => compact({
+              "@type": "Accommodation",
+              name: u.name,
+              url: `${this.baseUrl}${accommodationPath(locale, u.slug)}`,
+              image: this.abs(u.cover?.url),
+              occupancy: { "@type": "QuantitativeValue", maxValue: u.maxGuests },
+            }))
+            : null,
         }),
       ],
     };
@@ -439,6 +470,9 @@ export class SeoService {
     return { to: r.to_path, status: r.status_code };
   }
 }
+
+/** Photos listed on the LodgingBusiness (the first slide, then covers). */
+const LODGING_PHOTOS = 8;
 
 /** schema.org telephone: one number as text, several as a list. */
 function telephones(value: string | null): string | string[] | null {
