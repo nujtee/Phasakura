@@ -47,6 +47,13 @@ export const PAGE_SECURITY_HEADERS: Record<string, string> = {
   "Cross-Origin-Opener-Policy": "same-origin",
 };
 
+/**
+ * The back office only: WebAssembly may be compiled ('wasm-unsafe-eval' allows that and nothing else — no eval,
+ * no inline script). Photos uploaded from a browser whose canvas cannot write WebP (Safari on iPad / iPhone) are
+ * encoded by a WebAssembly encoder served from this site. Public pages keep the stricter policy.
+ */
+export const ADMIN_PAGE_CSP = PAGE_SECURITY_HEADERS["Content-Security-Policy"]!.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'");
+
 /** Third-party origins a tracker needs; added to the page CSP only while that tracker is switched on. */
 const TRACKER_SOURCES = {
   ga4: {

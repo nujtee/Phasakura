@@ -443,6 +443,41 @@ await check("home slide: upload, publish, visible in public API", async () => {
   await pa.screenshot({ path: `${SHOTS}/g-admin-home-slides.png`, fullPage: true });
 });
 
+await check("photo upload from a browser whose canvas cannot write WebP (Safari): still WebP, by the WebAssembly encoder", async () => {
+  const px = await admin.newPage(); watch(px);
+  // Safari's canvas ignores "image/webp" and answers PNG.
+  await px.addInitScript(() => {
+    const off = OffscreenCanvas.prototype.convertToBlob;
+    OffscreenCanvas.prototype.convertToBlob = function (o) { return off.call(this, o?.type === "image/webp" ? { ...o, type: "image/png" } : o); };
+    const tb = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (cb, type, q) { return tb.call(this, cb, type === "image/webp" ? "image/png" : type, q); };
+  });
+  await px.goto(`${BASE}/en/admin/content-home`);
+  await px.getByRole("button", { name: "+ Add slide" }).click();
+  const uploaded = px.waitForResponse((r) => r.url().endsWith("/api/admin/media") && r.request().method() === "POST");
+  await px.locator("input[type=file]").first().setInputFiles(`${DIR}/slide.png`);
+  const asset = (await (await uploaded).json()).data;
+  if (asset.mimeType !== "image/webp") throw new Error(`main: ${asset.mimeType}`);
+  if (asset.width !== 1600) throw new Error(`width ${asset.width}`);
+  const widths = asset.variants.map((v) => v.width).sort((a, b) => a - b);
+  if (widths.join() !== "640,1024") throw new Error(`renditions ${widths.join()}`);
+  if (!asset.variants.every((v) => v.url.endsWith(".webp"))) throw new Error("a rendition is not WebP");
+  await px.close();
+});
+
+await check("logo: a large one is scaled to 512 px WebP, a small light one is kept exactly as uploaded", async () => {
+  await pa.goto(`${BASE}/en/admin/settings-branding`);
+  let uploaded = pa.waitForResponse((r) => r.url().endsWith("/api/admin/media") && r.request().method() === "POST");
+  await pa.locator("input[type=file]").first().setInputFiles(`${DIR}/slide.png`); // 1600 px wide
+  let asset = (await (await uploaded).json()).data;
+  if (asset.mimeType !== "image/webp" || asset.width !== 512) throw new Error(`large: ${asset.mimeType} ${asset.width}`);
+  await pa.goto(`${BASE}/en/admin/settings-branding`);
+  uploaded = pa.waitForResponse((r) => r.url().endsWith("/api/admin/media") && r.request().method() === "POST");
+  await pa.locator("input[type=file]").first().setInputFiles(`${DIR}/logo.png`); // 480 px, a few kB
+  asset = (await (await uploaded).json()).data;
+  if (asset.mimeType !== "image/png" || asset.width !== 480) throw new Error(`small: ${asset.mimeType} ${asset.width}`);
+});
+
 await check("gallery: multi-upload two images, publish one", async () => {
   await pa.goto(`${BASE}/en/admin/content-gallery`);
   await pa.locator("input[type=file][multiple]").setInputFiles([`${DIR}/g1.png`, `${DIR}/g2.png`]);

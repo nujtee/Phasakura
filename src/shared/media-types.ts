@@ -3,8 +3,9 @@ import type { FontStackKey } from "./theme.ts";
 /**
  * Image handling profiles (Phase 12). The admin's browser re-encodes a photo before upload
  * (WebP, metadata removed, orientation applied) to at most `maxWidth`, and adds smaller
- * renditions at `widths` for responsive `srcset`. Logos, favicons and payment QR codes are
- * stored exactly as uploaded (sharp edges, transparency, scannability).
+ * renditions at `widths` for responsive `srcset`. Payment QR codes are stored exactly as uploaded
+ * (scannability). Logos and favicons are drawn small on every page, so a large or heavy one is
+ * scaled down (`onlyIfOver`); a small, light one is kept exactly as uploaded.
  */
 export type ImageProfilePurpose =
   | "LOGO" | "FAVICON" | "HOME_SLIDE" | "HOME_SECTION" | "GALLERY" | "HISTORY" | "ACCOMMODATION" | "FOOD" | "OG_IMAGE" | "PAYMENT_QR" | "OTHER";
@@ -16,8 +17,13 @@ export interface ImageProfile {
   /** Responsive renditions (only those smaller than the final image are made). */
   widths: readonly number[];
   /** Preferred output; falls back to JPEG where the browser cannot encode WebP. */
-  format: "image/webp" | "image/jpeg";
+  format: "image/webp" | "image/jpeg" | "image/png";
   quality: number;
+  /**
+   * Re-encode only a picture wider than `maxWidth` or heavier than this many bytes; otherwise keep the original.
+   * Such pictures may be transparent: never turned into JPEG unless the original was one.
+   */
+  onlyIfOver?: number;
 }
 
 export const IMAGE_PROFILES: Record<ImageProfilePurpose, ImageProfile> = {
@@ -29,8 +35,10 @@ export const IMAGE_PROFILES: Record<ImageProfilePurpose, ImageProfile> = {
   FOOD: { compress: true, maxWidth: 1600, widths: [400, 800], format: "image/webp", quality: 0.82 },
   // Social cards: crawlers handle JPEG everywhere; 1200 px is what they display.
   OG_IMAGE: { compress: true, maxWidth: 1200, widths: [], format: "image/jpeg", quality: 0.86 },
-  LOGO: { compress: false, maxWidth: 0, widths: [], format: "image/webp", quality: 1 },
-  FAVICON: { compress: false, maxWidth: 0, widths: [], format: "image/webp", quality: 1 },
+  // Drawn about 40–120 px high on every page: 512 px covers high-density screens.
+  LOGO: { compress: true, maxWidth: 512, widths: [], format: "image/webp", quality: 0.9, onlyIfOver: 60 * 1024 },
+  // PNG: every browser and crawler takes it as an icon.
+  FAVICON: { compress: true, maxWidth: 192, widths: [], format: "image/png", quality: 1, onlyIfOver: 30 * 1024 },
   PAYMENT_QR: { compress: false, maxWidth: 0, widths: [], format: "image/webp", quality: 1 },
   // Site plan pictures (landscape): an aerial photo is drawn large and zoomed into, so it stays big.
   OTHER: { compress: true, maxWidth: 3200, widths: [1280], format: "image/webp", quality: 0.85 },
