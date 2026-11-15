@@ -189,11 +189,11 @@ describe("page CSP follows the trackers that are on", () => {
   it("adds only the origins of enabled trackers", () => {
     assert.deepEqual(pageSecurityHeaders({ ga4: false, pixel: false }), PAGE_SECURITY_HEADERS);
     const ga = pageSecurityHeaders({ ga4: true, pixel: false })["Content-Security-Policy"]!;
-    assert.match(ga, /script-src 'self' https:\/\/www\.googletagmanager\.com;/);
+    assert.match(ga, /script-src 'self' https:\/\/www\.googletagmanager\.com https:\/\/static\.cloudflareinsights\.com;/);
     assert.match(ga, /connect-src 'self' https:\/\/\*\.google-analytics\.com/);
     assert.doesNotMatch(ga, /facebook/);
     const px = pageSecurityHeaders({ ga4: false, pixel: true })["Content-Security-Policy"]!;
-    assert.match(px, /script-src 'self' https:\/\/connect\.facebook\.net;/);
+    assert.match(px, /script-src 'self' https:\/\/connect\.facebook\.net https:\/\/static\.cloudflareinsights\.com;/);
     assert.doesNotMatch(px, /google/);
     for (const csp of [ga, px]) {
       assert.match(csp, /object-src 'none'/);

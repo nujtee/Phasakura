@@ -230,7 +230,10 @@ describe("app shell with page metadata (Phase 13)", () => {
     const adminCsp = admin.res.headers.get("Content-Security-Policy") ?? "";
     assert.match(adminCsp, /script-src 'self' 'wasm-unsafe-eval';/);
     assert.doesNotMatch(adminCsp, /unsafe-inline|[^-]unsafe-eval/);
-    assert.equal(adminCsp.replace(" 'wasm-unsafe-eval'", ""), PAGE_SECURITY_HEADERS["Content-Security-Policy"]);
+    // … and nothing from outside the site: the public pages' policy minus Cloudflare Web Analytics.
+    assert.equal(adminCsp.replace(" 'wasm-unsafe-eval'", ""),
+      PAGE_SECURITY_HEADERS["Content-Security-Policy"]!.replace(" https://static.cloudflareinsights.com", "").replace(" https://cloudflareinsights.com", ""));
+    assert.doesNotMatch(adminCsp, /https?:\/\/(?!$)[a-z]/, "no outside origin (img-src https: aside)");
     assert.doesNotMatch((await page("/th/")).res.headers.get("Content-Security-Policy") ?? "", /wasm/, "public pages keep the strict policy");
     assert.match(admin.html, /<meta name="robots" content="noindex, nofollow" \/>/);
     assert.doesNotMatch(admin.html, /property="og:title"|rel="canonical"/);
