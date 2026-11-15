@@ -114,8 +114,8 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
       const indexable = meta.robots.startsWith("index");
       const tracking = (await s.site.getPublicSite(route.locale)).tracking;
       // The page's content in the HTML itself (prerender); a failure here only costs the prerender.
-      const body = await s.seo.prerender(route, meta).catch(async (error: unknown) => { await log("page_prerender_failed", error); return null; });
-      const html = body ? injectBody(injectHead(shell, meta), body) : injectHead(shell, meta);
+      const pre = await s.seo.prerender(route, meta).catch(async (error: unknown) => { await log("page_prerender_failed", error); return null; });
+      const html = pre ? injectBody(injectHead(shell, meta), pre.body, pre.boot) : injectHead(shell, meta);
       return withHeaders(html, meta.status, {
         // GA4 / Pixel origins only while they are switched on (the app still waits for consent).
         ...pageSecurityHeaders({ ga4: !!tracking.ga4MeasurementId, pixel: !!tracking.metaPixelId }),

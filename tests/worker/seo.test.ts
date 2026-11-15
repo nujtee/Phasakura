@@ -419,7 +419,8 @@ describe("translation coverage (i18n)", () => {
 });
 
 describe("prerendered page content (SSR / prerender for crawlers)", () => {
-  const body = (html: string) => /<div id="root">([\s\S]*?)<\/div>\s*<noscript>/.exec(html)?.[1] ?? "";
+  const body = (html: string) => /<div id="root">([\s\S]*?)<\/div>(?:<script type="application\/json" id="boot-data">[^<]*<\/script>)?\s*<noscript>/.exec(html)?.[1] ?? "";
+  const boot = (html: string) => JSON.parse(/<script type="application\/json" id="boot-data">([^<]*)<\/script>/.exec(html)?.[1] ?? "{}") as Record<string, unknown>;
 
   it("home: site name as the one h1, menu, every house linked, hero photo early, contact links", async () => {
     production();
@@ -460,6 +461,29 @@ describe("prerendered page content (SSR / prerender for crawlers)", () => {
     for (const path of ["/th/booking/lookup", "/th/no-such-page", "/en/accommodation/no-such-house", "/th/admin"]) {
       const { html } = await page(path);
       assert.match(html, /<div id="root"><\/div>/, path);
+      assert.doesNotMatch(html, /id="boot-data"/, path);
     }
+  });
+
+  it("the page's first data travels in the HTML, exactly as the public API answers it", async () => {
+    production();
+    const api = async (path: string) => ((await (await h.get(path)).json()) as { data: unknown }).data;
+    const cases: [string, string[]][] = [
+      ["/th/", ["/api/public/site?lang=th", "/api/public/home?lang=th", "/api/public/accommodations?lang=th"]],
+      ["/en/booking", ["/api/public/site?lang=en", "/api/public/accommodations?lang=en"]],
+      ["/zh-cn/gallery", ["/api/public/site?lang=zh-cn", "/api/public/gallery?lang=zh-cn"]],
+      ["/th/history", ["/api/public/site?lang=th", "/api/public/history?lang=th"]],
+      ["/th/accommodation/house-sakura", ["/api/public/site?lang=th", "/api/public/accommodations/house-sakura?lang=th"]],
+    ];
+    for (const [path, keys] of cases) {
+      const data = boot((await page(path)).html);
+      assert.deepEqual(Object.keys(data).sort(), [...keys].sort(), path);
+      for (const key of keys) assert.deepEqual(data[key], await api(key), `${path} → ${key}`);
+    }
+    // Content can never close the JSON block or start markup.
+    h.db.run("UPDATE home_section_translations SET title = '</script><img src=x>' WHERE rowid = (SELECT MIN(rowid) FROM home_section_translations)");
+    const { html } = await page("/th/");
+    assert.doesNotMatch(html, /<\/script><img src=x>/);
+    assert.ok(JSON.stringify(boot(html)).includes("</script><img src=x>"), "the text itself is intact once parsed");
   });
 });

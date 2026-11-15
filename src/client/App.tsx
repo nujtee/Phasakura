@@ -1,22 +1,39 @@
-import { useEffect, useLayoutEffect } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
 import { getMessages } from "../shared/i18n/index.ts";
 import { resolveRoute, type SitePage } from "../shared/routes.ts";
-import { AdminApp } from "./admin/AdminApp.tsx";
 import { Layout } from "./components/Layout.tsx";
 import type { NavKey } from "./components/navigation.ts";
 import { I18nProvider } from "./i18n/I18nProvider.tsx";
-import { AccommodationDetailPage } from "./pages/AccommodationDetailPage.tsx";
-import { BookingMovePage } from "./pages/BookingMovePage.tsx";
-import { BookingLookupPage } from "./pages/BookingLookupPage.tsx";
-import { BookingPage } from "./pages/BookingPage.tsx";
-import { GalleryPage } from "./pages/GalleryPage.tsx";
-import { HistoryPage } from "./pages/HistoryPage.tsx";
-import { PrivacyPage } from "./pages/PrivacyPage.tsx";
 import { HomePage } from "./pages/HomePage.tsx";
 import { NotFoundPage } from "./pages/NotFoundPage.tsx";
 import { useRouter } from "./router/Router.tsx";
 import { setTrackingSuspended } from "./analytics/tracker.ts";
 import { SiteProvider } from "./site/SiteProvider.tsx";
+
+// The back office is a large part of the code and no visitor needs it: it is downloaded only when someone opens it.
+const AdminApp = lazy(() => import("./admin/AdminApp.tsx").then((m) => ({ default: m.AdminApp })));
+
+// Pages other than the home page come as their own files, so the first screen downloads less. The booking pages are
+// fetched in the background once the first page is idle (PREFETCH), so going there does not wait.
+const pages = {
+  booking: () => import("./pages/BookingPage.tsx"),
+  accommodation: () => import("./pages/AccommodationDetailPage.tsx"),
+  bookingLookup: () => import("./pages/BookingLookupPage.tsx"),
+  bookingMove: () => import("./pages/BookingMovePage.tsx"),
+  gallery: () => import("./pages/GalleryPage.tsx"),
+  history: () => import("./pages/HistoryPage.tsx"),
+  privacy: () => import("./pages/PrivacyPage.tsx"),
+};
+const BookingPage = lazy(() => pages.booking().then((m) => ({ default: m.BookingPage })));
+const AccommodationDetailPage = lazy(() => pages.accommodation().then((m) => ({ default: m.AccommodationDetailPage })));
+const BookingLookupPage = lazy(() => pages.bookingLookup().then((m) => ({ default: m.BookingLookupPage })));
+const BookingMovePage = lazy(() => pages.bookingMove().then((m) => ({ default: m.BookingMovePage })));
+const GalleryPage = lazy(() => pages.gallery().then((m) => ({ default: m.GalleryPage })));
+const HistoryPage = lazy(() => pages.history().then((m) => ({ default: m.HistoryPage })));
+const PrivacyPage = lazy(() => pages.privacy().then((m) => ({ default: m.PrivacyPage })));
+
+const PREFETCH = [pages.booking, pages.accommodation];
+const PREFETCH_DELAY_MS = 2500;
 
 export function App() {
   const { pathname, navigate } = useRouter();
@@ -30,10 +47,23 @@ export function App() {
   const isAdmin = route.kind === "admin";
   useLayoutEffect(() => setTrackingSuspended(isAdmin), [isAdmin]);
 
+  // Once the first page has settled, fetch the booking pages so the next click is instant (public pages only).
+  useEffect(() => {
+    if (isAdmin) return;
+    const timer = window.setTimeout(() => PREFETCH.forEach((load) => void load().catch(() => undefined)), PREFETCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [isAdmin]);
+
   if (route.kind === "redirect") return null;
 
   // Admin area: separate shell, no public header/footer.
-  if (route.kind === "admin") return <AdminApp locale={route.locale} segments={route.segments} />;
+  if (route.kind === "admin") {
+    return (
+      <Suspense fallback={<div className="app-loading" aria-busy="true" />}>
+        <AdminApp locale={route.locale} segments={route.segments} />
+      </Suspense>
+    );
+  }
 
   const t = getMessages(route.locale.code);
   const page: SitePage | null = route.kind === "page" ? route.page : null;
@@ -46,7 +76,9 @@ export function App() {
     <I18nProvider locale={route.locale}>
       <SiteProvider locale={route.locale}>
         <Layout currentPage={navPage} sitePage={page} title={title}>
-          {renderPage(page, title, slug)}
+          <Suspense fallback={<div className="page container page-loading" aria-busy="true" />}>
+            {renderPage(page, title, slug)}
+          </Suspense>
         </Layout>
       </SiteProvider>
     </I18nProvider>
