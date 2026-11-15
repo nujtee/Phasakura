@@ -36,9 +36,21 @@ export function withSecurityHeaders(response: Response, requestId: string): Resp
  * `public/_headers` (kept identical by a test), so moving page rendering into the Worker changes
  * nothing for the browser.
  */
+/** The policy with nothing from outside this site (the back office starts from it). */
+const STRICT_CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
+
+/**
+ * Cloudflare Web Analytics: Cloudflare itself adds its beacon script to the pages of a zone where the owner
+ * switched it on (no cookies). Public pages allow that script and where it reports to; without this the browser
+ * blocks it and logs an error on every page. Sites without Web Analytics get no script, so nothing changes there.
+ */
+const CLOUDFLARE_INSIGHTS = { script: "https://static.cloudflareinsights.com", connect: "https://cloudflareinsights.com" } as const;
+
 export const PAGE_SECURITY_HEADERS: Record<string, string> = {
-  "Content-Security-Policy":
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
+  "Content-Security-Policy": STRICT_CSP
+    .replace("script-src 'self'", `script-src 'self' ${CLOUDFLARE_INSIGHTS.script}`)
+    .replace("connect-src 'self'", `connect-src 'self' ${CLOUDFLARE_INSIGHTS.connect}`),
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -49,10 +61,10 @@ export const PAGE_SECURITY_HEADERS: Record<string, string> = {
 
 /**
  * The back office only: WebAssembly may be compiled ('wasm-unsafe-eval' allows that and nothing else — no eval,
- * no inline script). Photos uploaded from a browser whose canvas cannot write WebP (Safari on iPad / iPhone) are
+ * no inline script), and nothing from outside this site: the back office is not measured. Photos uploaded from a browser whose canvas cannot write WebP (Safari on iPad / iPhone) are
  * encoded by a WebAssembly encoder served from this site. Public pages keep the stricter policy.
  */
-export const ADMIN_PAGE_CSP = PAGE_SECURITY_HEADERS["Content-Security-Policy"]!.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'");
+export const ADMIN_PAGE_CSP = STRICT_CSP.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'");
 
 /** Third-party origins a tracker needs; added to the page CSP only while that tracker is switched on. */
 const TRACKER_SOURCES = {
