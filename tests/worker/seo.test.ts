@@ -4,8 +4,12 @@ import { readFileSync } from "node:fs";
 import { beforeEach, describe, it } from "node:test";
 import { negotiateLocale } from "../../src/shared/i18n/locales.ts";
 import type { PageMetaDto } from "../../src/shared/seo-types.ts";
+import { createHash } from "node:crypto";
+import type { PublicSiteDto } from "../../src/shared/api-types.ts";
+import type { PublicSlideDto } from "../../src/shared/content-types.ts";
 import { PAGE_SECURITY_HEADERS } from "../../src/worker/http/security-headers.ts";
 import { injectHead, jsonForScript } from "../../src/worker/seo/html.ts";
+import { heroShell, themeCss } from "../../src/worker/seo/prerender.ts";
 import { Harness } from "../helpers/harness.ts";
 import { pngBytes } from "../helpers/images.ts";
 
@@ -47,6 +51,9 @@ async function page(path: string, headers: Record<string, string> = {}) {
   return { res, html: await res.text() };
 }
 
+/** A page's CSP without the hash of its one inline style sheet. */
+const stripStyleHash = (value: string | null) => (value ?? "").replace(/ 'sha256-[A-Za-z0-9+/=]+'/, "");
+
 describe("app shell with page metadata (Phase 13)", () => {
   it("home: lang, title, description, canonical, hreflang, Open Graph, JSON-LD; dev deployments are noindex", async () => {
     const { res, html } = await page("/th/");
@@ -85,7 +92,8 @@ describe("app shell with page metadata (Phase 13)", () => {
     // Photos are absolute URLs (the first slide and stay covers), never empty: the logo when there are none.
     const images = ([] as unknown[]).concat(lodging.image ?? []);
     assert.ok(images.every((u) => typeof u === "string" && /^https?:\/\//.test(u)), JSON.stringify(images));
-    for (const [k, v] of Object.entries(PAGE_SECURITY_HEADERS)) assert.equal(res.headers.get(k), v, k);
+    // Same security headers as the static files, plus exactly one inline style sheet allowed by its hash.
+    for (const [k, v] of Object.entries(PAGE_SECURITY_HEADERS)) assert.equal(stripStyleHash(res.headers.get(k)), v, k);
     assert.match(html, /<div id="root"><div class="prerender">/, "the page content is in the HTML (prerender); the app replaces it");
   });
 
@@ -425,7 +433,7 @@ describe("translation coverage (i18n)", () => {
 });
 
 describe("prerendered page content (SSR / prerender for crawlers)", () => {
-  const body = (html: string) => /<div id="root">([\s\S]*?)<\/div>(?:<script type="application\/json" id="boot-data">[^<]*<\/script>)?\s*<noscript>/.exec(html)?.[1] ?? "";
+  const body = (html: string) => /<div id="root">(?:<div class="prerender-hero"[\s\S]*?<\/div><\/div><\/div><\/div><\/div><\/div>)?([\s\S]*?)<\/div>(?:<script type="application\/json" id="boot-data">[^<]*<\/script>)?\s*<noscript>/.exec(html)?.[1] ?? "";
   const boot = (html: string) => JSON.parse(/<script type="application\/json" id="boot-data">([^<]*)<\/script>/.exec(html)?.[1] ?? "{}") as Record<string, unknown>;
 
   it("home: site name as the one h1, menu, every house linked, hero photo early, contact links", async () => {
@@ -469,6 +477,60 @@ describe("prerendered page content (SSR / prerender for crawlers)", () => {
       assert.match(html, /<div id="root"><\/div>/, path);
       assert.doesNotMatch(html, /id="boot-data"/, path);
     }
+  });
+
+  it("home with a slide: the header bar and the first photo are in the HTML, visible before the app runs", async () => {
+    production();
+    const img = await h.upload<{ id: string; url: string }>(root, { bytes: pngBytes(1600, 800), name: "hero.png", type: "image/png" }, "HOME_SLIDE");
+    const slide = await h.api<{ id: string }>("POST", "/api/admin/cms/homeSlide", { token: root, body: { desktopAssetId: img.data.id, overlayOpacity: 30, translations: { th: { title: "ยินดีต้อนรับ" } } } });
+    assert.equal(slide.status, 201, JSON.stringify(slide.body));
+    assert.equal((await h.api("POST", `/api/admin/cms/homeSlide/${slide.data.id}/publish`, { token: root })).status, 200);
+
+    const { res, html } = await page("/th/");
+    // First child of #root, in the app's own classes; the photo is the slide's, high priority, no text of its own.
+    assert.match(html, /<div id="root"><div class="prerender-hero" aria-hidden="true"><div class="site-header"><div class="container site-header__inner"><\/div><\/div><div class="site-main"><div class="home"><div class="hero"><div class="hero__viewport"><div class="hero__slide is-active hero__slide--overlay"><picture class="hero__media"><img src="[^"]+" alt="" width="1600" height="800" fetchpriority="high" decoding="async"><\/picture>/);
+    assert.ok(html.includes(`src="${img.data.url}"`), "the slide's photo");
+    assert.match(html, /<html lang="th" data-seo-path="\/th\/" data-layout="CLASSIC">/);
+    // One inline style sheet: the slide's tint (and the theme's colours when it has any); the CSP allows exactly it.
+    const css = /<style>([^<]*)<\/style>/.exec(html)?.[1] ?? "";
+    assert.match(css, /\.prerender-hero \.hero__slide\{--hero-overlay:#000000;--hero-overlay-opacity:0\.3;\}/);
+    assert.equal((html.match(/<style>/g) ?? []).length, 1);
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    assert.ok(csp.includes(`style-src 'self' 'sha256-${createHash("sha256").update(css).digest("base64")}';`), csp);
+    assert.doesNotMatch(csp, /unsafe-inline/);
+    // Other pages: no hero shell.
+    assert.doesNotMatch((await page("/th/booking")).html, /prerender-hero/);
+  });
+
+  it("hero shell: tint, focal points and theme colours are written only as hex colours and numbers", () => {
+    const image = (over: object = {}) => ({ url: "/media/a.webp", srcset: "/media/a-w640.webp 640w, /media/a.webp 1600w", width: 1600, height: 800, alt: "x", ...over });
+    const slide = (over: Partial<PublicSlideDto> = {}): PublicSlideDto => ({
+      id: "s1", desktop: image({ focal: { x: 30, y: 40, zoom: 150 } }), mobile: null, overlay: { enabled: true, color: "#112233", opacity: 25 },
+      position: "CENTER", title: null, subtitle: null, description: null, button1: null, button2: null, ...over,
+    } as PublicSlideDto);
+    const site = (layout: string, theme: Record<string, string> = {}) => ({ layout, theme } as unknown as PublicSiteDto);
+
+    const classic = heroShell(site("CLASSIC"), slide())!;
+    assert.match(classic.html, /<div class="home"><div class="hero">/);
+    assert.match(classic.html, /srcset="\/media\/a-w640\.webp 640w, \/media\/a\.webp 1600w" sizes="100vw"/);
+    assert.equal(classic.css, ".prerender-hero .hero__slide{--hero-overlay:#112233;--hero-overlay-opacity:0.25;}.prerender-hero .hero__media{--hero-focal:30% 40%;--hero-zoom:1.5;}");
+    // Themed layouts use the app's wrapper class; a phone photo gets its own source and (centred) point.
+    const night = heroShell(site("NIGHT"), slide({ mobile: image({ url: "/media/m.webp", srcset: null }) as PublicSlideDto["mobile"] }))!;
+    assert.match(night.html, /<div class="home home--night">/);
+    assert.match(night.html, /<source media="\(max-width: 767px\)" srcset="\/media\/m\.webp" sizes="100vw">/);
+    assert.match(night.css, /--hero-focal-m:50% 50%;--hero-zoom-m:1;/);
+    // No hero in the list layout, none without a slide.
+    assert.equal(heroShell(site("LIST"), slide()), null);
+    assert.equal(heroShell(site("CLASSIC"), undefined), null);
+    // Anything that is not a hex colour or a number is left out, never written.
+    const hostile = heroShell(site("CLASSIC"), slide({
+      overlay: { enabled: true, color: "red;}</style><script>", opacity: 25 },
+      desktop: image({ focal: { x: "1%;} body{display:none" as unknown as number, y: 2 } }) as PublicSlideDto["desktop"],
+    }))!;
+    assert.equal(hostile.css, "");
+    assert.doesNotMatch(hostile.html, /hero__slide--overlay/);
+    assert.equal(themeCss(site("CLASSIC", { "--color-primary": "#aabbcc", "--color-background": "url(x)", "--font-heading": "Evil}" })), ":root{--color-primary:#aabbcc;}");
+    assert.equal(themeCss(site("CLASSIC")), "");
   });
 
   it("the page's first data travels in the HTML, exactly as the public API answers it", async () => {

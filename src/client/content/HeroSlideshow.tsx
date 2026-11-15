@@ -91,7 +91,9 @@ export function HeroSlideshow({ slides, title }: { slides: PublicSlideDto[]; tit
                   {s.mobile && <source media="(max-width: 767px)" srcSet={s.mobile.srcset ?? s.mobile.url} sizes={IMAGE_SIZES.hero} />}
                   <img src={s.desktop.url} srcSet={s.desktop.srcset ?? undefined} sizes={s.desktop.srcset ? IMAGE_SIZES.hero : undefined}
                     alt={s.desktop.alt} width={s.desktop.width ?? undefined} height={s.desktop.height ?? undefined}
-                    loading={i === 0 ? "eager" : "lazy"} fetchPriority={i === 0 ? "high" : "low"} decoding="async" />
+                    loading={i === 0 ? "eager" : "lazy"} fetchPriority={i === 0 ? "high" : "low"}
+                    // The first photo is already on screen (prerendered) and downloaded: drawn in the same frame, no blink.
+                    decoding={i === 0 ? "sync" : "async"} />
                 </picture>
               )}
               {(s.title || s.subtitle || s.description || s.button1 || s.button2) && (

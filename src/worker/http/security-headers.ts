@@ -81,3 +81,14 @@ export function pageSecurityHeaders(tracking: { ga4: boolean; pixel: boolean }):
     .replace("connect-src 'self'", `connect-src 'self' ${extra.connect.join(" ")}`);
   return { ...PAGE_SECURITY_HEADERS, "Content-Security-Policy": csp };
 }
+
+/** base64 SHA-256 of an inline style sheet, for `style-src 'sha256-…'`. */
+export async function styleHash(css: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(css));
+  return btoa(String.fromCharCode(...new Uint8Array(digest)));
+}
+
+/** The same headers, allowing exactly one inline style sheet (by its hash); nothing else inline. */
+export function withInlineStyle(headers: Record<string, string>, hash: string): Record<string, string> {
+  return { ...headers, "Content-Security-Policy": headers["Content-Security-Policy"]!.replace("style-src 'self'", `style-src 'self' 'sha256-${hash}'`) };
+}

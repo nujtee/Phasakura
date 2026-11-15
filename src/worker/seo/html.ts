@@ -17,6 +17,11 @@ export function jsonForScript(value: unknown): string {
     .replace(/[\u2028\u2029]/g, (c) => (c === "\u2028" ? "\\u2028" : "\\u2029"));
 }
 
+/** Inline CSS can never close its element: the text is written by the Worker from hex colours and numbers only. */
+export function safeCss(css: string): string {
+  return /[<>]/.test(css) ? "" : css;
+}
+
 const meta = (attr: "name" | "property", key: string, content: string | null | undefined) =>
   content ? `<meta ${attr}="${key}" content="${escapeHtml(content)}" data-seo />` : "";
 
@@ -62,11 +67,14 @@ export function renderHeadTags(m: PageMetaDto): string {
  * skips re-fetching metadata on first load), the title and the tags above. The template's own
  * empty <title> and placeholder favicon are replaced, everything else is kept byte for byte.
  */
-export function injectHead(template: string, m: PageMetaDto): string {
+export function injectHead(template: string, m: PageMetaDto, first?: { layout: string; css: string }): string {
+  // `first`: what the first paint needs before the app runs — the theme's layout name on <html> (layouts.css keys
+  // off it; the app sets the same) and a small style sheet (the caller allows it in the CSP by its hash).
+  const layout = first && /^[A-Z]+$/.test(first.layout) ? ` data-layout="${first.layout}"` : "";
   // Function replacements: "$&" or "$1" in content must never be read as replacement patterns.
-  let html = template.replace(/<html\b[^>]*>/i, () => `<html lang="${escapeHtml(m.lang)}" data-seo-path="${escapeHtml(m.path)}">`);
+  let html = template.replace(/<html\b[^>]*>/i, () => `<html lang="${escapeHtml(m.lang)}" data-seo-path="${escapeHtml(m.path)}"${layout}>`);
   html = html.replace(/<title>[\s\S]*?<\/title>\s*/i, "");
   if (m.favicon) html = html.replace(/<link rel="icon" href="data:,"\s*\/?>\s*/i, "");
-  const tags = renderHeadTags(m);
+  const tags = renderHeadTags(m) + (first?.css ? `\n    <style>${safeCss(first.css)}</style>` : "");
   return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, () => `    ${tags}\n  </head>`) : `${tags}\n${html}`;
 }
