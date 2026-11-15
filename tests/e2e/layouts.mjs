@@ -65,6 +65,36 @@ pv.on("response", (r) => { if (/\.woff2(\?|$)/.test(r.url())) fonts.push([r.url(
 const phone = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "th-TH" });
 const pm = await phone.newPage(); watch(pm);
 
+
+/**
+ * First paint: before the app's script arrives the page already shows the header's bar and the first slide's photo
+ * (prerendered). They must sit exactly where the app draws them, in the theme's colours, so nothing moves or
+ * changes colour when the app takes over. Measured with the script blocked, then with the app running.
+ */
+async function firstPaintMatches(label) {
+  const rect = (scope) => `(() => { const q = (s) => { const el = document.querySelector(s); if (!el) return null; const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map((n) => Math.round(n * 10) / 10).join(","); };
+    const header = document.querySelector("${scope} .site-header");
+    return { header: q("${scope} .site-header"), photo: q("${scope} .hero__media img"), headerColour: header ? getComputedStyle(header).backgroundColor : null, layout: document.documentElement.dataset.layout }; })()`;
+  for (const [ctx, size] of [[phone, "phone"], [visitor, "desktop"]]) {
+    const blocked = await ctx.newPage(); // not watched: its script request is aborted on purpose
+    await blocked.route(/\/assets\/index-[^/]*\.js$/, (r) => r.abort());
+    await blocked.goto(`${BASE}/th/`, { waitUntil: "load" });
+    await blocked.locator(".prerender-hero .hero__media img").evaluate((img) => img.decode());
+    assert(await blocked.locator(".prerender-hero .hero__media img").isVisible(), `${label} ${size}: the photo is not visible before the script`);
+    const before = await blocked.evaluate(rect(".prerender-hero"));
+    await blocked.close();
+    const live = await ctx.newPage(); watch(live);
+    await live.goto(`${BASE}/th/`);
+    await live.locator(".app-shell .hero__media img").first().waitFor();
+    assert((await live.locator(".prerender-hero").count()) === 0, `${label} ${size}: the prerendered hero is still there`);
+    const after = await live.evaluate(rect(".app-shell"));
+    await live.close();
+    assert(JSON.stringify(before) === JSON.stringify(after), `${label} ${size}: before ${JSON.stringify(before)} / app ${JSON.stringify(after)}`);
+  }
+}
+
+await check("CLASSIC: the first paint (before the script) shows the header bar and the hero photo where the app draws them", () => firstPaintMatches("CLASSIC"));
+
 for (const [layout, name] of [["EDITORIAL", "A · Sakura Editorial"], ["BOUTIQUE", "B · Boutique Minimal"], ["NIGHT", "C · Mountain Night"]]) {
   const slug = layout.toLowerCase();
   await check(`Theme → ${name}: applies its colours, saves the draft, publishes`, async () => {
@@ -83,6 +113,8 @@ for (const [layout, name] of [["EDITORIAL", "A · Sakura Editorial"], ["BOUTIQUE
     const site = await (await admin.request.get(`${BASE}/api/public/site?lang=en`)).json();
     assert(site.data.layout === layout, `layout ${site.data.layout}`);
   });
+
+  await check(`${name}: the first paint (before the script) shows the header bar and the hero photo where the app draws them`, () => firstPaintMatches(name));
 
   await check(`${name} · desktop: header button, hero, date bar, trust strip, fonts from the site, no sideways scroll`, async () => {
     fonts.length = 0;

@@ -6,6 +6,10 @@ import type { Messages } from "../../shared/i18n/messages.ts";
 import { splitPhones } from "../../shared/phones.ts";
 import type { PageMetaDto } from "../../shared/seo-types.ts";
 import type { PublicPrivacyDto } from "../../shared/settings-types.ts";
+import type { PublicSlideDto } from "../../shared/content-types.ts";
+import { objectPosition, zoomScale, type FocalPoint } from "../../shared/focal-point.ts";
+import { IMAGE_SIZES } from "../../shared/media-types.ts";
+import { COLOR_TOKENS } from "../../shared/theme.ts";
 import { escapeHtml, jsonForScript } from "./html.ts";
 
 /**
@@ -152,6 +156,62 @@ export function prerenderBody(input: PrerenderInput): string {
     + `<main>${main(input)}</main>`
     + (contact ? `<footer><h2>${e(t.footer.contact)}</h2>${contact}${site.footerText ? `<p>${e(site.footerText)}</p>` : ""}</footer>` : "")
     + `</div>`;
+}
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+
+/** A focal point as CSS custom properties; nothing unless every number is a plain number. */
+function focalVars(focal: FocalPoint | null | undefined, suffix: string): string {
+  if (!focal || !finite(focal.x) || !finite(focal.y) || (focal.zoom != null && !finite(focal.zoom))) return "";
+  return `--hero-focal${suffix}:${objectPosition(focal)};--hero-zoom${suffix}:${zoomScale(focal)};`;
+}
+
+/**
+ * The published theme's colours as a style sheet for <head>, so the page has them from its first paint (the app
+ * sets the same values on <html> when it starts; a draft preview still wins, being set on the element itself).
+ * Only six-digit hex colours are written: nothing an admin typed can end the rule.
+ */
+export function themeCss(site: PublicSiteDto): string {
+  const tokens = (site.theme ?? {}) as Record<string, unknown>;
+  const vars = COLOR_TOKENS.map((name) => {
+    const value = tokens[name];
+    return typeof value === "string" && HEX.test(value) ? `${name}:${value};` : "";
+  }).join("");
+  return vars ? `:root{${vars}}` : "";
+}
+
+/**
+ * The first screen of the home page, visible before the app's script arrives: the header's bar (empty) and the
+ * first slide's photo, in the app's own elements and classes so they sit exactly where the app draws them. The app
+ * then replaces it with the same picture (already downloaded) plus the header, the texts and the controls.
+ * Without this the screen stays blank until the script has run, however early the photo arrived.
+ *
+ * Not for the list layout (no hero) or a home page without slides. `css` carries the slide's tint and focal point
+ * (custom properties only, numbers and hex colours) for the page's inline style sheet.
+ */
+export function heroShell(site: PublicSiteDto, slide: PublicSlideDto | undefined): { html: string; css: string } | null {
+  if (!slide || site.layout === "LIST") return null;
+  const tint = slide.overlay.enabled && HEX.test(slide.overlay.color) && finite(slide.overlay.opacity);
+  const home = site.layout === "CLASSIC" ? "home" : `home home--${site.layout.toLowerCase()}`;
+  const d = slide.desktop;
+  const picture = `<picture class="hero__media">`
+    + (slide.mobile ? `<source media="(max-width: 767px)" srcset="${e(slide.mobile.srcset ?? slide.mobile.url)}" sizes="${IMAGE_SIZES.hero}">` : "")
+    + `<img src="${e(d.url)}"${d.srcset ? ` srcset="${e(d.srcset)}" sizes="${IMAGE_SIZES.hero}"` : ""} alt=""`
+    + `${d.width ? ` width="${d.width}"` : ""}${d.height ? ` height="${d.height}"` : ""} fetchpriority="high" decoding="async"></picture>`;
+  const html = `<div class="prerender-hero" aria-hidden="true">`
+    + `<div class="site-header"><div class="container site-header__inner"></div></div>`
+    + `<div class="site-main"><div class="${home}"><div class="hero"><div class="hero__viewport">`
+    + `<div class="hero__slide is-active${tint ? " hero__slide--overlay" : ""}">${picture}</div>`
+    + `</div></div></div></div></div>`;
+  const css = (tint ? `.prerender-hero .hero__slide{--hero-overlay:${slide.overlay.color};--hero-overlay-opacity:${slide.overlay.opacity / 100};}` : "")
+    + (() => {
+      // As the app: a phone photo without a point of its own is centred, not cropped by the wide photo's point.
+      const vars = focalVars(d.focal, "")
+        + (slide.mobile ? focalVars(slide.mobile.focal, "-m") || "--hero-focal-m:50% 50%;--hero-zoom-m:1;" : "");
+      return vars ? `.prerender-hero .hero__media{${vars}}` : "";
+    })();
+  return { html, css };
 }
 
 /** The id of the inline JSON block the app reads its first data from (src/client/api/boot.ts). */

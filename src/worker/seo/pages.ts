@@ -2,8 +2,8 @@ import { DEFAULT_LOCALE, negotiateLocale } from "../../shared/i18n/locales.ts";
 import { pagePath, resolveRoute } from "../../shared/routes.ts";
 import type { Services } from "../container.ts";
 import type { Env } from "../env.ts";
-import { ADMIN_PAGE_CSP, PAGE_SECURITY_HEADERS, pageSecurityHeaders } from "../http/security-headers.ts";
-import { escapeHtml, injectHead } from "./html.ts";
+import { ADMIN_PAGE_CSP, PAGE_SECURITY_HEADERS, pageSecurityHeaders, styleHash, withInlineStyle } from "../http/security-headers.ts";
+import { escapeHtml, injectHead, safeCss } from "./html.ts";
 import { injectBody } from "./prerender.ts";
 
 /** Paths that are never pages (and never redirect targets of Website → SEO → Redirects). */
@@ -116,10 +116,13 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
       const tracking = (await s.site.getPublicSite(route.locale)).tracking;
       // The page's content in the HTML itself (prerender); a failure here only costs the prerender.
       const pre = await s.seo.prerender(route, meta).catch(async (error: unknown) => { await log("page_prerender_failed", error); return null; });
-      const html = pre ? injectBody(injectHead(shell, meta), pre.body, pre.boot) : injectHead(shell, meta);
+      const css = pre ? safeCss(pre.css) : "";
+      const html = pre ? injectBody(injectHead(shell, meta, { layout: pre.layout, css }), pre.body, pre.boot) : injectHead(shell, meta);
+      // GA4 / Pixel origins only while they are switched on (the app still waits for consent).
+      const security = pageSecurityHeaders({ ga4: !!tracking.ga4MeasurementId, pixel: !!tracking.metaPixelId });
       return withHeaders(html, meta.status, {
-        // GA4 / Pixel origins only while they are switched on (the app still waits for consent).
-        ...pageSecurityHeaders({ ga4: !!tracking.ga4MeasurementId, pixel: !!tracking.metaPixelId }),
+        // The first paint's style sheet (theme colours, hero crop) is the one inline style allowed, by its hash.
+        ...(css ? withInlineStyle(security, await styleHash(css)) : security),
         "Content-Type": "text/html; charset=utf-8",
         "Content-Language": meta.lang,
         // HTML always revalidates (content and hashed asset names change on deploy).

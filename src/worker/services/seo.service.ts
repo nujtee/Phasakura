@@ -9,7 +9,7 @@ import { accommodationPath, bookingLookupPath, pagePath, privacyPath, PUBLIC_PAG
 import type { PublicPrivacyDto } from "../../shared/settings-types.ts";
 import { HREFLANG, OG_LOCALE, type MetaImageDto, type PageMetaDto, type RobotsDirective } from "../../shared/seo-types.ts";
 import { HttpError } from "../http/errors.ts";
-import { prerenderBody, type PrerenderPage } from "../seo/prerender.ts";
+import { heroShell, prerenderBody, themeCss, type PrerenderPage } from "../seo/prerender.ts";
 import type { SeoRepository, SeoRow } from "../repositories/seo.repository.ts";
 import type { AccommodationService } from "./accommodation.service.ts";
 import { publicMediaUrl } from "./media-url.ts";
@@ -297,7 +297,7 @@ export class SeoService {
    * it travels inside the HTML, so the app draws the page as soon as its script runs instead of waiting for those
    * requests. Each value is exactly what that endpoint answers.
    */
-  async prerender(route: MetaRoute, meta: PageMetaDto): Promise<{ body: string; boot: Record<string, unknown> } | null> {
+  async prerender(route: MetaRoute, meta: PageMetaDto): Promise<{ body: string; boot: Record<string, unknown>; css: string; layout: string } | null> {
     if (route.kind !== "page" || meta.status !== 200 || route.page === "bookingLookup" || route.page === "bookingMove") return null;
     const locale = route.locale;
     const lang = locale.code;
@@ -350,7 +350,9 @@ export class SeoService {
       paths: { home: pagePath(locale, "home"), gallery: pagePath(locale, "gallery"), booking: pagePath(locale, "booking"), history: pagePath(locale, "history") },
       unitPath: (slug) => accommodationPath(locale, slug),
     });
-    return { body, boot };
+    // Home: the header bar and the first slide's photo are visible at once, where the app will draw them.
+    const hero = page.kind === "home" ? heroShell(site, page.home.slides[0]) : null;
+    return { body: (hero?.html ?? "") + body, boot, css: themeCss(site) + (hero?.css ?? ""), layout: site.layout };
   }
 
   /**

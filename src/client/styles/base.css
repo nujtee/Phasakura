@@ -190,6 +190,17 @@ main:focus {
   }
 }
 
+/*
+ * Home page, before the app's script has arrived: the header's bar and the first slide's photo, in the app's own
+ * elements and classes (prerender.ts, heroShell), so the photo is on screen at once and exactly where the app
+ * draws it a moment later. Without scripts the plain content above is shown instead.
+ */
+@media (scripting: none) {
+  .prerender-hero {
+    display: none;
+  }
+}
+
 /* A page whose code is still arriving (pages other than home are separate files): keep the footer from jumping up. */
 .page-loading,
 .app-loading {

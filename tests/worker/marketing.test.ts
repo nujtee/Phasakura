@@ -204,7 +204,8 @@ describe("page CSP follows the trackers that are on", () => {
 
   it("pages get the widened CSP only while a tracker is switched on; admin pages never", async () => {
     let res = await h.get("/th/");
-    assert.equal(res.headers.get("Content-Security-Policy"), PAGE_SECURITY_HEADERS["Content-Security-Policy"]);
+    // (a page's CSP also allows its one inline style sheet, by hash: not what this test is about)
+    assert.equal((res.headers.get("Content-Security-Policy") ?? "").replace(/ 'sha256-[A-Za-z0-9+/=]+'/, ""), PAGE_SECURITY_HEADERS["Content-Security-Policy"]);
     await marketing({ ga4Enabled: true, ga4MeasurementId: "G-TEST1234" });
     res = await h.get("/th/gallery");
     assert.match(res.headers.get("Content-Security-Policy") ?? "", /googletagmanager/);
