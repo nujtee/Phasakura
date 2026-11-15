@@ -2,7 +2,7 @@ import { DEFAULT_LOCALE, negotiateLocale } from "../../shared/i18n/locales.ts";
 import { pagePath, resolveRoute } from "../../shared/routes.ts";
 import type { Services } from "../container.ts";
 import type { Env } from "../env.ts";
-import { PAGE_SECURITY_HEADERS, pageSecurityHeaders } from "../http/security-headers.ts";
+import { ADMIN_PAGE_CSP, PAGE_SECURITY_HEADERS, pageSecurityHeaders } from "../http/security-headers.ts";
 import { escapeHtml, injectHead } from "./html.ts";
 import { injectBody } from "./prerender.ts";
 
@@ -106,6 +106,7 @@ export function createPageHandler(servicesFor: (request: Request, env: Env, url:
         .replace(/<\/head>/i, () => '    <meta name="robots" content="noindex, nofollow" />\n  </head>');
       return withHeaders(html, 200, {
         "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", ...noindex,
+        "Content-Security-Policy": ADMIN_PAGE_CSP,
       }, head);
     }
 

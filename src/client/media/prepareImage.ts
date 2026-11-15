@@ -7,8 +7,9 @@ import { apiUpload } from "../api/client.ts";
  *
  * The Worker cannot run image codecs without a paid image service, so the admin's browser does
  * it before uploading: the photo is decoded (orientation applied), scaled to the purpose's
- * maximum width and re-encoded as WebP (JPEG where the browser cannot encode WebP). Re-encoding
- * also drops camera metadata such as GPS location. Smaller renditions for `srcset` are made from
+ * maximum width and re-encoded as WebP. Browsers whose canvas cannot write WebP (Safari, so every
+ * iPad and iPhone) use a WebAssembly encoder instead (./webpWasm.ts, downloaded only then); JPEG is
+ * the last resort. Re-encoding also drops camera metadata such as GPS location. Smaller renditions for `srcset` are made from
  * the same decoded picture. The server re-checks every file from its bytes.
  * Anything that fails here falls back to uploading the original unchanged.
  */
@@ -23,6 +24,7 @@ export interface PreparedImage {
 }
 
 let webpSupport: Promise<boolean> | null = null;
+let wasmSupport: Promise<boolean> | null = null;
 
 function canvas(width: number, height: number): OffscreenCanvas | HTMLCanvasElement {
   if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(width, height);
@@ -51,9 +53,27 @@ export function canEncodeWebp(): Promise<boolean> {
   return webpSupport;
 }
 
-async function encode(bitmap: ImageBitmap, width: number, height: number, type: string, quality: number): Promise<Blob | null> {
+/** Can the WebAssembly WebP encoder run here? (Not where the page's policy forbids WebAssembly.) */
+function canEncodeWebpWasm(): Promise<boolean> {
+  wasmSupport ??= (async () => {
+    const { encodeWebp } = await import("./webpWasm.ts");
+    const probe = new ImageData(new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255]), 2, 2);
+    return (await encodeWebp(probe, 0.8)).byteLength > 0;
+  })().catch(() => false);
+  return wasmSupport;
+}
+
+/** How this browser writes WebP: its own canvas, the WebAssembly encoder, or not at all. */
+export async function webpEncoder(): Promise<"canvas" | "wasm" | null> {
+  if (await canEncodeWebp()) return "canvas";
+  return (await canEncodeWebpWasm()) ? "wasm" : null;
+}
+
+type Encoder = "canvas" | "wasm";
+
+async function encode(bitmap: ImageBitmap, width: number, height: number, type: string, quality: number, encoder: Encoder = "canvas"): Promise<Blob | null> {
   const c = canvas(width, height);
-  const ctx = c.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  const ctx = c.getContext("2d", encoder === "wasm" ? { willReadFrequently: true } : undefined) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
   if (!ctx) return null;
   if (type === "image/jpeg") {
     // JPEG has no transparency: paint white instead of black behind transparent pixels.
@@ -63,9 +83,19 @@ async function encode(bitmap: ImageBitmap, width: number, height: number, type: 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(bitmap, 0, 0, width, height);
+  if (encoder === "wasm" && type === "image/webp") {
+    try {
+      const { encodeWebp } = await import("./webpWasm.ts");
+      return new Blob([await encodeWebp(ctx.getImageData(0, 0, width, height), quality)], { type });
+    } catch {
+      return null;
+    }
+  }
   const blob = await toBlob(c, type, quality);
   return blob && blob.type === type ? blob : null;
 }
+
+const EXTENSION: Record<string, string> = { "image/webp": "webp", "image/jpeg": "jpg", "image/png": "png" };
 
 /** Purposes whose pictures the public site crops to fill a frame (object-fit: cover). */
 export const CROPPED = new Set<ImageProfilePurpose>(["HOME_SLIDE", "HOME_SECTION", "GALLERY", "HISTORY", "ACCOMMODATION", "FOOD"]);
@@ -96,6 +126,8 @@ export async function prepareImage(file: File, purpose: ImageProfilePurpose): Pr
   const profile = IMAGE_PROFILES[purpose];
   const unchanged: PreparedImage = { file, variants: [], processed: false, focal: null };
   if (!profile?.compress || typeof createImageBitmap !== "function") return unchanged;
+  // A vector logo stays a vector.
+  if (file.type === "image/svg+xml") return unchanged;
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
@@ -106,19 +138,35 @@ export async function prepareImage(file: File, purpose: ImageProfilePurpose): Pr
     const scale = Math.min(1, profile.maxWidth / bitmap.width);
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
-    const type = profile.format === "image/webp" && (await canEncodeWebp()) ? "image/webp" : "image/jpeg";
-    const ext = type === "image/webp" ? "webp" : "jpg";
+    // A small, light logo or icon is kept exactly as uploaded.
+    if (profile.onlyIfOver !== undefined && bitmap.width <= profile.maxWidth && file.size <= profile.onlyIfOver) return unchanged;
+    const webp = profile.format === "image/webp" ? await webpEncoder() : null;
+    let type: string = profile.format === "image/webp" ? (webp ? "image/webp" : "image/jpeg") : profile.format;
+    // Possibly transparent (logo): JPEG would paint the background white, so only a JPEG may stay a JPEG.
+    if (type === "image/jpeg" && profile.onlyIfOver !== undefined && file.type !== "image/jpeg") return unchanged;
+    const encoder: Encoder = type === "image/webp" && webp === "wasm" ? "wasm" : "canvas";
+    const ext = EXTENSION[type] ?? "jpg";
     const focal = CROPPED.has(purpose) ? detectFocal(bitmap, bitmap.width, bitmap.height) : null;
-    const main = await encode(bitmap, width, height, type, profile.quality);
+    let main = await encode(bitmap, width, height, type, profile.quality, encoder);
+    // The WebAssembly encoder failed on this picture (memory): JPEG as before, where that loses nothing.
+    if (!main && encoder === "wasm" && profile.onlyIfOver === undefined) {
+      type = "image/jpeg";
+      main = await encode(bitmap, width, height, type, profile.quality);
+    }
     if (!main) return { ...unchanged, focal };
+    // Never upload something heavier than what was given (a small PNG logo re-drawn larger in bytes).
+    if (profile.onlyIfOver !== undefined && main.size >= file.size) return unchanged;
+    const finalType = type;
+    const finalExt = EXTENSION[finalType] ?? ext;
+    const finalEncoder: Encoder = finalType === "image/webp" ? encoder : "canvas";
     const name = baseName(file.name);
     const variants: File[] = [];
     for (const w of profile.widths) {
       if (w >= width) continue;
-      const blob = await encode(bitmap, w, Math.max(1, Math.round((height * w) / width)), type, profile.quality);
-      if (blob) variants.push(new File([blob], `${name}-${w}.${ext}`, { type }));
+      const blob = await encode(bitmap, w, Math.max(1, Math.round((height * w) / width)), finalType, profile.quality, finalEncoder);
+      if (blob) variants.push(new File([blob], `${name}-${w}.${finalExt}`, { type: finalType }));
     }
-    return { file: new File([main], `${name}.${ext}`, { type }), variants, processed: true, focal };
+    return { file: new File([main], `${name}.${finalExt}`, { type: finalType }), variants, processed: true, focal };
   } catch {
     return unchanged;
   } finally {
