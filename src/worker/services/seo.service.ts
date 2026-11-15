@@ -292,32 +292,52 @@ export class SeoService {
   /**
    * The page's content as plain HTML for <div id="root"> (prerender): public pages that exist (200), never the
    * private Booking ID lookup. Null = serve the empty app shell as before.
+   *
+   * `boot` is the same data keyed by the public API address the app would ask for it ("/api/public/home?lang=th"):
+   * it travels inside the HTML, so the app draws the page as soon as its script runs instead of waiting for those
+   * requests. Each value is exactly what that endpoint answers.
    */
-  async prerender(route: MetaRoute, meta: PageMetaDto): Promise<string | null> {
+  async prerender(route: MetaRoute, meta: PageMetaDto): Promise<{ body: string; boot: Record<string, unknown> } | null> {
     if (route.kind !== "page" || meta.status !== 200 || route.page === "bookingLookup" || route.page === "bookingMove") return null;
     const locale = route.locale;
     const lang = locale.code;
     const t = getMessages(lang);
     const site = await this.site.getPublicSite(locale);
+    const q = `?lang=${locale.path}`;
+    const boot: Record<string, unknown> = { [`/api/public/site${q}`]: site };
     let page: PrerenderPage | null = null;
     switch (route.page) {
       case "home": {
         const [home, stays] = await Promise.all([this.content.home(lang), this.accommodation.publicList(locale)]);
         page = { kind: "home", home, stays };
+        boot[`/api/public/home${q}`] = home;
+        boot[`/api/public/accommodations${q}`] = stays;
         break;
       }
-      case "booking":
-        page = { kind: "booking", stays: await this.accommodation.publicList(locale) };
+      case "booking": {
+        const stays = await this.accommodation.publicList(locale);
+        page = { kind: "booking", stays };
+        boot[`/api/public/accommodations${q}`] = stays;
         break;
-      case "gallery":
-        page = { kind: "gallery", gallery: await this.content.gallery(lang) };
+      }
+      case "gallery": {
+        const gallery = await this.content.gallery(lang);
+        page = { kind: "gallery", gallery };
+        boot[`/api/public/gallery${q}`] = gallery;
         break;
-      case "history":
-        page = { kind: "history", history: await this.content.history(lang) };
+      }
+      case "history": {
+        const history = await this.content.history(lang);
+        page = { kind: "history", history };
+        boot[`/api/public/history${q}`] = history;
         break;
-      case "accommodation":
-        page = { kind: "accommodation", unit: await this.accommodation.publicBySlug(route.slug!, locale), bookingUrl: pagePath(locale, "booking") };
+      }
+      case "accommodation": {
+        const unit = await this.accommodation.publicBySlug(route.slug!, locale);
+        page = { kind: "accommodation", unit, bookingUrl: pagePath(locale, "booking") };
+        boot[`/api/public/accommodations/${encodeURIComponent(route.slug!)}${q}`] = unit;
         break;
+      }
       case "privacy":
         if (this.privacyPolicy) page = { kind: "privacy", policy: await this.privacyPolicy(locale) };
         break;
@@ -325,11 +345,12 @@ export class SeoService {
         page = null;
     }
     if (!page) return null;
-    return prerenderBody({
+    const body = prerenderBody({
       meta, site, t, nav: t.nav, page,
       paths: { home: pagePath(locale, "home"), gallery: pagePath(locale, "gallery"), booking: pagePath(locale, "booking"), history: pagePath(locale, "history") },
       unitPath: (slug) => accommodationPath(locale, slug),
     });
+    return { body, boot };
   }
 
   /**

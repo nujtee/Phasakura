@@ -1,4 +1,5 @@
 import type { ApiErrorBody, ApiSuccess } from "../../shared/api-types.ts";
+import { bootData } from "./boot.ts";
 
 export class ApiError extends Error {
   constructor(
@@ -54,6 +55,9 @@ export async function apiRequest<T>(method: Method, path: string, body?: unknown
 }
 
 export function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  // The page's first data arrives inside the HTML: no request for it.
+  const inline = bootData<T>(path);
+  if (inline !== null) return Promise.resolve(inline);
   return apiRequest<T>("GET", path, undefined, signal);
 }
 

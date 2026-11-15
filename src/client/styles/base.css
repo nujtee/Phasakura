@@ -189,3 +189,9 @@ main:focus {
     visibility: hidden;
   }
 }
+
+/* A page whose code is still arriving (pages other than home are separate files): keep the footer from jumping up. */
+.page-loading,
+.app-loading {
+  min-height: 60vh;
+}

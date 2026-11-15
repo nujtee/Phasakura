@@ -6,7 +6,7 @@ import type { Messages } from "../../shared/i18n/messages.ts";
 import { splitPhones } from "../../shared/phones.ts";
 import type { PageMetaDto } from "../../shared/seo-types.ts";
 import type { PublicPrivacyDto } from "../../shared/settings-types.ts";
-import { escapeHtml } from "./html.ts";
+import { escapeHtml, jsonForScript } from "./html.ts";
 
 /**
  * Prerendered page content (Rendering: SSR / prerender). The Worker puts the page's real content — heading,
@@ -154,7 +154,14 @@ export function prerenderBody(input: PrerenderInput): string {
     + `</div>`;
 }
 
-/** Puts the prerendered content into the app shell's empty root element. */
-export function injectBody(html: string, body: string): string {
-  return html.replace(/<div id="root"><\/div>/, () => `<div id="root">${body}</div>`);
+/** The id of the inline JSON block the app reads its first data from (src/client/api/boot.ts). */
+export const BOOT_DATA_ID = "boot-data";
+
+/**
+ * Puts the prerendered content into the app shell's empty root element, followed by the page's data as inline JSON
+ * (never run as script; `<` is escaped so content cannot close the element).
+ */
+export function injectBody(html: string, body: string, boot?: Record<string, unknown>): string {
+  const data = boot && Object.keys(boot).length ? `<script type="application/json" id="${BOOT_DATA_ID}">${jsonForScript(boot)}</script>` : "";
+  return html.replace(/<div id="root"><\/div>/, () => `<div id="root">${body}</div>${data}`);
 }

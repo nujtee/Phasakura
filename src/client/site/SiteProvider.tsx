@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PublicSiteDto } from "../../shared/api-types.ts";
 import type { Locale } from "../../shared/i18n/index.ts";
 import type { PublicFontFaceDto } from "../../shared/media-types.ts";
 import { parseBookingLayout, parseLayout, THEME_TOKENS, validateThemeTokens, type BookingLayout, type ThemeLayout, type ThemeTokens } from "../../shared/theme.ts";
+import { bootData } from "../api/boot.ts";
 import { apiGet } from "../api/client.ts";
 
 export type SiteState = (
@@ -91,13 +92,23 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
     setPreviewLayout(null);
     setPreviewBookingLayout(null);
   }, []);
-  const [state, setState] = useState<Omit<SiteState, "preview" | "exitPreview">>({ status: "loading", site: null, retry });
+  // The site settings sent inside the HTML are there on the first render: the header and theme do not wait.
+  const sitePath = `/api/public/site?lang=${encodeURIComponent(locale.path)}`;
+  const inline = useRef<string | null>(null);
+  const [state, setState] = useState<Omit<SiteState, "preview" | "exitPreview">>(() => {
+    const boot = bootData<PublicSiteDto>(sitePath);
+    if (boot === null) return { status: "loading", site: null, retry };
+    inline.current = sitePath;
+    return { status: "ready", site: boot, retry };
+  });
 
   useEffect(() => {
+    if (inline.current === sitePath && attempt === 0) return;
+    inline.current = null;
     const controller = new AbortController();
     // Keep the previous site while switching language to avoid header flicker.
     setState((prev) => ({ status: "loading", site: prev.site, retry }));
-    apiGet<PublicSiteDto>(`/api/public/site?lang=${encodeURIComponent(locale.path)}`, controller.signal)
+    apiGet<PublicSiteDto>(sitePath, controller.signal)
       .then((site) => setState({ status: "ready", site, retry }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -105,7 +116,7 @@ export function SiteProvider({ locale, children }: { locale: Locale; children: R
         setState((prev) => ({ status: "error", site: prev.site, retry }));
       });
     return () => controller.abort();
-  }, [locale, attempt, retry]);
+  }, [sitePath, attempt, retry]);
 
   // "Preview on the live website": draft tokens for a signed-in theme editor only (the API checks the session).
   useEffect(() => {
