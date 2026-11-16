@@ -9,6 +9,7 @@ import { useAdmin } from "../AdminContext.tsx";
 import { Alert, Button, ConfirmDialog, detailMessage, errorMessage, useDateFormatter } from "../ui.tsx";
 import { PaymentPanel } from "../payments/PaymentPanel.tsx";
 import { BookingStatusBadge, useStayDate } from "./shared.tsx";
+import { ChangeRoom } from "./ChangeRoom.tsx";
 import { MoveDates } from "./MoveDates.tsx";
 import { StayButtons } from "./StayButtons.tsx";
 import { StaysCard } from "./StaysCard.tsx";
@@ -104,7 +105,12 @@ export function BookingDetailPage({ code }: { code: string }) {
             <dt>{t.bk.created}</dt><dd>{dateTime(b.createdAt)} · {b.source} · {b.languageCode}</dd>
             {b.cancelledAt && <><dt>{t.bk.cancelledAt}</dt><dd>{dateTime(b.cancelledAt)}</dd><dt>{t.bk.cancelReason}</dt><dd>{b.cancelReason}</dd></>}
           </dl>
-          {movable && <MoveDates key={`${b.checkIn}|${b.status}`} booking={b} onMoved={stayChanged} />}
+          {movable && (
+            <div className="adm-stay-tools">
+              <MoveDates key={`${b.checkIn}|${b.status}`} booking={b} onMoved={stayChanged} />
+              <ChangeRoom key={`room|${b.checkIn}|${b.status}|${b.items.map((i) => i.unitId).join()}`} booking={b} onChanged={stayChanged} />
+            </div>
+          )}
         </div>
         <div className="adm-card">
           <div className="adm-row adm-row--wrap adm-cardhead">

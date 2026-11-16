@@ -495,6 +495,16 @@ export interface BookingMoveRoomsDto {
   nearest: { checkIn: string; checkOut: string; state: MoveDayState }[];
 }
 
+/**
+ * Admin: another house / VIP tent for a booking on the dates it has. For each stay, the rooms of the same type
+ * that fit its guests (its own first), free on every night or not, with today's price for those nights.
+ */
+export interface BookingRoomChoicesDto {
+  checkIn: string;
+  checkOut: string;
+  stays: Omit<BookingMoveRoomsDto["stays"][number], "suggested">[];
+}
+
 export interface AdminBookingDto extends PublicBookingDto {
   id: string;
   source: string;

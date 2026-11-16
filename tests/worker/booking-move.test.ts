@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AdminBookingDto, BookingMoveOptionsDto, BookingMoveRoomsDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
+import type { AdminBookingDto, BookingMoveOptionsDto, BookingMoveRoomsDto, BookingRoomChoicesDto, PublicBookingDto, QuoteDto } from "../../src/shared/booking-types.ts";
 import { Harness } from "../helpers/harness.ts";
 import type { SQLInputValue } from "node:sqlite";
 
@@ -253,6 +253,116 @@ describe("change dates → another room when the booked one is taken (migration 
     const r = (await roomsOn(h, admin, both.data.bookingCode, "2027-02-10")).data;
     assert.equal(r.state, "TAKEN", "House 02 cannot hold both stays");
     assert.ok(r.nearest.length > 0);
+  });
+});
+
+describe("another house for a booking, same dates (admin → Change house)", () => {
+  const choices = (h: Harness, token: string, code: string) => h.api<BookingRoomChoicesDto>("GET", `/api/admin/bookings/${code}/rooms`, { token });
+  const change = (h: Harness, token: string, code: string, rooms: { itemId: string; unitId: string }[]) =>
+    h.api<AdminBookingDto>("POST", `/api/admin/bookings/${code}/rooms`, { token, body: { rooms } });
+  const nightsOf = (h: Harness, code: string) =>
+    rows(h, "SELECT n.unit_id, n.stay_date FROM booking_unit_nights n JOIN bookings b ON b.id = n.booking_id WHERE b.booking_code = ? ORDER BY 2, 1", code);
+
+  it("lists the houses of the same type (own first, free or not); changing keeps dates, price and meals, and names the new house", async () => {
+    const { h, admin } = await setup();
+    const b = await book(h, { food: [{ optionId: "dev_food_dinner_a", serviceDate: "2027-02-01", adults: 2 }] });
+    const list = await choices(h, admin, b.bookingCode);
+    assert.equal(list.status, 200, JSON.stringify(list.body));
+    assert.equal(list.data.checkIn, "2027-02-01");
+    const stay = list.data.stays[0]!;
+    assert.equal(stay.unitId, "dev_house_01");
+    assert.deepEqual(stay.options.map((o) => [o.unitId, o.own, o.free]), [["dev_house_01", true, true], ["dev_house_02", false, true]]);
+    assert.equal(stay.options[1]!.priceSatang, 2 * 320000, "House 02's own price for these nights (shown only)");
+    assert.ok(stay.options.every((o) => !o.unitId.startsWith("dev_vip")), "only houses for a house");
+
+    const meals = rows(h, "SELECT service_date, status FROM food_orders ORDER BY 1");
+    const capacity = rows(h, "SELECT food_category_id, service_date, used_quantity FROM food_daily_capacity ORDER BY 1, 2");
+    const done = await change(h, admin, b.bookingCode, [{ itemId: stay.itemId, unitId: "dev_house_02" }]);
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.equal(done.data.items[0]!.unitId, "dev_house_02");
+    assert.equal(done.data.items[0]!.name, stay.options[1]!.name, "the new house's name");
+    assert.equal(done.data.checkIn, b.checkIn);
+    assert.equal(done.data.checkOut, b.checkOut);
+    assert.equal(done.data.totalSatang, b.totalSatang, "the guest keeps the price they booked at");
+    assert.deepEqual(nightsOf(h, b.bookingCode), [{ unit_id: "dev_house_02", stay_date: "2027-02-01" }, { unit_id: "dev_house_02", stay_date: "2027-02-02" }]);
+    assert.deepEqual(rows(h, "SELECT service_date, status FROM food_orders ORDER BY 1"), meals, "meals are not touched");
+    assert.deepEqual(rows(h, "SELECT food_category_id, service_date, used_quantity FROM food_daily_capacity ORDER BY 1, 2"), capacity);
+    assert.equal(rows(h, "SELECT unit_id FROM booking_price_snapshots")[0]!.unit_id, "dev_house_01", "what was sold stays on record");
+    const audit = h.audits("CHANGE_BOOKING_ROOM")[0]!;
+    assert.match(audit.old_value!, /dev_house_01/);
+    assert.match(audit.new_value!, /dev_house_02/);
+    // House 01 is free again for someone else on those nights; the list now shows House 02 as the booking's own.
+    assert.equal((await h.api("POST", "/api/public/bookings/quote", { body: { checkIn: "2027-02-01", checkOut: "2027-02-03", adults: 2, children: 0, stay: { kind: "UNIT", unitId: "dev_house_01" }, food: [], lang: "th" } })).status, 200);
+    assert.deepEqual((await choices(h, admin, b.bookingCode)).data.stays[0]!.options.map((o) => [o.unitId, o.own]), [["dev_house_02", true], ["dev_house_01", false]]);
+  });
+
+  it("a house someone else holds, the same house, another type, a cancelled or camping booking, no permission: refused, nothing changes", async () => {
+    const { h, admin } = await setup();
+    const b = await book(h, {});
+    const other = await book(h, { checkIn: "2027-02-02", checkOut: "2027-02-04", stay: { kind: "UNIT", unitId: "dev_house_02" } }); // overlaps one night
+    const itemId = (await choices(h, admin, b.bookingCode)).data.stays[0]!.itemId;
+    const before = nightsOf(h, b.bookingCode);
+    assert.deepEqual((await choices(h, admin, b.bookingCode)).data.stays[0]!.options.map((o) => [o.unitId, o.free]), [["dev_house_01", true], ["dev_house_02", false]]);
+
+    const taken = await change(h, admin, b.bookingCode, [{ itemId, unitId: "dev_house_02" }]);
+    assert.equal(taken.status, 409);
+    assert.equal(taken.error?.code, "ROOM_NOT_FREE");
+    assert.equal((await change(h, admin, b.bookingCode, [{ itemId, unitId: "dev_house_01" }])).error?.code, "SAME_ROOM");
+    assert.equal((await change(h, admin, b.bookingCode, [{ itemId, unitId: "dev_vip_01" }])).error?.code, "ROOM_NOT_FREE", "a VIP tent is not a house");
+    assert.equal((await change(h, admin, b.bookingCode, [{ itemId: "no_such_item", unitId: "dev_house_02" }])).error?.code, "ROOM_NOT_FREE");
+    assert.equal((await change(h, admin, b.bookingCode, [])).status, 422);
+    assert.deepEqual(nightsOf(h, b.bookingCode), before);
+    assert.equal(h.audits("CHANGE_BOOKING_ROOM").length, 0);
+
+    // Taken between the list and the click: the database refuses the whole batch.
+    const c = await book(h, { checkIn: "2027-03-01", checkOut: "2027-03-02" });
+    const cItem = (await choices(h, admin, c.bookingCode)).data.stays[0]!.itemId;
+    let raced = false;
+    const db = h.env.DB as unknown as { batch: (s: unknown[]) => Promise<unknown> };
+    const batch = db.batch.bind(db);
+    db.batch = async (statements: unknown[]) => {
+      db.batch = batch;
+      raced = true;
+      h.db.run("INSERT INTO booking_unit_nights (unit_id, stay_date, block_reason) VALUES ('dev_house_02', '2027-03-01', 'last minute')");
+      return batch(statements);
+    };
+    const race = await change(h, admin, c.bookingCode, [{ itemId: cItem, unitId: "dev_house_02" }]);
+    db.batch = batch;
+    assert.ok(raced, "the race was staged");
+    assert.equal(race.error?.code, "ROOM_NOT_FREE", JSON.stringify(race.body));
+    assert.deepEqual(nightsOf(h, c.bookingCode), [{ unit_id: "dev_house_01", stay_date: "2027-03-01" }]);
+
+    const viewer = await h.login(await h.user({ id: `viewer_${++seq}`, roles: ["CONTENT_ADMIN"] }));
+    assert.equal((await choices(h, viewer, b.bookingCode)).status, 403);
+    assert.equal((await change(h, viewer, b.bookingCode, [{ itemId, unitId: "dev_house_02" }])).status, 403);
+
+    const camp = await book(h, { stay: { kind: "CAMPING", tents: 1 }, checkIn: "2027-02-20", checkOut: "2027-02-21" });
+    assert.equal((await choices(h, admin, camp.bookingCode)).error?.code, "BOOKING_STATUS_INVALID", "tents brought by the guest have no room");
+    assert.equal((await h.api("POST", `/api/admin/bookings/${other.bookingCode}/cancel`, { token: admin, body: { reason: "guest asked" } })).status, 200);
+    assert.equal((await choices(h, admin, other.bookingCode)).error?.code, "BOOKING_STATUS_INVALID");
+    // The house the cancelled booking held is free now.
+    assert.equal((await change(h, admin, b.bookingCode, [{ itemId, unitId: "dev_house_02" }])).status, 200);
+  });
+
+  it("two houses in one booking can swap with each other; a stay not named keeps its house", async () => {
+    const { h, admin } = await setup();
+    const q = { checkIn: "2027-02-01", checkOut: "2027-02-02", adults: 2, children: 0, food: [], lang: "th",
+      stays: [{ kind: "UNIT", unitId: "dev_house_01", adults: 1, children: 0 }, { kind: "UNIT", unitId: "dev_house_02", adults: 1, children: 0 }] };
+    const quote = await h.api<QuoteDto>("POST", "/api/public/bookings/quote", { body: q });
+    const both = await h.api<PublicBookingDto>("POST", "/api/public/bookings", {
+      body: { ...q, customer: { name: "Two", phone: "0811113333" }, privacyAccepted: true, expectedTotalSatang: quote.data.totalSatang, idempotencyKey: key() },
+    });
+    assert.equal(both.status, 201, JSON.stringify(both.body));
+    const stays = (await choices(h, admin, both.data.bookingCode)).data.stays;
+    const a = stays.find((s) => s.unitId === "dev_house_01")!;
+    const b = stays.find((s) => s.unitId === "dev_house_02")!;
+    // Only one named, into the house the other stay holds: refused (the other keeps its house).
+    assert.equal((await change(h, admin, both.data.bookingCode, [{ itemId: a.itemId, unitId: "dev_house_02" }])).error?.code, "ROOM_NOT_FREE");
+    const swapped = await change(h, admin, both.data.bookingCode, [{ itemId: a.itemId, unitId: "dev_house_02" }, { itemId: b.itemId, unitId: "dev_house_01" }]);
+    assert.equal(swapped.status, 200, JSON.stringify(swapped.body));
+    assert.deepEqual(rows(h, "SELECT booking_item_id, unit_id FROM booking_unit_nights ORDER BY 2"),
+      [{ booking_item_id: b.itemId, unit_id: "dev_house_01" }, { booking_item_id: a.itemId, unit_id: "dev_house_02" }]);
+    assert.equal(swapped.data.totalSatang, both.data.totalSatang);
   });
 });
 

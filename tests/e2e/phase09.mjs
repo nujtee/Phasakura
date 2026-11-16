@@ -350,6 +350,45 @@ await check("change dates: green / amber / red days; red shows the nearest free 
   await pa.setViewportSize({ width: 1440, height: 900 });
 });
 
+await check("change house: the houses are listed by name (current / free / not free); the booking moves there, dates and price as booked", async () => {
+  const G = await book(req, { checkIn: day(33), checkOut: day(35), stay: { kind: "UNIT", unitId: "dev_house_02" } }, "0861110001");
+  await pa.goto(`${BASE}/en/admin/bookings/${G.bookingCode}`);
+  await pa.getByRole("button", { name: "Change house" }).click();
+  const panel = pa.getByRole("group", { name: "Change house" });
+  const options = panel.locator(".adm-room__option");
+  await options.first().waitFor();
+  if ((await options.count()) !== 2) throw new Error(`houses listed: ${await options.count()}`);
+  await options.nth(0).getByText("current").waitFor(); // its own house first
+  await options.nth(1).getByText("free").waitFor();
+  if (!(await panel.getByRole("button", { name: "Save the change" }).isDisabled())) throw new Error("save enabled with nothing chosen");
+  const target = (await options.nth(1).locator(".adm-room__name").innerText()).trim();
+  await options.nth(1).locator("input").check();
+  await panel.getByText(/the booked price stays/).waitFor();
+  await pa.screenshot({ path: `${SHOTS}/g-admin-change-house.png`, fullPage: true });
+  await panel.getByRole("button", { name: "Save the change" }).click();
+  await pa.locator("dialog[open]").getByText(new RegExp(` → ${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} — the dates and the booked price stay`)).waitFor();
+  await pa.locator("dialog[open]").getByRole("button", { name: "Save the change" }).click();
+  await pa.getByText(/^Accommodation changed: /).waitFor();
+  const after = (await (await req.get(`${BASE}/api/admin/bookings/${G.bookingCode}`)).json()).data;
+  if (after.items[0].unitId !== "dev_house_01" || after.items[0].name !== target) throw new Error(`house ${after.items[0].unitId} ${after.items[0].name}`);
+  if (after.checkIn !== day(33) || after.checkOut !== day(35) || after.totalSatang !== G.totalSatang) throw new Error("dates or price changed");
+  await pa.getByRole("group", { name: "Change house" }).waitFor({ state: "detached" });
+  // The house it left is free again: another guest books it; then it shows as not free and cannot be chosen.
+  await book(req, { checkIn: day(34), checkOut: day(35), stay: { kind: "UNIT", unitId: "dev_house_02" } }, "0861110002");
+  await pa.setViewportSize({ width: 390, height: 844 });
+  await pa.goto(`${BASE}/th/admin/bookings/${G.bookingCode}`);
+  await pa.getByRole("button", { name: "เปลี่ยนบ้าน" }).click();
+  const th = pa.getByRole("group", { name: "เปลี่ยนบ้าน" });
+  const busy = th.locator(".adm-room__option--busy");
+  await busy.getByText("ไม่ว่าง").waitFor();
+  if (!(await busy.locator("input").isDisabled())) throw new Error("a taken house can be chosen");
+  await th.getByText("ไม่มีที่พักอื่นว่างในวันเข้าพักนี้").waitFor();
+  const box = await th.boundingBox();
+  if (box.x < 0 || box.x + box.width > 390) throw new Error(`panel off screen ${JSON.stringify(box)}`);
+  await th.screenshot({ path: `${SHOTS}/g-admin-change-house-th-mobile.png` });
+  await pa.setViewportSize({ width: 1440, height: 900 });
+});
+
 await check("dashboard arrivals: check in straight from the list; bookings list: check out from the row", async () => {
   await pa.goto(`${BASE}/en/admin`);
   await pa.getByRole("button", { name: `Check in ${C.bookingCode}` }).click();

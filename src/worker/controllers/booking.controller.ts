@@ -495,6 +495,20 @@ export function bookingController(services: ServicesFor) {
       return jsonOk(await services(ctx).bookings.moveDates(auth, codeParam(ctx), checkIn, requestMeta(ctx), rooms), { headers: NO_STORE });
     }),
 
+    /** GET /api/admin/bookings/:code/rooms — for each house / VIP tent of the booking, the rooms it could have on its dates. */
+    roomChoices: withPermission("bookings.edit", services, async (ctx, auth) =>
+      jsonOk(await services(ctx).bookings.roomChoices(auth, codeParam(ctx), requestMeta(ctx)), { headers: NO_STORE })),
+
+    /** POST /api/admin/bookings/:code/rooms { rooms: [{ itemId, unitId }] } — other rooms of the same type, same dates, same price. */
+    changeRooms: withPermission("bookings.edit", services, async (ctx, auth) => {
+      const body = await readJsonObject(ctx.request);
+      const v = new Validator(body).allowOnly(["rooms"]);
+      const rooms = parseRooms(body.rooms, v);
+      if (!rooms.length && !v.errors.rooms) v.errors.rooms = "REQUIRED";
+      v.assertValid();
+      return jsonOk(await services(ctx).bookings.changeRooms(auth, codeParam(ctx), rooms, requestMeta(ctx)), { headers: NO_STORE });
+    }),
+
     /** PUT /api/admin/bookings/:code/customer { name, phone, email, lineId } — staff correct the guest's contact details. */
     updateCustomer: withPermission("bookings.edit", services, async (ctx, auth) => {
       const v = new Validator(await readJsonObject(ctx.request)).allowOnly(["name", "phone", "email", "lineId"]);
