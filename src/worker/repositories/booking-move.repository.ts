@@ -30,6 +30,9 @@ export interface MoveFoodOrderRow {
  * whose CHECK (used <= max) rejects overselling. Price snapshots are not touched (the guest keeps the price
  * they booked at); food lines and kitchen orders move by the same number of days as the stay.
  */
+/** Change of room (same dates): true once the batch's first statement has stamped the booking (?1 id, ?2 check-in, ?3 now). */
+const ROOM_CHANGE_GUARD = "EXISTS (SELECT 1 FROM bookings WHERE id = ?1 AND check_in = ?2 AND updated_at = ?3)";
+
 export class BookingMoveRepository {
   constructor(private readonly db: D1DatabaseLike) {}
 
@@ -127,6 +130,49 @@ export class BookingMoveRepository {
       .bind(JSON.stringify(categoryIds), from, to)
       .all<{ food_category_id: string; service_date: string; max_quantity: number; used_quantity: number }>();
     return results;
+  }
+
+  /**
+   * Another room for stays of a booking, same dates: the booking's nights are released and taken again in the rooms
+   * given (`rename` = a stay that changes room, with the new room's name). Guarded by the booking's dates and
+   * status; every later statement only runs when that first one did (same `updated_at`).
+   * PRIMARY KEY (unit_id, stay_date) fails the whole batch when a night is already held.
+   */
+  changeRoomStatements(p: { bookingId: string; checkIn: string; checkOut: string; now: string; units: { unitId: string; itemId: string; rename?: string }[] }): D1PreparedStatementLike[] {
+    const db = this.db;
+    // ?1 = booking id, ?2 = check-in, ?3 = now — bound first in every statement below.
+    const head = [p.bookingId, p.checkIn, p.now] as const;
+    const statements: D1PreparedStatementLike[] = [
+      db
+        .prepare(
+          `UPDATE bookings SET updated_at = ?3
+            WHERE id = ?1 AND check_in = ?2 AND check_out = ?4 AND booking_status IN ('PENDING', 'CONFIRMED') AND updated_at <> ?3
+            RETURNING id`,
+        )
+        .bind(...head, p.checkOut),
+      db.prepare(`DELETE FROM booking_unit_nights WHERE booking_id = ?1 AND ${ROOM_CHANGE_GUARD}`).bind(...head),
+    ];
+    // The trigger of migration 0042 refuses another type or a room out of service.
+    for (const unit of p.units.filter((u) => u.rename !== undefined)) {
+      statements.push(
+        db
+          .prepare(`UPDATE booking_items SET unit_id = ?4, unit_name = ?5 WHERE id = ?6 AND booking_id = ?1 AND status = 'ACTIVE' AND ${ROOM_CHANGE_GUARD}`)
+          .bind(...head, unit.unitId, unit.rename!, unit.itemId),
+      );
+    }
+    for (const unit of p.units) {
+      for (const night of stayNights(p.checkIn, p.checkOut)) {
+        statements.push(
+          db
+            .prepare(
+              `INSERT INTO booking_unit_nights (unit_id, stay_date, booking_id, booking_item_id, created_at)
+               SELECT ?4, ?5, ?1, ?6, ?3 WHERE ${ROOM_CHANGE_GUARD}`,
+            )
+            .bind(...head, unit.unitId, night, unit.itemId),
+        );
+      }
+    }
+    return statements;
   }
 
   /**

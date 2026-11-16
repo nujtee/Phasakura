@@ -4206,3 +4206,18 @@
 /* Booking → guest details: title with the "edit" button on the right. */
 .adm-cardhead { justify-content: space-between; align-items: center; margin: 0 0 8px; }
 .adm-cardhead .adm-h2 { margin: 0; }
+
+/* Booking page → Stay: "Change dates" and "Change house" side by side; an open one takes the full width. */
+.adm-stay-tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 12px; }
+.adm-stay-tools > .adm-move { flex: 1 1 100%; min-width: 0; }
+
+/* Change house: the accommodations of the same type by name — current, free (selectable), taken (greyed). */
+.adm-room__stay { margin: 12px 0; padding: 12px; border: 1px solid var(--color-border); border-radius: 10px; min-width: 0; }
+.adm-room__stay legend { padding: 0 6px; font-weight: 600; }
+.adm-room__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.adm-room__option { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; }
+.adm-room__option:has(input:checked) { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface)); }
+.adm-room__option:has(input:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.adm-room__option--busy { cursor: not-allowed; color: var(--color-muted); background: color-mix(in srgb, var(--color-muted) 8%, var(--color-surface)); }
+.adm-room__name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.adm-room__state { font-size: 0.8125rem; color: var(--color-muted); white-space: nowrap; }
