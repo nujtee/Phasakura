@@ -7,6 +7,7 @@ import {
   type BookingCtaDto, type BrandingDto, type BrandingSlot, type MarketingDto, type SeoEntryDto, type SeoPageDto, type SeoPageKey,
   type WebsiteSettingsDto,
 } from "../../../shared/settings-types.ts";
+import { pagePath } from "../../../shared/routes.ts";
 import { apiGet, apiRequest } from "../../api/client.ts";
 import { useAdmin } from "../AdminContext.tsx";
 import { CmsManager, ImageField, LangTabs, PageTabs } from "../cms/CmsKit.tsx";
@@ -365,6 +366,19 @@ const EMPTY_SEO: SeoEntryDto = {
   robots: "index,follow", schemaJson: null,
 };
 
+/** The same address, however it was typed: no trailing slash, host in lower case. */
+function sameAddress(a: string, b: string): boolean {
+  const norm = (u: string) => {
+    try {
+      const url = new URL(u.trim());
+      return `${url.protocol}//${url.host.toLowerCase()}${url.pathname.replace(/\/+$/, "")}${url.search}`;
+    } catch {
+      return u.trim().replace(/\/+$/, "");
+    }
+  };
+  return norm(a) === norm(b);
+}
+
 export function SeoPage() {
   const { t, c, can } = useAdmin();
   const s = useSettings<SeoPageDto[]>("/api/admin/seo");
@@ -379,6 +393,14 @@ export function SeoPage() {
   const e = draft[lang] ?? EMPTY_SEO;
   const set = (k: keyof SeoEntryDto, v: string | null) => setDraft({ ...draft, [lang]: { ...e, [k]: v } });
   const err = (k: string) => s.errors[`translations.${lang}.${k}`];
+  // A canonical URL that is not the page's own address tells search engines the page is a copy of another one
+  // (and takes it out of the sitemap): almost always a mistake, so it is pointed out — saving stays possible.
+  const ownUrl = (code: LocaleCode) => `${window.location.origin}${pagePath(LOCALES.find((l) => l.code === code)!, page)}`;
+  const foreign = (code: LocaleCode) => {
+    const value = draft[code]?.canonicalUrl?.trim();
+    return !!value && !sameAddress(value, ownUrl(code));
+  };
+  const othersForeign = LOCALES.filter((l) => l.code !== lang && foreign(l.code));
   const submit = (ev: FormEvent) => {
     ev.preventDefault();
     void s.save({
@@ -405,7 +427,7 @@ export function SeoPage() {
             <p className="adm-field__hint">{c.seo.autoHint}</p>
             <div className="adm-seo-preview" aria-label={c.seo.googlePreview}>
               <span className="adm-seo-preview__title">{e.seoTitle || c.ui.untitled}</span>
-              <span className="adm-seo-preview__url">{e.canonicalUrl || ""}</span>
+              <span className="adm-seo-preview__url">{e.canonicalUrl || ownUrl(lang)}</span>
               <span className="adm-seo-preview__desc">{e.metaDescription || ""}</span>
             </div>
             <Field label={c.seo.seoTitle} lang={lang} maxLength={70} value={e.seoTitle ?? ""} error={err("seoTitle")}
@@ -416,8 +438,16 @@ export function SeoPage() {
               <p className="adm-field__hint">{format(c.seo.chars, { n: (e.metaDescription ?? "").length })}</p>
               {err("metaDescription") && <p className="adm-field__error">{err("metaDescription")}</p>}
             </div>
+            {foreign(lang) && (
+              <Alert kind="error">
+                {format(c.seo.canonicalWarn, { url: ownUrl(lang) })}{" "}
+                <Button type="button" variant="secondary" onClick={() => set("canonicalUrl", null)}>{c.seo.canonicalClear}</Button>
+              </Alert>
+            )}
+            {othersForeign.length > 0 && <Alert kind="info">{format(c.seo.canonicalOthers, { langs: othersForeign.map((l) => l.code.toUpperCase()).join(", ") })}</Alert>}
             <div className="adm-grid2">
-              <Field label={c.seo.canonicalUrl} type="url" value={e.canonicalUrl ?? ""} error={err("canonicalUrl")} onChange={(ev) => set("canonicalUrl", ev.currentTarget.value)} />
+              <Field label={c.seo.canonicalUrl} type="url" value={e.canonicalUrl ?? ""} error={err("canonicalUrl")}
+                hint={format(c.seo.canonicalHint, { url: ownUrl(lang) })} onChange={(ev) => set("canonicalUrl", ev.currentTarget.value)} />
               <Select label={c.seo.robots} value={e.robots} onChange={(v) => set("robots", v)} options={ROBOTS_VALUES.map((r) => ({ value: r, label: r }))} error={err("robots")} />
               <Field label={c.seo.ogTitle} lang={lang} maxLength={95} value={e.ogTitle ?? ""} error={err("ogTitle")} onChange={(ev) => set("ogTitle", ev.currentTarget.value)} />
               <Field label={c.seo.ogDescription} lang={lang} maxLength={300} value={e.ogDescription ?? ""} error={err("ogDescription")} onChange={(ev) => set("ogDescription", ev.currentTarget.value)} />

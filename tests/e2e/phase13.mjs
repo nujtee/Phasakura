@@ -236,6 +236,36 @@ await check("admin SEO page: search engines, translation coverage, site search s
 });
 
 // ------------------------------------------------------------------ mobile
+
+await check("SEO settings: a canonical URL that is not the page's own address is pointed out, with the right one and a button to clear it", async () => {
+  await pa.goto(`${BASE}/en/admin/seo`);
+  const field = pa.getByLabel("Canonical URL (https://)");
+  await field.waitFor();
+  // Empty: the hint names the page's own address, the preview shows it, no warning.
+  await pa.getByText(`Normally leave empty: the page's own address is used (${BASE}/th/).`).waitFor();
+  assert((await pa.locator(".adm-seo-preview__url").innerText()) === `${BASE}/th/`, "preview shows the page's own address");
+  assert((await pa.getByText(/Google will treat this page as a copy/).count()) === 0, "warning without a value");
+  // The page's own address, with or without the trailing slash: fine.
+  await field.fill(`${BASE}/th`);
+  assert((await pa.getByText(/Google will treat this page as a copy/).count()) === 0, "own address warned about");
+  // The domain root (it redirects) and another page: warned, naming this page's address.
+  for (const wrong of [BASE, `${BASE}/th/booking`]) {
+    await field.fill(wrong);
+    await pa.getByText(`This is not this page's own address (${BASE}/th/).`, { exact: false }).waitFor();
+  }
+  // Another language keeps its own check: English still wrong is listed while Thai is being edited.
+  await pa.getByRole("tab", { name: /EN/ }).or(pa.getByRole("button", { name: /^EN/ })).first().click();
+  await field.fill(`${BASE}/th/`);
+  await pa.getByText(`This is not this page's own address (${BASE}/en/).`, { exact: false }).waitFor();
+  await pa.getByRole("tab", { name: /TH/ }).or(pa.getByRole("button", { name: /^TH/ })).first().click();
+  await pa.getByText("The canonical URL of other languages is not their own page: EN").waitFor();
+  await pa.screenshot({ path: `${SHOTS}/p13-admin-seo-canonical.png` });
+  // "Clear it" empties the field and the warning goes.
+  await pa.getByRole("button", { name: "Clear it" }).click();
+  assert((await field.inputValue()) === "", "field not cleared");
+  assert((await pa.getByText(/This is not this page's own address \(.*\/th\/\)/).count()) === 0, "warning still shown");
+});
+
 await check("mobile 390 px: search fills the screen, results readable, no horizontal scroll", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "th-TH" });
   const p = await ctx.newPage(); watch(p);
